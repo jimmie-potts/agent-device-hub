@@ -33,6 +33,11 @@ run evidence declared by the worker contract.
 - **WHEN** Codex cannot confirm its ChatGPT account before a turn, or Claude Code reports a contrary credential during its preflight or stream check
 - **THEN** the worker refuses the run at that boundary without falling back to an API key
 
+#### Scenario: Codex cannot confirm isolated configuration
+
+- **WHEN** a readiness probe or delegated run finds unsafe or unreadable effective Codex settings
+- **THEN** it SHALL refuse account probing or thread startup and keep any personal profile outside the child environment
+
 #### Scenario: Only explicit plan exhaustion routes as a usage limit
 
 - **WHEN** a harness reports subscription-plan exhaustion without a completed structured result

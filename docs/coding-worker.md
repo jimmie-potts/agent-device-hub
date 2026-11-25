@@ -204,20 +204,35 @@ disabled or lost endpoint clears the record.
 
 ## Codex delegation
 
-Use `coding-worker/1.1` and add a `codex` object with an absolute
-`executable` path and, optionally, a `model` name. For example, set the
-executable to `/opt/homebrew/bin/codex` if that is the reviewed local binary.
-Upgrade the core first so it accepts `coding-endpoint/2.3`. Omitting the
-harness from a work request still selects Claude Code.
+Use `coding-worker/1.1` and add a `codex` object with absolute `executable`
+and `home` paths and, optionally, a `model` name. For example, use the
+reviewed `/opt/homebrew/bin/codex` binary and a dedicated mode-700 directory
+outside every checkout. Upgrade the core first so it accepts
+`coding-endpoint/2.3`. Omitting the harness still selects Claude Code.
 
-The worker starts a private stdio app-server with a scrubbed environment and
-forces ChatGPT sign-in with the first-party provider. It checks the account
-before opening a thread and again before sending a turn. Sign-in, plan and
-limit responses contribute only the declared readiness fields. A missing or
-unconfirmed subscription, or an unconfirmed worktree permission profile,
-refuses the turn. The child receives no worker credential or provider API
-key. Codex manages the existing ChatGPT sign-in. The worker reads no
-authentication token and changes no personal settings.
+As the worker's host user, create that directory and sign in to ChatGPT in
+the dedicated profile. Use the same absolute directory for `codex.home`
+and preserve it for the native sessions it stores.
+
+```sh
+worker_codex_home="$HOME/.local/share/bunny/coding-worker/codex"
+install -d -m 700 "$worker_codex_home"
+CODEX_HOME="$worker_codex_home" HOME="$worker_codex_home" /opt/homebrew/bin/codex \
+  -c 'cli_auth_credentials_store="file"' -c 'forced_login_method="chatgpt"' login
+```
+
+Keep this profile free of `config.toml` and a nested `.codex` directory.
+Use the dedicated ChatGPT login and keep personal credentials in their own profile.
+The worker launches the private stdio app-server from that directory with
+both `HOME` and `CODEX_HOME` set to it. It checks the effective configuration
+before reading account readiness or opening a thread. Configured MCP
+servers or plugins, enabled hooks, apps, shell snapshots or login shells,
+and unavailable settings evidence refuse the operation. The worker checks
+the ChatGPT account before opening a thread and again before sending a turn.
+Sign-in, plan and limit responses contribute only the declared readiness
+fields. The child receives no worker credential or provider API key. Codex
+owns its file-backed sign-in in the dedicated profile. The worker reads no
+authentication token.
 
 The run uses a fresh worktree, no interactive approvals and a profile with
 writes restricted to the worktree and disabled shell network access. The shared wall-clock

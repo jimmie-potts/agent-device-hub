@@ -95,10 +95,11 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
   }
   let codexConfig: CodexConfiguration | undefined;
   if (codex !== undefined) {
-    if (!isRecord(codex) || Object.keys(codex).some(key => !['executable', 'model'].includes(key)) ||
-      typeof codex.executable !== 'string' || !isAbsolute(codex.executable)) return bad('codex needs an absolute executable path and optional model');
+    if (!isRecord(codex) || Object.keys(codex).some(key => !['executable', 'model', 'home'].includes(key)) ||
+      typeof codex.executable !== 'string' || !isAbsolute(codex.executable) ||
+      typeof codex.home !== 'string' || !isAbsolute(codex.home)) return bad('codex needs an absolute executable path and a private worker home');
     if (codex.model !== undefined && (typeof codex.model !== 'string' || !/^[a-z0-9.-]{1,64}$/.test(codex.model))) return bad('codex.model is not a model name');
-    codexConfig = {executable: codex.executable, ...(codex.model === undefined ? {} : {model: codex.model})};
+    codexConfig = {executable: codex.executable, home: codex.home, ...(codex.model === undefined ? {} : {model: codex.model})};
   }
   return {edge: url.origin, tokenFile, repositories: list, ...(value.schema === 'coding-worker/1.1' ? {adapterProtocol: true} : {}), ...(codexConfig === undefined ? {} : {codex: codexConfig}), claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
     ...(claude.maxTurns === undefined ? {} : {maxTurns: Number(claude.maxTurns)}), ...(environment === undefined ? {} : {environment: environment as string[]})}};
@@ -346,7 +347,7 @@ export class CodingWorker {
     this.#harness = harness ?? claudeHarness(configuration.claude.executable, process.env,
       {...(configuration.claude.environment === undefined ? {} : {environment: configuration.claude.environment}), ...(configuration.repositories[0] === undefined ? {} : {probeCwd: configuration.repositories[0].path})});
     const cwd = configuration.repositories[0]?.path;
-    const configured = configuration.codex === undefined || cwd === undefined ? [] : [codexAdapter(configuration.codex, {probeCwd: cwd})];
+    const configured = configuration.codex === undefined || cwd === undefined ? [] : [codexAdapter(configuration.codex, {})];
     const claudeAdapter: CodingAdapter = {
       id: CLAUDE,
       capabilities: CLAUDE_CAPABILITIES,

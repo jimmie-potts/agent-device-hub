@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import {mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {test} from 'node:test';
+import {after, test} from 'node:test';
 import {codexAdapter, codexEnvironment, type CodexTransport} from '../src/worker/codex-adapter.js';
+
+const profileHome = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-profile-')));
+after(() => rm(profileHome, {recursive: true, force: true}));
 
 const threadId = '11111111-2222-4333-8444-555555555555';
 const turnId = 'synthetic-turn';
@@ -14,6 +17,8 @@ const report = {outcome: 'tested-candidate', summary: 'Reviewed the requested re
   {name: 'git diff', status: 'passed', detail: null}, {name: 'npm test', status: 'skipped', detail: 'No fixture dependencies installed.'},
 ], findings: [], limitations: []};
 const bounds = {wallClockMs: 120_000, maxTurns: 3, budgetUsd: 2};
+const safeConfig = {mcp_servers: {}, plugins: {}, hooks: null, allow_login_shell: false, cli_auth_credentials_store: 'file',
+  features: {hooks: false, apps: false, plugins: false, shell_snapshot: false}};
 
 function assertStrictOutputSchema(value: unknown): void {
   if (typeof value !== 'object' || value === null) return;
@@ -27,11 +32,11 @@ function assertStrictOutputSchema(value: unknown): void {
 }
 
 type Scenario = {
-  auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; badPermissions?: boolean; changeAuth?: boolean;
+  effectiveConfig?: object; auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; badPermissions?: boolean; changeAuth?: boolean;
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
 
-function fixture(scenario: Scenario = {}) {
+function fixture(scenario: Scenario = {}, home = profileHome) {
   const requests: string[] = [], sessions: string[] = [];
   let starts = 0, accounts = 0;
   let wireSchema: unknown;
@@ -39,9 +44,15 @@ function fixture(scenario: Scenario = {}) {
     assert.ok(args.includes('forced_login_method="chatgpt"'));
     assert.ok(args.includes('model_provider="openai"'));
     assert.ok(args.includes('features.hooks=false'));
+    assert.ok(args.includes('features.plugins=false'));
+    assert.ok(args.includes('features.shell_snapshot=false'));
+    assert.ok(args.includes('allow_login_shell=false'));
+    assert.ok(args.includes('cli_auth_credentials_store="file"'));
     assert.ok(args.includes('mcp_servers={}'));
     assert.ok(args.some(arg => arg.includes('.network.enabled=false')));
-    assert.deepEqual(env, {PATH: '/synthetic/bin', HOME: '/synthetic/home'});
+    assert.ok(args.some(arg => arg.includes(`${JSON.stringify(join(home, 'auth.json'))}="deny"`)));
+    assert.equal(cwd, home, 'app-server starts outside the worktree');
+    assert.deepEqual(env, {PATH: '/synthetic/bin', HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'});
     return {
       notify(method) {assert.equal(method, 'initialized');},
       close() {closed();},
@@ -49,6 +60,10 @@ function fixture(scenario: Scenario = {}) {
         requests.push(method);
         switch (method) {
           case 'initialize': return Promise.resolve({});
+          case 'config/read':
+            assert.ok(params !== undefined && 'cwd' in params && typeof params.cwd === 'string');
+            assert.deepEqual(params, {cwd: params.cwd, includeLayers: false});
+            return Promise.resolve({config: scenario.effectiveConfig ?? safeConfig});
           case 'account/read':
             assert.deepEqual(params, {refreshToken: false});
             accounts += 1;
@@ -56,10 +71,10 @@ function fixture(scenario: Scenario = {}) {
           case 'account/rateLimits/read': return Promise.resolve({rateLimits: window});
           case 'thread/start': {
             const sent = params as {cwd: string; permissions: string; runtimeWorkspaceRoots: string[]};
-            assert.equal(sent.cwd, cwd);
-            assert.deepEqual(sent.runtimeWorkspaceRoots, [cwd]);
-            return Promise.resolve({cwd, thread: {id: threadId}, modelProvider: 'openai', approvalPolicy: 'never',
-              activePermissionProfile: {id: sent.permissions}, sandbox: {type: 'workspaceWrite', networkAccess: false, writableRoots: [cwd]}, runtimeWorkspaceRoots: scenario.badPermissions === true ? [cwd, '/other-checkout'] : [cwd]});
+            assert.notEqual(sent.cwd, home);
+            assert.deepEqual(sent.runtimeWorkspaceRoots, [sent.cwd]);
+            return Promise.resolve({cwd: sent.cwd, thread: {id: threadId}, modelProvider: 'openai', approvalPolicy: 'never',
+              activePermissionProfile: {id: sent.permissions}, sandbox: {type: 'workspaceWrite', networkAccess: false, writableRoots: [sent.cwd]}, runtimeWorkspaceRoots: scenario.badPermissions === true ? [sent.cwd, '/other-checkout'] : [sent.cwd]});
           }
           case 'turn/start': {
             starts += 1;
@@ -85,7 +100,7 @@ function fixture(scenario: Scenario = {}) {
       },
     };
   };
-  const adapter = codexAdapter({executable: '/synthetic/codex'}, {probeCwd: '/synthetic/repo', transport, version: () => Promise.resolve('0.163.0'),
+  const adapter = codexAdapter({executable: '/synthetic/codex', home}, {transport, version: () => Promise.resolve('0.163.0'),
     environment: {PATH: '/synthetic/bin', HOME: '/synthetic/home', OPENAI_API_KEY: 'synthetic-key', CODEX_HOME: '/untrusted/config',
       BUNNY_CODING_TOKEN: 'worker-credential', CLAUDE_CODE_OAUTH_TOKEN: 'other-provider-token'}});
   const run = (worktree: string) => adapter.run({worktree, brief, bounds, signal: new AbortController().signal, session: id => {sessions.push(id);}});
@@ -96,9 +111,9 @@ void test('Codex readiness reports only subscription fields, plan and quota with
   const {adapter, requests} = fixture();
   assert.deepEqual(await adapter.readiness(), {installed: 'yes', signedIn: 'yes', version: '0.163.0', plan: 'plus',
     windows: [{window: 'primary-300m', status: 'rejected', utilization: 100, resetsAtMs: 1_800_000_000_000}]});
-  assert.deepEqual(requests, ['initialize', 'account/read', 'account/rateLimits/read']);
+  assert.deepEqual(requests, ['initialize', 'config/read', 'account/read', 'account/rateLimits/read']);
   assert.deepEqual(codexEnvironment({HOME: '/synthetic/home', OPENAI_BASE_URL: 'https://invalid.example',
-    CODEX_API_KEY: 'synthetic-key', SSH_AUTH_SOCK: '/private/socket'}), {HOME: '/synthetic/home'});
+    CODEX_API_KEY: 'synthetic-key', SSH_AUTH_SOCK: '/private/socket'}, profileHome), {HOME: profileHome, CODEX_HOME: profileHome, SHELL: '/bin/sh'});
 });
 
 void test('Codex sends one bounded model turn after confirmed worktree scope and early session identity', async t => {
@@ -112,6 +127,37 @@ void test('Codex sends one bounded model turn after confirmed worktree scope and
   assert.equal(evidence.sessionId, threadId);
   assert.deepEqual(evidence.structured, report);
   assert.equal(evidence.usage?.costUsd, null);
+});
+
+void test('Codex refuses effective MCP or plugin configuration before probing auth or opening a thread', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  for (const effectiveConfig of [
+    {...safeConfig, mcp_servers: {synthetic: {command: '/usr/bin/false'}}},
+    {...safeConfig, plugins: {'synthetic@test': {enabled: true}}},
+    {...safeConfig, features: {...safeConfig.features, shell_snapshot: true}},
+    {},
+  ]) {
+    const probe = fixture({effectiveConfig});
+    assert.equal((await probe.adapter.readiness()).signedIn, 'unknown');
+    assert.deepEqual(probe.requests, ['initialize', 'config/read']);
+    const run = fixture({effectiveConfig});
+    assert.equal((await run.run(cwd)).reason, 'refused');
+    assert.deepEqual(run.requests, ['initialize', 'config/read']);
+    assert.equal(run.starts(), 0);
+  }
+});
+
+void test('a worker profile containing user configuration refuses both entry points before app-server starts', async t => {
+  const profile = await realpath(await mkdtemp(join(tmpdir(), 'bunny-forbidden-codex-profile-')));
+  t.after(() => rm(profile, {recursive: true, force: true}));
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  await writeFile(join(profile, 'config.toml'), '[mcp_servers.synthetic]\ncommand = "/usr/bin/false"\n');
+  const candidate = fixture({}, profile);
+  assert.equal((await candidate.adapter.readiness()).signedIn, 'unknown');
+  assert.equal((await candidate.run(cwd)).reason, 'refused');
+  assert.deepEqual(candidate.requests, []);
 });
 
 void test('Codex refuses signed-out, API key, unknown credentials and broadened worktree authority before model work', async t => {
@@ -128,7 +174,7 @@ void test('Codex refuses signed-out, API key, unknown credentials and broadened 
     assert.equal((await run(cwd)).reason, 'refused');
     assert.equal(starts(), 0);
   }
-  const missing = codexAdapter({executable: '/nonexistent/codex'}, {probeCwd: cwd});
+  const missing = codexAdapter({executable: '/nonexistent/codex', home: profileHome}, {});
   assert.equal((await missing.readiness()).installed, 'no');
 });
 
@@ -165,9 +211,10 @@ if (process.argv.includes('--version')) {console.log('codex-cli 0.163.0'); proce
 lines.on('line', line => {
   const {id, method} = JSON.parse(line);
   if (method === 'initialize') console.log(JSON.stringify({id, result: {}}));
+  if (method === 'config/read') console.log(JSON.stringify({id, result: {config: ${JSON.stringify(safeConfig)}}}));
   if (method === 'account/read') console.log(JSON.stringify({id, result: {requiresOpenaiAuth: true, account: null}}));
 });
 `, {mode: 0o700});
-  const adapter = codexAdapter({executable}, {probeCwd: cwd});
+  const adapter = codexAdapter({executable, home: profileHome}, {});
   assert.deepEqual(await adapter.readiness(), {installed: 'yes', signedIn: 'no', version: '0.163.0', plan: null});
 });
