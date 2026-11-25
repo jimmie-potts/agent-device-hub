@@ -1758,7 +1758,7 @@ void test('Responses never substitutes an older owner excerpt for the latest pri
   const earlier = 'Synthetic earlier owner statement.';
   await ask(earlier);
   await ask('Repeat my last message.');
-  assert.ok(bodies.at(-1)?.includes(earlier), 'an authorized actual latest owner message may be quoted');
+  assert.equal(bodies.at(-1)?.includes(earlier), true, 'an authorized actual latest owner message may be quoted');
   await ask('Synthetic statement private to Reachy.', 'reachy');
   const deniedTask = await ask('Synthetic newly revoked owner statement.');
   denied = deniedTask + '-prompt';
