@@ -3154,6 +3154,11 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+After the root build, `npm run test:companions:built` exercises an owner asking
+for one coding job’s status while a synthetic worker is running. Its Conversation
+fixtures also verify the saved answer after restart, a changed attempt, revoked
+access and subsequent provider and title inputs.
+
 For device history, build and run `node --test --test-concurrency=2 apps/runtime/dist/tests/device-history.test.js modules/companions/dist/tests/device-history.test.js`.
 Run the Companion and runtime suites for the synthetic conversation and the
 core history and MCP readers. The Companion suite also exercises Responses

@@ -1,3 +1,4 @@
+import {statusQuestion, type CodingJobEntry} from '../coding/job-page.js';
 import {codingChoice, type CodingChoice} from '../coding/routing.js';
 import {catalogRoute, SHOW_SAVE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {createHash, randomUUID} from 'node:crypto';
@@ -74,6 +75,7 @@ export type AssistantOptions = {
   backgroundCoding?: boolean;
   codingJob?: (operationId: string) => CodingJob | undefined;
   codingJobRead?: CodingCoordinator['jobRead'];
+  readJobStatus?: (jobId: string) => CodingJobEntry | undefined;
   stopCodingJob?: CodingCoordinator['prepareStop'];
   messageCodingJob?: CodingCoordinator['prepareMessage'];
   openNativeClient?: CodingCoordinator['prepareNativeClient'];
@@ -636,7 +638,7 @@ export class AssistantEngine {
   canSpeak(taskId: string, messageId: string): boolean {
     const task = this.store.task(taskId);
     const message = this.store.savedMessage(taskId, messageId);
-    if (task === undefined || message?.role !== 'assistant' || !spokenAloud(task.profile)) return false;
+    if (task === undefined || task.localJobStatus !== undefined || message?.role !== 'assistant' || !spokenAloud(task.profile)) return false;
     const read = this.#fields(task.profile, 'read', 'private-conversation'), speech = this.#fields(task.profile, 'read', 'conversation-speech');
     const allowed: FieldAccess = (source, field, record) => read(source, field, record) && speech(source, field, record);
     return allowed('conversation', 'text', task.conversationId) && allowed('conversation', 'text', messageId) &&
@@ -688,6 +690,12 @@ export class AssistantEngine {
     const head = this.store.queue.messages(conversationId)[0];
     if (head === undefined || this.store.queue.hold(conversationId) !== null) return undefined;
     if (this.store.unfinishedIn(conversationId) !== undefined || this.#busy(conversationId)) return undefined;
+    const question = statusQuestion(head.text);
+    if (question !== undefined && this.store.meta().enabled && !this.#unrecovered.has(conversationId)) {
+      this.#localJobStatus(head.profile, head.text, question, head.supervisor);
+      this.store.queue.remove(head.id);
+      return this.#dispatch(conversationId, refuse);
+    }
     const refusal = this.#startRefusal(head.profile, conversationId, head.supervisor);
     if (refusal !== undefined) {
       if (refuse) throw refusal;
@@ -877,6 +885,34 @@ export class AssistantEngine {
       }};
     } catch (error) {return errorBody(error instanceof SyntaxError ? 'invalid-request' : codeOf(error));}
   }
+  #localJobStatus(profile: AssistantProfile, text: string, jobId: string | null, supervisor?: SupervisorIdentity): void {
+    const now = this.context.clock.now();
+    const task = this.store.newTask(profile, 'Private owner question.', supervisor);
+    const job = jobId === null ? undefined : this.options.readJobStatus?.(jobId);
+    const visible = job !== undefined && job.jobId === jobId && job.companion === profile && job.conversationId === task.conversationId
+      ? {jobId: job.jobId, operationId: job.operationId, status: job.status} : undefined;
+    task.localJobStatus = {question: text, ...(visible === undefined ? {} : {visible})};
+    task.status = 'succeeded';
+    // Shared message records, including knowledge exports and provider context, contain no job reference or result.
+    this.store.message(task, `${task.id}-private-question`, 'owner', task.prompt, now);
+    this.store.message(task, `${task.id}-private-status`, 'assistant', 'Private owner reply.', now);
+    this.store.save(task);
+  }
+  #privateJobText(profile: AssistantProfile, conversationId: string | undefined, message: MessageSource): string | undefined {
+    if (message.id !== `${message.taskId}-private-status` && message.id !== `${message.taskId}-private-question`) return undefined;
+    const task = this.store.task(message.taskId), receipt = task?.localJobStatus, saved = receipt?.visible;
+    if (task?.profile !== profile || task.conversationId !== conversationId || receipt === undefined ||
+        !this.#publicRead(profile).task(conversationId, task.id)) return undefined;
+    const unavailable = message.role === 'owner' ? undefined : 'No readable coding job with that ID was found in this conversation.';
+    if (saved === undefined) return message.role === 'assistant' && statusQuestion(receipt.question) === null
+      ? 'Ask about one coding job by its full ID in a separate status question.' : unavailable;
+    const current = this.options.readJobStatus?.(saved.jobId);
+    if (current?.jobId !== saved.jobId || current.companion !== profile || current.conversationId !== conversationId) return unavailable;
+    if (current.operationId !== saved.operationId && !this.canReadCodingJob(profile, {...current, operationId: saved.operationId})) return unavailable;
+    if (message.role === 'owner') return receipt.question;
+    if (current.operationId !== saved.operationId) return 'The current attempt changed after this question. Ask again for its status.';
+    return `Coding job ${saved.jobId}, attempt ${saved.operationId}, had reported status “${saved.status}” when you asked.`;
+  }
   #input(command: Command<AssistantInput>): Promise<Reply> {
     let titled: {id: string; conversationId: string; profile: AssistantProfile; event: TitleEvent} | undefined;
     let jobCommitted: (() => Promise<void>) | undefined;
@@ -926,6 +962,7 @@ export class AssistantEngine {
         // A queue with nothing to wait behind starts its message at once.
         return this.#dispatch(conversationId);
       }
+      if (input.action === 'answer' && statusQuestion(input.text) !== undefined) fail('invalid-request');
       if (input.action === 'steer') {
         this.store.discard(staged.ref);
         const steered = this.#steer(input, command, now);
@@ -959,6 +996,12 @@ export class AssistantEngine {
         const conversationId = this.store.conversation(input.profile);
         if (conversationId !== undefined && (this.store.unfinishedIn(conversationId) !== undefined || this.#active.has(conversationId))) fail('capacity');
         if (conversationId !== undefined && this.#unrecovered.has(conversationId)) fail('unavailable');
+        const question = statusQuestion(input.text);
+        if (question !== undefined) {
+          this.#localJobStatus(input.profile, input.text, question, this.#identity(this.#providerFor(input.profile, input.provider)));
+          this.store.discard(staged.ref);
+          return undefined;
+        }
         // A new turn of a paid profile is refused, its reply naming why, when what remains of the daily limit or the month's
         // estimate is below the smallest first call, so it is not admitted only to fail there; synthetic turns cost nothing.
         const paid = this.#providerFor(input.profile, input.provider), pin = this.#identity(paid);
@@ -1039,6 +1082,11 @@ export class AssistantEngine {
       if (!this.store.queue.steerRoom(conversationId)) throw new Fault('capacity', STEERS_FULL);
       this.store.queue.addSteer({id: command.data.requestId, taskId: task.id, conversationId, profile: task.profile, text: input.text, savedAtMs: now, traceparent: command.traceparent});
     };
+    if (statusQuestion(input.text) !== undefined) {
+      if (input.questionId !== undefined) fail('invalid-request');
+      queued();
+      return {launch: undefined};
+    }
     if (input.questionId !== undefined) {
       // A delegation is answered by the worker alone, so only a clarification or an approval can be set aside.
       if (asked === null || asked.id !== input.questionId || asked.kind === 'delegation' || !['waiting', 'paused'].includes(task.status)) fail('invalid-state');
@@ -1138,6 +1186,7 @@ export class AssistantEngine {
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify({...queue, held, messages, steers}))};
       }
       const visibility = {
+        privateText: (message: MessageSource) => this.#privateJobText(selected, conversationId, message),
         shows: (message: MessageSource) => fields('conversation', 'text', message.id) &&
           (message.role === 'owner' || this.#jobMessageAllowed(message, fields) && this.#replayable(message.taskId, fields)),
         attachment: (requestId: string) => fields('artwork', 'attachment', requestId),
