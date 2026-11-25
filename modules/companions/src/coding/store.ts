@@ -1,6 +1,6 @@
 import type {DatabaseSync} from 'node:sqlite';
 import {isErrorCode} from '@jimmie-potts/event-contracts/v2';
-import type {CodingAttemptEntry, CodingAttemptResult, CodingJobEntry, JobMessage} from './job-page.js';
+import type {AttemptContext, CodingAttemptEntry, CodingAttemptResult, CodingJobEntry, JobMessage} from './job-page.js';
 import type {CodingCompanion, CodingContinuation, CodingProgress} from '@jimmie-potts/event-contracts/v2/coding';
 import type {CodingChoice, CodingHarness} from './routing.js';
 
@@ -46,6 +46,9 @@ export class CodingStore {
       selection_reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', result TEXT, handoff_token TEXT, selection_id TEXT,
       from_operation_id TEXT UNIQUE, from_token TEXT, stop_requested INTEGER NOT NULL DEFAULT 0 CHECK(stop_requested IN (0,1))
     ) STRICT`);
+    if (!database.prepare('PRAGMA table_info(companion_coding_attempts)').all().some(column => column.name === 'context')) {
+      database.exec('ALTER TABLE companion_coding_attempts ADD COLUMN context TEXT');
+    }
     database.exec('CREATE INDEX IF NOT EXISTS companion_coding_attempt_job ON companion_coding_attempts(job_id)');
     database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_job_updates (
       operation_id TEXT NOT NULL, task_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('sent','stop-unconfirmed','result')),
@@ -86,7 +89,8 @@ export class CodingStore {
       )
       SELECT job.job_id, job.current_operation AS operation_id, job.task_id, job.conversation_id, job.repository, COALESCE(waiting.companion, attempt.companion) AS companion,
       COALESCE(attempt.status, run.status) AS status, terminal.text AS terminal_text,
-      (SELECT text FROM companion_coding_job_updates item WHERE item.operation_id=job.current_operation ORDER BY rowid DESC LIMIT 1) AS latest_update
+      (SELECT CASE kind WHEN 'result' THEN 'A job outcome was recorded.' ELSE text END FROM companion_coding_job_updates item
+        WHERE item.operation_id=job.current_operation ORDER BY rowid DESC LIMIT 1) AS latest_update
       FROM current job LEFT JOIN companion_coding_waiting waiting ON waiting.operation_id=job.current_operation
       LEFT JOIN companion_coding_attempts attempt ON attempt.operation_id=job.current_operation
       LEFT JOIN companion_coding run ON run.operation_id=job.current_operation
@@ -153,9 +157,10 @@ export class CodingStore {
       (choice !== 'auto' && choice !== 'claude-code' && choice !== 'codex') ||
       (companion !== 'bunny' && companion !== 'reachy' && companion !== 'microduck') ||
       (harness !== null && harness !== 'claude-code' && harness !== 'codex') || (sessionId !== null && typeof sessionId !== 'string') ||
-      (status !== 'queued' && status !== 'dispatching' && status !== 'started' && status !== 'completed' && status !== 'failed' &&
+      (status !== 'queued' && status !== 'dispatching' && status !== 'started' && status !== 'cancelling' && status !== 'completed' && status !== 'failed' &&
         status !== 'cancelled' && status !== 'uncertain') || (result !== null && typeof result !== 'string')) throw new Error('coding-attempt-invalid');
     return {operationId, jobId, choice, companion, harness, sessionId, selectionReason, status, result: result === null ? null : JSON.parse(result) as CodingAttemptResult,
+      ...(typeof row.context === 'string' ? {context: JSON.parse(row.context) as AttemptContext} : {}),
       ...(typeof handoffToken === 'string' ? {handoffToken} : {}), ...(typeof selectionId === 'string' ? {selectionId} : {}),
       ...(typeof from === 'string' && typeof token === 'string' ? {continuation: {fromOperationId: from, token}} : {})};
   }
@@ -167,6 +172,13 @@ export class CodingStore {
     this.database.prepare(`UPDATE companion_coding_attempts SET status=?, session_id=COALESCE(session_id,?),
       result=COALESCE(result,?), handoff_token=COALESCE(handoff_token,?), selection_id=COALESCE(selection_id,?), harness=COALESCE(harness,?) WHERE operation_id=?`)
       .run(status, sessionId ?? null, result === undefined ? null : JSON.stringify(result), handoffToken ?? null, selectionId ?? null, harness ?? null, operationId);
+  }
+  observeAttemptContext(operationId: string, context: AttemptContext): boolean {
+    const attempt = this.attempt(operationId);
+    if (attempt === undefined) return false;
+    const merged = JSON.stringify({...attempt.context, ...context});
+    if (merged === JSON.stringify(attempt.context)) return false;
+    return this.database.prepare('UPDATE companion_coding_attempts SET context=? WHERE operation_id=?').run(merged, operationId).changes === 1;
   }
   requestStop(operationId: string): boolean {
     if (this.attempt(operationId) !== undefined) return this.database.prepare('UPDATE companion_coding_attempts SET stop_requested=1 WHERE operation_id=? AND stop_requested=0').run(operationId).changes === 1;

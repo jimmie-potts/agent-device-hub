@@ -1,4 +1,4 @@
-// Browser-safe list of commands eligible for an explicit Conversation approval.
+// Browser-safe list of commands eligible for an explicit Conversation request.
 import type {Capabilities, DeviceRecord} from './devices.js';
 
 export const SHOW_SAVE_WINDOW_MS = 30_000;
@@ -37,6 +37,14 @@ export const assistantRoutes = {
   'nanoleaf-notice-acknowledge': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'task noticeId'},
   'nanoleaf-reactive-preset-save': {binding: 'fixed', owner: nanoleaf, target: 'reactive-presets', fields: 'presetId expectedRevision name recipe'},
   'wemo-hold-release': {binding: 'device', owners: [wemo], fields: 'heldRequestId'},
+  'mode-override-set': {binding: 'record', owner: 'bunny/core', record: 'mode', fields: 'mode'},
+  'notice-clear': {binding: 'record', owner: 'bunny/core', record: 'session', fields: 'noticeId'},
+  'session-label-set': {binding: 'record', owner: 'bunny/core', record: 'session', fields: 'label'},
+  'inbox-handle': {binding: 'record', owner: 'bunny/core', record: 'inbox-item', fields: 'action'},
+  'home-layout-set': {binding: 'record', owner: 'bunny/core', record: 'home-layout', fields: 'layouts'},
+  'lighting-layout-set': {binding: 'record', owner: 'bunny/core', record: 'lighting-layout', fields: 'layout'},
+  'playback-layout-set': {binding: 'record', owner: 'bunny/core', record: 'playback-layout', fields: 'assignments'},
+  'art-catalog-edit': {binding: 'fixed', owner: 'bunny/modules/art', target: 'art', fields: 'action artworkId favorite signal target'},
   'playback-control': {binding: 'record', owner: 'bunny/modules/playback', record: 'playback', fields: 'action'},
   'volcano-session-gap': {binding: 'record', owner: volcano, record: 'volcano-status', fields: 'gapMinutes'},
   'art-request': {binding: 'fixed', owner: 'bunny/modules/art', target: 'art', fields: 'format description showTargets'},

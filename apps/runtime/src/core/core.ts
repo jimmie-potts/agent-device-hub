@@ -347,7 +347,8 @@ const METADATA_SOURCES: readonly string[] = ['bunny/modules/codex-desktop', NATI
 
 class Core {
   readonly #automation: AutomationPart;
-  readonly #companions = new CompanionPart(id => this.#automation.currentDevice(id), action => this.dispatchOperator(action));
+  readonly #companions = new CompanionPart(id => this.#automation.currentDevice(id), action => this.dispatchOperator(action),
+    (core, handling) => this.#inbox.handle(core, handling));
   readonly #art: ArtPart;
   setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
   get automation(): AutomationControls {return this.#automation.controls;}

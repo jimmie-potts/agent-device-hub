@@ -3,10 +3,13 @@ import {CONVERSATION_ART_SCHEMA} from '@jimmie-potts/event-contracts/v2/art';
 import {artDescription, catalogProposal, catalogRoute, permitsDevice, SHOW_SAVE_WINDOW_MS, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {CoreHandle} from './core.js';
+import type {InboxHandleRequest} from './inbox.js';
 import type {Action, ActionAnswer} from './tracker.js';
+import {OPERATOR_ACTIONS} from './tracker.js';
 
 export async function dispatchCatalogAction(core: Pick<CoreHandle, 'dispatch' | 'operation' | 'clock'>, command: Message<{requestId: string; admitByMs?: number} & CatalogProposal>,
-  device: (id: string) => Message<DeviceRecord> | undefined, dispatchLighting: (action: Action) => Promise<ActionAnswer>): Promise<ActionAnswer> {
+  device: (id: string) => Message<DeviceRecord> | undefined, dispatchOperator: (action: Action) => Promise<ActionAnswer>,
+  handleInbox: (action: Action, input: InboxHandleRequest) => Promise<ActionAnswer>): Promise<ActionAnswer> {
   const approved = catalogProposal(command.data);
   if (approved === undefined) return errorBody('invalid-request');
   const {target, binding, data, command: family} = approved, {requestId} = command.data;
@@ -47,5 +50,9 @@ export async function dispatchCatalogAction(core: Pick<CoreHandle, 'dispatch' | 
   const minor = family === 'nanoleaf-show-save' || family === 'art-show' && 'guards' in data ? '2.1' : route.binding === 'device' ? route.guardedMinor ?? '2.0' : '2.0';
   const action: Action = {key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
     draft: {type, subject: target, dataschema: `https://bunny.invalid/events/${family}/${minor}`, data: payload}};
-  return family === 'music-lighting-control' ? dispatchLighting(action) : core.dispatch(action);
+  if (family === 'inbox-handle') {
+    if (binding.kind !== 'record' || data.action !== 'dismiss' && data.action !== 'send-again') return errorBody('invalid-request');
+    return handleInbox(action, {requestId, action: data.action, expectedRevision: binding.revision});
+  }
+  return OPERATOR_ACTIONS.includes(family) ? dispatchOperator(action) : core.dispatch(action);
 }

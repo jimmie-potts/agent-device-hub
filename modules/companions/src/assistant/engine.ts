@@ -1,6 +1,7 @@
 import {codingChoice, type CodingChoice} from '../coding/routing.js';
 import {SHOW_SAVE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {createHash, randomUUID} from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import {Annotation, Command as Resume, END, GraphRecursionError, StateGraph, interrupt} from '@langchain/langgraph';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
@@ -18,11 +19,13 @@ import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Append
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
+import {accessFor, canRevokeFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
+import {ALL_WEMO_PLUGS, authorizesControl, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {buildContext, type ContextEntry} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
-import {ConversationActions, type RetainedArtworkRead} from './catalog-actions.js';
+import {ConversationActions, deviceClarification, type RetainedArtworkRead} from './catalog-actions.js';
 import {catalogCommand, catalogTool, isCatalogTool, READ_DEVICES} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
@@ -40,6 +43,7 @@ export type Dispatch = (data: AssistantDispatch, parent: TraceContext, signal: A
  * and the owner's currently active explicit preferences, read at each model call (none without the seam).
  */
 export type AssistantOptions = {
+  share?: Share;
   provider?: ModelProvider;
   retainedArtwork?: RetainedArtworkRead;
   tools?: readonly string[];
@@ -104,10 +108,31 @@ export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSig
 /** An engine refusal; `closingReason` is fixed text for the owner, such as the spend limit a new turn met. */
 class Fault extends Error {constructor(readonly code: ErrorCode, readonly closingReason?: string) {super(code);}}
 /** What one call answered: its text, its reported usage total, and a paid provider's usage by price class. */
-type Answer = {text: string; units: number | null; usage?: TokenUsage | null; evidence?: ActionEvidence[]; confirmation?: Confirmation};
+type Answer = {text: string; units: number | null; usage?: TokenUsage | null; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[];
+  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true};
 /** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
 type Budget = {units: number; unit: string; spend?: {model: string; inputUnits: number; outputUnits: number}};
 function fail(code: ErrorCode): never {throw new Fault(code);}
+
+function conversationMessageId(taskId: string, item: TurnInput['transcript'][number]): string | undefined {
+  if ('effect' in item && typeof item.effect === 'string') {
+    return item.role === 'owner' && item.effect.startsWith('steer-') ? steerMessageId(taskId, item.effect.slice(6)) : item.effect;
+  }
+  return item.role === 'owner' ? `${taskId}-prompt` : undefined;
+}
+
+const MAX_DISCLOSED_FIELDS = 512;
+type DisclosureLedger = {fields: DisclosedField[]; incompleteDisclosures?: true};
+function recordDisclosures(access: FieldAccess, ledger: DisclosureLedger): FieldAccess {
+  return (source, field, record) => {
+    if (!access(source, field, record)) return false;
+    if (!ledger.fields.some(item => item.source === source && item.field === field && item.record === record)) {
+      if (ledger.fields.length === MAX_DISCLOSED_FIELDS) ledger.incompleteDisclosures = true;
+      else ledger.fields.push({source, field, ...(record === undefined ? {} : {record})});
+    }
+    return true;
+  };
+}
 const codeOf = (error: unknown): ErrorCode => error instanceof Fault || error instanceof ProviderFault ? error.code : fullDisk(error) || error instanceof CheckpointCapacityError ? 'capacity' : 'internal';
 function closingReasonOf(error: unknown): string | undefined {
   if (error instanceof Fault) return error.closingReason;
@@ -170,7 +195,7 @@ export const QUEUE_FULL = `This conversation's queue holds its limit of ${String
 export const STEERS_FULL = 'This task holds as many unread messages as it can take now. Wait for it to read them at its next step, or withdraw a queued message.';
 /** The tool result a clarification the owner skipped answers with (Hub #2031): the owner's new message follows it. */
 export const SKIPPED = 'The owner skipped this question and sent a new message instead; it follows.';
-type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
+type Next = 'ask' | 'tool' | 'approve' | 'act' | 'await' | 'turn' | 'end';
 const shape = Annotation.Root({taskId: Annotation<string>, step: Annotation<number>, next: Annotation<Next>, decision: Annotation<string>, result: Annotation<string>});
 type GraphState = typeof shape.State;
 type Active = {taskId: string; conversationId: string; runId: string; generation: number; controller: AbortController; span: Span; accountedAt: number; deadline?: Cancel; stopReason?: string; work: Promise<void>};
@@ -222,7 +247,19 @@ export class AssistantEngine {
     this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone, options.monthlyLimitMicros);
     this.titles = new ConversationTitles(context.database(), {outbox, spend: this.spend, now: () => context.clock.now(), after: (ms, callback) => context.scheduler.after(ms, callback),
       provider: () => options.titleProvider ?? options.syntheticTitleProvider,
-      messages: conversationId => this.store.titleMessages(conversationId), reported: conversationId => this.store.report(conversationId).sequence > 0,
+      previousTitle: (conversationId, profile, title) => {
+        const fields = this.#fields(profile, 'title', (options.titleProvider ?? options.syntheticTitleProvider)?.name);
+        return fields('conversation', 'label', conversationId) && (title?.source !== 'generated' || !canRevokeFields(options.share)) ? title : null;
+      },
+      messages: conversationId => {
+        const profile = this.store.messages.conversation(conversationId)?.profile;
+        if (profile == null) return [];
+        const fields = this.#fields(profile, 'title', (options.titleProvider ?? options.syntheticTitleProvider)?.name);
+        return fields('conversation', 'text', conversationId) ? this.store.titleMessages(conversationId, 8, message =>
+          fields('conversation', 'text', message.id) && (message.role === 'owner' ||
+            this.#jobMessageAllowed(message, fields) &&
+            this.#replayable(message.taskId, fields) && this.#replayable(message.taskId, this.#modelFields(profile)))) : [];
+      }, reported: conversationId => this.store.report(conversationId).sequence > 0,
       metadata: (conversationId, title, observedAtMs) => observationDraft(titleObservationOf(conversationId, title, observedAtMs))});
     this.#allowed = [...(options.tools ?? [])];
     const instant = localInstant(this.spend.timeZone);
@@ -238,7 +275,7 @@ export class AssistantEngine {
       .addNode('delivered', state => this.#delivered(state))
       .addEdge('__start__', 'turn')
       // A steer that reached the task while its model was about to finish takes the model node once more (Hub #2031).
-      .addConditionalEdges('turn', state => state.next, {ask: 'ask', tool: 'tool', approve: 'approve', turn: 'turn', end: END})
+      .addConditionalEdges('turn', state => state.next, {ask: 'ask', tool: 'tool', approve: 'approve', act: 'act', turn: 'turn', end: END})
       .addEdge('ask', 'answered').addEdge('answered', 'turn').addEdge('tool', 'turn').addEdge('approve', 'act')
       // An approved delegation waits for the worker's word before the next turn; every other act goes straight back to the model.
       .addConditionalEdges('act', state => state.next === 'await' ? 'await' : 'turn', {await: 'await', turn: 'turn'})
@@ -261,15 +298,31 @@ export class AssistantEngine {
   inspect(): AssistantState {
     const provider = this.provider();
     const queues = this.#queues();
+    const tasks = this.store.latest().filter(task => this.#publicRead(task.profile).task(task.conversationId, task.id))
+      .map(task => this.store.summary(task));
     return {id: 'assistant', ...this.store.meta(), available: this.available(), provider: provider.name, model: provider.model, tools: [...this.#allowed],
-      tasks: this.store.latest().map(task => this.store.summary(task)), ...(queues.length === 0 ? {} : {queues})};
+      tasks, ...(queues.length === 0 ? {} : {queues})};
+  }
+  /** An assistant-state draft waiting to publish can outlive the read grants that allowed its contents. */
+  matchesPublicState(data: object): boolean {return isDeepStrictEqual(data, this.inspect());}
+  #publicRead(profile: AssistantProfile) {
+    const discover = this.#fields(profile, 'discovery', 'private-conversation');
+    const read = this.#fields(profile, 'read', 'private-conversation');
+    return {discover, read, task: (conversationId: string, taskId: string) =>
+      discover('conversation', 'index', conversationId) && read('conversation', 'text', conversationId)
+      && discover('conversation', 'index', taskId) && read('conversation', 'details', taskId) && read('conversation', 'status', taskId)};
   }
   /** Each profile's current conversation whose queue holds messages (Hub #2030): how many, and whether and why it is held. */
   #queues(): AssistantQueueSummary[] {
     return profiles.flatMap(owner => {
-      const conversationId = this.store.conversation(owner), messages = conversationId === undefined ? 0 : this.store.queue.count(conversationId);
-      if (conversationId === undefined || messages === 0) return [];
-      const hold = this.store.queue.hold(conversationId);
+      const conversationId = this.store.conversation(owner);
+      if (conversationId === undefined) return [];
+      const {discover, read} = this.#publicRead(owner);
+      if (!discover('conversation', 'index', conversationId)) return [];
+      const stored = this.store.queue.messages(conversationId);
+      const messages = stored.filter(message => discover('conversation', 'index', message.id) && read('conversation', 'text', message.id)).length;
+      if (messages === 0) return [];
+      const hold = messages === stored.length && read('conversation', 'details', conversationId) ? this.store.queue.hold(conversationId) : null;
       return [{conversationId, profile: owner, messages, held: hold?.reason ?? null, code: hold?.code ?? null}];
     });
   }
@@ -304,7 +357,9 @@ export class AssistantEngine {
       // A queue counts as changed wherever its conversation changed at the start (Hub #2030), and a queue the start held
       // changed at the start: a revision records it, so a queue command read before is stale.
       this.store.queue.aligned();
-      if (this.store.queue.changed()) await this.outbox.transaction(add => {this.#publish(add);});
+      if (this.store.queue.changed() || canRevokeFields(this.options.share)) {
+        await this.outbox.transaction(add => {this.#publish(add);});
+      }
     } finally {this.#starting = false;}
     if (this.#allowed.includes(READ_WEMO) || this.#allowed.includes(READ_DEVICES)) this.#powerLimits = followPowerLimits(this.context);
     for (const watch of this.store.confirmations()) void this.#followConfirmation(watch);
@@ -488,6 +543,14 @@ export class AssistantEngine {
   #queueRevision(revision: number, conversationId: string | undefined): void {
     if (revision > this.store.meta().revision || (conversationId !== undefined && this.store.queue.changedAt(conversationId) > revision)) fail('revision-conflict');
   }
+  canSpeak(taskId: string, messageId: string): boolean {
+    const task = this.store.task(taskId);
+    if (task === undefined || this.store.savedMessage(taskId, messageId)?.role !== 'assistant' || !spokenAloud(task.profile)) return false;
+    const read = this.#fields(task.profile, 'read', 'private-conversation'), speech = this.#fields(task.profile, 'read', 'conversation-speech');
+    const allowed: FieldAccess = (source, field, record) => read(source, field, record) && speech(source, field, record);
+    return allowed('conversation', 'text', task.conversationId) && allowed('conversation', 'text', messageId) &&
+      this.#jobMessageAllowed({id: messageId, taskId}, allowed) && this.#replayable(taskId, allowed);
+  }
   /**
    * Offers one durable assistant message to be spoken through the companions speech endpoint. Text over the browser driver's
    * bound stays on the page unspoken rather than cut; the coordinator decides availability, Quiet and one-at-a-time.
@@ -496,8 +559,7 @@ export class AssistantEngine {
     if (this.options.speak === undefined || this.#closed || this.context.signal.aborted || text.trim() === '' || text.length > LIMITS.spokenChars) return;
     try {
       const task = this.#task(taskId);
-      // A quacks-only persona's English text is its intended meaning, never spoken English (Hub #2026).
-      if (!spokenAloud(task.profile)) return;
+      if (!this.canSpeak(taskId, messageId)) return;
       this.options.speak({taskId, messageId, text, validUntilMs: this.context.clock.now() + SPOKEN_REPLY_TTL_MS}, key, parent, task.conversationId);
     }
     catch { /* Speech is an output of the saved message, never a condition of it. */ }
@@ -618,6 +680,7 @@ export class AssistantEngine {
         const message = this.store.savedMessage(data.taskId ?? fail('invalid-request'), data.messageId ?? fail('invalid-request')) ?? fail('not-found');
         if (message.role !== 'assistant') fail('invalid-request');
         if (!spokenAloud(this.#task(data.taskId ?? fail('invalid-request')).profile)) throw new Fault('invalid-request', UNSPOKEN);
+        if (!this.canSpeak(data.taskId ?? fail('invalid-request'), message.id)) fail('forbidden');
         spoken = message; return undefined;
       }
       const task = this.#task(data.taskId ?? fail('invalid-request'));
@@ -886,9 +949,28 @@ export class AssistantEngine {
     if (asked?.kind === 'approval') queued(); else steered();
     return {launch: undefined};
   }
-  canReadCodingJob(profile: AssistantProfile, job: Pick<CodingJob, 'taskId' | 'conversationId' | 'operationId' | 'repository'>): boolean {
+  canReadCodingOperation(profile: AssistantProfile, taskId: string, operationId: string): boolean {
+    const task = this.store.task(taskId);
+    if (task?.profile !== profile) return false;
+    const fields = this.#publicRead(profile);
+    return fields.task(task.conversationId, taskId) && fields.discover('coding', 'index', operationId) &&
+      fields.read('coding', 'details', operationId) && fields.read('coding', 'status', operationId);
+  }
+  canReadCodingJob(profile: AssistantProfile, job: Pick<CodingJob, 'jobId' | 'taskId' | 'conversationId' | 'operationId' | 'repository'>): boolean {
     const task = this.store.task(job.taskId);
-    return task?.profile === profile && task.conversationId === job.conversationId;
+    if (task?.profile !== profile || task.conversationId !== job.conversationId) return false;
+    const fields = this.#publicRead(profile);
+    return fields.task(job.conversationId, job.taskId) && fields.discover('coding', 'index', job.jobId) &&
+      fields.read('coding', 'repository', job.repository) && fields.read('coding', 'details', job.operationId) &&
+      fields.read('coding', 'status', job.operationId);
+  }
+  canReadCodingJobBrief(profile: AssistantProfile, job: CodingJob): boolean {
+    return this.canReadCodingJob(profile, job) && this.#publicRead(profile).read('coding', 'brief', job.repository);
+  }
+  canMessageCodingJob(profile: AssistantProfile, job: CodingJob): boolean {
+    const destination = this.#fields(profile, 'brief', 'coding-worker');
+    return this.canReadCodingJob(profile, job) && destination('coding', 'repository', job.repository) &&
+      destination('coding', 'brief', job.repository);
   }
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref === 'spend') {
@@ -906,7 +988,9 @@ export class AssistantEngine {
       const query = request?.query ?? {};
       if (request?.signal.aborted === true || Object.keys(query).some(key => key !== 'profile') || !profile(query.profile)) return errorBody('invalid-request');
       try {
-        const {context, basis} = this.previewContext(query.profile), provider = this.provider(query.profile);
+        const recipient = this.#fields(query.profile, 'read', 'private-conversation');
+        if (!recipient('conversation', 'details')) return errorBody('forbidden');
+        const {context, basis} = this.previewContext(query.profile, recipient), provider = this.provider(query.profile);
         const document: ContextPreview = {schema: 'assistant-context/1.0', revision: this.store.meta().revision, profile: query.profile, conversationId: context.conversationId,
           provider: provider.name, model: provider.model, basis, sections: context.sections};
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify(document))};
@@ -916,14 +1000,26 @@ export class AssistantEngine {
     const query = request?.query ?? {}, selected = query.profile;
     if (request?.signal.aborted === true || !profile(selected)) return errorBody('invalid-request');
     try {
+      const {discover, read, task} = this.#publicRead(selected);
+      const fields = query.view === 'list' ? discover : read;
+      const conversationId = query.conversationId ?? this.store.conversation(selected);
+      if (!fields('conversation', query.view === 'list' ? 'index' : 'text', query.view === 'list' ? undefined : conversationId)) return errorBody('forbidden');
       if (query.view === 'list') {
         // The profile's conversations (Hub #2029), the current one first, then the rest newest first, each with its title as
         // its session shows it. `after` is the keyset cursor of a later page, `<last message time or -1>:<row>`.
         const cursor = query.after === undefined ? undefined : /^(-1|\d{1,15}):(\d{1,15})$/.exec(query.after);
         if (Object.keys(query).some(key => !['profile', 'view', 'after'].includes(key)) || cursor === null) return errorBody('invalid-request');
-        const listed = this.store.conversations(selected, cursor === undefined ? undefined : {last: Number(cursor[1]), row: Number(cursor[2])});
+        const listed = this.store.conversations(selected, cursor === undefined ? undefined : {last: Number(cursor[1]), row: Number(cursor[2])}, {
+          conversation: id => fields('conversation', 'index', id),
+          message: message => read('conversation', 'text', message.id) &&
+            (message.role === 'owner' || this.#jobMessageAllowed(message, read) && this.#replayable(message.taskId, read)),
+        });
         const document: ConversationList = {version: 1, profile: selected, older: listed.older,
-          conversations: listed.conversations.map(value => ({...value, title: this.titles.published(value.conversationId, selected)}))};
+          conversations: listed.conversations.map(value => {
+            const id = value.conversationId;
+            const allowLabel = discover('conversation', 'label', id) && read('conversation', 'label', id);
+            return {...value, title: this.titles.published(id, selected, {allowLabel, allowGenerated: !canRevokeFields(this.options.share)})};
+          })};
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify(document))};
       }
       if (query.view === 'queue') {
@@ -933,17 +1029,28 @@ export class AssistantEngine {
           (query.conversationId !== undefined && !/^[A-Za-z0-9-]{1,128}$/.test(query.conversationId))) return errorBody('invalid-request');
         const current = this.store.conversation(selected), requested = query.conversationId ?? current;
         if (requested !== undefined && requested !== current && !this.store.owns(selected, requested)) return errorBody('not-found');
-        return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.store.queue.document(selected, requested, this.store.meta().revision, requested === current)))};
+        const queue = this.store.queue.document(selected, requested, this.store.meta().revision, requested === current);
+        const visible = (message: {id: string}) => discover('conversation', 'index', message.id) && fields('conversation', 'text', message.id);
+        const messages = queue.messages.filter(visible), steers = queue.steers.filter(visible);
+        const held = messages.length === queue.messages.length && steers.length === queue.steers.length &&
+          fields('conversation', 'details', requested) ? queue.held : null;
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify({...queue, held, messages, steers}))};
       }
+      const visibility = {
+        shows: (message: {id: string; role: string; taskId: string}) => fields('conversation', 'text', message.id) &&
+          (message.role === 'owner' || this.#jobMessageAllowed(message, fields) && this.#replayable(message.taskId, fields)),
+        attachment: (requestId: string) => fields('artwork', 'attachment', requestId),
+        task: (taskId: string) => conversationId !== undefined && task(conversationId, taskId),
+      };
       if (query.view === 'recent') {
         if (Object.keys(query).some(key => !['profile', 'view', 'before', 'conversationId'].includes(key)) ||
           (query.conversationId !== undefined && !/^[A-Za-z0-9-]{1,128}$/.test(query.conversationId))) return errorBody('invalid-request');
-        const page = this.store.recentPage(selected, query.before, query.conversationId);
+        const page = this.store.recentPage(selected, query.before, query.conversationId, visibility);
         return typeof page === 'string' ? errorBody(page) : {type: 'application/json', bytes: Buffer.from(JSON.stringify(page))};
       }
       const after = query.after === undefined ? 0 : Number(query.after);
       if (Object.keys(query).some(key => !['profile', 'after'].includes(key)) || !Number.isSafeInteger(after) || after < 0) return errorBody('invalid-request');
-      return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.store.page(selected, after)))};
+      return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.store.page(selected, after, visibility)))};
     } catch {return errorBody('unavailable');}
   }
   #config(taskId: string) {return {configurable: {thread_id: taskId}, durability: 'sync' as const, recursionLimit: 4 * LIMITS.modelCalls + 4, callbacks: []};}
@@ -1089,47 +1196,117 @@ export class AssistantEngine {
       if (textBytes(JSON.stringify(task.transcript)) > LIMITS.stateBytes) throw new Fault('capacity', 'This turn reached its working transcript limit.');
     }, parent);
   }
+  #fields(companion: AssistantProfile, purpose: ShareQuery['purpose'], destination: ShareQuery['destination'] = this.provider(companion).name): FieldAccess {
+    return accessFor(this.options.share, {caller: destination === 'private-conversation' || destination === 'conversation-speech' || destination === 'coding-worker' ? 'owner' : 'companion',
+      companion, purpose, destination});
+  }
+  canShareCodingBrief(taskId: string, repository: string): boolean {
+    const task = this.store.task(taskId);
+    if (task === undefined) return false;
+    const target = this.#fields(task.profile, 'brief', 'coding-worker');
+    if (!target('coding', 'repository', repository) || !target('coding', 'brief', repository)) return false;
+    const current = this.#modelFields(task.profile), share = this.options.share;
+    return this.#replayable(taskId, (source, field, record) => current(source, field, record) &&
+      (share?.allowsDerived?.({caller: 'owner', companion: task.profile, purpose: 'brief', destination: 'coding-worker', source, field,
+        ...(record === undefined ? {} : {record})}) ?? (share === undefined || share.revokesFields === false || target(source, field, record))));
+  }
+  #modelFields(companion: AssistantProfile): FieldAccess {
+    const prompt = this.#fields(companion, 'prompt'), read = this.#fields(companion, 'read'), discover = this.#fields(companion, 'discovery');
+    return (source, field, record) => prompt(source, field, record) && (field === 'index' ? discover : read)(source, field, record);
+  }
+  #jobMessageAllowed(message: {id: string; taskId: string; role?: string}, access: FieldAccess): boolean {
+    const match = /^(.+-step-\d+)(-job(?:-sent|-stop-unconfirmed|-result)?)?$/u.exec(message.id);
+    const operationId = match?.[1], jobMessage = match?.[2] !== undefined;
+    if (operationId === undefined || !jobMessage && message.role !== 'tool') return true;
+    const job = this.options.codingJob?.(operationId);
+    if (job === undefined) return !jobMessage || !canRevokeFields(this.options.share);
+    return job.taskId === message.taskId && access('conversation', 'details', message.taskId) &&
+      access('coding', 'repository', job.repository) && access('coding', 'details', operationId);
+  }
+  #replayable(taskId: string, access: FieldAccess): boolean {
+    if (this.store.task(taskId)?.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
+    const acceptsOldRecords = !canRevokeFields(this.options.share);
+    return this.store.calls(taskId).every(call => call.incompleteDisclosures !== true && (call.disclosures === undefined
+      ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => access(field.source, field.field, field.record))));
+  }
   #core(): CoreCopy {return this.options.core?.() ?? {sessions: [], mode: undefined, synced: false};}
   /**
    * The prompt context at this call (Hub #2029): the builder's sections for the task's companion, from the records as they
    * are now, with the recent conversation held to the messages saved before the task started. A task saved before that
    * boundary existed has no recent conversation.
    */
-  #context(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>): PromptContext {
+  #context(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>, recipient?: FieldAccess): PromptContext {
     const persona = PROFILES.find(value => value.id === task.profile) ?? fail('internal');
-    const recent = task.contextThrough === undefined ? {messages: [], total: 0} : this.store.recentContext(task.profile, task.conversationId, task.contextThrough);
+    const providerFields = this.#fields(task.profile, 'prompt'), toolFields = this.#modelFields(task.profile);
+    const fields: FieldAccess = (source, field, record) => providerFields(source, field, record) && recipient?.(source, field, record) !== false;
+    const modelFields: FieldAccess = (source, field, record) => toolFields(source, field, record) && recipient?.(source, field, record) !== false;
+    const recent = task.contextThrough === undefined || !fields('conversation', 'text', task.conversationId)
+      ? {messages: [], total: 0} : this.store.recentContext(task.profile, task.conversationId, task.contextThrough, message =>
+        fields('conversation', 'text', message.id) &&
+        (message.role === 'owner' || this.#jobMessageAllowed(message, modelFields) && this.#replayable(message.taskId, modelFields)) &&
+        (message.role !== 'tool' || fields('conversation', 'details', message.id)));
+    const recentMessages = recent.messages.map(message => {
+      if (message.attachment === undefined || fields('artwork', 'attachment', message.attachment.requestId)) return message;
+      const {attachment: _, ...text} = message;
+      return text;
+    });
     return buildContext({profile: task.profile, persona: {name: persona.name, character: persona.character},
-      knowledge: {enabled: this.store.knowledgeEnabled(task.profile), entries: (this.options.knowledge?.() ?? []).map(entry => ({title: entry.title, text: entry.text}))},
-      preferences: (this.options.preferences?.() ?? []).map(entry => ({title: entry.title, text: entry.text})),
-      recent: {conversationId: task.conversationId, ...recent}});
+      knowledge: {enabled: this.store.knowledgeEnabled(task.profile) && fields('knowledge', 'text'),
+        entries: (this.options.knowledge?.() ?? []).filter(entry => fields('knowledge', 'label', entry.title) && fields('knowledge', 'text', entry.title))},
+      preferences: (this.options.preferences?.() ?? []).filter(entry => fields('preferences', 'label', entry.title) && fields('preferences', 'text', entry.title)),
+      recent: {conversationId: task.conversationId, messages: recentMessages, total: recent.total}});
   }
   /**
    * What the builder would send for the profile now (Hub #2029), for the page's context preview: the next call of the
    * current conversation's unfinished task, or else of a new message's task in it.
    */
-  previewContext(profile: AssistantProfile): {context: PromptContext; basis: {kind: 'task'; taskId: string} | {kind: 'next-message'}} {
+  previewContext(profile: AssistantProfile, recipient?: FieldAccess): {context: PromptContext; basis: {kind: 'task'; taskId: string} | {kind: 'next-message'}} {
     const conversationId = this.store.conversation(profile);
     const unfinished = conversationId === undefined ? undefined : this.store.unfinishedIn(conversationId);
-    if (unfinished !== undefined) return {context: this.#context(unfinished), basis: {kind: 'task', taskId: unfinished.id}};
-    const context = conversationId === undefined ? {...this.#context({profile, conversationId: '', contextThrough: 0}), conversationId: null}
-      : this.#context({profile, conversationId, contextThrough: this.store.lastSequence(conversationId)});
+    if (unfinished !== undefined) return {context: this.#context(unfinished, recipient), basis: {kind: 'task', taskId: unfinished.id}};
+    const context = conversationId === undefined ? {...this.#context({profile, conversationId: '', contextThrough: 0}, recipient), conversationId: null}
+      : this.#context({profile, conversationId, contextThrough: this.store.lastSequence(conversationId)}, recipient);
     return {context, basis: {kind: 'next-message'}};
   }
   async #turn(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
-    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile), copy = this.#core();
+    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic'), copy = this.#core();
     const id = `${state.taskId}-step-${String(state.step)}`;
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
-    const context = this.#context(task), paid = provider.name !== 'synthetic';
+    const paid = provider.name !== 'synthetic';
+    const ledger: DisclosureLedger = {fields: []};
+    const fields = recordDisclosures(this.#fields(task.profile, 'prompt'), ledger);
+    const modelFields = this.#modelFields(task.profile);
+    if (!fields('conversation', 'text', task.conversationId)) throw new Fault('forbidden', 'This conversation is not shared with the configured model.');
     let request: TurnInput | undefined;
+    let includesReplay = false;
     // The task's unread steers are taken into its transcript in the call's own admission (Hub #2031), after the last
     // call's tool results, and the request is built from that transcript: a limit that refuses the call leaves them
     // unread, and a replayed node whose call was admitted takes none again.
-    const text = await this.#call(state.taskId, state.step, 'model', signal => provider.turn(request ?? fail('internal'), signal)
-      .then(reply => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null})), undefined, current => {
+    const text = await this.#call(state.taskId, state.step, 'model', signal => {
+      const allow = this.#fields(task.profile, 'prompt');
+      if (ledger.fields.some(field => !allow(field.source, field.field, field.record)) || includesReplay && !this.#replayable(task.id, modelFields) ||
+        ledger.incompleteDisclosures === true && this.options.share !== undefined && this.options.share.revokesFields !== false) {
+        throw new Fault('forbidden', 'Sharing changed before the configured model could receive this turn.');
+      }
+      return provider.turn(request ?? fail('internal'), signal)
+        .then((reply): Answer => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null, disclosures: ledger.fields,
+          ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})}));
+    }, undefined, current => {
       this.#drain(current);
-      request = {instructions: INSTRUCTIONS, context, transcript: current.transcript, tools,
-        mode: copy.mode === undefined ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
+      const replayFields: FieldAccess = (source, field, record) => modelFields(source, field, record) && fields(source, field, record);
+      const visible = (item: TurnInput['transcript'][number]) => {
+        const id = conversationMessageId(current.id, item);
+        return fields('conversation', 'text', id) && (id === undefined || item.role === 'owner' ||
+          this.#jobMessageAllowed({id, taskId: current.id, role: item.role}, replayFields));
+      };
+      const ownerInputs = current.transcript.filter(item => item.role === 'owner');
+      const latest = ownerInputs.at(-1);
+      if (latest !== undefined && !visible(latest)) throw new Fault('forbidden', 'This message is not shared with the configured model.');
+      includesReplay = this.#replayable(current.id, modelFields) && current.transcript.every(visible);
+      const transcript = includesReplay ? current.transcript : ownerInputs.filter(visible);
+      request = {instructions: INSTRUCTIONS, context: this.#context(current, fields), transcript, tools,
+        mode: copy.mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
       // The call reserves what this request could use: its bytes bound its input tokens, and the output bound its answer's.
       const inputUnits = inputBound(request);
       return {units: inputUnits + LIMITS.outputUnits, unit: paid ? 'tokens' : 'synthetic units',
@@ -1155,16 +1332,74 @@ export class AssistantEngine {
       next = tool === undefined || !permitted ? 'tool' : tool.effect === 'question' ? 'ask' : tool.effect === 'command' ? 'approve' : 'tool';
     }
     let question: Question | undefined;
+    let targets: readonly (readonly string[])[] | undefined;
+    let knownTargets: readonly (readonly string[])[] | undefined;
+    let artRecipientsBound = false;
+    let draftRevision: number | undefined;
+    const clarificationDevices = new Set<string>();
+    const discover = this.#fields(task.profile, 'discovery', 'private-conversation'), read = this.#fields(task.profile, 'read', 'private-conversation');
+    const canNameDevice = (id: string): boolean => {
+      const allowed = discover('devices', 'index', id) && read('devices', 'index', id) && read('devices', 'label', id)
+        && modelFields('devices', 'index', id) && modelFields('devices', 'label', id);
+      if (allowed) clarificationDevices.add(id);
+      return allowed;
+    };
+    let artworkRequestId: string | undefined;
+    let direct: BoundControl | undefined;
     const command = call === undefined ? undefined : catalogCommand(call.name);
-    if (next === 'approve' && command !== undefined && call !== undefined) {
+    const savedControl = task.control?.requestId === `${task.id}-step-${String(state.step + 1)}` ? task.control : undefined;
+    const group = next === 'approve' && call?.name === SET_WEMO_POWER && typeof call.input.device === 'string'
+      && normalizedControlText(call.input.device) === ALL_WEMO_PLUGS;
+    if (savedControl !== undefined) {
+      direct = savedControl;
+      next = 'act';
+    } else if (group && call !== undefined) {
+      const devices = this.options.devices?.(ASSISTANT_WEMO_OWNER);
+      const proposals = devices?.map(device => deviceProposal(call, device));
+      const refused = proposals?.find(selection => 'code' in selection);
+      const [first, ...rest] = proposals?.flatMap(selection => 'proposal' in selection ? [selection.proposal] : []) ?? [];
+      const targets = devices?.map(device => [device.id, deviceLabel(device)]);
+      if (refused !== undefined && 'code' in refused) result = `refused: ${refused.code}`;
+      else if (first !== undefined && rest.length < 16) {
+        const prepared = this.#bindControl(task, first, call, `Set power on ${ALL_WEMO_PLUGS}?`, state.step + 1, targets, undefined, true);
+        if (prepared !== undefined) direct = {...prepared, additional: rest};
+        else result = 'refused: the owner did not explicitly request this group and setting.';
+      } else result = first === undefined ? 'refused: no plug is available.' : 'refused: capacity';
+      next = direct === undefined ? 'tool' : 'act';
+    } else if (next === 'approve' && command !== undefined && call !== undefined) {
       const selected = command === 'art-request' && this.store.hasArtReply(task.id)
-        ? {code: 'invalid-state'} : await this.#catalog().propose(command, call, active.span.context);
+        ? {code: 'invalid-state'} : await this.#catalog().propose(command, call, active.span.context, {
+          instruction: task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt,
+          answer: this.#controlClarification(task)?.answer ?? '', canNameDevice,
+        });
       const id = `${state.taskId}-q${String(this.#task(state.taskId).questions + 1)}`;
       if ('code' in selected) result = `refused: ${selected.code}`;
       else if ('question' in selected) question = {id, kind: 'clarification', text: selected.question, answer: null, call: call.id, proposal: null};
-      else question = {id, kind: 'approval', text: selected.text, answer: null, call: call.id, proposal: selected.proposal};
+      else {
+        question = {id, kind: 'approval', text: selected.text, answer: null, call: call.id, proposal: selected.proposal};
+        targets = selected.targets;
+        knownTargets = selected.knownTargets;
+        artworkRequestId = selected.artworkRequestId;
+        artRecipientsBound = selected.artRecipientsBound === true;
+        draftRevision = selected.draftRevision;
+        const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
+        const matches = namedControlTargets(selected.proposal, instruction, knownTargets ?? []);
+        if (matches.length > 1 && this.#controlClarification(task)?.answer == null) {
+          const text = deviceClarification('device', matches.flatMap(([id]) => id === undefined ? [] : [id]), canNameDevice);
+          question = {id, kind: 'clarification', text, answer: null, call: call.id, proposal: null};
+        }
+      }
     } else if ((next === 'ask' || next === 'approve') && call !== undefined) {
-      question = this.#question(state.taskId, call, copy);
+      question = this.#question(state.taskId, call, copy, canNameDevice);
+    }
+    const proposal = question?.proposal;
+    if (call !== undefined && question !== undefined && proposal != null && proposal.family !== 'coding-dispatch' && command !== 'art-request') {
+      direct = this.#bindControl(task, proposal, call, question.text, state.step + 1, targets, artworkRequestId, false, knownTargets, draftRevision, artRecipientsBound);
+      next = direct === undefined ? 'tool' : 'act';
+      const detail = direct === undefined && command !== undefined && this.#controlClarification(task)?.answer == null
+        ? missingCatalogDetail(command, task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt) : undefined;
+      if (direct === undefined) result = 'refused: this control needs a clear current owner request naming the action, target and setting.';
+      question = detail === undefined ? undefined : {...question, kind: 'clarification', text: detail, proposal: null};
     }
     // A command the module cannot bind to a synced Hub-mode revision, or whose value is not a mode, is refused to the model in the tool node.
     if (next === 'approve' && question === undefined) next = 'tool';
@@ -1175,9 +1410,11 @@ export class AssistantEngine {
     let asked = false;
     await this.#append(state.taskId, item, active.span.context, current => {
       if (forced && reply.text !== null && reply.text.trim() !== '') this.store.message(current, supersededReplyId(id), 'assistant', reply.text, this.context.clock.now());
+      if (direct !== undefined) current.control = direct;
       if (question === undefined) return;
       if (current.questions >= LIMITS.questions) throw new Fault('capacity', `This turn reached its limit of ${String(LIMITS.questions)} questions.`);
       current.questions += 1; current.question = question;
+      if (clarificationDevices.size > 0) current.clarificationDevices = [...new Set([...(current.clarificationDevices ?? []), ...clarificationDevices])];
       this.store.message(current, question.id, 'assistant', question.text, this.context.clock.now()); asked = true;
     });
     if (asked && question !== undefined) this.#speak(state.taskId, question.id, question.text, active.span.context);
@@ -1202,7 +1439,7 @@ export class AssistantEngine {
   #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed, this.#deviceDisplay, this.options.retainedArtwork);}
   #catalogActions: ConversationActions | undefined;
   /** The question a call asks, or undefined when the command cannot be proposed. */
-  #question(taskId: string, call: ToolCall, copy: CoreCopy): Question | undefined {
+  #question(taskId: string, call: ToolCall, copy: CoreCopy, canNameDevice: (id: string) => boolean): Question | undefined {
     const id = `${taskId}-q${String(this.#task(taskId).questions + 1)}`;
     if (call.name === ASK_OWNER) {
       const text = typeof call.input.text === 'string' && call.input.text.trim() !== '' ? call.input.text : 'What should the assistant do next?';
@@ -1219,20 +1456,75 @@ export class AssistantEngine {
     }
     const owner = deviceToolOwner(call.name);
     if (owner !== undefined) {
-      const selected = chooseDevice(this.options.devices?.(owner), call.input.device);
+      const devices = this.options.devices?.(owner);
+      const task = this.#task(taskId);
+      const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
+      const answer = task.question?.kind === 'clarification' ? task.question.answer : null;
+      if (call.name === SET_LIFX_BRIGHTNESS && answer === null && missingBrightness(instruction)) {
+        return {id, text: 'What brightness percentage do you want?', answer: null, kind: 'clarification', call: call.id, proposal: null};
+      }
+      const subject = powerSubject(instruction);
+      const addressed = subject !== undefined && answer === null ? devices?.filter(device =>
+        subject === normalizedControlText(device.id) || subject === normalizedControlText(deviceLabel(device))) : undefined;
+      const selected = addressed !== undefined && addressed.length > 1 ? {matches: addressed} : chooseDevice(devices, call.input.device);
       if ('matches' in selected) {
-        const names = selected.matches.slice(0, 4).map(device => device.id).join(', ');
-        return {id, text: `Which ${owner === ASSISTANT_WEMO_OWNER ? "plug" : "light"} do you mean? Matching device IDs: ${names}.`, answer: null, kind: 'clarification', call: call.id, proposal: null};
+        const text = deviceClarification(owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light', selected.matches.map(device => device.id), canNameDevice);
+        return {id, text, answer: null, kind: 'clarification', call: call.id, proposal: null};
       }
       if ('code' in selected) return undefined;
       const result = deviceProposal(call, selected.device);
       if ('code' in result) return undefined;
       return {id, text: deviceProposalText(result.proposal, deviceLabel(selected.device)), answer: null, kind: 'approval', call: call.id, proposal: result.proposal};
     }
+    const task = this.#task(taskId);
+    const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
+    if (call.name === SET_MODE && task.question?.answer == null && missingMode(instruction)) {
+      return {id, text: 'Which Hub mode do you want: work, free, or quiet?', answer: null, kind: 'clarification', call: call.id, proposal: null};
+    }
     const mode = MODES.find(value => value === call.input.mode);
     if (mode === undefined || copy.mode === undefined || !copy.synced) return undefined;
     const proposal: Proposal = {family: 'mode-set', target: 'hub', data: {mode}, expectedRevision: copy.mode.revision};
     return {id, text: `Set the Hub mode to ${proposal.data.mode}?`, answer: null, kind: 'approval', call: call.id, proposal};
+  }
+  #controlClarification(task: Task): Question | undefined {
+    const latest = task.transcript.filter(item => item.role === 'owner').at(-1);
+    const afterInstruction = task.transcript.slice(latest === undefined ? 0 : task.transcript.lastIndexOf(latest) + 1);
+    return task.question?.kind === 'clarification' && afterInstruction.some(item =>
+      item.role === 'tool' && 'effect' in item && item.effect === `${task.question?.id}-answer`) ? task.question : undefined;
+  }
+  #bindControl(task: Task, proposal: BoundControl['proposal'], call: ToolCall, text: string, ordinal: number,
+    targets: readonly (readonly string[])[] | undefined, artworkRequestId?: string, explicitGroup = false,
+    knownTargets: readonly (readonly string[])[] = [], draftRevision?: number, artRecipientsBound = false): BoundControl | undefined {
+    if (this.store.queue.steers(task.id).length > 0) return undefined;
+    const inputs = task.transcript.filter(item => item.role === 'owner');
+    const latest = inputs.at(-1);
+    const instruction = latest?.text ?? task.prompt;
+    const sourceId = latest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, latest) ?? `${task.id}-prompt`;
+    const clarification = this.#controlClarification(task);
+    const answer = clarification?.answer ?? '';
+    const ownerMessageIds = clarification !== undefined && clarification.answer !== null ? [sourceId, `${clarification.id}-answer`] : [sourceId];
+    if (this.store.calls(task.id).some(receipt => {
+      const control = receipt.action?.control;
+      return control?.ownerMessageIds.join() === ownerMessageIds.join() &&
+        (control.proposal.target === proposal.target || explicitGroup && control.additional !== undefined);
+    })) return undefined;
+    const recent = task.contextThrough === undefined ? [] : this.store.recentContext(task.profile, task.conversationId, task.contextThrough).messages;
+    const preceding = inputs.at(-2)?.text ?? recent.filter(message => message.role === 'owner').at(-1)?.text ?? '';
+    const attached = recent.filter(message => message.attachment !== undefined).at(-1)?.attachment;
+    const knownArtwork = artworkRequestId !== undefined && (this.store.call(artworkRequestId)?.taskId === task.id ||
+      attached?.requestId === artworkRequestId) && this.#modelFields(task.profile)('artwork', 'attachment', artworkRequestId);
+    const owner = deviceToolOwner(call.name);
+    if (targets === undefined && owner !== undefined) {
+      const devices = this.options.devices?.(owner);
+      knownTargets = devices?.map(device => [device.id, deviceLabel(device)]) ?? [];
+      const selected = chooseDevice(devices, proposal.target);
+      targets = 'device' in selected ? [[selected.device.id, deviceLabel(selected.device)]] : [[proposal.target]];
+    }
+    if (targets === undefined && proposal.family === 'catalog-action') {
+      targets = [[proposal.target]];
+    }
+    if (!authorizesControl(proposal, instruction, answer, targets ?? [], preceding, knownTargets, knownArtwork, explicitGroup, draftRevision, artRecipientsBound)) return undefined;
+    return {requestId: `${task.id}-step-${String(ordinal)}`, ownerMessageIds, proposal, text, call: call.id, ...(draftRevision === undefined ? {} : {draftRevision})};
   }
   /** Why a command call was refused instead of proposed. */
   #proposalRefusal(call: ToolCall): string {
@@ -1277,60 +1569,77 @@ export class AssistantEngine {
     const last = [...task.transcript].reverse().find(item => item.role === 'assistant');
     const call = last?.role === 'assistant' ? last.calls[0] : undefined;
     if (call === undefined) fail('invalid-state');
-    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile);
+    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic');
     const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
     const id = `${state.taskId}-step-${String(state.step)}`;
     if (tool === undefined || !permitted || (tool.effect !== 'read' && tool.effect !== 'draft')) {
-      const reason = tool !== undefined && permitted && tool.effect === 'command' ? catalogCommand(call.name) === undefined ? this.#proposalRefusal(call) : state.result : 'This tool is not permitted.';
+      const reason = tool !== undefined && permitted && tool.effect === 'command'
+        ? state.result === '' ? this.#proposalRefusal(call) : state.result : 'This tool is not permitted.';
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result: reason, ok: false, effect: `${id}-refused`}, active.span.context,
         current => {this.store.message(current, `${id}-refused`, 'tool', reason, this.context.clock.now());});
       return {step: state.step};
     }
     const owner = deviceToolOwner(call.name);
+    const modelFields = this.#modelFields(task.profile);
     const result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
       const now = this.context.clock.now();
+      const ledger: DisclosureLedger = {fields: []};
+      const access = recordDisclosures(modelFields, ledger);
+      let text: string;
       if (owner !== undefined) {
         const name = call.input.device;
-        const read = await this.options.readDevice?.(owner, name, signal, parent, this.#deviceDisplay);
-        return {text: read ?? readDevices(this.options.devices?.(owner), name, now, owner, this.#deviceDisplay), units: 0};
-      }
-      if (isCatalogTool(call.name)) {
+        const records = this.options.devices?.(owner)?.filter(device => access('devices', 'index', device.id) && access('devices', 'label', device.id)
+          && (name === '' || access('devices', 'details', device.id) && access('devices', 'status', device.id)));
+        const selected = chooseDevice(records, name);
+        const fresh = 'device' in selected ? await this.options.readDevice?.(owner, selected.device.id, signal, parent, this.#deviceDisplay) : undefined;
+        text = fresh ?? readDevices(records, name, now, owner, this.#deviceDisplay);
+      } else if (isCatalogTool(call.name)) {
         const evidence: ActionEvidence[] = [];
-        const text = await this.#catalog().read(call, parent, item => evidence.push(item)) ?? fail('invalid-state');
-        return {text, units: 0, evidence};
+        text = await this.#catalog().read(call, parent, item => evidence.push(item), access,
+          id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id)) ?? fail('invalid-state');
+        return {text, units: 0, evidence, disclosures: ledger.fields, ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})};
+      } else {
+        text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now, access) : fail('invalid-state');
       }
-      const text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now) : fail('invalid-state');
-      return {text, units: 0};
+      const answer: Answer = {text, units: 0, disclosures: ledger.fields};
+      if (ledger.incompleteDisclosures === true) answer.incompleteDisclosures = true;
+      return answer;
     });
     await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result, ok: true, effect: id}, active.span.context);
     return {step: state.step + 1};
   }
   async #act(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
-    const question = task.question ?? fail('invalid-state'), proposal = question.proposal ?? fail('invalid-state');
-    const id = `${state.taskId}-step-${String(state.step)}`, name = proposalTool(proposal);
+    const id = `${state.taskId}-step-${String(state.step)}`;
+    const direct = task.control?.requestId === id ? task.control : undefined;
+    const question = direct === undefined ? task.question ?? fail('invalid-state')
+      : {id, call: direct.call, proposal: direct.proposal, text: direct.text, kind: 'approval' as const, answer: null};
+    const proposal = question.proposal ?? fail('invalid-state'), name = proposalTool(proposal);
     const refuse = async (suffix: string, text: string): Promise<Partial<GraphState>> => {
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: question.call, name, result: text, ok: false, effect: `${id}-${suffix}`}, active.span.context,
         current => {this.store.message(current, `${id}-${suffix}`, 'tool', text, this.context.clock.now());});
       return {step: state.step, next: 'turn'};
     };
-    if (state.decision !== 'approve') return refuse('declined', DECLINED);
-    if (!permittedTools(this.#allowed, this.provider(task.profile).name === 'synthetic', task.profile).some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
+    if (direct === undefined && state.decision !== 'approve') return refuse('declined', DECLINED);
+    if (direct !== undefined && this.store.call(id) === undefined && this.store.queue.steers(task.id).length > 0) {
+      return refuse('superseded', 'The owner sent new input before dispatch. The earlier control request was not sent.');
+    }
+    if (!permittedTools(this.#allowed, this.provider(task.profile).name === 'synthetic').some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
     const settle = (answer: RequestResult, accepted: string): {text: string; units: number} => {
       // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
       if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');
       if (answer.status === 'accepted') return {text: accepted, units: 0};
       const code = answer.error.error.code;
       return {text: proposal.family === 'mode-set' && code === 'revision-conflict'
-        ? 'refused: revision-conflict: the Hub mode changed since this was proposed; nothing was changed. Read the mode again before proposing another change.'
+        ? 'refused: revision-conflict: the Hub mode changed after the request was resolved. No change was sent.'
         : `refused: ${code}`, units: 0};
     };
     let result: string, delegation: Question | undefined, job: CodingJob | undefined;
     const startedAtMs = this.context.clock.now();
     const target = confirmationTarget(proposal, question.text);
-    const action = {questionId: question.id, description: actionDescription(proposal, question.text)};
+    const action = {questionId: question.id, description: actionDescription(proposal, question.text), ...(direct === undefined ? {} : {control: direct})};
     if (proposal.family !== 'coding-dispatch') {
       const dispatch = this.options.dispatch;
       if (dispatch === undefined) return refuse('refused', 'This tool is not permitted.');
@@ -1344,11 +1653,32 @@ export class AssistantEngine {
         : proposal.family === 'catalog-action' && proposal.command === 'art-request'
           ? 'accepted: the art service queued this request. The Conversation attachment will show the actual result.'
           : `accepted: ${proposal.family === 'catalog-action' ? proposal.command : proposal.family} on ${proposal.target} as operation ${id}; its outcome is tracked separately`;
+      const confirmationOf = (selected: NonNullable<typeof target>, requestId: string, parent: TraceContext): Confirmation => {
+        const acceptedAtMs = this.context.clock.now();
+        return {...selected, requestId, taskId: task.id, questionId: question.id,
+          acceptedAtMs, expiresAtMs: acceptedAtMs + CONFIRMATION_LIFETIME_MS, traceparent: parent.traceparent};
+      };
       result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
         const admitByMs = this.context.clock.now() + SHOW_SAVE_WINDOW_MS;
         if (proposal.family === 'catalog-action') {
-          const refused = this.#catalog().beforeDispatch(proposal, id, admitByMs);
+          const refused = this.#catalog().beforeDispatch(proposal, id, admitByMs, direct?.draftRevision);
           if (refused !== undefined) return {text: `refused: ${refused}`, units: 0};
+        }
+        if (direct?.additional !== undefined) {
+          const commands = [proposal, ...direct.additional];
+          const receipts: string[] = [];
+          const confirmations: Confirmation[] = [];
+          for (const [index, item] of commands.entries()) {
+            if (item.family !== 'power-set' || !('owner' in item)) return {text: 'refused: invalid-state', units: 0};
+            this.#fence(active);
+            const requestId = `${id}-group-${String(index)}`;
+            const answer = await dispatch({requestId, ...item}, parent, signal);
+            const evidence = settle(answer, `accepted: ${item.target} as operation ${requestId}`);
+            receipts.push(evidence.text);
+            const target = confirmationTarget(item, '');
+            if (answer.status === 'accepted' && target !== undefined) confirmations.push(confirmationOf(target, requestId, parent));
+          }
+          return {text: receipts.join('\n'), units: 0, confirmations};
         }
         const answer = await dispatch(data.family === 'catalog-action' && data.command === 'nanoleaf-show-save'
           ? {...data, admitByMs} : data, parent, signal);
@@ -1357,16 +1687,21 @@ export class AssistantEngine {
         }
         const settled = settle(answer, receipt);
         if (answer.status !== 'accepted' || target === undefined) return settled;
-        const acceptedAtMs = this.context.clock.now();
-        return {...settled, confirmation: {...target, requestId: id, taskId: task.id, questionId: question.id,
-          acceptedAtMs, expiresAtMs: acceptedAtMs + CONFIRMATION_LIFETIME_MS, traceparent: parent.traceparent}};
+        return {...settled, confirmations: [confirmationOf(target, id, parent)]};
       }, (current, call) => {
         call.action = action;
+        const targets = [proposal, ...(direct?.additional ?? [])];
+        call.disclosures = [{source: 'operations', field: 'details', record: id}, ...targets.flatMap<DisclosedField>(item => [
+          {source: 'devices', field: 'label', record: item.target}, {source: 'devices', field: 'status', record: item.target},
+          ...(item.family === 'catalog-action' && item.command === 'art-show' && typeof item.data.artworkId === 'string'
+            ? [{source: 'artwork', field: 'details', record: item.data.artworkId} satisfies DisclosedField] : []),
+        ])];
         if (artDescription === undefined) return;
-        const targets = proposal.family === 'catalog-action' ? proposal.data.showTargets : undefined;
-        this.store.artReply(current, id, artDescription, this.context.clock.now(), Array.isArray(targets) && targets.every((v): v is string => typeof v === 'string') ? targets : undefined);
+        const displays = proposal.family === 'catalog-action' ? proposal.data.showTargets : undefined;
+        this.store.artReply(current, id, artDescription, this.context.clock.now(), Array.isArray(displays) && displays.every((v): v is string => typeof v === 'string') ? displays : undefined);
       });
     } else {
+      if (!this.canShareCodingBrief(task.id, proposal.data.repository)) return refuse('refused', 'Coding brief sharing is not permitted.');
       const delegate = this.options.delegate;
       if (delegate === undefined) return refuse('refused', 'This tool is not permitted.');
       // The task waits on the delegation before the hand-off leaves, so a worker's word that comes back faster than this
@@ -1386,7 +1721,11 @@ export class AssistantEngine {
           return answer.status === 'waiting'
             ? {text: `${WAITING_RECEIPT} ${companion}'s slot as operation ${id}; it is sent when that slot frees, and its structured result arrives as this tool's later result`, units: 0}
             : settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`);
-        }), (current, call) => {if (this.options.backgroundCoding !== true) current.question = pending; call.action = action;});
+        }), (current, call) => {
+          if (this.options.backgroundCoding !== true) current.question = pending;
+          call.action = action;
+          call.disclosures = [{source: 'coding', field: 'repository', record: proposal.data.repository}, {source: 'coding', field: 'brief', record: proposal.data.repository}];
+        });
       if (job === undefined && result.startsWith('accepted: Coding job ')) {
         job = {jobId: `${id}-job`, operationId: id, taskId: task.id, conversationId: task.conversationId, repository: proposal.data.repository, brief: proposal.data.brief};
       }
@@ -1570,8 +1909,10 @@ export class AssistantEngine {
         if (call.action !== undefined && observed !== undefined) call.action.observed = observed;
         // Whether a steer reached the task before this model call's answer was saved (Hub #2031); one after it is late.
         if (kind === 'model' && this.store.queue.steers(taskId).length > 0) call.steered = true;
+        if (reply.disclosures !== undefined) call.disclosures = reply.disclosures;
+        if (reply.incompleteDisclosures === true) call.incompleteDisclosures = true;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
-        if (reply.confirmation !== undefined) this.store.saveConfirmation(reply.confirmation);
+        for (const confirmation of reply.confirmations ?? []) this.store.saveConfirmation(confirmation);
         for (const evidence of reply.evidence ?? []) this.store.observeAction(taskId, evidence);
         if (reply.units !== null) task.reservedUnits -= call.reservedUnits - reply.units;
         this.spend.settle(id, reply.usage ?? null);

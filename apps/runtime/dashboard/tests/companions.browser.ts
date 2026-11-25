@@ -128,27 +128,21 @@ try {
   await settings.click();
   await closeDetails.click();
   await enableAssistant.click();
-  // An approved proposal: the synthetic provider proposes the named mode, the owner decides by keyboard after a reload.
-  await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER quiet mode');
+  // The explicit mode request dispatches directly and stays in history across reload.
+  await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('Please set the Hub mode to quiet');
   const startTask = assistant.getByRole('button', {name: 'Send', exact: true}); await startTask.focus(); await startTask.press('Enter');
   const proposal = assistant.getByRole('article', {name: 'Proposed command', exact: true});
-  await proposal.getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
+  await assistant.getByText('Task completed', {exact: true}).waitFor();
+  assert.equal(await proposal.count(), 0);
   await page.reload(); await feed(page, 'connected');
-  await proposal.getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
-  const approve = proposal.getByRole('button', {name: 'Approve proposal', exact: true}); await approve.focus(); await approve.press('Enter');
-  await assistant.getByText('Task completed', {exact: true}).waitFor();
-  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByText(/accepted by the core, outcome tracked separately/).waitFor();
-  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
-  // A declined proposal sends nothing and the conversation says so.
-  await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER free mode');
-  await startTask.click();
-  const decline = proposal.getByRole('button', {name: 'Decline proposal', exact: true}); await decline.focus(); await decline.press('Enter');
-  await assistant.getByText('Task completed', {exact: true}).waitFor();
   const messages = assistant.getByRole('list', {name: 'Saved conversation messages'});
-  const declineResult = messages.getByRole('article', {name: 'tool message'}).filter({hasText: /declined the proposal/});
-  await declineResult.locator('summary').click();
-  await declineResult.getByText(/declined the proposal/).waitFor();
-  await declineResult.locator('summary').click();
+  await messages.getByText(/accepted by the core, outcome tracked separately/).waitFor();
+  await messages.getByText('Please set the Hub mode to quiet', {exact: true}).waitFor();
+  // A status question cannot change mode even if the synthetic model calls the command tool.
+  await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('Is the Hub in free mode?');
+  await startTask.click();
+  await messages.getByText(/Synthetic result: not applied/).waitFor();
+  assert.equal(await proposal.count(), 0);
   // A clarification: the synthetic provider asks, the owner answers, the read tool runs without approval.
   await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-PROMPT');
   await startTask.focus(); await startTask.press('Enter');
@@ -203,5 +197,5 @@ try {
   assert.equal(await enabled.isDisabled(), true);
   assert.deepEqual(errors, []);
   await context.close();
-  process.stdout.write('Companions browser: grounded owner-supplied coding form, no HTTP evidence writes, explicit clipboard, duplicate/superseded/changed-turn/mismatched/expired evidence, policy and disconnect fences; explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history and restart; Reachy cards preserved; conversation start, approved and declined proposals by keyboard across reload, clarification with a read tool, cancellation, saved history, reader authorization, disconnection, keyboard and narrow viewport passed.\n');
+  process.stdout.write('Companions browser: grounded owner-supplied coding form, no HTTP evidence writes, explicit clipboard, duplicate/superseded/changed-turn/mismatched/expired evidence, policy and disconnect fences; explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history and restart; Reachy cards preserved; conversation start, direct mode control and refusal across reload, clarification with a read tool, cancellation, saved history, reader authorization, disconnection, keyboard and narrow viewport passed.\n');
 } finally {await browser.close(); await world.close();}

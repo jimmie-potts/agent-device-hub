@@ -22,31 +22,23 @@ export async function pixooConfirmationJourney(browser: Browser): Promise<void> 
     await conversation.getByRole('button', {name: 'Enable conversation', exact: true}).click();
     const input = conversation.getByRole('textbox', {name: 'Message', exact: true});
     const send = conversation.getByRole('button', {name: 'Send', exact: true});
-    const approve = async (percent: number, beforeApproval?: () => void) => {
-      await input.fill('SYNTHETIC_CATALOG ' + JSON.stringify({name: 'control_brightness_set',
-        input: {owner: 'bunny/modules/pixoo', target: 'pixoo-1', arguments: JSON.stringify({percent})}}));
+    const setBrightness = async (percent: number, before?: () => void) => {
+      before?.();
+      await input.fill(`Run brightness-set on pixoo-1 with ${JSON.stringify({percent})}`);
       await send.click();
-      await expect(conversation.getByText(`Set Studio Display brightness to ${percent}%?`, {exact: true}).first()).toBeVisible();
-      const proposal = conversation.getByRole('article', {name: 'Proposed command', exact: true});
-      await proposal.locator('summary').click();
-      await expect(proposal.locator('pre')).toContainText('bunny/modules/pixoo');
-      await expect(proposal.locator('pre')).toContainText('configurationRevision');
-      await expect(proposal.locator('pre')).toContainText('generation');
-      beforeApproval?.();
-      await proposal.getByRole('button', {name: 'Approve proposal', exact: true}).click();
       await expect(conversation.getByRole('button', {name: 'Approve proposal', exact: true})).toHaveCount(0);
       await clock.advance(50);
     };
-    await approve(35);
+    await setBrightness(35);
     await expect(conversation.getByText('Studio Display reports 35% brightness.')).toBeVisible();
     assert.equal(world.pixooState().writes, 1);
 
-    await approve(35);
+    await setBrightness(35);
     await expect(conversation.getByText('Studio Display reports 35% brightness.')).toHaveCount(2);
     assert.equal(world.pixooState().writes, 2, 'an already-matching value still uses one write and a fresh reading');
 
     reading = delayed;
-    await approve(65);
+    await setBrightness(65);
     await expect.poll(() => world.pixooState().writes).toBe(3);
     await clock.advance(1050);
     const pending = conversation.getByText('Brightness command sent. I’ll update this reply when confirmation for Studio Display is available.');
@@ -73,12 +65,12 @@ export async function pixooConfirmationJourney(browser: Browser): Promise<void> 
     await expect(send).toBeDisabled();
     await expect(conversation.getByText(/Synthetic result: Continue/)).toBeVisible();
     reading = Promise.resolve(undefined);
-    await approve(70);
+    await setBrightness(70);
     await expect(conversation.getByText('Brightness command sent. I couldn’t confirm Studio Display’s brightness.')).toBeVisible();
     assert.equal(world.pixooState().writes, 4);
 
     const sent = world.pixooState().sent;
-    await approve(75, () => {world.pixooMode('silent');});
+    await setBrightness(75, () => {world.pixooMode('silent');});
     await clock.advance(1100);
     await expect(conversation.getByText(/Brightness request accepted.*confirmation for Studio Display is available/)).toBeVisible();
     await clock.advance(5000);

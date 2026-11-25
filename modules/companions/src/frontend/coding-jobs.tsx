@@ -106,9 +106,64 @@ function messageStatus(message: JobMessage): string {
   return 'Message refused';
 }
 
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+function stringRows(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function AttemptResults({value}: {value: unknown}): React.JSX.Element | null {
+  const attempt = record(value);
+  if (attempt === undefined || typeof attempt.operationId !== 'string' || typeof attempt.status !== 'string') return null;
+  const result = record(attempt.result), usage = record(result?.usage);
+  const context = record(attempt.context);
+  const files = stringRows(result?.changedFiles), limitations = stringRows(result?.limitations);
+  const checks: unknown[] = Array.isArray(result?.checks) ? result.checks : [];
+  const facts = [
+    ['Harness', attempt.harness], ['Native session', attempt.sessionId], ['Reported model', context?.model],
+    ['Branch', context?.branch === null ? 'Detached HEAD' : context?.branch], ['Worktree', context?.worktreeRef],
+    ['Turn count', usage?.turns], ['Cost', typeof usage?.costUsd === 'number' ? `$${usage.costUsd.toFixed(2)}` : undefined],
+  ] as const;
+  return <li className="coding-job-attempt">
+    <strong>{attempt.status}</strong> · <code>{attempt.operationId}</code>
+    {typeof attempt.selectionReason === 'string' && <p>{attempt.selectionReason}</p>}
+    <dl>{facts.map(([label, fact]) => <React.Fragment key={label}><dt>{label}</dt><dd>{typeof fact === 'number' || typeof fact === 'string' ? fact : 'Unknown'}</dd></React.Fragment>)}</dl>
+    {result !== undefined && <>
+      <p>{typeof result.outcome === 'string' ? result.outcome : 'Outcome unknown'}</p>
+      {typeof result.pendingDecision === 'string' && <p>Pending decision{result.pendingDecision === '' ? '' : ` · ${result.pendingDecision}`}</p>}
+      <details><summary>Checks ({checks.length})</summary><ul>{checks.map((value, index) => {
+        const check = record(value);
+        return typeof check?.name === 'string' && typeof check.status === 'string' ? <li key={index}>{check.name} · {check.status}</li> : null;
+      })}</ul></details>
+      <details><summary>Changed files ({files.length})</summary><ul>{files.map(file => <li key={file}>{file}</li>)}</ul></details>
+      <details><summary>Limitations ({limitations.length})</summary><ul>{limitations.map(line => <li key={line}>{line}</li>)}</ul></details>
+    </>}
+  </li>;
+}
+
+function JobAttempts({jobId, revision, read}: {jobId: string; revision: number | undefined; read: (path: string) => Promise<unknown>}): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const [attempts, setAttempts] = useState<readonly unknown[] | null>();
+  useEffect(() => {
+    if (!expanded || revision === undefined) return;
+    let current = true;
+    void read(`/modules/companions/content/coding-job?${new URLSearchParams({jobId}).toString()}`).then(value => {
+      const detail = record(value);
+      if (current) setAttempts(detail?.version === 1 && detail.jobId === jobId && Array.isArray(detail.attempts) ? detail.attempts as unknown[] : null);
+    }, () => {if (current) setAttempts(null);});
+    return () => {current = false;};
+  }, [expanded, jobId, read, revision]);
+  return <details onToggle={event => {setExpanded(event.currentTarget.open);}}>
+    <summary>Attempts and results</summary>
+    {expanded && (attempts === undefined ? <p>Loading attempts…</p> : attempts === null ? <p>Attempts unavailable.</p>
+      : <ol>{attempts.map((attempt, index) => <AttemptResults key={index} value={attempt}/>)}</ol>)}
+  </details>;
+}
+
 type MessageJob = (job: CodingJobEntry, text: string, requestId: string) => void;
-export function CodingJobCard({job, stop, message, locked, inConversation = false}: {
-  job: CodingJobEntry; stop: (jobId: string, operationId: string) => void; message: MessageJob; locked: boolean; inConversation?: boolean;
+export function CodingJobCard({job, stop, message, locked, read, revision, inConversation = false}: {
+  job: CodingJobEntry; stop: (jobId: string, operationId: string) => void; message: MessageJob; locked: boolean; read: (path: string) => Promise<unknown>; revision: number | undefined; inConversation?: boolean;
 }): React.JSX.Element {
   const {companion, conversationId} = job;
   const [draft, setDraft] = useState('');
@@ -134,6 +189,7 @@ export function CodingJobCard({job, stop, message, locked, inConversation = fals
       <dt>Worktree</dt><dd>{job.worktreeRef ?? 'Unknown'}</dd>
       <dt>Native session</dt><dd>{job.sessionId ?? 'Unknown'}</dd>
     </dl>
+    <JobAttempts jobId={job.jobId} read={read} revision={revision}/>
     {!inConversation && job.latestUpdate !== undefined && <p className="conversation-message-text">{job.latestUpdate}</p>}
     {!inConversation && companion !== undefined && <a href="#/module/companions/assistant"
       onClick={() => {conversationRail.openConversation(companion, conversationId);}}>Open original conversation</a>}
@@ -189,7 +245,7 @@ export function CodingJobs({read, revision, stop, message, locked, standalone = 
   const list = <>{page === undefined ? <p>Loading coding jobs…</p>
     : page === null ? <p>Coding jobs unavailable. <button type="button" onClick={() => {setRetry(value => value + 1);}}>Retry</button></p>
     : page.jobs.length === 0 ? <p>{standalone ? 'No jobs on this page.' : 'No active jobs on this page.'}</p>
-    : <ul className="coding-job-list">{page.jobs.map(job => <li key={job.jobId}><CodingJobCard job={job} stop={stop} message={message} locked={locked}/></li>)}</ul>}
+    : <ul className="coding-job-list">{page.jobs.map(job => <li key={job.jobId}><CodingJobCard job={job} stop={stop} message={message} locked={locked} read={read} revision={revision}/></li>)}</ul>}
     {cursors.length > 1 && <button type="button" onClick={() => {setCursors(values => values.slice(0, -1));}}>Previous jobs</button>}
     {page?.next != null && <button type="button" onClick={() => {
       const next = page.next;
@@ -215,7 +271,7 @@ export function ConversationCodingJob({jobId, revision, read, locked, stop, mess
     }, () => {if (current) setJob(undefined);});
     return () => {current = false;};
   }, [jobId, read, revision]);
-  return job === undefined ? null : <CodingJobCard job={job} stop={stop} message={message} locked={locked || revision === undefined} inConversation/>;
+  return job === undefined ? null : <CodingJobCard job={job} stop={stop} message={message} locked={locked || revision === undefined} read={read} revision={revision} inConversation/>;
 }
 
 export function JobsPage({context}: {context: FrontendContext}): React.JSX.Element {

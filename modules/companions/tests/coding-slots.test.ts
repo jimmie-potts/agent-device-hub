@@ -21,6 +21,7 @@ import type {CodingJobPage} from '../src/coding/job-page.js';
 import {CodingStore} from '../src/coding/store.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
+import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
 
 const PROFILES = ['bunny', 'reachy', 'microduck'] as const;
 const ENDPOINT = 'worker-endpoint-1';
@@ -122,6 +123,22 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
   };
+  const message = async (jobId: string, operationId: string, text: string, repeat = false): Promise<RequestResult> => {
+    const requestId = randomUUID();
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'message-coding-job', jobId, operationId, text}))});
+    assert.ok(staged !== undefined && !('error' in staged));
+    const send = () => core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+    const reply = await send();
+    if (repeat) await send();
+    return reply;
+  };
+  const jobs = async (query: Record<string, string>): Promise<CodingJobPage> => {
+    const reply = await module.manifest.content?.('coding-jobs', {query, signal: new AbortController().signal});
+    assert.ok(reply !== undefined && !('error' in reply));
+    return JSON.parse(Buffer.from(reply.bytes).toString()) as CodingJobPage;
+  };
   type SavedMessage = {id: string; taskId: string; role: string; text: string; follows?: string};
   const messages = async (profile: AssistantProfile, conversationId?: string): Promise<SavedMessage[]> => {
     const content = await module.manifest.content?.('conversation', {query: conversationId === undefined ? {profile} : {profile, view: 'recent', conversationId}, signal: new AbortController().signal});
@@ -160,7 +177,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     assert.ok(reply !== undefined && !('error' in reply));
     return JSON.parse(Buffer.from(reply.bytes).toString()) as CodingJobDetail;
   };
-  return {continueJob, jobDetail, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
+  return {continueJob, jobDetail, jobs, message, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
     const release = releaseStart ?? assert.fail('serial responder has a delivered start to acknowledge');
     releaseStart = undefined; release();
   }, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, lose, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
@@ -468,6 +485,40 @@ void test('Conversation answers a Hub question and takes another job while a wor
   assert.equal(w.starts().filter(command => command.data.operationId === first.operationId).length, 1);
 });
 
+
+void test('background coding checks queued grants again and filters retained job results after revocation', {timeout: 30_000}, async context => {
+  const permitted = sharing();
+  let blockBrief = false, hiddenResult: string | undefined;
+  const share = Object.assign((query: ShareQuery) => permitted(query) &&
+    !(blockBrief && query.destination === 'coding-worker' && query.source === 'coding' && query.field === 'brief') &&
+    !(hiddenResult !== undefined && query.destination === 'private-conversation' && query.source === 'coding' &&
+      query.field === 'details' && query.record === hiddenResult),
+  {revokesFields: true, allowsDerived: (query: ShareQuery) => permitted.allowsDerived?.(query) !== false});
+  const w = await world(context, {share});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic first job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  const first = w.starts()[0]?.data;
+  assert.ok(first?.action === 'start');
+  await w.progress({operationId: first.operationId, status: 'started'});
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  assert.equal((await w.send('bunny', 'Synthetic queued job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.task('bunny')?.status === 'succeeded' && w.coding().waiting?.length === 1);
+  blockBrief = true;
+  await w.progress({operationId: first.operationId, status: 'completed', result: result('Synthetic retained outcome.')});
+  const messages = await w.waitMessages('bunny', /Synthetic retained outcome/);
+  assert.ok(messages.some(message => message.id === `${first.operationId}-job-result`));
+  await w.waitMessages('bunny', /refused: forbidden/);
+  assert.equal(w.starts().length, 1, 'revocation prevents a second worker dispatch');
+  hiddenResult = first.operationId;
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /Synthetic retained outcome/);
+  await w.restart();
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /Synthetic retained outcome/);
+  assert.equal(w.starts().length, 1);
+});
 
 void test('a named stop with no worker confirmation leaves a sibling running', {timeout: 30_000}, async context => {
   const w = await world(context);
@@ -883,7 +934,7 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   const w = await world(context);
   const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
     limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
-  const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus'};
+  const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus', capabilities: {...claude.capabilities, steering: 'live'}};
   const exhausted: CodingHarnessReadiness = {...claude, limits: [{window: 'primary', status: 'rejected', resetsAtMs: null, utilization: null}]};
   assert.equal((await w.control('enable')).status, 'accepted');
   assert.equal((await w.enable('uncapped', [exhausted, codex])).status, 'accepted');
@@ -897,6 +948,15 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
   await w.progress({operationId, status: 'started', setup: 'ready', harness: 'codex', sessionId: 'native-codex'}, '2.3');
   await settle(() => w.coding().runs?.some(run => run.sessionId === 'native-codex') === true);
+  await w.progress({operationId, status: 'attempt-context', worktreeRef: 'bunny-fixture-partial', branch: null, model: 'fixture-reported-model'}, '2.5');
+  const message = await w.message(jobId, operationId, 'Keep the fixture intact.', true);
+  assert.equal(message.status, 'accepted');
+  await settle(() => w.work.filter(command => command.data.action === 'message').length === 1);
+  await w.progress({operationId, messageId: message.requestId, sessionId: 'wrong-session', status: 'message-observed'}, '2.5');
+  assert.equal((await w.jobs({jobId})).jobs[0]?.messages?.[0]?.observed, false);
+  await w.progress({operationId, messageId: message.requestId, sessionId: 'native-codex', status: 'message-observed'}, '2.5');
+  await settle(() => w.database().prepare('SELECT observed FROM companion_coding_job_messages WHERE message_id=?').get(message.requestId)?.observed === 1);
+  assert.equal((await w.jobs({jobId})).jobs[0]?.messages?.[0]?.observed, true);
   assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
   const head = 'a'.repeat(40);
   const stopped = {...result('Synthetic partial work.'), head, changedFiles: ['partial.txt'], checks: [{name: 'git diff', status: 'passed'}]};
@@ -915,8 +975,19 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   assert.match(resumed.brief, /git diff \(passed\)/);
   assert.doesNotMatch(resumed.brief, /native-codex|Synthetic partial work/);
   assert.equal((await w.jobDetail(jobId)).activeOperationId, resumed.operationId);
+  assert.equal((await w.jobs({jobId})).jobs[0]?.operationId, resumed.operationId);
+  const stale = await w.message(jobId, operationId, 'Never reach a replacement attempt.');
+  assert.equal(stale.status, 'rejected');
+  if (stale.status === 'rejected') assert.equal(stale.error.error.code, 'revision-conflict');
+  assert.deepEqual((await w.jobDetail(jobId)).attempts[0]?.context, {
+    worktreeRef: 'bunny-fixture-partial', branch: null, model: 'fixture-reported-model',
+  });
   assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
   await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'native-claude'}, '2.3');
+  const unsupported = await w.message(jobId, resumed.operationId, 'Never message this unsupported harness.');
+  assert.equal(unsupported.status, 'rejected');
+  if (unsupported.status === 'rejected') assert.equal(unsupported.error.error.code, 'unsupported-capability');
+  assert.equal(w.work.filter(command => command.data.action === 'message').length, 1);
   await w.progress({operationId: resumed.operationId, status: 'completed', harness: 'claude-code',
     result: {...result('Synthetic continued work.'), head, changedFiles: ['partial.txt'], checks: [{name: 'unit test', status: 'passed'}]}}, '2.3');
   await w.waitMessages('bunny', /Synthetic continued work/);
@@ -927,4 +998,33 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
     [resumed.operationId, 'claude-code', 'native-claude', 'completed', 'unit test'],
   ]);
   assert.doesNotMatch(JSON.stringify(detail), new RegExp(handoffToken));
+});
+
+
+void test('Jobs read grants filter discovery, detail and live counts before projecting names', {timeout: 30_000}, async context => {
+  const policy = sharing();
+  let hiddenOperation: string | undefined, hideBrief = false;
+  const w = await world(context, {share: query => policy(query) &&
+    !(query.destination === 'private-conversation' && query.source === 'coding' &&
+      (query.record === hiddenOperation && hiddenOperation !== undefined || hideBrief && query.field === 'brief'))});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  for (const profile of ['bunny', 'reachy'] as const) {
+    assert.equal((await w.send(profile, 'Synthetic private job')).status, 'accepted');
+    await w.approved(profile);
+  }
+  await settle(() => w.starts().length === 2);
+  const first = w.starts()[0]?.data.operationId ?? assert.fail('first operation');
+  const second = w.starts()[1]?.data.operationId ?? assert.fail('second operation');
+  assert.equal((await w.jobs({scope: 'all'})).jobs.length, 2);
+  hiddenOperation = first;
+  hideBrief = true;
+  const listed = await w.jobs({scope: 'all'});
+  assert.deepEqual(listed.jobs.map(job => [job.operationId, job.label]), [[second, undefined]]);
+  assert.equal(listed.next, null);
+  assert.equal(w.coding().counts?.runs, 1);
+  assert.deepEqual((await w.jobs({target: 'Synthetic reachy brief'})).jobs, []);
+  assert.deepEqual((await w.jobs({jobId: `${first}-job`})).jobs, []);
+  const restricted = await w.module().manifest.content?.('coding-job', {query: {jobId: `${first}-job`}, signal: new AbortController().signal});
+  assert.ok(restricted !== undefined && 'error' in restricted && restricted.error.code === 'not-found');
 });

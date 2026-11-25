@@ -98,9 +98,9 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await waitFor(() => commands.length === 4);
     assert.deepEqual(commands.slice(3).map(command => [command.action, command.operationId]), [['cancel', first.operationId]]);
     await progress({operationId: first.operationId, status: 'cancelled', reason: 'cancelled', result: null, harness: 'claude-code'}, '2.3');
-    await card(first).getByText(/cancelled \(cancelled\)/).waitFor();
+    await card(first).getByText(/ · cancelled$/).waitFor();
     await page.reload();
-    await card(first).getByText(/cancelled \(cancelled\)/).waitFor();
+    await card(first).getByText(/ · cancelled$/).waitFor();
     await card(second).getByText('fixture-beta-session', {exact: true}).waitFor();
     await card(second).getByText('Queued in the Hub', {exact: true}).waitFor();
     acceptMessage();

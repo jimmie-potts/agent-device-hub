@@ -34,14 +34,19 @@ export type CodingJobPage = {version: 1; jobs: CodingJobEntry[]; next: string | 
 
 
 export type CodingAttemptResult = Pick<CodingResult, 'outcome' | 'base' | 'head' | 'changedFiles'> & {
+  usage?: CodingResult['usage'];
+  limitations?: string[];
+  pendingDecision?: string;
   checks: Pick<CodingResult['checks'][number], 'name' | 'status'>[];
 };
+export type AttemptContext = Pick<CodingJobEntry, 'worktreeRef' | 'branch' | 'model'>;
 export type CodingAttemptEntry = {
   operationId: string;
   harness: CodingHarness | null;
   sessionId: string | null;
   status: 'queued' | 'dispatching' | 'started' | 'cancelling' | Exclude<CodingProgress['status'], 'started'>;
   selectionReason: string;
+  context?: AttemptContext;
   result: CodingAttemptResult | null;
 };
 export type CodingJobDetail = {
