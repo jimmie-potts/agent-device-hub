@@ -40,7 +40,8 @@ function matches(row: MonitorSessionRow, filter: Filter): boolean {
     && (filter.projectId === undefined || row.projectId === filter.projectId)
     && (filter.session === undefined || Object.entries(filter.session).every(([key, value]) => row.identity[key as keyof typeof row.identity] === value));
 }
-function Pixels({context, refs, delay, revision, label}: {context: FrontendContext; refs: readonly string[]; delay: number | null; revision: number | undefined; label: string}): React.JSX.Element {
+/** Exported for its bitmap-lifetime check (Hub #2133). */
+export function Pixels({context, refs, delay, revision, label}: {context: FrontendContext; refs: readonly string[]; delay: number | null; revision: number | undefined; label: string}): React.JSX.Element {
   const [bitmaps, setBitmaps] = useState<ImageBitmap[]>([]), [index, setIndex] = useState(0), [failure, setFailure] = useState<string>();
   const key = JSON.stringify(refs);
   useEffect(() => {

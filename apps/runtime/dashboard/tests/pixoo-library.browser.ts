@@ -5,6 +5,7 @@ import {chromium, type Browser} from 'playwright';
 import sharp from 'sharp';
 import {changes, feed, startWorld} from './harness.ts';
 import {checkPixooAnimatedMedia} from './pixoo-animated-media.ts';
+import {checkPixooBitmapOwners} from './pixoo-bitmap-owners.ts';
 import {checkPixooPreview} from './pixoo-preview.ts';
 
 const world = await startWorld({pixooPages: true});
@@ -18,6 +19,8 @@ try {
     await checkPixooPreview(context);
     // The animated tile's bitmap lifetime, the same way (Hub #2133).
     await checkPixooAnimatedMedia(context);
+    // The playlist item's and the Monitor preview's, the same way.
+    await checkPixooBitmapOwners(context);
     const page = await context.newPage(); page.setDefaultTimeout(8000);
     const sent = changes(page);
     await page.goto(`${world.url}/#/module/pixoo/library`); await feed(page, 'connected');

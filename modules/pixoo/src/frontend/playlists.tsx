@@ -84,7 +84,8 @@ function MediaPicker({context, disabled, add}: {context: FrontendContext; disabl
   </fieldset>;
 }
 
-function PlaylistItem({context, item, index, length, disabled, edit, move, remove}: {
+/** Exported for its bitmap-lifetime check (Hub #2133). */
+export function PlaylistItem({context, item, index, length, disabled, edit, move, remove}: {
   context: FrontendContext; item: Item; index: number; length: number; disabled: boolean;
   edit: (playback: Policy) => void; move: (delta: number) => void; remove: () => void;
 }): React.JSX.Element {
