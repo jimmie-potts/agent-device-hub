@@ -40,6 +40,9 @@ export type CodingSeams = {
 type Phase = CodingRunEntry['status'];
 type Active = CodingResponsibility & {companion: CodingCompanion; phase: Phase; wallClockMs: number; cancel: Cancel; settling: boolean};
 const noop = (): void => {};
+const STORAGE_RETRY_MS = 1000;
+const MAX_STORAGE_RETRY_MS = 30_000;
+const waitWriteKey = (operationId: string): string => `wait:${operationId}`;
 /**
  * How long the worker may take to report it started once it accepted the work; the tracked outcome is uncertain after
  * that. Under the tracker's thirty-second device budget for `coding-run`, so the outcome lands before the tracker expires it.
@@ -89,6 +92,10 @@ export class CodingCoordinator {
   readonly #reserved = new Map<string, string>();
   /** Tasks cancelled while their hand-off was on its way from the queue: its arrival is refused, so nothing runs. */
   readonly #cancelled = new Set<string>();
+  readonly #terminalWrites = new Map<string, Cancel>();
+  readonly #delivering = new Set<string>();
+  #deliveryRetry: Cancel | undefined;
+  #deliveryRetryMs = STORAGE_RETRY_MS;
   #closed = false;
   #starting = false;
   readonly #seams: CodingSeams;
@@ -134,7 +141,7 @@ export class CodingCoordinator {
     }
     // A hand-off whose dispatch had left without its acceptance recorded may have reached the core: its fate is unknown
     // and it is never sent again. One that never left keeps its place and is sent when its slot frees.
-    for (const record of this.#store.waiting().filter(waiting => waiting.sending)) await this.#endWait(record, 'uncertain', 'lost', true);
+    for (const record of this.#store.waiting().filter(waiting => waiting.sending)) await this.#endWait(record);
     await this.#deliverJobUpdates(undefined, true);
     this.#starting = false;
     this.#subscriptions.push(await this.context.sdk.respond<CodingEndpointControl>('bunny.cmd.coding-endpoint.*', command => this.#control(command)));
@@ -148,6 +155,9 @@ export class CodingCoordinator {
   async stop(): Promise<void> {
     this.#closed = true;
     for (const active of this.#active.values()) active.cancel();
+    for (const cancel of this.#terminalWrites.values()) cancel();
+    this.#terminalWrites.clear();
+    this.#deliveryRetry?.();
     await Promise.all(this.#subscriptions.map(subscription => subscription.close()));
   }
   /**
@@ -241,59 +251,67 @@ export class CodingCoordinator {
     if (this.#reserved.get(slot) === record.operationId) this.#reserved.delete(slot);
     // An answer lost to the module's own stop is left to the next start, which finds the hand-off's fate unknown.
     if (this.#closed || this.context.signal.aborted) return;
-    // An accepted dispatch is a run now: its acceptance ended the wait. Any other answer ends the wait without a run.
-    // An accepted dispatch is a run now, and so is one whose answer was lost after the module accepted its run: the run's
-    // own progress settles it. The task's conversation now says the hand-off was sent.
-    if (answer.status === 'accepted' || this.#store.accepted(record.operationId)) {
-      try {
-        if (this.#store.job(record.operationId) === undefined) this.#seams.sent?.(record.taskId, record);
-        else if (!this.#store.resultSaved(record.operationId)) {
-          this.#store.update({...record, kind: 'sent', text: 'The core accepted the worker dispatch. The worker start is a separate observation.'});
-          await this.#deliverJobUpdates(record.operationId);
-        }
-      } catch (error) {this.#storageFailure(error, record);}
-      this.#drain(); return;
-    }
-    const code = answer.error.error.code, uncertain = answer.status === Outcome.uncertain || code === 'uncertain-result';
-    if (!uncertain && code === 'invalid-state' && this.#store.stopRequested(record.operationId)) {
-      await this.#endWait(record, 'cancelled', 'stopped before worker start');
-      this.#drain(); return;
-    }
-    await this.#endWait(record, uncertain ? 'uncertain' : 'failed', uncertain ? 'lost' : `refused: ${code}`);
+    // A dispatch whose reply was lost may have recorded responsibility. In that case the run owns its own result.
+    await this.#endWait(record, answer);
     this.#drain();
   }
-  /** Ends a hand-off's wait without a run and tells its task, unless the owner cancelled it. */
-  async #endWait(record: CodingWaitingRecord, status: 'cancelled' | 'failed' | 'uncertain', reason: string, startup = false): Promise<void> {
-    const text = describeResult(status, undefined, reason);
-    if (this.#store.job(record.operationId) !== undefined) {
+  /** Reconciles a dispatch reply with durable responsibility, or closes an interrupted wait at startup. */
+  async #endWait(record: CodingWaitingRecord, answer?: RequestResult): Promise<void> {
+    const startup = answer === undefined;
+    await this.#persistTerminal(record, () => this.outbox.transaction(() => {
+      const {operationId} = record;
+      const job = this.#store.job(operationId);
+      if (answer !== undefined && (answer.status === 'accepted' || this.#store.accepted(operationId))) return {kind: 'sent', job} as const;
+      const code = answer?.error.error.code;
+      const uncertain = answer === undefined || answer.status === Outcome.uncertain || code === 'uncertain-result';
+      const stopped = !uncertain && code === 'invalid-state' && this.#store.stopRequested(operationId);
+      const text = describeResult(uncertain ? 'uncertain' : stopped ? 'cancelled' : 'failed', undefined,
+        uncertain ? 'lost' : stopped ? 'stopped before worker start' : `refused: ${code}`);
+      this.#store.unwait(operationId);
+      if (job !== undefined) this.#store.update({...record, kind: 'result', text});
+      return {kind: 'ended', job, text, uncertain} as const;
+    }), async settlement => {
       try {
-        await this.outbox.transaction(() => {
-          this.#store.unwait(record.operationId);
-          this.#store.update({...record, kind: 'result', text});
-        });
-        this.#changed();
-        await this.#deliverJobUpdates(record.operationId, startup);
-      } catch (error) {this.#storageFailure(error, record);}
-      return;
-    }
-    try {this.#store.unwait(record.operationId);} catch (error) {this.#storageFailure(error, record);}
-    const cancelled = this.#cancelled.delete(record.taskId);
-    this.#changed();
-    if (cancelled) return;
-    try {await this.deliver(record.taskId, text, {traceparent: record.traceparent},
-      {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : 'the coding hand-off was refused'}, startup);}
-    catch (error) {this.#storageFailure(error, record);}
+        if (settlement.kind === 'ended') this.#changed();
+        if (settlement.job !== undefined) {
+          if (settlement.kind === 'sent' && !this.#store.resultSaved(record.operationId)) {
+            this.#store.update({...record, kind: 'sent', text: 'The core accepted the worker dispatch. The worker start is a separate observation.'});
+          }
+          await this.#deliverJobUpdates(record.operationId, startup);
+        } else if (settlement.kind === 'sent') this.#seams.sent?.(record.taskId, record);
+        else if (!this.#cancelled.delete(record.taskId)) await this.deliver(record.taskId, settlement.text, record,
+          {requestId: record.operationId, source: 'effect', text: settlement.uncertain ? 'the coding worker outcome is unknown' : 'the coding hand-off was refused'}, startup);
+      } finally {this.#drain();}
+    });
   }
   async #deliverJobUpdates(operationId?: string, startup = false): Promise<void> {
-    if (this.#seams.jobUpdate === undefined) return;
-    for (const update of this.#store.undelivered(operationId)) {
-      const job = this.#store.job(update.operationId);
-      if (job === undefined) continue;
-      try {
-        await this.#seams.jobUpdate(job, update.kind, update.text, update, startup);
-        this.#store.delivered(update);
-      } catch (error) {this.#storageFailure(error, update);}
-    }
+    if (this.#seams.jobUpdate === undefined || this.#closed || this.context.signal.aborted) return;
+    try {
+      for (const update of this.#store.undelivered(operationId)) {
+        if (this.#closed || this.context.signal.aborted) return;
+        const id = `${update.operationId}:${update.kind}`;
+        if (this.#delivering.has(id)) continue;
+        this.#delivering.add(id);
+        try {
+          const job = this.#store.job(update.operationId);
+          if (job === undefined) continue;
+          await this.#seams.jobUpdate(job, update.kind, update.text, update, startup);
+          if (!this.#closed && !this.context.signal.aborted) this.#store.delivered(update);
+        } catch (error) {this.#scheduleDelivery(error, startup, update);}
+        finally {this.#delivering.delete(id);}
+      }
+    } catch (error) {this.#scheduleDelivery(error, startup);}
+    if (operationId === undefined && this.#deliveryRetry === undefined) this.#deliveryRetryMs = STORAGE_RETRY_MS;
+  }
+  #scheduleDelivery(error: unknown, startup: boolean, parent?: TraceContext): void {
+    if (this.#closed || this.context.signal.aborted || this.#deliveryRetry !== undefined) return;
+    const delay = this.#deliveryRetryMs;
+    if (delay === STORAGE_RETRY_MS) this.#storageFailure(error, parent);
+    this.#deliveryRetryMs = Math.min(delay * 2, MAX_STORAGE_RETRY_MS);
+    this.#deliveryRetry = this.context.scheduler.after(delay, () => {
+      this.#deliveryRetry = undefined;
+      void this.#deliverJobUpdates(undefined, startup);
+    });
   }
   /** Records stop intent inside the caller's transaction; the returned work can run after commit. */
   prepareStop(jobId: string, operationId: string): {code: 'unavailable' | 'not-found' | 'invalid-state'} | {committed: () => Promise<void>} {
@@ -303,7 +321,7 @@ export class CodingCoordinator {
     if (this.#store.resultSaved(operationId)) return {code: 'invalid-state'};
     const waiting = this.#store.waiting().find(record => record.operationId === operationId);
     const active = this.#active.get(operationId);
-    if (waiting === undefined && (active === undefined || active.settling)) return {code: 'invalid-state'};
+    if ((waiting === undefined && (active === undefined || active.settling)) || (waiting !== undefined && this.#terminalWrites.has(waitWriteKey(operationId)))) return {code: 'invalid-state'};
     if (!this.#store.requestStop(operationId)) return {committed: () => Promise.resolve()};
     if (waiting !== undefined && !waiting.sending) {
       this.#store.unwait(operationId);
@@ -407,7 +425,7 @@ export class CodingCoordinator {
     const data = command.data;
     if (this.#active.has(data.requestId)) return {status: 'accepted'};
     try {
-      if (this.#store.accepted(data.requestId) || this.#store.resultSaved(data.requestId)) return errorBody('invalid-state', {detail: 'the coding attempt has already settled'});
+      if (this.#terminalWrites.has(waitWriteKey(data.requestId)) || this.#store.accepted(data.requestId) || this.#store.resultSaved(data.requestId)) return errorBody('invalid-state', {detail: 'the coding attempt has already settled'});
       if (this.#store.stopRequested(data.requestId)) return errorBody('invalid-state', {detail: 'the job was stopped before the worker start'});
       const job = this.#store.job(data.requestId);
       if (job !== undefined && (job.taskId !== data.taskId || job.repository !== data.repository || job.brief !== data.brief)) {
@@ -465,6 +483,7 @@ export class CodingCoordinator {
       try {this.#store.started(active.operationId);} catch (error) {this.#storageFailure(error, active); await this.#settle(active, 'uncertain', undefined, 'lost'); return;}
       // The tracked effect is "handed to the worker": observed, because the worker said so. The run's end is the task's business.
       try {await this.#outcome(active, {result: Outcome.succeeded}, 'observed');} catch (error) {this.#storageFailure(error, active);}
+      if (active.settling || this.#closed || this.context.signal.aborted) return;
       if (active.phase === 'dispatching') active.phase = 'started';
       this.#changed();
       active.cancel = this.context.scheduler.after(active.wallClockMs + GRACE_MS + SETUP_MS, () => {void this.#settle(active, 'uncertain', undefined, 'timeout');});
@@ -488,34 +507,42 @@ export class CodingCoordinator {
     const active = 'settling' in record ? record : undefined;
     if (active !== undefined) {if (active.settling || this.#active.get(active.operationId) !== active) return; active.settling = true; active.cancel();}
     const text = describeResult(status, result, reason);
-    // Keep the first terminal observation while the transaction is unavailable. Retrying only local persistence
-    // leaves the operation fenced and never sends another worker command.
-    let retryMs = 1000;
-    const persist = async (): Promise<void> => {
-      if (this.#closed || this.context.signal.aborted) return;
-      let job: CodingJob | undefined;
-      try {
-        job = this.#store.job(record.operationId);
-        await this.outbox.transaction(add => {
-          this.#store.settle(record.operationId, status);
-          if (job !== undefined) this.#store.update({...record, kind: 'result', text});
-          if (outcome !== undefined) this.#addOutcome(add, record, outcome, record.started ? 'observed' : 'none');
-        });
-      } catch (error) {
-        if (retryMs === 1000) this.#storageFailure(error, record);
-        if (active !== undefined && !this.#closed && !this.context.signal.aborted) {
-          active.cancel = this.context.scheduler.after(retryMs, () => {void persist();});
-          retryMs = Math.min(retryMs * 2, 30_000);
-        }
-        return;
-      }
+    await this.#persistTerminal(record, () => this.outbox.transaction(add => {
+      const job = this.#store.job(record.operationId);
+      this.#store.settle(record.operationId, status);
+      if (job !== undefined) this.#store.update({...record, kind: 'result', text});
+      if (outcome !== undefined) this.#addOutcome(add, record, outcome, record.started ? 'observed' : 'none');
+      return job;
+    }), async job => {
       if (active !== undefined) {this.#active.delete(active.operationId); this.#changed();}
       try {
         if (job !== undefined) await this.#deliverJobUpdates(record.operationId, startup);
         else await this.deliver(record.taskId, text, record,
           {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : `the coding worker reported that the task ${status}`}, startup);
-      } catch (error) {this.#storageFailure(error, record);}
-      if (active !== undefined) this.#drain();
+      } finally {if (active !== undefined) this.#drain();}
+    });
+  }
+  /** Retains the first observation across local write failures. Only the local transaction is retried. */
+  async #persistTerminal<T>(record: CodingWaitingRecord | CodingResponsibility, write: () => Promise<T>, committed: (value: T) => Promise<void>): Promise<void> {
+    const key = 'sending' in record ? waitWriteKey(record.operationId) : `run:${record.operationId}`;
+    if (this.#closed || this.context.signal.aborted || this.#terminalWrites.has(key)) return;
+    this.#terminalWrites.set(key, noop);
+    let delay = STORAGE_RETRY_MS;
+    const persist = async (): Promise<void> => {
+      if (this.#closed || this.context.signal.aborted) return;
+      let value: T;
+      try {value = await write();}
+      catch (error) {
+        if (delay === STORAGE_RETRY_MS) this.#storageFailure(error, record);
+        if (!this.#closed && !this.context.signal.aborted) {
+          this.#terminalWrites.set(key, this.context.scheduler.after(delay, () => {void persist();}));
+          delay = Math.min(delay * 2, MAX_STORAGE_RETRY_MS);
+        }
+        return;
+      }
+      this.#terminalWrites.delete(key);
+      if (this.#closed || this.context.signal.aborted) return;
+      try {await committed(value);} catch (error) {this.#storageFailure(error, record);}
     };
     await persist();
   }

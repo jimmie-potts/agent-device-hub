@@ -41,6 +41,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   // The core's tracked dispatcher forwards a dispatch to the module's coding-run responder, once per request ID.
   const dispatched: string[] = [], work: Command<CodingWork>[] = [];
   let heldDispatch: Promise<void> | undefined;
+  let refusesDispatch = false;
   const holdDispatch = (): (() => void) => {
     let release = (): void => {};
     heldDispatch = new Promise(resolve => {release = resolve;});
@@ -53,6 +54,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
       heldDispatch = undefined;
       await held;
     }
+    if (refusesDispatch) return errorBody('unavailable');
     const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
       {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
@@ -126,7 +128,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     }
     return assert.fail(`Missing message ${String(pattern)}`);
   };
-  return {module: () => module, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
+  return {module: () => module, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}};
 }
 
@@ -346,6 +348,77 @@ void test('a failed terminal commit retries the first evidence without sending a
   assert.equal(w.starts().length, 1);
   await w.restart();
   assert.equal((await w.messages('bunny')).filter(message => message.id === `${operationId}-job-result`).length, 1);
+});
+
+void test('a dispatch refusal survives failed result persistence without resending the attempt', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  w.refuseDispatch();
+  const db = w.database();
+  let attempts = 0;
+  db.function('fail_refusal_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_refusal_save BEFORE INSERT ON companion_coding_job_updates
+    WHEN NEW.kind='result' AND fail_refusal_save()=1 BEGIN SELECT RAISE(ABORT,'synthetic refusal insert failure'); END`);
+  assert.equal((await w.send('bunny', 'Synthetic refused job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => attempts === 1);
+  const operationId = w.dispatched[0] ?? assert.fail('attempt');
+  assert.equal(w.coding().waiting?.[0]?.operationId, operationId);
+  w.advance(1000);
+  await w.waitMessages('bunny', /failed \(refused: unavailable\)/);
+  assert.equal(w.coding().waiting?.length, 0);
+  await w.restart();
+  assert.equal((await w.enable()).status, 'accepted');
+  const saved = (await w.messages('bunny')).filter(message => message.id === `${operationId}-job-result`);
+  assert.equal(saved.length, 1);
+  assert.match(saved[0]?.text ?? '', /failed \(refused: unavailable\)/);
+  assert.deepEqual(w.dispatched, [operationId]);
+  assert.equal(w.starts().length, 0);
+});
+
+void test('a saved result retries original-exchange delivery and deduplicates after a failed delivery marker', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic result delivery job')).status, 'accepted');
+  const conversation = w.task('bunny')?.conversationId ?? assert.fail('originating conversation');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  const operationId = w.starts()[0]?.data.operationId ?? assert.fail('attempt');
+  const id = `${operationId}-job-result`;
+  await w.waitMessages('bunny', /accepted the worker dispatch/);
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  assert.equal((await w.newConversation('bunny')).status, 'accepted');
+  const db = w.database();
+  const store = new CodingStore(db);
+  let insertAttempts = 0, markAttempts = 0;
+  db.function('fail_result_copy', () => {insertAttempts += 1; return insertAttempts === 1 ? 1 : 0;});
+  db.function('fail_delivery_mark', () => {markAttempts += 1; return markAttempts === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_result_copy BEFORE INSERT ON assistant_messages
+    WHEN NEW.id LIKE '%-job-result' AND fail_result_copy()=1 BEGIN SELECT RAISE(ABORT,'synthetic result copy failure'); END;
+    CREATE TEMP TRIGGER fail_delivery_mark BEFORE UPDATE OF delivered ON companion_coding_job_updates
+    WHEN NEW.kind='result' AND fail_delivery_mark()=1 BEGIN SELECT RAISE(ABORT,'synthetic delivered mark failure'); END`);
+  await w.progress({operationId, status: 'started'});
+  await settle(() => w.coding().active?.status === 'started');
+  await w.progress({operationId, status: 'completed', result: result('Synthetic retried result delivery.')});
+  await settle(() => insertAttempts === 1);
+  assert.ok(store.resultSaved(operationId));
+  assert.ok(!(await w.messages('bunny', conversation)).some(message => message.id === id));
+  await w.progress({operationId, status: 'completed', result: result('Synthetic conflicting duplicate.')});
+  w.advance(1000);
+  await settle(() => markAttempts === 1);
+  const saved = await w.waitMessages('bunny', /Synthetic retried result delivery/, conversation);
+  assert.equal(saved.filter(message => message.id === id && message.follows === `${operationId}-job`).length, 1);
+  assert.ok(!(await w.messages('bunny')).some(message => message.id === id));
+  w.advance(2000);
+  await settle(() => store.undelivered(operationId).length === 0);
+  assert.equal(insertAttempts, 2);
+  await w.restart();
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.messages('bunny', conversation)).filter(message => message.id === id).length, 1);
+  assert.deepEqual(w.dispatched, [operationId]);
+  assert.equal(w.starts().length, 1);
 });
 
 void test('an interrupted dispatch restores the job receipt, reports uncertainty and never resends', {timeout: 30_000}, async context => {
