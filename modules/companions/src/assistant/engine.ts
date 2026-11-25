@@ -9,11 +9,11 @@ import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contrac
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
 import type {CodingJob} from '../coding/store.js';
-import type {HandOffAnswer} from '../coding/coordinator.js';
+import type {CodingCoordinator, HandOffAnswer} from '../coding/coordinator.js';
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
-import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
+import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type Stage, type StagedInput, type Task} from './store.js';
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
@@ -63,6 +63,7 @@ export type AssistantOptions = {
   delegate?: Delegate;
   backgroundCoding?: boolean;
   codingJob?: (operationId: string) => CodingJob | undefined;
+  stopCodingJob?: CodingCoordinator['prepareStop'];
   /**
    * Whether the module already sent a hand-off that answered `waiting` (Hub #2028), so a hand-off sent before its waiting
    * line is saved reads "Delegated to ..." at once.
@@ -658,19 +659,22 @@ export class AssistantEngine {
       // New conversation (Hub #2029) names its profile and the revision the page read, and nothing else. It runs no work,
       // so it is admitted while conversation is off, as a rename is.
       const fresh = object(value) && value.action === 'new-conversation';
+      const stoppingJob = object(value) && value.action === 'stop-coding-job';
+      if (stoppingJob && (Object.keys(value).some(key => !['action', 'jobId', 'operationId'].includes(key)) ||
+        typeof value.operationId !== 'string' || !QUEUED_ID.test(value.operationId) || value.jobId !== `${value.operationId}-job`)) fail('invalid-request');
       // Editing a queued message (Hub #2030) runs no work either, so it is admitted while conversation is off.
-      if (!fresh && !(object(value) && value.action === 'edit-queued')) this.#ready();
+      if (!fresh && !stoppingJob && !(object(value) && value.action === 'edit-queued')) this.#ready();
       if (fresh && (Object.keys(value).some(key => !['action', 'profile', 'expectedRevision'].includes(key)) || !profile(value.profile) ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
-      if (!fresh && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId'].includes(key)) ||
+      if (!fresh && !stoppingJob && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId'].includes(key)) ||
         !profile(value.profile) || !['start', 'answer', 'queue', 'edit-queued', 'steer'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
       // A steer names the turn it expects (Hub #2031), and with a question the one it skips or declines.
-      if (!fresh && (value.action === 'answer' ? typeof value.taskId !== 'string' || typeof value.questionId !== 'string' || value.queuedId !== undefined
+      if (!fresh && !stoppingJob && (value.action === 'answer' ? typeof value.taskId !== 'string' || typeof value.questionId !== 'string' || value.queuedId !== undefined
         : value.action === 'steer' ? typeof value.taskId !== 'string' || !(value.questionId === undefined || typeof value.questionId === 'string') || value.queuedId !== undefined
           : value.action === 'edit-queued' ? value.taskId !== undefined || value.questionId !== undefined || typeof value.queuedId !== 'string' || !QUEUED_ID.test(value.queuedId)
             : value.taskId !== undefined || value.questionId !== undefined || value.queuedId !== undefined)) fail('invalid-request');
-      const input = (fresh ? {...value, text: ''} : value) as StagedInput;
+      const input = (fresh ? {...value, text: ''} : value) as Stage['input'];
       this.store.expireStages(this.context.clock.now());
       const previous = this.store.inputFor(request.requestId);
       if (previous !== undefined && digest(previous.input) !== digest(input)) fail('duplicate-conflict');
@@ -684,12 +688,20 @@ export class AssistantEngine {
   }
   #input(command: Command<AssistantInput>): Promise<Reply> {
     let titled: {conversationId: string; profile: AssistantProfile; event: TitleEvent} | undefined;
+    let stopCommitted: (() => Promise<void>) | undefined;
     return this.#admit(command, digest(command.data), () => {
       const staged = this.store.input(command.data.inputRef) ?? fail('invalid-request');
-      if (staged.input.action !== 'new-conversation' && staged.input.action !== 'edit-queued') this.#ready();
       if (staged.requestId !== command.data.requestId) fail('invalid-request');
       if (staged.expires <= this.context.clock.now()) fail('expired');
       const input = staged.input, now = this.context.clock.now();
+      if (input.action === 'stop-coding-job') {
+        const stop = this.options.stopCodingJob?.(input.jobId, input.operationId) ?? fail('unavailable');
+        if ('code' in stop) fail(stop.code);
+        stopCommitted = stop.committed;
+        this.store.discard(staged.ref);
+        return undefined;
+      }
+      if (input.action !== 'new-conversation' && input.action !== 'edit-queued') this.#ready();
       if (input.action === 'queue' || input.action === 'edit-queued') {
         this.#queueRevision(input.expectedRevision, this.store.conversation(input.profile));
         this.store.discard(staged.ref);
@@ -766,7 +778,12 @@ export class AssistantEngine {
       this.#activate(task, command); this.store.save(task); this.store.discard(staged.ref); return task.id;
     }).then(reply => {
       // The title check runs beside the task, after its admission committed; it never delays, fails or rolls back the task.
-      if (titled !== undefined && !('error' in reply)) this.#checkTitle(titled, titled.event);
+      if (!('error' in reply)) {
+        if (titled !== undefined) this.#checkTitle(titled, titled.event);
+        if (stopCommitted !== undefined) void stopCommitted().catch(() => {
+          recordLog(this.context.log, 'message.received', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.uncertain, 'bunny.code': 'internal'}, command);
+        });
+      }
       return reply;
     });
   }

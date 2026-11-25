@@ -199,7 +199,7 @@ class Companions {
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries,
       // The owner's knowledge notes reach a companion's context only once the owner turns them on for it (Hub #2029).
       knowledge: () => this.knowledge?.store.active().entries ?? [], speak,
-      coding: this.options.coding ?? (() => coding.endpoint()), delegate, backgroundCoding: this.options.delegate === undefined, codingJob: requestId => coding.jobForAttempt(requestId), handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
+      coding: this.options.coding ?? (() => coding.endpoint()), delegate, backgroundCoding: this.options.delegate === undefined, codingJob: requestId => coding.jobForAttempt(requestId), stopCodingJob: (jobId, operationId) => coding.prepareStop(jobId, operationId), handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();
     await this.preferences.start();

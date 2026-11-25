@@ -40,8 +40,19 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   // The core's tracked dispatcher forwards a dispatch to the module's coding-run responder, once per request ID.
   const dispatched: string[] = [], work: Command<CodingWork>[] = [];
+  let heldDispatch: Promise<void> | undefined;
+  const holdDispatch = (): (() => void) => {
+    let release = (): void => {};
+    heldDispatch = new Promise(resolve => {release = resolve;});
+    return release;
+  };
   await core.respond<{requestId: string}>('bunny.cmd.coding-dispatch.assistant', async command => {
     dispatched.push(command.data.requestId);
+    if (heldDispatch !== undefined) {
+      const held = heldDispatch;
+      heldDispatch = undefined;
+      await held;
+    }
     const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
       {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
@@ -82,6 +93,14 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
   };
+  const stop = async (jobId: string, operationId: string): Promise<RequestResult> => {
+    const requestId = randomUUID();
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'stop-coding-job', jobId, operationId}))});
+    if (staged === undefined || 'error' in staged) return {status: 'rejected', requestId, error: staged ?? errorBody('unavailable')};
+    return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+  };
   type SavedMessage = {id: string; taskId: string; role: string; text: string; follows?: string};
   const messages = async (profile: AssistantProfile, conversationId?: string): Promise<SavedMessage[]> => {
     const content = await module.manifest.content?.('conversation', {query: conversationId === undefined ? {profile} : {profile, view: 'recent', conversationId}, signal: new AbortController().signal});
@@ -107,7 +126,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     }
     return assert.fail(`Missing message ${String(pattern)}`);
   };
-  return {module: () => module, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, task, control, send, newConversation, messages, waitMessages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
+  return {module: () => module, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}};
 }
 
@@ -256,8 +275,9 @@ void test('a named stop with no worker confirmation leaves a sibling running', {
   await w.progress({operationId: reachy.operationId, status: 'started'});
   await settle(() => w.coding().runs?.every(run => run.status === 'started') === true);
   w.refuseStop();
-  assert.deepEqual(await w.module().stopCodingJob(`${bunny.operationId}-job`, reachy.operationId), errorBody('not-found'));
-  assert.deepEqual(await w.module().stopCodingJob(`${bunny.operationId}-job`, bunny.operationId), {status: 'accepted'});
+  const wrong = await w.stop(`${bunny.operationId}-job`, reachy.operationId);
+  assert.equal(wrong.status, 'rejected');
+  assert.equal((await w.stop(`${bunny.operationId}-job`, bunny.operationId)).status, 'accepted');
   await w.waitMessages('bunny', /stop is unconfirmed/);
   assert.deepEqual(w.work.filter(command => command.data.action === 'cancel').map(command => command.data.operationId), [bunny.operationId]);
   assert.equal(w.coding().runs?.find(run => run.operationId === reachy.operationId)?.status, 'started');
@@ -298,4 +318,79 @@ void test('an earlier saved delegation interrupt and unsent hand-off survive the
   await w.waitMessages('bunny', /Synthetic pre-change result/);
   await settle(() => w.task('bunny')?.status === 'succeeded');
   assert.deepEqual(w.dispatched, [operationId]);
+});
+
+
+void test('a failed terminal commit retries the first evidence without sending another worker command', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic persistence job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  const operationId = w.starts()[0]?.data.operationId ?? assert.fail('attempt');
+  const db = w.database();
+  await w.progress({operationId, status: 'started'});
+  await settle(() => w.coding().active?.status === 'started');
+  let failures = 0;
+  db.function('fail_first_result', () => {failures += 1; return failures === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_result BEFORE INSERT ON companion_coding_job_updates
+    WHEN NEW.kind='result' AND fail_first_result()=1 BEGIN SELECT RAISE(ABORT,'synthetic result insert failure'); END`);
+  await w.progress({operationId, status: 'completed', result: result('Synthetic first saved completion.')});
+  await settle(() => failures === 1);
+  assert.equal(w.coding().active?.operationId, operationId);
+  await w.progress({operationId, status: 'failed', reason: 'refused', result: result('Synthetic conflicting later evidence.')});
+  w.advance(1000);
+  const saved = await w.waitMessages('bunny', /Synthetic first saved completion/);
+  assert.doesNotMatch(JSON.stringify(saved), /Synthetic conflicting later evidence/);
+  assert.equal(w.starts().length, 1);
+  await w.restart();
+  assert.equal((await w.messages('bunny')).filter(message => message.id === `${operationId}-job-result`).length, 1);
+});
+
+void test('an interrupted dispatch restores the job receipt, reports uncertainty and never resends', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  const release = w.holdDispatch();
+  try {
+    assert.equal((await w.send('bunny', 'Synthetic ambiguous job')).status, 'accepted');
+    await w.approved('bunny');
+    await settle(() => w.dispatched.length === 1);
+    const operationId = w.dispatched[0] ?? assert.fail('dispatch');
+    const messages = await w.waitMessages('bunny', /Coding job .* was queued/);
+    assert.ok(messages.some(message => message.id === `${operationId}-job`));
+    assert.equal(w.starts().length, 0);
+    await w.restart();
+    const restored = await w.waitMessages('bunny', /uncertain \(lost\)/);
+    assert.equal(restored.filter(message => message.id === `${operationId}-job`).length, 1);
+    assert.ok(restored.some(message => message.id === `${operationId}-job-result` && message.follows === `${operationId}-job`));
+    assert.equal((await w.enable()).status, 'accepted');
+    release();
+    for (let turns = 0; turns < 20; turns += 1) await new Promise(resolve => {setImmediate(resolve);});
+    assert.deepEqual(w.dispatched, [operationId]);
+    assert.equal(w.starts().length, 0);
+  } finally {release();}
+});
+
+
+void test('a failed job receipt rolls back job admission and prevents dispatch', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic job with failed receipt')).status, 'accepted');
+  const db = w.database();
+  let attempts = 0;
+  db.function('reject_job_receipt', () => {attempts += 1; return 1;});
+  db.exec(`CREATE TEMP TRIGGER fail_job_receipt BEFORE INSERT ON assistant_messages
+    WHEN NEW.id LIKE '%-job' AND reject_job_receipt()=1 BEGIN SELECT RAISE(ABORT,'synthetic receipt insert failure'); END`);
+  await w.approved('bunny');
+  await settle(() => attempts === 1 && w.task('bunny')?.status === 'succeeded');
+  assert.equal(db.prepare('SELECT job_id FROM companion_coding_jobs').get(), undefined);
+  assert.equal(db.prepare('SELECT operation_id FROM companion_coding_waiting').get(), undefined);
+  assert.equal(w.dispatched.length, 0);
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /was queued/);
+  await w.restart();
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal(w.dispatched.length, 0);
 });

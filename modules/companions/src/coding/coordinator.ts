@@ -295,32 +295,38 @@ export class CodingCoordinator {
       } catch (error) {this.#storageFailure(error, update);}
     }
   }
-  /** Stops only the job and attempt the caller named. Terminal progress remains the evidence of a worker stop. */
-  async stopJob(jobId: string, operationId: string): Promise<Reply> {
-    if (this.#closed || this.context.signal.aborted) return errorBody('unavailable');
+  /** Records stop intent inside the caller's transaction; the returned work can run after commit. */
+  prepareStop(jobId: string, operationId: string): {code: 'unavailable' | 'not-found' | 'invalid-state'} | {committed: () => Promise<void>} {
+    if (this.#closed || this.context.signal.aborted) return {code: 'unavailable'};
     const job = this.#store.job(operationId);
-    if (job === undefined || job.jobId !== jobId) return errorBody('not-found');
-    if (this.#store.resultSaved(operationId)) return errorBody('invalid-state');
+    if (job === undefined || job.jobId !== jobId) return {code: 'not-found'};
+    if (this.#store.resultSaved(operationId)) return {code: 'invalid-state'};
     const waiting = this.#store.waiting().find(record => record.operationId === operationId);
     const active = this.#active.get(operationId);
-    if (waiting === undefined && (active === undefined || active.settling)) return errorBody('invalid-state');
-    try {
-      let first = false;
-      await this.outbox.transaction(() => {
-        first = this.#store.requestStop(operationId);
-        if (!first || waiting === undefined || waiting.sending) return;
-        this.#store.unwait(operationId);
-        this.#store.update({...waiting, kind: 'result', text: 'Cancelled before dispatch. The worker was never sent a start.'});
-      });
-      if (!first) return {status: 'accepted'};
-      if (waiting !== undefined && !waiting.sending) {
-        await this.#deliverJobUpdates(operationId);
+    if (waiting === undefined && (active === undefined || active.settling)) return {code: 'invalid-state'};
+    if (!this.#store.requestStop(operationId)) return {committed: () => Promise.resolve()};
+    if (waiting !== undefined && !waiting.sending) {
+      this.#store.unwait(operationId);
+      this.#store.update({...waiting, kind: 'result', text: 'Cancelled before dispatch. The worker was never sent a start.'});
+      return {committed: async () => {
         this.#changed();
         this.#drain();
-      } else if (active !== undefined && this.#active.get(operationId) === active && !active.settling) {
+        await this.#deliverJobUpdates(operationId);
+      }};
+    }
+    return {committed: () => {
+      if (active !== undefined && this.#active.get(operationId) === active && !active.settling && !this.#closed) {
         active.phase = 'cancelling'; this.#changed();
-        void this.#stopAttempt(active);
+        return this.#stopAttempt(active);
       }
+      return Promise.resolve();
+    }};
+  }
+  async stopJob(jobId: string, operationId: string): Promise<Reply> {
+    try {
+      const stop = await this.outbox.transaction(() => this.prepareStop(jobId, operationId));
+      if ('code' in stop) return errorBody(stop.code);
+      void stop.committed().catch(error => {this.#storageFailure(error);});
       return {status: 'accepted'};
     } catch (error) {
       this.#storageFailure(error);
@@ -482,22 +488,36 @@ export class CodingCoordinator {
     const active = 'settling' in record ? record : undefined;
     if (active !== undefined) {if (active.settling || this.#active.get(active.operationId) !== active) return; active.settling = true; active.cancel();}
     const text = describeResult(status, result, reason);
-    let job: CodingJob | undefined;
-    try {
-      job = this.#store.job(record.operationId);
-      await this.outbox.transaction(add => {
-        this.#store.settle(record.operationId, status);
-        if (job !== undefined) this.#store.update({...record, kind: 'result', text});
-        if (outcome !== undefined) this.#addOutcome(add, record, outcome, record.started ? 'observed' : 'none');
-      });
-    } catch (error) {this.#storageFailure(error, record);}
-    if (active !== undefined) {this.#active.delete(active.operationId); this.#changed();}
-    try {
-      if (job !== undefined) await this.#deliverJobUpdates(record.operationId, startup);
-      else await this.deliver(record.taskId, text, {traceparent: record.traceparent},
-      {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : `the coding worker reported that the task ${status}`}, startup);}
-    catch (error) {this.#storageFailure(error, record);}
-    if (active !== undefined) this.#drain();
+    // Keep the first terminal observation while the transaction is unavailable. Retrying only local persistence
+    // leaves the operation fenced and never sends another worker command.
+    let retryMs = 1000;
+    const persist = async (): Promise<void> => {
+      if (this.#closed || this.context.signal.aborted) return;
+      let job: CodingJob | undefined;
+      try {
+        job = this.#store.job(record.operationId);
+        await this.outbox.transaction(add => {
+          this.#store.settle(record.operationId, status);
+          if (job !== undefined) this.#store.update({...record, kind: 'result', text});
+          if (outcome !== undefined) this.#addOutcome(add, record, outcome, record.started ? 'observed' : 'none');
+        });
+      } catch (error) {
+        if (retryMs === 1000) this.#storageFailure(error, record);
+        if (active !== undefined && !this.#closed && !this.context.signal.aborted) {
+          active.cancel = this.context.scheduler.after(retryMs, () => {void persist();});
+          retryMs = Math.min(retryMs * 2, 30_000);
+        }
+        return;
+      }
+      if (active !== undefined) {this.#active.delete(active.operationId); this.#changed();}
+      try {
+        if (job !== undefined) await this.#deliverJobUpdates(record.operationId, startup);
+        else await this.deliver(record.taskId, text, record,
+          {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : `the coding worker reported that the task ${status}`}, startup);
+      } catch (error) {this.#storageFailure(error, record);}
+      if (active !== undefined) this.#drain();
+    };
+    await persist();
   }
   #outcome(record: CodingResponsibility, outcome: {result: 'succeeded' | 'failed' | 'uncertain'; code?: string}, evidence: 'observed' | 'none'): Promise<void> {
     return this.outbox.transaction(add => {this.#addOutcome(add, record, outcome, evidence);});

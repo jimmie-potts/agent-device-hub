@@ -251,7 +251,7 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 
 #### Scenario: Busy slot on the page
 - **WHEN** a companion's slot is busy and its conversation proposes a delegation that the owner approves
-- **THEN** the proposal says the hand-off will wait, the delegated work says the coding worker is busy and nothing has been sent, the details show the busy slots and the waiting hand-off, and the card changes to the ordinary wait once the hand-off is sent
+- **THEN** the proposal says the hand-off will wait, Conversation shows a background job reference, and details show the busy slots and waiting hand-off until it is sent
 
 #### Scenario: Plan usage
 - **WHEN** the selected worker's readiness carries limit windows from its latest run
@@ -958,7 +958,7 @@ The owner SHALL be able to steer a conversation's unfinished task with a new mes
 
 ### Requirement: Background coding jobs in Conversation
 
-An approved coding delegation SHALL return a stable job ID and let its Conversation turn finish without waiting for dispatch, worker admission or a result. The approved job SHALL remain independent of subsequent turns and chat selection. The result SHALL reach the original conversation and exchange by the saved attempt identity.
+An approved coding delegation SHALL return a stable job ID and let its Conversation turn finish without waiting for dispatch, worker admission or a result. The approved job SHALL remain independent of subsequent turns and chat selection. The result SHALL reach the original conversation and exchange by the saved attempt identity. Conversation SHALL offer an authenticated stop control on a queued or running job reference. It SHALL name the exact job and attempt, including when opened in an earlier chat.
 
 #### Scenario: Worker still running
 

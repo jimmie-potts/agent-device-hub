@@ -740,8 +740,8 @@ attempt first. A restart preserves unsent jobs and reports an ambiguous start
 as uncertain without reissuing it. A result saved before an interruption can
 still reach its original exchange.
 
-**Cancel task** ends the Conversation turn. A named job stop targets one
-attempt. It removes a known unsent attempt, or asks the worker to stop a
+**Cancel task** ends the Conversation turn. **Stop coding job** on the saved
+job receipt targets one attempt. It removes a known unsent attempt, or asks the worker to stop a
 running attempt. A stop stays unconfirmed until the worker reports a terminal
 observation. The coordinator still handles saved pre-change delegation
 interrupts, including their task cancellation behavior.

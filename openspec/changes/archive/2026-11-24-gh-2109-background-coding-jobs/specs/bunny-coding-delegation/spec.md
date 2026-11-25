@@ -2,7 +2,7 @@
 
 ### Requirement: Durable coding job ownership
 
-Companions SHALL save the job ID, originating conversation and exchange, approved repository and brief, and attempt operation ID before dispatch. The current dispatcher and worker SHALL continue to use the attempt operation ID. An attempt's terminal status and pending Conversation delivery SHALL be saved together. Duplicate and late progress SHALL only be considered for the attempt they identify.
+Companions SHALL save the job ID, originating conversation and exchange, approved repository and brief, and attempt operation ID before dispatch. The current dispatcher and worker SHALL continue to use the attempt operation ID. An attempt's terminal status and pending Conversation delivery SHALL be saved together. If that write fails, Companions SHALL retain the first observed terminal evidence while it retries the write. It SHALL NOT send another worker command. A restart without durable terminal evidence SHALL report uncertainty. Duplicate and late progress SHALL only be considered for the attempt they identify.
 
 #### Scenario: Restore after interruption
 
@@ -33,8 +33,8 @@ An approved delegation SHALL go from the companions module to the core as `codin
 - **THEN** nothing is sent for it, the coding state lists it as waiting, another companion's run ending sends nothing, and its own slot freeing sends it once
 
 #### Scenario: Cancel a waiting hand-off
-- **WHEN** the owner stops a named job whose hand-off waits for its slot, whether the coordinator hears the cancel at once, while the hand-off's dispatch is on its way, or only after a restart
-- **THEN** nothing runs for it, its task hears nothing more, and the slot freeing later sends nothing for it
+- **WHEN** the owner stops a named job whose hand-off has not been sent
+- **THEN** its original exchange reports cancellation before dispatch and freeing the slot sends nothing for it
 
 #### Scenario: Restart never resends
 - **WHEN** the runtime restarts with a responsibility the worker had not finished and a never-sent waiting hand-off behind it

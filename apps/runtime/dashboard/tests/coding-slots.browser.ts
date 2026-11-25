@@ -84,11 +84,19 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
     await details.getByText(/^Running task [0-9a-f]{8} \(dispatching\)$/).waitFor();
     await shot(page, '02-two-companions-running');
     await closeDetails.click();
-    for (const [index, entry] of starts().entries()) {
-      await report(slotted, {operationId: entry.operationId, status: 'started'});
-      await report(slotted, {operationId: entry.operationId, status: 'completed', result: result(`Synthetic result ${String(index + 1)}.`)});
-    }
-    await conversation.getByText(/Synthetic result 2\./).waitFor();
+    const [bunnyFirst, reachyFirst] = starts();
+    assert.ok(bunnyFirst !== undefined && reachyFirst !== undefined);
+    for (const entry of [bunnyFirst, reachyFirst]) await report(slotted, {operationId: entry.operationId, status: 'started'});
+    const stopReachy = conversation.locator(`[data-message="${reachyFirst.operationId}-job"]`).getByRole('button', {name: 'Stop coding job'});
+    await stopReachy.focus();
+    await stopReachy.press('Enter');
+    const stops = () => work.filter(entry => entry.action === 'cancel');
+    await waitFor(() => stops().length === 1, 'exact named stop reached the worker');
+    assert.equal(stops()[0]?.operationId, reachyFirst.operationId);
+    await conversation.getByText(/stop itself is unconfirmed/).waitFor();
+    await report(slotted, {operationId: reachyFirst.operationId, status: 'cancelled', reason: 'cancelled', result: null});
+    await conversation.getByText(/cancelled \(cancelled\)/).waitFor();
+    await report(slotted, {operationId: bunnyFirst.operationId, status: 'completed', result: result('Synthetic result 1.')});
     await select('bunny', 'B.U.N.N.Y.');
     await conversation.getByText(/Synthetic result 1\./).waitFor();
     const off = await slotted.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.2', data: {requestId: randomUUID(), action: 'disable'}}, {timeoutMs: 5000});
@@ -129,5 +137,5 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
     assert.equal(JSON.stringify(world.logs).includes('synthetic test for Reachy'), false, 'briefs reach no diagnostic record');
     assert.deepEqual(errors, []);
   } finally {await worker.close(); await context.close(); await world.close();}
-  process.stdout.write('Coding slots browser: three-slot worker with plan usage, two companions running at once with tagged starts, an older worker\'s one slot making an approved hand-off wait in the background, and its automatic single send when the slot freed passed.\n');
+  process.stdout.write('Coding slots browser: three-slot worker with plan usage, two companions running at once with tagged starts, an owner stop isolated to one attempt, and an older worker\'s one slot making an approved hand-off wait in the background, and its automatic single send when the slot freed passed.\n');
 }
