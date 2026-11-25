@@ -129,6 +129,7 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
 type WriterHandoff = {
   operationId: string; endpoint: RemoteEndpoint; repository: string; worktree: WorktreeProof; successor: 'claude-code' | 'codex';
   base: string; writerHome?: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
+  crossHarness: boolean;
 };
 type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; model?: string; modelReport?: Promise<void>; steer: AdapterSteer | undefined; controller: AbortController};
@@ -591,7 +592,7 @@ export class CodingWorker {
     let proof: WriterHandoff | undefined;
     if (data.continuation !== undefined) {
       proof = this.#handoffs.get(data.continuation.token);
-      if (proof === undefined || proof.operationId !== data.continuation.fromOperationId || proof.endpoint !== this.#endpoint ||
+      if (proof?.crossHarness !== true || proof.operationId !== data.continuation.fromOperationId || proof.endpoint !== this.#endpoint ||
         proof.repository !== repository.name || harness !== proof.successor || this.configuration.uncapped !== true) {
         return errorBody('invalid-state', {detail: 'The verified handoff is no longer available.'});
       }
@@ -958,19 +959,22 @@ export class CodingWorker {
     const reason = timedOut ? 'timeout' : running.cancelled ? evidence.uncertain === true ? 'lost' : 'cancelled' :
       evidence.reason ?? (evidence.uncertain === true ? 'lost' : undefined);
     const result = assembleAdapterResult(repository, base, head, changedFiles, evidence, reason, running.sessionId, this.#now() - started);
-    let handoffToken: string | undefined;
+    let proofToken: string | undefined;
     const endpoint = running.endpoint;
+    const crossHarness = changedFiles.length > 0 && (reason !== undefined || result.outcome !== 'tested-candidate');
+    const nativeCodex = adapter.id === 'codex' && this.configuration.nativeClients?.harnesses.includes('codex') === true &&
+      this.#adapterHealth.get('codex')?.version === '0.163.0' && evidence.writerFence?.home !== undefined &&
+      endingSession !== undefined && running.sessionId === endingSession && NATIVE_UUID.test(endingSession);
     if (successor !== undefined && sourceIdentity !== undefined && protectedRoot !== undefined && evidence.writerFence?.root === protectedRoot.path &&
       evidence.writerStopped === true && evidence.uncertain !== true && endpoint !== undefined &&
-      base !== null && head !== null && changedFiles.length > 0 && reason !== 'refused' &&
-      (reason !== undefined || result.outcome !== 'tested-candidate')) {
+      base !== null && head !== null && reason !== 'refused' && (crossHarness || nativeCodex)) {
       const fingerprint = await worktreeFingerprint(worktree, (cwd, args) => this.#git(cwd, args, {trim: false, timeoutMs: 15_000}));
       const reserved = await protectedCheckout(protectedRoot.path).catch(() => undefined);
       if (fingerprint?.head === head && sameCheckout(fingerprint.identity, sourceIdentity) &&
         reserved?.identity === protectedRoot.identity && this.#endpoint === endpoint) {
-        handoffToken = randomUUID();
+        proofToken = randomUUID();
         const {home} = evidence.writerFence;
-        this.#handoffs.set(handoffToken, {operationId: running.operationId, endpoint, repository, successor, worktree: fingerprint, base,
+        this.#handoffs.set(proofToken, {operationId: running.operationId, endpoint, repository, successor, worktree: fingerprint, base, crossHarness,
           ...(home === undefined ? {} : {writerHome: home}), protectedRoot, checks: continuationChecks(result.checks)});
       } else if (this.#endpoint === endpoint) {
         result.limitations = [
@@ -979,9 +983,9 @@ export class CodingWorker {
         ];
       }
     }
-    if (handoffToken === undefined && protectedRoot !== undefined) await rmdir(protectedRoot.path).catch(() => {});
-    const handoff = handoffToken === undefined ? {} : {handoffToken};
-    await this.#offerNative(running, adapter, worktree, evidence, handoffToken);
+    if (proofToken === undefined && protectedRoot !== undefined) await rmdir(protectedRoot.path).catch(() => {});
+    const handoff = proofToken === undefined || !crossHarness ? {} : {handoffToken: proofToken};
+    await this.#offerNative(running, adapter, worktree, evidence, proofToken);
     if (reason === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'completed', result, ...handoff}); return;}
     const status = evidence.uncertain === true && !timedOut ? 'uncertain' : running.cancelled ? 'cancelled' : 'failed';
     await this.#progress(running, {operationId: running.operationId, status, reason, result, ...handoff});

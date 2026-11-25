@@ -163,10 +163,19 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await card(second).locator('code').filter({hasText: second.operationId}).waitFor();
     assert.equal(await card(second).getByRole('button', {name: /^Continue with/}).count(), 0);
     assert.equal(await card(second).getByRole('button', {name: native}).count(), 0);
+    const nativeSession = 'fixture-continued-native';
+    await progress({operationId: continuation.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: nativeSession});
+    await progress({operationId: continuation.operationId, status: 'completed', harness: 'claude-code', sessionId: nativeSession,
+      result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: revision, head: revision,
+        changedFiles: ['fixture.ts'], checks: [], findings: [], limitations: [],
+        summary: 'Synthetic continued work.', sessionId: nativeSession, usage: null}});
+    await card(second).getByText(/ · completed$/).waitFor();
+    await page.reload();
+    await card(second).getByText(/ · completed$/).waitFor();
+    await card(second).locator('dd').filter({hasText: nativeSession}).waitFor();
+    await card(second).locator('dd').filter({hasText: 'claude-code'}).waitFor();
 
     const successor = continuation.operationId;
-    await progress({operationId: successor, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'fixture-successor-session'});
-    await progress({operationId: successor, status: 'cancelled', reason: 'cancelled', result: null, harness: 'claude-code'});
     await progress({operationId: successor, status: 'native-client', clients: ['terminal'], state: 'available', observedAtMs: Date.now()}, '2.6');
     const nativeDetails = card(second).locator('details').filter({has: page.getByText('Native clients', {exact: true})});
     if (!await nativeDetails.evaluate(element => element.hasAttribute('open'))) await card(second).getByText('Native clients', {exact: true}).click();

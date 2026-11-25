@@ -60,8 +60,9 @@ node apps/runtime/bin/coding-worker.mjs native /absolute/private/coding-worker.j
 ```
 
 The eligible Codex CLI 0.163.0 route resumes the exact saved thread in its
-dedicated worker profile. It requires a verified #2112 partial attempt and
-copies its checkout into the protected successor directory. The worker checks
+dedicated worker profile. It reuses the #2112 writer fence and checkout proof
+to copy the checkout into a protected successor. A clean or committed
+completion can qualify without receiving a cross-harness continuation token. The worker checks
 the new write boundary against the original checkout. A no-turn app-server
 resume must return the same thread, the successor as its only workspace root,
 the selected permissions and current personal subscription. The terminal uses

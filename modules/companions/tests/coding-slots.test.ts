@@ -992,7 +992,12 @@ void test('an uncapped attempt uses observed setup deadlines without timing out 
 for (const [origin, destination] of [['codex', 'claude-code'], ['claude-code', 'codex']] as const)
 void test(`an owner-approved Auto job runs on ${origin} and explicitly continues on ${destination}`, {timeout: 30_000}, async context => {
   const brief = 'Exact owner-approved brief. ' + 'x'.repeat(4096 - 'Exact owner-approved brief. '.length);
-  const w = await world(context, {provider: delegating('bunny', brief)});
+  const policy = sharing();
+  let denyBrief: 'private-conversation' | 'coding-worker' | undefined;
+  const share = Object.assign((query: ShareQuery) => policy(query) &&
+    !(query.destination === denyBrief && query.source === 'coding' && query.field === 'brief'),
+  {revokesFields: true, allowsDerived: (query: ShareQuery) => policy.allowsDerived?.(query) !== false});
+  const w = await world(context, {provider: delegating('bunny', brief), share});
   const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
     limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
   const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus', capabilities: {...claude.capabilities, steering: 'live'}};
@@ -1036,6 +1041,20 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   const ready = await w.jobDetail(jobId);
   assert.deepEqual(ready.continuation, {fromOperationId: operationId, harness: destination, head, changedFiles: ['partial.txt']});
   assert.equal(ready.continuationReason, undefined);
+  for (const destinationGrant of ['private-conversation', 'coding-worker'] as const) {
+    denyBrief = destinationGrant;
+    const denied = await w.jobDetail(jobId);
+    assert.equal(denied.continuation, null);
+    assert.match(denied.continuationReason ?? '', /brief sharing is not permitted/);
+    const refused = await w.continueJob(jobId, operationId, destination);
+    assert.equal(refused.status, 'rejected');
+    if (refused.status === 'rejected') assert.equal(refused.error.error.code, 'forbidden');
+    assert.deepEqual((await w.jobDetail(jobId)).attempts.map(attempt => attempt.operationId), [operationId]);
+    assert.equal(w.starts().length, 1);
+  }
+  denyBrief = undefined;
+  assert.deepEqual((await w.jobDetail(jobId)).continuation, ready.continuation);
+
   const requestId = randomUUID();
   assert.equal((await w.continueJob(jobId, operationId, destination, requestId)).status, 'accepted');
   assert.equal((await w.continueJob(jobId, operationId, destination, requestId)).status, 'accepted');
@@ -1068,6 +1087,14 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
     [operationId, origin, initialSession, 'cancelled', 'git diff'],
     [resumed.operationId, destination, resumedSession, 'completed', 'unit test'],
   ]);
+  const assertCard = async (): Promise<void> => {
+    const card = (await w.jobs({jobId, scope: 'all'})).jobs[0];
+    assert.deepEqual([card?.operationId, card?.status, card?.harness, card?.sessionId],
+      [resumed.operationId, 'completed', destination, resumedSession]);
+  };
+  await assertCard();
+  await w.restart();
+  await assertCard();
   assert.doesNotMatch(JSON.stringify(detail), new RegExp(handoffToken));
 });
 

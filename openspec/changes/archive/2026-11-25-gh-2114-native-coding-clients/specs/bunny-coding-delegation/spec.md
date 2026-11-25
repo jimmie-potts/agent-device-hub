@@ -9,6 +9,11 @@ An authorized owner SHALL be able to request a qualified native client for the c
 - **WHEN** the owner selects terminal continuation for one saved attempt and its local helper is waiting
 - **THEN** only that attempt's client receives its exact saved identity and qualified checkout, and a competing writer is refused
 
+#### Scenario: A completed Codex attempt has a verified isolated successor
+
+- **WHEN** a successful Codex attempt has a clean or committed checkout and meets the native writer fence and saved-session requirements
+- **THEN** Jobs can offer exact native terminal continuation without offering a cross-harness handoff
+
 #### Scenario: Claude Desktop acknowledges the saved attempt
 
 - **WHEN** the owner authorizes Claude Desktop takeover after the worker stopped and the exact launcher acknowledgement is observed

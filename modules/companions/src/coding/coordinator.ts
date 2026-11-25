@@ -169,7 +169,7 @@ export class CodingCoordinator {
         jobs.push({...job, companion, status, ...(label === '' ? {} : {label}), ...(nativeClient === undefined ? {} : {nativeClient}),
           ...(attempt?.harness == null ? {} : {harness: attempt.harness}), steering: this.#steering(active), messages: this.#store.messages(job.jobId).filter(message =>
             this.#seams.jobVisible?.({...job, operationId: message.operationId}, companion) !== false),
-          ...context, ...(active === undefined ? {} : this.#runContext(active))});
+          ...context, ...(attempt?.sessionId == null ? {} : {sessionId: attempt.sessionId}), ...(active === undefined ? {} : this.#runContext(active))});
       }
       if (rows.length < CODING_JOB_PAGE_SIZE + 1) return {version: 1, jobs, next: null};
       cursor = rows.at(-1)?.jobId ?? cursor;
@@ -194,6 +194,9 @@ export class CodingCoordinator {
     if (choice.harness === undefined) return null;
     return {fromOperationId: attempt.operationId, harness, head: attempt.result.head, changedFiles: attempt.result.changedFiles};
   }
+  #canContinue(job: CodingJob, companion: CodingCompanion): boolean {
+    return this.#seams.jobBriefVisible?.(job, companion) !== false && this.#seams.mayShare?.(job.taskId, job.repository) !== false;
+  }
   jobDetail(jobId: string): CodingJobDetail | undefined {
     const job = this.#store.jobById(jobId);
     if (job === undefined) return undefined;
@@ -216,9 +219,12 @@ export class CodingCoordinator {
         status: active?.phase ?? this.#store.terminalStatus(job.operationId) ?? (this.#store.resultSaved(job.operationId) ? 'uncertain' : 'queued'),
         selectionReason: 'Legacy worker selection.', result: null});
     }
-    const latest = last, continuation = this.#continuation(latest);
+    const latest = last, candidate = this.#continuation(latest);
+    const briefDenied = candidate !== null && (companion === undefined || !this.#canContinue({...job, operationId: current}, companion));
+    const continuation = briefDenied ? null : candidate;
     const activeOperationId = this.#store.resultSaved(current) ? null : current;
     const continuationReason = continuation !== null || activeOperationId !== null || latest === undefined ? undefined :
+      briefDenied ? 'Coding brief sharing is not permitted.' :
       latest.status === 'uncertain' ? 'The previous writer may still be active.' :
       latest.status === 'completed' && latest.result?.outcome === 'tested-candidate' ? 'The previous attempt completed without a partial result.' :
       'Continuation requires a stopped, confined writer, an unchanged checkout and an eligible subscription in the other harness.';
@@ -226,7 +232,7 @@ export class CodingCoordinator {
       ...(continuationReason === undefined ? {} : {continuationReason})};
   }
   /** Called inside the assistant admission transaction. Dispatch starts only after commit. */
-  prepareContinuation(data: ContinueCodingControl, parent: TraceContext): {committed: () => void} | {code: 'not-found' | 'invalid-state' | 'unavailable'; detail: string} {
+  prepareContinuation(data: ContinueCodingControl, parent: TraceContext): {committed: () => void} | {code: 'not-found' | 'invalid-state' | 'unavailable' | 'forbidden'; detail: string} {
     const job = this.#store.job(data.operationId);
     if (job?.jobId !== data.jobId) return {code: 'not-found', detail: 'No such coding job attempt.'};
     const attempt = this.#store.attempts(job.jobId).at(-1);
@@ -235,6 +241,7 @@ export class CodingCoordinator {
     const next = this.#continuation(attempt);
     if (next === null || attempt.handoffToken === undefined) return {code: 'unavailable', detail: 'A verified stopped writer, worktree and eligible second harness are required.'};
     if (next.harness !== data.harness) return {code: 'invalid-state', detail: 'Choose the other harness to continue.'};
+    if (!this.#canContinue(job, attempt.companion)) return {code: 'forbidden', detail: 'Coding brief sharing is not permitted.'};
     const operationId = randomUUID();
     this.#store.createAttempt({jobId: job.jobId, operationId, companion: attempt.companion, choice: data.harness, harness: data.harness,
       selectionReason: `Explicit continuation of ${data.operationId}.`, continuation: {fromOperationId: data.operationId, token: attempt.handoffToken}});

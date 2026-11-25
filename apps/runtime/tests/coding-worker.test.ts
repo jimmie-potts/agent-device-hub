@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {promisify} from 'node:util';
-import type {CodingAttemptContext, CodingProgress, CodingWork, CodingWorkerProgress} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingAttemptContext, CodingNativeClient, CodingProgress, CodingWork, CodingWorkerProgress} from '@jimmie-potts/event-contracts/v2/coding';
 import type {Command, Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
@@ -39,7 +39,7 @@ async function repository(t: TestContext): Promise<string> {
 }
 function fakeEdge() {
   const requests: {family: string; data: unknown; dataschema?: string}[] = [], progress: CodingProgress[] = [];
-  const contexts: CodingAttemptContext[] = [];
+  const contexts: CodingAttemptContext[] = [], nativeClients: CodingNativeClient[] = [];
   // Which endpoint each report went out on, so a run's report after its endpoint closed is seen to go nowhere.
   const reportedOn: string[] = [];
   let responder: ((command: Command<CodingWork>) => Reply) | undefined, closed = 0, opened = 0, refuse = 0, disconnected = 0, onClosed: (() => void) | undefined, onDiagnostic: ((diagnostic: {event: string}) => void) | undefined;
@@ -48,7 +48,8 @@ function fakeEdge() {
     publish: (_family, draft) => {
       const report = draft.data as CodingWorkerProgress;
       if (report.status === 'attempt-context') contexts.push(report);
-      else if (report.status !== 'message-observed' && report.status !== 'native-client') {
+      else if (report.status === 'native-client') nativeClients.push(report);
+      else if (report.status !== 'message-observed') {
         progress.push(report);
         reportedOn.push(current);
       }
@@ -65,7 +66,7 @@ function fakeEdge() {
     return Promise.resolve({...endpoint, id, publish: (family: string, draft: {data: unknown}) => {current = id; return endpoint.publish(family, draft as never);}});
   }, close: () => {disconnected += 1; return Promise.resolve();}} as unknown as RemoteParticipant;
   const connect = (options: {onDiagnostic?: (diagnostic: {event: string}) => void}) => {onDiagnostic = options.onDiagnostic; return Promise.resolve(participant);};
-  return {connect: connect as unknown as typeof connectRemote, requests, progress, contexts, reportedOn, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened, disconnected: () => disconnected,
+  return {connect: connect as unknown as typeof connectRemote, requests, progress, contexts, nativeClients, reportedOn, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened, disconnected: () => disconnected,
     refuseNextEnable: () => {refuse += 1;},
     // The next endpoint close waits until released, as one that waits for the edge's answer does.
     holdNextClose: () => {held = new Promise(resolve => {releaseClose = resolve;});}, releaseClose: () => {releaseClose();},
@@ -694,5 +695,41 @@ for (const [origin, destination, scenarios] of [
       assert.equal(completed?.sessionId, resumedSession);
       assert.deepEqual(completed?.result?.checks, [{name: 'unit test', status: 'passed'}]);
     }
+  });
+}
+
+for (const committed of [false, true]) {
+  void test(`a completed Codex attempt can offer exact terminal continuation without a cross-harness token (commit: ${String(committed)})`, async t => {
+    const repo = await repository(t), edge = fakeEdge(), home = join(dirname(repo), 'native-profile');
+    await mkdir(home);
+    const sessionId = '7eedd100-0000-4000-8000-000000000001';
+    const codex: CodingAdapter = {
+      id: 'codex', capabilities: {steering: 'unsupported', resume: 'saved-session', review: true},
+      readiness: () => Promise.resolve({installed: 'yes', signedIn: 'yes', version: '0.163.0', plan: 'plus'}),
+      async run({worktree, session, continuationRoot}) {
+        if (committed) {
+          await writeFile(join(worktree, 'README.md'), 'Synthetic committed result.\n');
+          git(worktree, 'add', '--', 'README.md');
+          git(worktree, 'commit', '--quiet', '-m', 'Synthetic committed result');
+        }
+        await session(sessionId);
+        return {sessionId, writerStopped: true, writerFence: {root: continuationRoot ?? assert.fail('native fence root'), home},
+          structured: {outcome: 'tested-candidate', summary: 'Synthetic completed attempt.', checks: [], findings: [], limitations: []}};
+      },
+    };
+    const worker = new CodingWorker(parseConfiguration({...configuration(repo), schema: 'coding-worker/1.2',
+      nativeClients: {socket: join(dirname(repo), 'native.sock'), harnesses: ['codex']}}),
+    'fake-token', undefined, undefined, edge.connect, undefined, undefined, undefined, [codex]);
+    await worker.start();
+    t.after(() => worker.stop());
+    assert.deepEqual(edge.respond(command({action: 'start', requestId: 'clean', operationId: 'clean', taskId: 'synthetic-task', companion: 'bunny',
+      harness: 'codex', repository: 'agent-device-hub', brief: 'Review without editing.', bounds: {wallClockMs: 60_000, maxTurns: 4, budgetUsd: 1}})), {status: 'accepted'});
+    await until(() => edge.progress.some(entry => entry.status === 'completed'));
+    const completion = edge.progress.find(entry => entry.status === 'completed');
+    assert.deepEqual(completion?.result.changedFiles, committed ? ['README.md'] : []);
+    assert.equal(completion?.sessionId, sessionId);
+    assert.equal(completion?.handoffToken, undefined);
+    assert.deepEqual(edge.nativeClients.map(({operationId, clients, state}) => ({operationId, clients, state})),
+      [{operationId: 'clean', clients: ['terminal'], state: 'available'}]);
   });
 }
