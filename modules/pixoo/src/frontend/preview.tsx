@@ -1,6 +1,7 @@
 // Adapted from divoom-app-upgrade apps/web/src/preview.tsx; frames use the shared authenticated content reader.
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
+import {useCanvasBitmaps} from './bitmaps.js';
 
 type PreviewData = {renditionId: string; frameCount: number; durationMs: number | null;
   frames: {index: number; delayMs: number | null}[];
@@ -43,16 +44,10 @@ export function Preview({api, renditionId, active, onReady}: {
   const [animate, setAnimate] = useState(false);
   const [image, setImage] = useState<ImageBitmap>();
   const [failure, setFailure] = useState<string>();
-  // The preview owns every bitmap it decoded and has not closed. The shown bitmap is closed only once the next one
-  // replaces it, or when the preview unmounts, so a frame tick that commits with a newly decoded frame never closes the
-  // bitmap the canvas is about to draw. A decode that a newer frame superseded is closed at once, never shown (Hub #1900).
-  const owned = useRef(new Set<ImageBitmap>());
-  const release = useCallback((bitmap: ImageBitmap): void => { if (owned.current.delete(bitmap)) bitmap.close(); }, []);
-  useEffect(() => {
-    const bitmaps = owned.current;
-    return () => { for (const bitmap of bitmaps) bitmap.close(); bitmaps.clear(); };
-  }, []);
-  useEffect(() => () => { if (image !== undefined) release(image); }, [image, release]);
+  // Each decoded frame is kept until the next one replaces it, so a frame tick that commits with a newly decoded frame
+  // never closes the bitmap the canvas is about to draw. A decode that a newer frame superseded is closed at once (Hub #1900).
+  const {keep, drop} = useCanvasBitmaps(image);
+  useEffect(() => () => { if (image !== undefined) drop(image); }, [image, drop]);
   useEffect(() => {
     let disposed = false;
     if (!/^[a-f0-9]{64}$/.test(renditionId)) { setFailure('invalid-request'); return; }
@@ -68,11 +63,11 @@ export function Preview({api, renditionId, active, onReady}: {
     void api.image(`/modules/pixoo/content/frame.${renditionId}.${frame}`).then(async blob => {
       const decoded = await createImageBitmap(blob);
       if (disposed) { decoded.close(); return; }
-      owned.current.add(decoded);
+      keep(decoded);
       setImage(decoded);
     }).catch((error: unknown) => { if (!disposed) setFailure(codeOf(error)); });
     return () => { disposed = true; };
-  }, [api, renditionId, preview, frame]);
+  }, [api, renditionId, preview, frame, keep]);
   useEffect(() => {
     if (!active || !animate || failure !== undefined || preview === undefined || preview.frameCount < 2) return;
     const timer = window.setTimeout(() => { setFrame(value => (value + 1) % preview.frameCount); }, preview.frames[frame]?.delayMs ?? 100);
