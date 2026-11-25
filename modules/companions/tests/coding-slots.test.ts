@@ -1036,7 +1036,10 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   revoked.pop();
   // The saved association is required even if all grants currently allow the attempt.
   assert.equal(w.database().prepare("DELETE FROM companion_coding_job_updates WHERE operation_id=? AND kind='result'").run(resumed.operationId).changes, 1);
-  assert.doesNotMatch(JSON.stringify(await w.messages('bunny', conversation)), resultText);
+  const missingSource = /Synthetic continued work|Synthetic response based on the continuation/u;
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny', conversation)), missingSource);
+  share.revokesFields = false;
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny', conversation)), missingSource);
 });
 
 

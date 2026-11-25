@@ -389,6 +389,10 @@ export class AssistantStore {
       : this.database.prepare(query).all(conversationId)) as (MessageSource & {role: 'owner' | 'assistant'; text: string})[];
     return (permits === undefined ? rows : rows.filter(permits).slice(0, limit)).reverse().map(({role, text}) => ({role, text}));
   }
+  messageSource(id: string): MessageSource | undefined {
+    return this.database.prepare('SELECT id,role,task_id AS taskId,follows FROM assistant_messages WHERE id=?')
+      .get(id) as MessageSource | undefined;
+  }
   /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */
   savedMessage(taskId: string, id: string): (Pick<ConversationMessage, 'id' | 'role' | 'text'> & {follows: string | null}) | undefined {
     return this.database.prepare('SELECT id,role,text,follows FROM assistant_messages WHERE id=? AND task_id=?').get(id, taskId) as
@@ -474,8 +478,7 @@ export class AssistantStore {
   }
   #visibleMessage(row: MessageRow, visibility?: MessageVisibility): ConversationMessage {
     if (visibility === undefined) return messageOf(row);
-    const followed = row.follows === null ? undefined : this.database.prepare('SELECT id,role,task_id AS taskId,follows FROM assistant_messages WHERE id=?')
-      .get(row.follows) as MessageSource | undefined;
+    const followed = row.follows === null ? undefined : this.messageSource(row.follows);
     const follows = followed !== undefined && visibility.shows(followed) ? row.follows : null;
     const visible = row.artRequestId !== null && !visibility.attachment(row.artRequestId)
       ? {...row, artRequestId: null, artDescription: null} : row;

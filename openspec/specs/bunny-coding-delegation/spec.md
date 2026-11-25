@@ -262,4 +262,4 @@ A new coding job SHALL bind approval to Auto or a named harness. Auto SHALL choo
 
 - **WHEN** a saved coding update belongs to a continuation and the destination loses the repository, original task, original job or attempt grant
 - **THEN** Conversation, Jobs and later prompts withhold the affected facts and derived replies for that destination, including after restart
-- **AND** a continuation update without a verified saved job and attempt association stays private under a revocable policy
+- **AND** a continuation update and any derived reply stay private if the saved job and attempt association cannot be verified

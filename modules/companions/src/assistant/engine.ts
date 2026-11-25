@@ -156,6 +156,7 @@ const profile = (value: unknown): value is AssistantProfile => typeof value === 
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 /** A queued message's ID: the request ID that queued it, as the blocks define one. */
 const QUEUED_ID = /^[A-Za-z0-9_.-]{1,128}$/u;
+const ATTEMPT_UPDATE_ID = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})-(sent|stop-unconfirmed|result)$/u;
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** The tool an approved proposal runs, by its tool identifier. */
 const proposalTool = (proposal: Proposal): string => proposal.family === 'mode-set' ? SET_MODE : proposal.family === 'coding-dispatch' ? DELEGATE_CODING :
@@ -1194,7 +1195,7 @@ export class AssistantEngine {
   }
   #jobMessageAllowed(message: MessageSource, access: FieldAccess): boolean {
     const legacy = /^(.+-step-\d+)(-job)?(?:-(sent|stop-unconfirmed|result))?$/u.exec(message.id);
-    const updateId = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})-(sent|stop-unconfirmed|result)$/u.exec(message.id);
+    const updateId = ATTEMPT_UPDATE_ID.exec(message.id);
     // A normal Conversation reply uses its own task ID and the same result suffix.
     const continuation = updateId?.[1] === message.taskId ? null : updateId;
     const operationId = legacy?.[1] ?? continuation?.[1];
@@ -1203,7 +1204,7 @@ export class AssistantEngine {
     const followsJob = /-step-\d+-job$/u.test(follows ?? '');
     const jobMessage = followsJob || legacy?.[2] !== undefined || continuation !== null;
     const acceptsOldRecords = !canRevokeFields(this.options.share);
-    if (operationId === undefined) return !jobMessage || acceptsOldRecords;
+    if (operationId === undefined) return !jobMessage;
     if (!jobMessage && message.role !== 'tool') return true;
 
     const kind = legacy?.[3] ?? continuation?.[2];
@@ -1212,7 +1213,7 @@ export class AssistantEngine {
     // and the update owned by its attempt.
     const read = this.options.codingJobRead;
     const job = continuation !== null ? update === undefined ? undefined : read?.(operationId, update) : read?.(operationId);
-    if (job === undefined) return !jobMessage || acceptsOldRecords;
+    if (job === undefined) return continuation === null && (!jobMessage || acceptsOldRecords);
     if (job.taskId !== message.taskId || this.store.task(message.taskId)?.conversationId !== job.conversationId) return false;
     if (update !== undefined && (update.jobId !== job.jobId || codingUpdateMessageId(job, update.kind) !== message.id)) return false;
     return this.#codingJobAllowed(job, access);
@@ -1221,7 +1222,17 @@ export class AssistantEngine {
     if (this.store.task(taskId)?.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
     const acceptsOldRecords = !canRevokeFields(this.options.share);
     return this.store.calls(taskId).every(call => call.incompleteDisclosures !== true && (call.disclosures === undefined
-      ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => access(field.source, field.field, field.record))));
+      ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => this.#disclosureAllowed(field, access))));
+  }
+  #disclosureAllowed({source, field, record}: DisclosedField, access: FieldAccess): boolean {
+    if (!access(source, field, record)) return false;
+    if (source !== 'conversation' || field !== 'text' || record === undefined) return true;
+    const operationId = ATTEMPT_UPDATE_ID.exec(record)?.[1];
+    if (operationId === undefined) return true;
+    const message = this.store.messageSource(record);
+    // A model reply can carry facts from a saved attempt. Its own ledger must still resolve that source.
+    return message === undefined ? this.store.task(operationId) !== undefined
+      : message.role === 'owner' || this.#jobMessageAllowed(message, access);
   }
   #core(): CoreCopy {return this.options.core?.() ?? {sessions: [], mode: undefined, synced: false};}
   /**
@@ -1280,7 +1291,7 @@ export class AssistantEngine {
     // unread, and a replayed node whose call was admitted takes none again.
     const text = await this.#call(state.taskId, state.step, 'model', signal => {
       const allow = this.#fields(task.profile, 'prompt');
-      if (ledger.fields.some(field => !allow(field.source, field.field, field.record)) ||
+      if (ledger.fields.some(field => !this.#disclosureAllowed(field, allow)) ||
         modelLedger.fields.some(field => !modelFields(field.source, field.field, field.record)) ||
         includesReplay && !this.#replayable(task.id, modelFields) ||
         (ledger.incompleteDisclosures === true || modelLedger.incompleteDisclosures === true) && canRevokeFields(this.options.share)) {
