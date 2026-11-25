@@ -11,6 +11,7 @@ import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} 
 import {AnthropicTitleProvider, DEFAULT_TITLE_MODEL} from './assistant/titles.js';
 import {deviceToolOwner, allowlistable} from './assistant/tools.js';
 import {LIMITS} from './assistant/store.js';
+import {SPEND_LIMITS} from './assistant/limits.js';
 import type {ModelPrices, PriceTable} from './assistant/spend.js';
 import {AssistantDeviceCopy} from './assistant/devices.js';
 import {ASSISTANT_TOOL_LIMIT, type AssistantDeviceOwner, type AssistantDispatch, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
@@ -39,11 +40,12 @@ export const API_KEY_SECRET = 'anthropic-api-key';
 /**
  * The companions section of the private runtime configuration (Hub #46): `{assistant?, secrets?}`. `assistant` names the
  * provider, `synthetic` without one, with its model, effort, conversation title model (Hub #2025) and the allowlisted
- * tool names; a hosted provider needs its key file under `secrets`. The one provider and model serve every profile,
+ * tool names, prices and local monthly spend guard; a hosted provider needs its key file under `secrets`. The one provider and model serve every profile,
  * B.U.N.N.Y., Reachy and MicroDuck (Hub #2026). An empty section keeps every default and makes no network call.
  */
 export type CompanionsConfig = {readonly assistant: {readonly provider: 'synthetic'; readonly tools: readonly string[]}
-  | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly titleModel: string; readonly tools: readonly string[]; readonly prices: PriceTable}};
+  | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly titleModel: string; readonly tools: readonly string[]; readonly prices: PriceTable;
+    readonly monthlyLimitMicros: number}};
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const only = (value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean => Object.keys(value).every(key => keys.includes(key));
 const refuse = (detail: string): ErrorBody => errorBody('invalid-request', {detail});
@@ -67,16 +69,30 @@ function pricesOf(value: unknown): PriceTable | string {
   }
   return table;
 }
+const MONTHLY_LIMIT = {least: 0.01, most: 10_000} as const;
+/**
+ * `assistant.monthlyLimit` (Hub #2102), optional: the local monthly spend guard in US dollars, from $0.01 to $10,000, set to
+ * the owner's Anthropic Console workspace limit. Without it the guard is $150. Answers millionths of a dollar, or the refusal.
+ */
+function monthlyLimitOf(value: unknown): number | string {
+  if (value === undefined) return SPEND_LIMITS.monthMicros;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < MONTHLY_LIMIT.least || value > MONTHLY_LIMIT.most) {
+    return `assistant.monthlyLimit is the local monthly spend guard in US dollars, from ${String(MONTHLY_LIMIT.least)} to ${String(MONTHLY_LIMIT.most)}`;
+  }
+  return Math.round(value * 1_000_000);
+}
 export function configureCompanions(section: unknown): Configured<CompanionsConfig> | ErrorBody {
   if (!isObject(section) || !only(section, ['assistant', 'secrets'])) return refuse('the companions section has only assistant and secrets');
   const assistant = section.assistant === undefined ? {} : section.assistant;
-  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'titleModel', 'tools', 'prices'])) return refuse('assistant has only provider, model, effort, titleModel, tools and prices');
+  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'titleModel', 'tools', 'prices', 'monthlyLimit'])) return refuse('assistant has only provider, model, effort, titleModel, tools, prices and monthlyLimit');
   const provider = assistant.provider ?? 'synthetic';
   if (provider !== 'synthetic' && provider !== 'anthropic') return refuse('assistant.provider must be synthetic or anthropic');
   const tools = assistant.tools ?? [];
   if (!Array.isArray(tools) || tools.length > ASSISTANT_TOOL_LIMIT || !tools.every(allowlistable) || new Set(tools).size !== tools.length) return refuse('assistant.tools must list each permitted tool name once');
   if (provider === 'synthetic') {
-    if (assistant.model !== undefined || assistant.effort !== undefined || assistant.titleModel !== undefined || assistant.prices !== undefined) return refuse('the synthetic provider takes no model, effort, title model or prices');
+    if (assistant.model !== undefined || assistant.effort !== undefined || assistant.titleModel !== undefined || assistant.prices !== undefined || assistant.monthlyLimit !== undefined) {
+      return refuse('the synthetic provider takes no model, effort, title model, prices or monthly limit');
+    }
     return {config: {assistant: {provider, tools: [...tools]}}};
   }
   const model = assistant.model ?? DEFAULT_MODEL, effort = assistant.effort ?? 'medium', titleModel = assistant.titleModel ?? DEFAULT_TITLE_MODEL;
@@ -85,8 +101,10 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
   if (!EFFORTS.includes(effort as Effort)) return refuse('assistant.effort is low, medium or high');
   const prices = pricesOf(assistant.prices);
   if (typeof prices === 'string') return refuse(prices);
+  const monthlyLimitMicros = monthlyLimitOf(assistant.monthlyLimit);
+  if (typeof monthlyLimitMicros === 'string') return refuse(monthlyLimitMicros);
   if (!isObject(section.secrets) || !Object.hasOwn(section.secrets, API_KEY_SECRET)) return refuse(`a hosted provider names its API key file as secrets.${API_KEY_SECRET}`);
-  return {config: {assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices}}};
+  return {config: {assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices, monthlyLimitMicros}}};
 }
 /** What a test or the runtime gives the module: the engine's seams and, for a hosted provider, the transport behind its fetch. */
 export type CompanionsOptions = AssistantOptions & {readonly transport?: Transport};
@@ -251,7 +269,8 @@ class Companions {
       {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data},
       {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent}));
     const prices = options.prices ?? (assistant?.provider === 'anthropic' ? assistant.prices : undefined);
-    return {...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}),
+    const monthlyLimitMicros = options.monthlyLimitMicros ?? (assistant?.provider === 'anthropic' ? assistant.monthlyLimitMicros : undefined);
+    return {...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(monthlyLimitMicros === undefined ? {} : {monthlyLimitMicros}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}),
       ...(titleProvider === undefined ? {} : {titleProvider}), ...(options.syntheticTitleProvider === undefined ? {} : {syntheticTitleProvider: options.syntheticTitleProvider}),
       ...(options.profileProviders === undefined ? {} : {profileProviders: options.profileProviders}),
       tools, core, dispatch, devices: options.devices ?? (owner => this.#deviceCopies.get(owner)?.records()),

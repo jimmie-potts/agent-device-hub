@@ -76,6 +76,27 @@ void test('a reservation that could pass the daily or monthly limit is refused w
   assert.match(spend.reached() ?? '', /^The local estimate of this month's spend has reached its \$150\.00 guard: an estimated \$150\.00 is counted this month\. A new message can start when the next month begins\. The Anthropic Console holds the real monthly limit and spend\.$/);
 });
 
+void test('a configured monthly guard replaces the $150 default in the totals, the refusal and the new-turn check, and the day stays at $20 (Hub #2102)', () => {
+  assert.equal(new SpendLedger(new DatabaseSync(':memory:'), PRICES, () => at('2026-11-21T18:00:00Z'), ZONE).totals().month.limitMicros, 150_000_000, 'the default guard');
+  let now = at('2026-11-11T18:00:00Z');
+  const spend = new SpendLedger(new DatabaseSync(':memory:'), PRICES, () => now, ZONE, 200_000_000);
+  assert.deepEqual([spend.totals().day.limitMicros, spend.totals().month.limitMicros], [SPEND_LIMITS.dayMicros, 200_000_000]);
+  // At $5 per million input units, 200,000 input units reserve one dollar. Ten days at $19 count $190, past the default $150.
+  const big = (id: string, worth: number) => call(id, worth * 200_000, 0);
+  for (let day = 11; day <= 20; day += 1) {
+    now = at(`2026-11-${String(day)}T18:00:00Z`);
+    assert.equal(spend.reserve(big(`d${String(day)}`, 19)), undefined, `day ${String(day)}`);
+    if (day === 18) assert.equal(spend.reached(), undefined, 'an estimated $152 does not reach the configured guard');
+  }
+  assert.match(spend.reserve(big('over-day', 2)) ?? '', /^The daily spend limit of \$20\.00 would be passed: /, 'the daily pacing is unchanged');
+  now = at('2026-11-21T18:00:00Z');
+  assert.equal(spend.reserve(big('e', 9)), undefined);
+  assert.equal(spend.reserve(big('f', 2)), 'The local estimate of this month\'s spend would pass its $200.00 guard: an estimated $199.00 is counted this month and this model call could cost up to $2.00. The next model call was not sent.');
+  spend.settle('e', {input: 2_500_000, output: 0, cacheWrite: 0, cacheRead: 0});
+  now = at('2026-11-22T18:00:00Z');
+  assert.match(spend.reached() ?? '', /^The local estimate of this month's spend has reached its \$200\.00 guard: an estimated \$200\.00 is counted this month\./);
+});
+
 void test('the dated built-in table prices the models in use, a configured price overrides it, and an unknown model takes the dearest known rate', () => {
   // Anthropic's price list read on 2026-11-22: Claude Opus 5.5, and Claude Haiku 5.5 with its dearer tier over 100,000 prompt tokens.
   assert.equal(BUILT_IN_PRICES_AS_OF, '2026-11-22');

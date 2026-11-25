@@ -3285,6 +3285,16 @@ a refusal, and the conversation state journey covers the monthly estimate and
 the Prices fact. Run the same commands; the fakes return the documented error
 bodies, and no installed Console limit is exercised.
 
+The configurable monthly guard (#2102) extends the same files.
+`configure.test.js` covers the default, a configured `assistant.monthlyLimit`,
+its bounds and the named refusal. Its hosted module on a fake transport is
+refused at a configured $200 guard and not at $150, and the `spend` route
+reports that guard. `spend.test.js` covers the ledger's configured guard and
+the unchanged $20 daily pacing. `conversation-spend.test.js` covers the figure
+in Details and the notice, and the conversation state journey's fixture
+carries a $200 guard. Run the same commands; no installed Console limit is
+exercised.
+
 Independent conversation runs (#2027) add `assistant-concurrency.test.js`,
 `assistant-qualification.test.js` and its child fixture
 `assistant-qualification-child.js` to the companions suite, and extend

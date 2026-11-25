@@ -518,7 +518,8 @@ their open state while you inspect another panel or resize the page.
   reserved. Hosted tasks use reported tokens and leave the task's billed cost
   unknown. **Spend today** shows the shared spend of every profile against
   the $20 daily limit. **Spend this month (estimate)** shows the local
-  estimate against its $150 guard, and the line under it says that the
+  estimate against its monthly guard, $150 unless `assistant.monthlyLimit`
+  sets it ([Spend limits](#spend-limits)), and the line under it says that the
   Anthropic Console holds the real monthly limit and spend
   ([Spend limits](#spend-limits)). Both name any reservation still counted
   for a call without reported usage. **Prices** says whether the paid model's
@@ -579,6 +580,15 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   tokens, to override the built-in table below. Each entry needs all four
   prices, from 0 to 1000, for at most 16 models. `cacheWrite` is the
   five-minute cache write. The synthetic provider takes no prices.
+- `assistant.monthlyLimit` is optional (Hub #2102). It sets the local monthly
+  spend guard in US dollars, a number from 0.01 to 10000. The default is 150.
+  Set it to the B.U.N.N.Y. workspace's monthly spend limit in the Anthropic
+  Console, such as `"monthlyLimit": 200` for a $200 limit, so the local
+  estimate does not refuse messages before Anthropic does
+  ([Spend limits](#spend-limits)). Any other value refuses the section with
+  `invalid-request` and the detail "assistant.monthlyLimit is the local
+  monthly spend guard in US dollars, from 0.01 to 10000". The daily limit
+  stays $20. The synthetic provider takes no monthly limit.
 - **Built-in prices** (Hub #2047), read from the
   [Anthropic price list](https://platform.claude.com/docs/en/about-claude/pricing)
   on 2026-11-22, in US dollars per million tokens:
@@ -854,7 +864,7 @@ new task when the task before it ends or the owner releases its queue (see
 | Text and working state | Owner message 32 KiB, context sections as in [Recent context and New conversation](#recent-context-and-new-conversation), result 8 KiB, a model reply with its blocks 16 KiB, working transcript 1 MiB, staged input 193 KiB, serialized graph and pending writes 256 KiB each |
 | Usage | 1,000,000 units per turn; each model call reserves its request's UTF-8 bytes plus 8,192 framing units and 16,384 output units before it is sent; a unit is one provider token or one fake synthetic unit |
 | Private read | At most 16 messages and 512 KiB per page, advancing cursor |
-| Spend | $20 a day and $150 a month across all profiles; see [Spend limits](#spend-limits) |
+| Spend | $20 a day, and a local monthly guard of $150 or `assistant.monthlyLimit`, across all profiles; see [Spend limits](#spend-limits) |
 
 A turn is one task: one owner message and everything it causes. A call that
 would pass a limit is refused before anything is sent. The task ends with
@@ -867,18 +877,20 @@ its input tokens because each token encodes at least one byte of text.
 Spending is bounded in two layers (owner decision on #2024, Hub #2047):
 
 - **The month, at Anthropic.** A dedicated Console workspace for B.U.N.N.Y.
-  has a $150 monthly spend limit. Anthropic enforces it on real billing, so the
-  month cannot overrun. When it is reached, the provider refuses the call: the
-  task ends `capacity`, and the conversation says "The monthly spend limit at
-  Anthropic is reached, so the model call was refused and nothing more was
-  sent for this turn. The Anthropic Console shows the limit, this month's real
-  spend and when access resumes." The Console holds the real monthly limit and
-  spend.
+  has a monthly spend limit that the owner chooses. Anthropic enforces it on
+  real billing, so the month cannot overrun. When it is reached, the provider
+  refuses the call: the task ends `capacity`, and the conversation says "The
+  monthly spend limit at Anthropic is reached, so the model call was refused
+  and nothing more was sent for this turn. The Anthropic Console shows the
+  limit, this month's real spend and when access resumes." The Console holds
+  the real monthly limit and spend.
 - **The day, locally.** The module paces the assistant's paid calls at $20 a
   day across all profiles, from reported usage at the configured or built-in
-  prices. It also keeps a local estimate of the month, with a $150 guard that
-  refuses calls as the daily limit does. The estimate is not billing: it
-  counts unreported calls at their reservations and uses list prices.
+  prices. It also keeps a local estimate of the month, with a guard that
+  refuses calls as the daily limit does. The guard is $150 unless
+  `assistant.monthlyLimit` sets it to the workspace's limit (Hub #2102). The
+  estimate is not billing: it counts unreported calls at their reservations
+  and uses list prices, so Anthropic's limit stays the real ceiling.
 
 The day and the month are the runtime host's local ones and start at local
 midnight. A call counts on the day it was reserved. Coding-worker runs use the
@@ -894,9 +906,11 @@ goes live:
    workspace: Anthropic's rate-limit documentation says a limit on the
    default workspace might not count or stop some usage there, and on some
    platforms it cannot be set at all.
-2. Set the workspace's monthly spend limit to $150 at
+2. Set the workspace's monthly spend limit at
    [Spend limits](https://platform.claude.com/settings/spend-limits)
-   (`platform.claude.com/settings/spend-limits`).
+   (`platform.claude.com/settings/spend-limits`). The local guard defaults to
+   $150. For any other limit, set `assistant.monthlyLimit` to the same amount
+   in US dollars.
 3. Create an API key in that workspace and store it in the private key file
    that `secrets.anthropic-api-key` names, through the established private
    configuration route. No Admin API key or other credential is needed.
