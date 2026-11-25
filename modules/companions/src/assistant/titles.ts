@@ -406,9 +406,11 @@ export class ConversationTitles {
     this.database.prepare('INSERT INTO assistant_title_calls VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(call.id, call.conversationId, call.startedAtMs, JSON.stringify(call));
   }
   /** The session title a conversation publishes: the owner's or the generated title, or the persona name until one exists. */
-  published(conversationId: string, profile: AssistantProfile): Title {
-    const title = this.record(conversationId)?.title ?? null;
-    return title === null ? {value: persona(profile), source: 'provider'} : {value: title.value, source: title.source === 'owner' ? 'user' : 'provider'};
+  published(conversationId: string, profile: AssistantProfile, policy?: {allowLabel: boolean; allowGenerated: boolean}): Title {
+    const title = policy?.allowLabel === false ? null : this.record(conversationId)?.title ?? null;
+    if (title?.source === 'owner') return {value: title.value, source: 'user'};
+    const value = title?.source === 'generated' && policy?.allowGenerated !== false ? title.value : persona(profile);
+    return {value, source: 'provider'};
   }
   /**
    * Whether a task the owner starts asks for a check by itself, read in its admission's transaction: only while the

@@ -1032,6 +1032,13 @@ For an explicit request by the authorized owner in private Conversation, each co
 
 Before disclosing retained fields, the owning module SHALL check the current grant for caller, companion, purpose, source and destination. This SHALL cover discovery, counts, joins, pages, tool output, provider prompts, recent context, title requests and coding briefs. Existing collection and sharing choices SHALL remain in force. A new destination SHALL receive retained fields only after an explicit owner selection. Revocation SHALL apply before the next disclosure.
 
+#### Scenario: Public metadata respects current grants
+
+- **WHEN** a task's public read grant is withdrawn after a state snapshot was prepared
+- **THEN** later assistant-state updates, replay and sync omit the identity, status and counts of that task
+- **AND** a conversation list uses the neutral persona title when a stored generated title cannot be traced to currently allowed fields
+- **AND** an explicit owner title is shown while its label grant allows it
+
 #### Scenario: No access through a different read
 
 - **WHEN** the owner withdraws a grant for a retained record

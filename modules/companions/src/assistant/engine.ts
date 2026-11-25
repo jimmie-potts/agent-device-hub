@@ -1,5 +1,6 @@
 import {SHOW_SAVE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {createHash, randomUUID} from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import {Annotation, Command as Resume, END, GraphRecursionError, StateGraph, interrupt} from '@langchain/langgraph';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
@@ -15,7 +16,7 @@ import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Append
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
-import {accessFor, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
+import {accessFor, canRevokeFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
 import {ALL_WEMO_PLUGS, authorizesControl, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {buildContext, type ContextEntry} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
@@ -238,7 +239,7 @@ export class AssistantEngine {
       provider: () => options.titleProvider ?? options.syntheticTitleProvider,
       previousTitle: (conversationId, profile, title) => {
         const fields = this.#fields(profile, 'title', (options.titleProvider ?? options.syntheticTitleProvider)?.name);
-        return fields('conversation', 'label', conversationId) && (title?.source !== 'generated' || options.share?.revokesFields === false || options.share === undefined) ? title : null;
+        return fields('conversation', 'label', conversationId) && (title?.source !== 'generated' || !canRevokeFields(options.share)) ? title : null;
       },
       messages: conversationId => {
         const profile = this.store.messages.conversation(conversationId)?.profile;
@@ -286,15 +287,26 @@ export class AssistantEngine {
   inspect(): AssistantState {
     const provider = this.provider();
     const queues = this.#queues();
+    const tasks = this.store.latest().filter(task => this.#publicRead(task.profile).task(task.conversationId, task.id))
+      .map(task => this.store.summary(task));
     return {id: 'assistant', ...this.store.meta(), available: this.available(), provider: provider.name, model: provider.model, tools: [...this.#allowed],
-      tasks: this.store.latest().map(task => this.store.summary(task)), ...(queues.length === 0 ? {} : {queues})};
+      tasks, ...(queues.length === 0 ? {} : {queues})};
+  }
+  /** An assistant-state draft waiting to publish can outlive the read grants that allowed its contents. */
+  matchesPublicState(data: object): boolean {return isDeepStrictEqual(data, this.inspect());}
+  #publicRead(profile: AssistantProfile) {
+    const discover = this.#fields(profile, 'discovery', 'private-conversation');
+    const read = this.#fields(profile, 'read', 'private-conversation');
+    return {discover, read, task: (conversationId: string, taskId: string) =>
+      discover('conversation', 'index', conversationId) && read('conversation', 'text', conversationId)
+      && discover('conversation', 'index', taskId) && read('conversation', 'details', taskId) && read('conversation', 'status', taskId)};
   }
   /** Each profile's current conversation whose queue holds messages (Hub #2030): how many, and whether and why it is held. */
   #queues(): AssistantQueueSummary[] {
     return profiles.flatMap(owner => {
       const conversationId = this.store.conversation(owner);
       if (conversationId === undefined) return [];
-      const discover = this.#fields(owner, 'discovery', 'private-conversation'), read = this.#fields(owner, 'read', 'private-conversation');
+      const {discover, read} = this.#publicRead(owner);
       if (!discover('conversation', 'index', conversationId)) return [];
       const stored = this.store.queue.messages(conversationId);
       const messages = stored.filter(message => discover('conversation', 'index', message.id) && read('conversation', 'text', message.id)).length;
@@ -334,7 +346,9 @@ export class AssistantEngine {
       // A queue counts as changed wherever its conversation changed at the start (Hub #2030), and a queue the start held
       // changed at the start: a revision records it, so a queue command read before is stale.
       this.store.queue.aligned();
-      if (this.store.queue.changed()) await this.outbox.transaction(add => {this.#publish(add);});
+      if (this.store.queue.changed() || canRevokeFields(this.options.share)) {
+        await this.outbox.transaction(add => {this.#publish(add);});
+      }
     } finally {this.#starting = false;}
     if (this.#allowed.includes(READ_WEMO) || this.#allowed.includes(READ_DEVICES)) this.#powerLimits = followPowerLimits(this.context);
     for (const watch of this.store.confirmations()) void this.#followConfirmation(watch);
@@ -905,7 +919,8 @@ export class AssistantEngine {
     const query = request?.query ?? {}, selected = query.profile;
     if (request?.signal.aborted === true || !profile(selected)) return errorBody('invalid-request');
     try {
-      const fields = this.#fields(selected, query.view === 'list' ? 'discovery' : 'read', 'private-conversation');
+      const {discover, read, task} = this.#publicRead(selected);
+      const fields = query.view === 'list' ? discover : read;
       const conversationId = query.conversationId ?? this.store.conversation(selected);
       if (!fields('conversation', query.view === 'list' ? 'index' : 'text', query.view === 'list' ? undefined : conversationId)) return errorBody('forbidden');
       if (query.view === 'list') {
@@ -913,14 +928,16 @@ export class AssistantEngine {
         // its session shows it. `after` is the keyset cursor of a later page, `<last message time or -1>:<row>`.
         const cursor = query.after === undefined ? undefined : /^(-1|\d{1,15}):(\d{1,15})$/.exec(query.after);
         if (Object.keys(query).some(key => !['profile', 'view', 'after'].includes(key)) || cursor === null) return errorBody('invalid-request');
-        const read = this.#fields(selected, 'read', 'private-conversation');
         const listed = this.store.conversations(selected, cursor === undefined ? undefined : {last: Number(cursor[1]), row: Number(cursor[2])}, {
           conversation: id => fields('conversation', 'index', id),
           message: message => read('conversation', 'text', message.id) && (message.role === 'owner' || this.#replayable(message.taskId, read)),
         });
         const document: ConversationList = {version: 1, profile: selected, older: listed.older,
-          conversations: listed.conversations.map(value => ({...value, title: fields('conversation', 'label', value.conversationId) ? this.titles.published(value.conversationId, selected)
-            : {value: PROFILES.find(profile => profile.id === selected)?.name ?? selected, source: 'provider'}}))};
+          conversations: listed.conversations.map(value => {
+            const id = value.conversationId;
+            const allowLabel = discover('conversation', 'label', id) && read('conversation', 'label', id);
+            return {...value, title: this.titles.published(id, selected, {allowLabel, allowGenerated: !canRevokeFields(this.options.share)})};
+          })};
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify(document))};
       }
       if (query.view === 'queue') {
@@ -931,7 +948,6 @@ export class AssistantEngine {
         const current = this.store.conversation(selected), requested = query.conversationId ?? current;
         if (requested !== undefined && requested !== current && !this.store.owns(selected, requested)) return errorBody('not-found');
         const queue = this.store.queue.document(selected, requested, this.store.meta().revision, requested === current);
-        const discover = this.#fields(selected, 'discovery', 'private-conversation');
         const visible = (message: {id: string}) => discover('conversation', 'index', message.id) && fields('conversation', 'text', message.id);
         const messages = queue.messages.filter(visible), steers = queue.steers.filter(visible);
         const held = messages.length === queue.messages.length && steers.length === queue.steers.length &&
@@ -942,7 +958,7 @@ export class AssistantEngine {
         shows: (message: {id: string; role: string; taskId: string}) => fields('conversation', 'text', message.id) &&
           (message.role === 'owner' || this.#replayable(message.taskId, fields)),
         attachment: (requestId: string) => fields('artwork', 'attachment', requestId),
-        task: (taskId: string) => fields('conversation', 'details', taskId),
+        task: (taskId: string) => conversationId !== undefined && task(conversationId, taskId),
       };
       if (query.view === 'recent') {
         if (Object.keys(query).some(key => !['profile', 'view', 'before', 'conversationId'].includes(key)) ||
@@ -1104,7 +1120,7 @@ export class AssistantEngine {
   }
   #replayable(taskId: string, access: FieldAccess): boolean {
     if (this.store.task(taskId)?.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
-    const acceptsOldRecords = this.options.share === undefined || this.options.share.revokesFields === false;
+    const acceptsOldRecords = !canRevokeFields(this.options.share);
     return this.store.calls(taskId).every(call => call.incompleteDisclosures !== true && (call.disclosures === undefined
       ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => access(field.source, field.field, field.record))));
   }

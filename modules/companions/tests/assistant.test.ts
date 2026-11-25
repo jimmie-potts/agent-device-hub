@@ -70,7 +70,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
 }
 async function control(core: Participant, module: CompanionsModule, action: string, taskId?: string, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
-    dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
+    dataschema: `https://bunny.invalid/events/assistant-control/${action === 'rename' ? '2.1' : '2.0'}`, data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
 }
 async function input(core: Participant, module: CompanionsModule, text: string, answer = false, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   const state = module.inspectAssistant(), task = state?.tasks[0];
@@ -401,6 +401,81 @@ void test('an explicit Wemo group binds every target once', async context => {
   await until(() => status(w) === 'succeeded' && requests.length === 2);
   assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
   assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+});
+
+void test('assistant-state updates and sync hide revoked task metadata, including after restart', async context => {
+  let denied: string | undefined, blockPublication = false, deferredStates = 0;
+  const permitted = sharing();
+  const share = (query: ShareQuery) => permitted(query) && !(denied !== undefined && query.destination === 'private-conversation' &&
+    query.source === 'conversation' && query.field === 'details' && query.record === denied);
+  const w = await world(context, {share}, context => ({...context, sdk: {...context.sdk, publishMessage: (key, message) => {
+    if (blockPublication && key === 'bunny.state.assistant-state.assistant') {
+      deferredStates += 1;
+      return Promise.reject(new Error('synthetic unavailable state transport'));
+    }
+    return context.sdk.publishMessage(key, message);
+  }}}));
+  const updates: Message<object>[] = [];
+  const subscription = await w.core.subscribe('bunny.state.assistant-state.assistant', message => {updates.push(message);});
+  context.after(() => subscription.close());
+  const sync = async () => {
+    const result = await w.core.sync(['assistant-state'], () => {}, {owner: 'bunny/modules/companions', timeoutMs: 5000});
+    assert.equal(result.status, 'synced');
+    try {return JSON.stringify(result.copy.states());} finally {await result.copy.close();}
+  };
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic private task');
+  await until(() => status(w) === 'waiting');
+  const id = task(w)?.taskId ?? assert.fail('waiting task ID');
+  assert.ok((await sync()).includes(id));
+  assert.ok(JSON.stringify(updates).includes(id));
+  blockPublication = true;
+  await control(w.core, w.module(), 'enable');
+  await until(() => deferredStates > 0);
+  denied = id;
+  assert.ok(!(await sync()).includes(id), 'sync applies current grants');
+  assert.equal((await page(w, 'bunny', 'recent')).currentTask, null);
+  const before = updates.length;
+  await w.restart(() => {blockPublication = false;});
+  await until(() => updates.length > before);
+  assert.ok(!JSON.stringify(updates.slice(before)).includes(id), 'restart sends only current state, even with an older update in the outbox');
+  assert.ok(!(await sync()).includes(id), 'restart keeps the task private');
+  assert.equal(w.store().task(id)?.status, 'waiting', 'internal lifecycle retains the task');
+  const restarted = updates.length;
+  await control(w.core, w.module(), 'enable');
+  await until(() => updates.length > restarted);
+  assert.ok(!JSON.stringify(updates.slice(restarted)).includes(id), 'live updates apply current grants');
+});
+
+void test('the conversation list hides an unproven generated title after revocation and restart', async context => {
+  let revoked = false, labelDenied = false;
+  const permitted = sharing();
+  const share = Object.defineProperty((query: ShareQuery) => permitted(query) && !(query.destination === 'private-conversation' &&
+    query.source === 'conversation' && (revoked && query.field === 'text' || labelDenied && query.field === 'label')),
+  'revokesFields', {get: () => revoked || labelDenied});
+  const w = await world(context, {share, provider: counted(() => reply('Synthetic reply.'))});
+  const list = async () => {
+    const response = await w.module().manifest.content?.('conversation', {query: {profile: 'bunny', view: 'list'}, signal: new AbortController().signal});
+    assert.ok(response !== undefined && !('error' in response));
+    return JSON.stringify(JSON.parse(Buffer.from(response.bytes).toString()));
+  };
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic title source');
+  await until(() => status(w) === 'succeeded');
+  const id = task(w)?.conversationId ?? assert.fail('conversation ID');
+  w.host().moduleDatabase()?.prepare('UPDATE assistant_titles SET record=? WHERE conversation_id=?').run(
+    JSON.stringify({version: 1, title: {value: 'Synthetic Derived Title', source: 'generated'}, generation: 1, lastActivityMs: 1000}), id);
+  assert.match(await list(), /Synthetic Derived Title/);
+  revoked = true;
+  assert.doesNotMatch(await list(), /Synthetic Derived Title/);
+  assert.match(await list(), /B\.U\.N\.N\.Y\./);
+  await w.restart();
+  assert.doesNotMatch(await list(), /Synthetic Derived Title/);
+  const renamed = await control(w.core, w.module(), 'rename', undefined, randomUUID(), {profile: 'bunny', title: 'Synthetic Owner Title'});
+  assert.equal(renamed.status, 'accepted');
+  assert.match(await list(), /Synthetic Owner Title/);
+  labelDenied = true;
+  assert.doesNotMatch(await list(), /Synthetic Owner Title/);
 });
 
 void test('a session grant filters discovery, tool results, prompt replay and title calls after revocation', async context => {

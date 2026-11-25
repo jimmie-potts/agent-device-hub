@@ -9,7 +9,7 @@ import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './pref
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} from './assistant/anthropic.js';
 import {AnthropicTitleProvider, DEFAULT_TITLE_MODEL} from './assistant/titles.js';
-import {parseSharingGrants, sharing, type SharingGrant} from './assistant/sharing.js';
+import {canRevokeFields, parseSharingGrants, sharing, type SharingGrant} from './assistant/sharing.js';
 import {deviceToolOwner, allowlistable} from './assistant/tools.js';
 import {LIMITS} from './assistant/store.js';
 import {SPEND_LIMITS} from './assistant/limits.js';
@@ -170,7 +170,12 @@ class Companions {
     this.#qualification = readSpeechQualification(context.files());
     const database = context.database();
     this.#store = new CompanionStore(database);
-    this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator});
+    const configured = context.config as CompanionsConfig | undefined;
+    const share = this.options.share ?? sharing(configured?.sharing);
+    this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator,
+      statePublication: {discard: (message, key) => key === 'bunny.state.assistant-state.assistant' &&
+        canRevokeFields(share) && this.assistant?.matchesPublicState(message.data) !== true},
+    });
     this.speech = new SpeechCoordinator(context, this.#outbox, source => {
       return source.kind === 'card' ? speechRefusal(source.card, this.#policy(source.card.opportunity)) === undefined
         : replyRefusal(this.#replyPolicy()) === undefined && this.assistant?.canSpeak(source.reply.taskId, source.reply.messageId) === true;
@@ -186,8 +191,6 @@ class Companions {
     // Each run is tagged with the companion whose task asked (Hub #2028), read from the engine's saved task.
     // A waiting hand-off is sent only while its task still waits on it, so a cancel that the coordinator missed, as during
     // a stop, still sends nothing.
-    const configured = context.config as CompanionsConfig | undefined;
-    const share = this.options.share ?? sharing(configured?.sharing);
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
       mayShare: (taskId, repository) => this.assistant?.canShareCodingBrief(taskId, repository) === true,
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
