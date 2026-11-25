@@ -23,6 +23,7 @@ import {MessageQueue} from './queue.js';
  * this release (see `upgradeGraph`). Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume.
  */
 export const GRAPH_VERSION = 'conversation-2';
+export const RESPONSES_GRAPH_VERSION = 'responses-1';
 /** The graph version before Hub #2031, whose unfinished tasks the start upgrades to `GRAPH_VERSION`. */
 export const PREVIOUS_GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
@@ -243,9 +244,10 @@ export class AssistantStore {
   lastSequence(conversationId: string): number {
     return (this.database.prepare('SELECT MAX(seq) AS seq FROM assistant_messages WHERE conversation_id=?').get(conversationId) as {seq: number | null}).seq ?? 0;
   }
-  newTask(profile: AssistantProfile, prompt: string): Task {
+  newTask(profile: AssistantProfile, prompt: string, supervisor?: SupervisorIdentity): Task {
     const conversationId = this.ensureConversation(profile);
-    return {version: 1, graphVersion: GRAPH_VERSION, tracksApprovals: true, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
+    return {version: 1, graphVersion: supervisor?.provider === 'openai' ? RESPONSES_GRAPH_VERSION : GRAPH_VERSION,
+      ...(supervisor === undefined ? {} : {supervisor}), tracksApprovals: true, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
       generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
       transcript: [{role: 'owner', text: prompt}], contextThrough: this.lastSequence(conversationId)};
   }

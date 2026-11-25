@@ -597,7 +597,9 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   previous request, the supervisor can receive a bounded excerpt from the
   same conversation. A title for an untitled conversation uses only the
   current request. Provider-native reasoning and tool items replay within
-  their original task. A missing or changed provider leaves the task
+  their original task and current subject. A steer submits the new request
+  with only relevant excerpts from an earlier subject. A missing or changed
+  provider leaves the task
   readable and paused. Worker results remain in the private conversation.
 - Responses calls use Standard service and a 30-minute prompt cache. The
   published `gpt-6.2-sol` rates on 2026-11-24 are $2 per million input tokens,

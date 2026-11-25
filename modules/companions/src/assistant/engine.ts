@@ -11,13 +11,13 @@ import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type Mo
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
-import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
+import {AssistantStore, GRAPH_VERSION, LIMITS, RESPONSES_GRAPH_VERSION, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
 import {ALL_WEMO_PLUGS, authorizesControl, missingBrightness, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
-import {buildContext, type ContextEntry} from './context.js';
+import {buildContext, type ContextEntry, type RecentMessage} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
@@ -304,7 +304,11 @@ export class AssistantEngine {
     if (pin !== undefined && (provider.model !== pin.model || (provider.variant ?? '') !== pin.variant)) return fail('unavailable');
     return provider;
   }
-  #taskProvider(task: Task): ModelProvider {return this.#pinnedProvider(task.profile, task.supervisor);}
+  #taskProvider(task: Task): ModelProvider {
+    const expected = task.supervisor?.provider === 'openai' ? RESPONSES_GRAPH_VERSION : GRAPH_VERSION;
+    if (task.graphVersion !== expected) return fail('unavailable');
+    return this.#pinnedProvider(task.profile, task.supervisor);
+  }
   #canUseTaskProvider(task: Task): boolean {
     try {this.#taskProvider(task); return true;} catch (error) {
       if (error instanceof Fault && error.code === 'unavailable') return false;
@@ -349,7 +353,7 @@ export class AssistantEngine {
     try {
       for (const task of this.store.unfinished()) {
         try {
-          if (task.graphVersion !== GRAPH_VERSION || !this.available() || !this.#canUseTaskProvider(task)) await this.#recoverUnavailable(task.id);
+          if (!this.available() || !this.#canUseTaskProvider(task)) await this.#recoverUnavailable(task.id);
           else await this.#reconcile(task.id, true);
         } catch (error) {
           this.#unrecovered.add(task.conversationId);
@@ -594,7 +598,7 @@ export class AssistantEngine {
     this.#ready();
     if (this.#unrecovered.has(task.conversationId)) fail('unavailable');
     if (settling ? this.#busy(task.conversationId) : this.#active.has(task.conversationId)) fail('capacity');
-    if (task.graphVersion !== GRAPH_VERSION || task.version !== 1) fail('unavailable');
+    if (task.version !== 1) fail('unavailable');
     this.#taskProvider(task);
     if (unresolved(this.store.calls(task.id))) fail('uncertain-result');
     if (task.activeMs >= LIMITS.activeMs || task.reservedUnits >= LIMITS.units) fail('capacity');
@@ -628,8 +632,8 @@ export class AssistantEngine {
       this.store.queue.setHold(conversationId, {reason: 'refused', code: refusal.code, detail: refusal.closingReason ?? null});
       return undefined;
     }
-    const task = this.store.newTask(head.profile, head.text);
-    task.supervisor = head.supervisor ?? this.#identity(this.#pinnedProvider(head.profile, undefined));
+    const pin = head.supervisor ?? this.#identity(this.#pinnedProvider(head.profile, undefined));
+    const task = this.store.newTask(head.profile, head.text, pin);
     this.store.message(task, `${task.id}-prompt`, 'owner', head.text, this.context.clock.now());
     this.#activate(task, {traceparent: head.traceparent}, true);
     this.store.save(task);
@@ -854,8 +858,7 @@ export class AssistantEngine {
         const paid = this.#providerFor(input.profile, input.provider), pin = this.#identity(paid);
         const reached = paid.name === 'synthetic' ? undefined : this.spend.reached(paid.model, pin.pricing);
         if (reached !== undefined) throw new Fault('capacity', reached);
-        task = this.store.newTask(input.profile, input.text);
-        task.supervisor = pin;
+        task = this.store.newTask(input.profile, input.text, pin);
         this.store.message(task, `${task.id}-prompt`, 'owner', input.text, this.context.clock.now());
         // The first message of an untitled conversation earns it a model-written title (Hub #2025, #2075).
         if (this.titles.started(task.conversationId)) titled = {id: task.id, conversationId: task.conversationId, profile: task.profile, event: {kind: 'message'}};
@@ -1156,10 +1159,11 @@ export class AssistantEngine {
     if (task === undefined) return false;
     const target = this.#fields(task.profile, 'brief', 'coding-worker');
     if (!target('coding', 'repository', repository) || !target('coding', 'brief', repository)) return false;
-    const current = this.#taskFields(task), share = this.options.share;
+    const scoped = this.#taskProvider(task).name === 'openai' ? this.#openAIScope(task) : undefined;
+    const current = scoped?.fields ?? this.#taskFields(task), share = this.options.share;
     return this.#replayable(taskId, (source, field, record) => current(source, field, record) &&
       (share?.allowsDerived?.({caller: 'owner', companion: task.profile, purpose: 'brief', destination: 'coding-worker', source, field,
-        ...(record === undefined ? {} : {record})}) ?? (share === undefined || share.revokesFields === false || target(source, field, record))));
+        ...(record === undefined ? {} : {record})}) ?? (share === undefined || share.revokesFields === false || target(source, field, record))), scoped?.effects);
   }
   #toolsFor(task: Task): ReturnType<typeof permittedTools> {
     const provider = this.#taskProvider(task);
@@ -1168,42 +1172,66 @@ export class AssistantEngine {
       tool.name === ASK_OWNER || tool.name === SET_MODE || tool.name === DELEGATE_CODING || deviceToolOwner(tool.name) !== undefined);
   }
   #openAIScope(task: Task, purpose: 'supervisor' | 'title' = 'supervisor') {
-    const latest = task.transcript.filter(item => item.role === 'owner').at(-1);
+    const ownerInputs = task.transcript.filter(item => item.role === 'owner');
+    const latest = ownerInputs.at(-1), preceding = ownerInputs.at(-2);
+    const transcript = latest === undefined ? [] : task.transcript.slice(task.transcript.lastIndexOf(latest));
+    const effects = new Set(transcript.flatMap(item => 'effect' in item && typeof item.effect === 'string' ? [item.effect] : []));
     const request = latest?.text ?? task.prompt;
     const requestId = latest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, latest) ?? fail('invalid-state');
     const devices = new Set<string>();
-    const previous = /\b(?:previous|last|earlier) (?:message|request)\b/i.test(request);
-    const refersToDevice = /\b(?:it|that (?:device|lamp|light|plug))\b/i.test(request) &&
-      /\b(?:power|brightness|state|status|turn|switch|dim|on|off)\b/i.test(request);
-    const recent = purpose === 'supervisor' && (previous || refersToDevice) && task.contextThrough !== undefined
-      ? this.store.recentContext(task.profile, task.conversationId, task.contextThrough, message =>
-        message.role === 'owner' && supervisorFields(this.options.share, {companion: task.profile, requestId, conversationId: task.conversationId,
-          messages: new Map([[message.id, {conversationId: task.conversationId}]]), devices, purpose})('conversation', 'excerpt', message.id), true).messages
-      : [];
+    const previous = /^(?:please )?(?:quote|repeat|summari[sz]e|use|refer to|continue from) (?:my|the) (?:previous|last|earlier) (?:message|request)\b/iu.test(request.trim());
+    const subject = powerSubject(request);
+    const refersToDevice = subject !== undefined && /^(?:it|that one|this one|the same)$/u.test(subject) ||
+      /^(?:is|was) (?:it|that (?:device|lamp|light|plug)) (?:on|off)\s*[?]?$/iu.test(request.trim());
+    const allowsExcerpt = (id: string) => this.store.messages.removal(id) === undefined &&
+      supervisorFields(this.options.share, {companion: task.profile, requestId, conversationId: task.conversationId,
+        messages: new Map([[id, {conversationId: task.conversationId}]]), devices, purpose})('conversation', 'excerpt', id);
+    let recent: RecentMessage[] = [];
+    if (purpose === 'supervisor' && (previous || refersToDevice)) {
+      if (preceding !== undefined) {
+        const id = conversationMessageId(task.id, preceding);
+        if (id !== undefined && allowsExcerpt(id)) recent = [{id, role: 'owner', text: preceding.text}];
+      } else if (task.contextThrough !== undefined) {
+        recent = this.store.recentContext(task.profile, task.conversationId, task.contextThrough,
+          message => message.role === 'owner' && allowsExcerpt(message.id), true).messages;
+      }
+    }
     const named = (text: string, device: DeviceRecord): boolean => {
       const normalized = ` ${normalizedControlText(text)} `;
       return [device.id, deviceLabel(device)].some(value => normalized.includes(` ${normalizedControlText(value)} `));
     };
+    const referenced = new Map<string, string>();
     if (purpose === 'supervisor') {
       if (/\b(?:hub mode|current mode|set mode|work mode|free mode|quiet mode)\b/i.test(request)) devices.add('hub');
       for (const owner of [ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER] as const) {
         const group = owner === ASSISTANT_WEMO_OWNER ? /\b(?:wemo plugs|all plugs)\b/i : /\b(?:lifx lights|all lights)\b/i;
         for (const device of this.options.devices?.(owner) ?? []) {
-          if (named(request, device) || group.test(request) || refersToDevice && recent.some(message => named(message.text, device))) devices.add(device.id);
+          if (named(request, device) || group.test(request)) devices.add(device.id);
+          if (refersToDevice && recent.some(message => named(message.text, device))) referenced.set(device.id, deviceLabel(device));
         }
       }
     }
+    if (referenced.size === 1) for (const id of referenced.keys()) devices.add(id);
     const messages = new Map(recent.map(message => [message.id, {conversationId: task.conversationId}]));
-    for (const item of task.transcript) {
-      const ownerAnswer = item.role === 'tool' && 'effect' in item && typeof item.effect === 'string' && item.effect.endsWith('-answer');
-      if ((item.role !== 'owner' && !ownerAnswer) || item === latest) continue;
-      const id = conversationMessageId(task.id, item);
-      if (id !== undefined) messages.set(id, {conversationId: task.conversationId});
+    for (const item of transcript) {
+      const id = item.role === 'tool' ? conversationMessageId(task.id, item) : undefined;
+      if (id?.endsWith('-answer') === true) messages.set(id, {conversationId: task.conversationId});
     }
     const access = supervisorFields(this.options.share, {companion: task.profile, requestId, conversationId: task.conversationId, messages, devices, purpose});
     const fields: FieldAccess = (source, field, record) =>
       (source !== 'conversation' || record !== undefined && this.store.messages.removal(record) === undefined) && access(source, field, record);
-    return {request, requestId, recent, fields};
+    let referencedDevice: string | undefined;
+    if (!previous && refersToDevice) {
+      const target = referenced.size === 1 ? [...referenced.entries()][0] : undefined;
+      if (target !== undefined && fields('devices', 'label', target[0])) {
+        referencedDevice = target[0];
+        recent = recent.map(message => ({...message, text: target[1]}));
+      } else {
+        for (const message of recent) messages.delete(message.id);
+        recent = [];
+      }
+    }
+    return {request, requestId, recent, fields, transcript, effects, referencedDevice};
   }
   #taskFields(task: Task): FieldAccess {
     if (this.#taskProvider(task).name !== 'openai') return this.#modelFields(task.profile, this.#taskProvider(task).name);
@@ -1213,9 +1241,9 @@ export class AssistantEngine {
     const prompt = this.#fields(companion, 'prompt', destination), read = this.#fields(companion, 'read', destination), discover = this.#fields(companion, 'discovery', destination);
     return (source, field, record) => prompt(source, field, record) && (field === 'index' ? discover : read)(source, field, record);
   }
-  #replayable(taskId: string, access: FieldAccess): boolean {
+  #replayable(taskId: string, access: FieldAccess, effects?: ReadonlySet<string>): boolean {
     const acceptsOldRecords = this.options.share === undefined || this.options.share.revokesFields === false;
-    return this.store.calls(taskId).every(call => call.incompleteDisclosures !== true && (call.disclosures === undefined
+    return this.store.calls(taskId).every(call => effects?.has(call.id) === false || call.incompleteDisclosures !== true && (call.disclosures === undefined
       ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => access(field.source, field.field, field.record))));
   }
   #core(): CoreCopy {return this.options.core?.() ?? {sessions: [], mode: undefined, synced: false};}
@@ -1275,10 +1303,10 @@ export class AssistantEngine {
     // call's tool results, and the request is built from that transcript: a limit that refuses the call leaves them
     // unread, and a replayed node whose call was admitted takes none again.
     const text = await this.#call(state.taskId, state.step, 'model', signal => {
-      const current = this.#task(task.id);
-      const allow = openai ? this.#openAIScope(current).fields : promptFields();
-      if (ledger.fields.some(field => !allow(field.source, field.field, field.record)) || includesReplay && !this.#replayable(task.id, openai ? (source, field, record) =>
-        allow(source, field, record) || source === 'conversation' && field === 'request' && allow(source, 'excerpt', record) : modelFields) ||
+      const current = this.#task(task.id), scope = openai ? this.#openAIScope(current) : undefined;
+      const allow = scope?.fields ?? promptFields();
+      if (ledger.fields.some(field => !allow(field.source, field.field, field.record)) ||
+        includesReplay && !this.#replayable(task.id, scope?.fields ?? modelFields, scope?.effects) ||
         ledger.incompleteDisclosures === true && this.options.share !== undefined && this.options.share.revokesFields !== false) {
         throw new Fault('forbidden', 'Sharing changed before the configured model could receive this turn.');
       }
@@ -1292,26 +1320,16 @@ export class AssistantEngine {
         const access = recordDisclosures(scope.fields, ledger);
         if (!access('conversation', 'request', scope.requestId)) throw new Fault('forbidden', 'This request is not shared with OpenAI.');
         const persona = PROFILES.find(value => value.id === current.profile) ?? fail('internal');
-        const recent = scope.recent.filter(message => access('conversation', 'excerpt', message.id))
+        const recent = scope.recent.filter(message => access('conversation', 'excerpt', message.id) &&
+          (scope.referencedDevice === undefined || access('devices', 'label', scope.referencedDevice)))
           .map(message => ({id: message.id, role: message.role, text: message.text.slice(0, 1024)}));
         const context = buildContext({profile: current.profile, persona: {name: persona.name, character: persona.character},
           knowledge: {enabled: false, entries: []}, preferences: [], recent: {conversationId: null, messages: recent, total: recent.length}});
-        const allowsReplay: FieldAccess = (source, field, record) =>
-          scope.fields(source, field, record) || source === 'conversation' && field === 'request' && scope.fields(source, 'excerpt', record);
-        includesReplay = this.#replayable(current.id, allowsReplay);
-        if (includesReplay) {
-          for (const item of current.transcript) {
-            if (item.role !== 'owner') continue;
-            const id = conversationMessageId(current.id, item);
-            if (id !== scope.requestId && !access('conversation', 'excerpt', id)) {
-              throw new Fault('forbidden', 'An earlier message is no longer shared with this supervisor.');
-            }
-          }
-        }
-        if (!includesReplay && current.transcript.some(item => item.role !== 'owner')) {
+        includesReplay = scope.transcript.some(item => item.role === 'assistant');
+        if (includesReplay && !this.#replayable(current.id, scope.fields, scope.effects)) {
           throw new Fault('forbidden', 'Earlier task data can no longer be replayed to this supervisor.');
         }
-        const transcript = current.transcript.map(item => {
+        const transcript = scope.transcript.map(item => {
           if (item.role !== 'tool') return item;
           const record = conversationMessageId(current.id, item);
           if (record !== undefined && record.endsWith('-answer')) {
@@ -1517,9 +1535,10 @@ export class AssistantEngine {
       return control?.ownerMessageIds.join() === ownerMessageIds.join() &&
         (control.proposal.target === proposal.target || explicitGroup && control.additional !== undefined);
     })) return undefined;
-    const recent = this.#taskProvider(task).name === 'openai' ? this.#openAIScope(task).recent
+    const openai = this.#taskProvider(task).name === 'openai';
+    const recent = openai ? this.#openAIScope(task).recent
       : task.contextThrough === undefined ? [] : this.store.recentContext(task.profile, task.conversationId, task.contextThrough).messages;
-    const preceding = inputs.at(-2)?.text ?? recent.filter(message => message.role === 'owner').at(-1)?.text ?? '';
+    const preceding = (openai ? undefined : inputs.at(-2)?.text) ?? recent.filter(message => message.role === 'owner').at(-1)?.text ?? '';
     const attached = recent.filter(message => message.attachment !== undefined).at(-1)?.attachment;
     const knownArtwork = artworkRequestId !== undefined && (this.store.call(artworkRequestId)?.taskId === task.id ||
       attached?.requestId === artworkRequestId) && this.#modelFields(task.profile)('artwork', 'attachment', artworkRequestId);

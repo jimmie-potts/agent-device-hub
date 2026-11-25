@@ -1729,7 +1729,10 @@ configuration. An unfinished task whose provider cannot be established or
 matched stays paused. A pinned queued message waits if its supervisor is
 unavailable. Resolve the setting or cancel the task and start a fresh
 request. This also replaces the historical synthetic-to-Anthropic playback
-described in the #2026 release steps above.
+described in the #2026 release steps above. A previous release cannot resume
+a Responses task. Before a manual return to an older release, withdraw queued
+Responses messages and resolve any unread Responses steers in this release.
+Older queue readers do not interpret the provider pin.
 
 Keep the trial budget across both supervisors and their title calls. Set the
 shared local guard for the approved trial window, record its starting spend,

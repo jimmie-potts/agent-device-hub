@@ -2036,6 +2036,7 @@ void test('a full disk reported by the checkpoint writer names the storage cause
 
 void test('selecting OpenAI scopes titles and device reads, and replays only its own Responses items after restart', async context => {
   const sent: string[] = [], dispatched: AssistantDispatch[] = [];
+  const superseded = deferred<Response>();
   const reasoning = {type: 'reasoning', id: 'rs_fixture', encrypted_content: 'opaque-reasoning', summary: []};
   const message = (text: string) => ({type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]});
   const usage = {input_tokens: 200, output_tokens: 80, input_tokens_details: {cached_tokens: 50, cache_write_tokens: 20}, output_tokens_details: {reasoning_tokens: 60}};
@@ -2048,8 +2049,10 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     const body = JSON.parse(init.body) as {tools: unknown[]; input: Record<string, unknown>[]; store: boolean; parallel_tool_calls: boolean};
     assert.equal(body.store, false);
     assert.equal(body.parallel_tool_calls, false);
+    if (body.input.some(item => item.content === 'PRIVATE_SUPERSEDED_SUBJECT')) return superseded.promise;
     let output: unknown[];
     if (body.tools.length === 0) output = [message('Studio plug check')];
+    else if (body.input.some(item => item.content === 'New synthetic topic')) output = [message('A fresh topic.')];
     else if (body.input.some(item => item.type === 'function_call_output')) output = [message('I checked the tool result.')];
     else if (init.body.includes('What color is it')) output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
     else if (init.body.includes('Turn off Studio Plug') || init.body.includes('Could Studio Plug be off')) output = [reasoning, functionCall('set_wemo_power', {device: 'studio-plug', on: false})];
@@ -2113,4 +2116,13 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   assert.equal(bunnyTask()?.supervisor?.provider, 'anthropic');
   assert.equal(anthropicCalls, 2);
   assert.doesNotMatch(sent.join('\n'), /Synthetic queued Anthropic request/);
+
+  await start('PRIVATE_SUPERSEDED_SUBJECT');
+  await until(() => sent.at(-1)?.includes('PRIVATE_SUPERSEDED_SUBJECT') === true);
+  assert.equal((await input(w.core, w.module(), 'New synthetic topic', false, randomUUID(),
+    {action: 'steer', taskId: bunnyTask()?.taskId})).status, 'accepted');
+  superseded.resolve(new Response(JSON.stringify({status: 'completed', output: [reasoning, message('PRIVATE_SUPERSEDED_ANSWER')], usage})));
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.match(sent.at(-1) ?? '', /New synthetic topic/);
+  assert.doesNotMatch(sent.at(-1) ?? '', /PRIVATE_SUPERSEDED|opaque-reasoning/);
 });
