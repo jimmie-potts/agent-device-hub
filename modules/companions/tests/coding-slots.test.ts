@@ -18,6 +18,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, type Command, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import type {CodingJobPage} from '../src/coding/job-page.js';
+import {AssistantStore} from '../src/assistant/store.js';
 import {CodingStore} from '../src/coding/store.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
@@ -257,9 +258,14 @@ void test('an uncapped worker starts more jobs from one companion than a page ca
 });
 
 function seedReadyJobs(store: CodingStore, operations: string[]): void {
+  const assistant = new AssistantStore(store.database);
   for (const operationId of operations) {
-    const taskId = `${operationId}-task`, repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
-    store.create({jobId: `${operationId}-job`, operationId, taskId, repository, brief, conversationId: 'synthetic-older-conversation'});
+    const repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
+    const task = assistant.newTask('bunny', brief);
+    task.status = 'succeeded';
+    assistant.save(task);
+    const taskId = task.id;
+    store.create({jobId: `${operationId}-job`, operationId, taskId, repository, brief, conversationId: task.conversationId});
     store.wait({operationId, taskId, companion: 'bunny', repository, brief,
       traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
   }
@@ -947,10 +953,10 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   assert.match((await w.jobDetail(jobId)).attempts[0]?.selectionReason ?? '', /Claude Code quota exhausted \(reset unknown\)/);
   assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
   await w.progress({operationId, status: 'started', setup: 'ready', harness: 'codex', sessionId: 'native-codex'}, '2.3');
-  await settle(() => w.coding().runs?.some(run => run.sessionId === 'native-codex') === true);
+  await settle(() => w.coding().runs?.some(run => run.sessionId === 'native-codex' && run.status === 'started') === true);
   await w.progress({operationId, status: 'attempt-context', worktreeRef: 'bunny-fixture-partial', branch: null, model: 'fixture-reported-model'}, '2.5');
   const message = await w.message(jobId, operationId, 'Keep the fixture intact.', true);
-  assert.equal(message.status, 'accepted');
+  assert.equal(message.status, 'accepted', JSON.stringify(message));
   await settle(() => w.work.filter(command => command.data.action === 'message').length === 1);
   await w.progress({operationId, messageId: message.requestId, sessionId: 'wrong-session', status: 'message-observed'}, '2.5');
   assert.equal((await w.jobs({jobId})).jobs[0]?.messages?.[0]?.observed, false);
@@ -984,6 +990,7 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   });
   assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
   await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'native-claude'}, '2.3');
+  await settle(() => w.coding().runs?.some(run => run.operationId === resumed.operationId && run.status === 'started') === true);
   const unsupported = await w.message(jobId, resumed.operationId, 'Never message this unsupported harness.');
   assert.equal(unsupported.status, 'rejected');
   if (unsupported.status === 'rejected') assert.equal(unsupported.error.error.code, 'unsupported-capability');
@@ -1004,9 +1011,11 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
 void test('Jobs read grants filter discovery, detail and live counts before projecting names', {timeout: 30_000}, async context => {
   const policy = sharing();
   let hiddenOperation: string | undefined, hideBrief = false;
-  const w = await world(context, {share: query => policy(query) &&
+  const share = Object.assign((query: ShareQuery) => policy(query) &&
     !(query.destination === 'private-conversation' && query.source === 'coding' &&
-      (query.record === hiddenOperation && hiddenOperation !== undefined || hideBrief && query.field === 'brief'))});
+      (query.record === hiddenOperation && hiddenOperation !== undefined || hideBrief && query.field === 'brief')),
+    {revokesFields: true, allowsDerived: (query: ShareQuery) => policy.allowsDerived?.(query) !== false});
+  const w = await world(context, {share});
   assert.equal((await w.control('enable')).status, 'accepted');
   assert.equal((await w.enable('uncapped')).status, 'accepted');
   for (const profile of ['bunny', 'reachy'] as const) {

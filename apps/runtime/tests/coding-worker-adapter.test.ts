@@ -121,7 +121,7 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
             return Promise.resolve({turn: {id: turnId}});
           }
           case 'turn/steer': {
-            assert.ok(scenario.steerable);
+            assert.equal(scenario.steerable, true);
             assert.deepEqual(params, {threadId, expectedTurnId: turnId, clientUserMessageId: 'message-1',
               input: [{type: 'text', text: 'Only add the requested test.', text_elements: []}]});
             const item = {type: 'userMessage', clientId: 'message-1'};

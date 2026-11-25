@@ -263,6 +263,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const [history, setHistory] = useState<ConversationHistory>();
   // An earlier conversation of this profile the owner opened from Details (Hub #2029), read only; undefined shows the current one.
   const [viewing, setViewing] = useState<string>();
+  const previousProfile = useRef(profile);
   const [conversations, setConversations] = useState<readonly ConversationListEntry[]>();
   // The cursor of the next page of the profile's conversations, or null when every one is listed.
   const [olderConversations, setOlderConversations] = useState<string | null>(null);
@@ -377,7 +378,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
     setHistoryStatus('loading');
   }, [profile, viewing]);
   // Another profile opens on its current conversation.
-  useLayoutEffect(() => {setViewing(conversationRail.takeOpening(profile));}, [profile]);
+  useLayoutEffect(() => {
+    const opening = conversationRail.takeOpening(profile);
+    if (opening !== undefined || previousProfile.current !== profile) setViewing(opening);
+    previousProfile.current = profile;
+  }, [profile]);
   useEffect(() => {
     if (viewing !== undefined && conversations?.some(entry => entry.current && entry.conversationId === viewing) === true) {
       setViewing(undefined);

@@ -548,7 +548,7 @@ export class CodingCoordinator {
         } catch {status = 'uncertain'; code = 'uncertain-result';}
       }
       await this.#persistObservation(`message:${requestId}`, parent, () => this.outbox.transaction(() =>
-        this.#store.resolveMessage(requestId, status, code)), async changed => {if (changed) this.#changed();});
+        this.#store.resolveMessage(requestId, status, code)), changed => Promise.resolve(changed ? this.#changed() : undefined));
     }};
   }
   /** Records stop intent inside the caller's transaction; the returned work can run after commit. */
@@ -781,7 +781,7 @@ export class CodingCoordinator {
       const {operationId, messageId, sessionId} = message.data;
       if (message.subject !== this.#state.endpointId || !this.#connected()) return;
       await this.#persistObservation(`observed:${messageId}`, message, () => this.outbox.transaction(() =>
-        this.#store.observeMessage(messageId, operationId, message.subject, sessionId)), async changed => {if (changed) this.#changed();});
+        this.#store.observeMessage(messageId, operationId, message.subject, sessionId)), changed => Promise.resolve(changed ? this.#changed() : undefined));
       return;
     }
     const active = this.#active.get(message.data.operationId);
@@ -792,7 +792,7 @@ export class CodingCoordinator {
       const context: Omit<CodingAttemptContext, 'status' | 'operationId'> = {
         ...(worktreeRef === undefined ? {} : {worktreeRef}), ...(branch === undefined ? {} : {branch}), ...(model === undefined ? {} : {model})};
       await this.#persistObservation(`attempt-context:${message.id}`, message, () => this.outbox.transaction(() =>
-        this.#store.observeAttemptContext(active.operationId, context)), async changed => {if (changed) this.#changed();});
+        this.#store.observeAttemptContext(active.operationId, context)), changed => Promise.resolve(changed ? this.#changed() : undefined));
       return;
     }
     const progress = message.data;
