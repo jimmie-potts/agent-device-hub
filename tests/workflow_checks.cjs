@@ -421,11 +421,13 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   // keeps its full browser suite out of pull request Checks too; it runs after merges to main in its own workflow (#1942).
   const { scripts } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   for (const name of ['test:hub:built', 'test:hub:package:built', 'test:hub:verify:built', 'test:agent-status:built', 'test:lifx:built',
-    'test:tidbyt:built', 'test:tidbyt:python', 'test:local-controllers:built', 'test:contracts:python', 'test:package:built',
+    'test:tidbyt:built', 'test:local-controllers:built', 'test:contracts:python', 'test:package:built',
     'test:performance', 'test:dashboard:browser', 'test:runtime-dashboard:browser']) {
     assert.ok(scripts[name], `${name} stays available for local runs`);
     assert.equal(runs.includes(`npm run ${name}`), false, `${name} runs outside pull request Checks`);
   }
+  // #839 removed the old Tidbyt Python golden check; modules/tidbyt's golden.test.ts decodes the same images in Node.
+  assert.equal(scripts['test:tidbyt:python'], undefined, 'the old Tidbyt Python golden check is gone');
   assert.equal(scripts['test:dashboard:smoke'], 'node apps/dashboard/tests/smoke.mjs');
   // Hub #1676: the two Runtime verification jobs split the suite as packaged qualification's lanes do
   // (scripts/release/packaged.mjs lanePlan). Capture shard 1/2 runs alone; the other job runs every other file

@@ -29,8 +29,8 @@ The [shared architecture](../../docs/architecture.md) and
 - **Renderer** (`src/render.ts`, `src/webp.ts`): a pure function from a 64×32
   RGB frame to lossless WebP (VP8L), with no dependencies. It has no I/O and
   knows nothing about backends, credentials or configuration. Golden images
-  under `fixtures/` are checked byte for byte in TypeScript and decoded
-  independently by Pillow.
+  under `fixtures/` are checked byte for byte in TypeScript. The runtime module's
+  `modules/tidbyt/tests/golden.test.ts` decodes the same images independently.
 - **Cloud connection** (`src/connection.ts`): background pushes to one configured
   installation through `POST /v0/devices/{device}/push`, removal of that
   installation through `DELETE /v0/devices/{device}/installations/{installation}`,
@@ -216,10 +216,9 @@ competing common API.
 
 Follow [scoped instructions](AGENTS.md) and the root
 [development guide](../../docs/development.md#tidbyt-controller-checks). From the
-worktree root on Node 24, run `npm run test:tidbyt`. With Pillow from
-`requirements-contracts.txt` installed, also run `npm run test:tidbyt:python`.
+worktree root on Node 24, run `npm run test:tidbyt`.
 After an intentional encoder change, run `npm run build`, regenerate the golden
-images with `node controllers/tidbyt/scripts/write-golden.mjs` and rerun both checks.
+images with `node controllers/tidbyt/scripts/write-golden.mjs` and rerun it.
 
 Source tests use fake connections and a fake `fetch`. Real pushes need the
 user's explicit go-ahead and happen only where an issue allows them: one test
