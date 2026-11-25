@@ -48,7 +48,7 @@ function titleOrigin(title: ConversationTitle, profileName: string, synthetic: b
 export function ConversationDetails({
   id, open, overlay, onClose, stopSpeaking,
   Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, goTo, setEnabled, title, rename,
-  conversations, viewing, openConversation, showOlder,
+  conversations, viewing, openConversation, showOlder, codingJobs,
 }: {
   id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
@@ -69,6 +69,7 @@ export function ConversationDetails({
   conversations: readonly ConversationListEntry[] | undefined; viewing: string | undefined; openConversation: (conversationId: string) => void;
   /** Lists the next page of older conversations, or undefined when every one is listed. */
   showOlder: (() => void) | undefined;
+  codingJobs: React.ReactNode;
 }): React.JSX.Element {
   const renameId = useId();
   const [draftTitle, setDraftTitle] = useState('');
@@ -137,12 +138,13 @@ export function ConversationDetails({
           ...(withheld.length === 0 ? [] : [['B.U.N.N.Y. only', toolList(withheld)] as const]),
           ['Unavailable tools', toolList(unavailable)],
           ['Coding worker', workerAvailability(coding)],
-          [`${profileName}'s coding slot`, slotStatus(coding, profile)],
+          ...(coding?.capacity === 'uncapped' ? [] : [[`${profileName}'s coding slot`, slotStatus(coding, profile)] as const]),
           // The plan's usage windows are shared by every run; the worker reports them after a run (Hub #2028).
           ['Plan usage', planUsage(coding?.readiness, ms => new Date(ms).toLocaleString()).join('; ')],
         ]}/>
         <p>Reads need no approval. Proposed changes need your approval in the conversation.</p>
       </details>
+      {codingJobs}
       <details>
         <summary>Task activity</summary>
         {lastKnown && <p>Last known task activity.</p>}

@@ -3520,6 +3520,16 @@ delivery leaves one conversation result and sends no new worker command. The
 browser journeys verify the job reference and its
 linked result through the real gateway with a disposable worker.
 
+Uncapped coding jobs (#2110) use the same runtime, Companions, event contract
+and browser checks. The coding-slots suites exercise same-companion starts,
+setup deadlines and a named stop past the first job page. Loss and disable
+tests hold a worker acknowledgement, reconnect with the same identity, and
+verify that starts assigned to the old connection cannot run. Another test
+releases a delayed core dispatch after reconnect and checks that only the
+unassigned job reaches the worker. The coding-worker
+tests inject a disk error and spawn failure, use linked Git worktrees and
+check a cancelled waiter. Follow the existing Mac test admission rules.
+
 Coding-worker slots (#2028) use the same suites. `coding-coordinator.test.js`
 also covers three companions at once with tagged starts, a proposal bound to
 the worker's connection only, a companion's own further hand-off waiting and
