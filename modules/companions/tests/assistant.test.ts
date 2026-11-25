@@ -1,3 +1,4 @@
+import {DEVICE_HISTORY_VERSION} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -401,6 +402,50 @@ void test('an explicit Wemo group binds every target once', async context => {
   await until(() => status(w) === 'succeeded' && requests.length === 2);
   assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
   assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+});
+
+void test('Conversation discovers an allowed device and answers a held-out power interval from bounded evidence', async context => {
+  const owner = 'bunny/modules/wemo', target = 'fixture-plug';
+  const read = {source: owner, target, period: '', fromAtMs: 1000, toAtMs: 1100};
+  const provider = counted((request, turn) => {
+    if (turn === 1) return call('read_hub_guide');
+    if (turn === 2) {
+      assert.match(JSON.stringify(request.transcript), /read_device_history/);
+      return call('read_devices', {owner, target: ''});
+    }
+    if (turn === 3) {
+      assert.match(JSON.stringify(request.transcript), /fixture-plug/);
+      return call('read_device_history', {...read, cursor: ''}, 'history-first');
+    }
+    const result = request.transcript.filter(item => item.role === 'tool').at(-1)?.result ?? '{}';
+    const page = JSON.parse(result) as {next: string | null; durations: {on: number; unknown: number}; evidence: {seq: number}[]};
+    if (page.next !== null) return call('read_device_history', {...read, cursor: page.next}, 'history-next');
+    assert.equal(page.evidence.at(-1)?.seq, 15);
+    return reply(`The evidence supports ${String(page.durations.on)} on and ${String(page.durations.unknown)} unknown.`);
+  });
+  let reads = 0;
+  const w = await world(context, {provider, tools: ['read_hub_guide', 'read_devices', 'read_device_history'],
+    dispatch: () => assert.fail('history sends no device command'),
+    deviceHistory: query => {
+      reads += 1;
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 15, complete: true,
+        durations: {on: 60, off: 10, unknown: 30}, lastChange: null, causes: [],
+        evidence: Array.from({length: 16}, (_, seq) => ({seq, messageId: null, atMs: 1000 + seq, confirmedThroughMs: 1001 + seq,
+          kind: 'observation', power: 'on'}))};
+    },
+  });
+  const device = w.bus.connect(owner);
+  context.after(() => device.close());
+  await device.serveSync(['device'], () => ({revision: 1, states: [{
+    type: 'org.bunny.device.updated', subject: target, dataschema: DEVICE_READBACK_SCHEMA,
+    data: {...light(target, 'Fixture Plug'), kind: 'wemo'},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'How much of the Fixture Plug’s last interval can you prove it was on?');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(reads, 1);
+  await w.restart();
+  assert.match(JSON.stringify(await page(w)), /60 on and 30 unknown/);
 });
 
 void test('assistant-state updates and sync hide revoked task metadata, including after restart', async context => {

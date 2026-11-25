@@ -32,10 +32,11 @@ type Candidate = {event: CompanionOpportunity; parent: TraceContext; speechEpoch
 const stateDraft = (data: CompanionState): StateDraft<CompanionState> => ({type: 'org.bunny.companion-state.updated', subject: 'reachy',
   dataschema: 'https://bunny.invalid/events/companion-state/2.0', data});
 const receiptKey = (event: CompanionOpportunity): string => createHash('sha256').update(`${event.context}:${event.origin.source}:${event.origin.id}:${event.cue}`).digest('hex');
+type DeviceHistoryRead = NonNullable<AssistantOptions['deviceHistory']>;
 type RetainedArtworkRead = NonNullable<AssistantOptions['retainedArtwork']>;
 export const isCompanionsModule = (module: BunnyModule): module is CompanionsModule =>
   module.manifest.name === 'companions' && 'setArtCatalog' in module && typeof module.setArtCatalog === 'function';
-export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtworkRead): void; inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; stopCodingJob(jobId: string, operationId: string): Promise<Reply>; pending(): number};
+export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtworkRead): void; setDeviceHistory(read: DeviceHistoryRead): void; inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; stopCodingJob(jobId: string, operationId: string): Promise<Reply>; pending(): number};
 /** The name under the section's `secrets` of the file holding the hosted provider's API key. */
 export const API_KEY_SECRET = 'anthropic-api-key';
 /**
@@ -120,11 +121,13 @@ export function createCompanionsModule(options: CompanionsOptions = {}): Compani
     content: (ref, request) => engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
     upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
     setArtCatalog: read => {engine.retainedArtwork = read;},
+    setDeviceHistory: read => {engine.deviceHistory = read;},
     start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), inspectSpeech: () => engine.speech?.inspect(), inspectCoding: () => engine.coding?.inspect(),
     stopCodingJob: (jobId, operationId) => engine.coding?.stopJob(jobId, operationId) ?? Promise.resolve(errorBody('unavailable')), pending: () => engine.pending()};
 }
 class Companions {
   retainedArtwork: RetainedArtworkRead | undefined;
+  deviceHistory: DeviceHistoryRead | undefined;
   speech: SpeechCoordinator | undefined;
   coding: CodingCoordinator | undefined;
   assistant: AssistantEngine | undefined;
@@ -207,6 +210,7 @@ class Companions {
     // An approved hand-off goes to the core now when its companion's slot is free, or waits for it (Hub #2028).
     const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => coding.handOff(data, parent));
     this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context), share,
+      deviceHistory: query => (this.deviceHistory ?? this.options.deviceHistory)?.(query) ?? errorBody('unavailable'),
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries,
       // The owner's knowledge notes reach a companion's context only once the owner turns them on for it (Hub #2029).
       knowledge: () => this.knowledge?.store.active().entries ?? [], speak,

@@ -25,7 +25,8 @@ import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type Sp
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions, deviceClarification, type RetainedArtworkRead} from './catalog-actions.js';
-import {catalogCommand, catalogTool, isCatalogTool, READ_DEVICES} from './catalog-tools.js';
+import {catalogCommand, catalogTool, isCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
+import {DeviceHistoryPages, deviceHistoryGuide, type DeviceHistoryRead} from './device-history.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
 import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} from './titles.js';
@@ -42,6 +43,7 @@ export type Dispatch = (data: AssistantDispatch, parent: TraceContext, signal: A
  * and the owner's currently active explicit preferences, read at each model call (none without the seam).
  */
 export type AssistantOptions = {
+  deviceHistory?: DeviceHistoryRead;
   share?: Share;
   provider?: ModelProvider;
   retainedArtwork?: RetainedArtworkRead;
@@ -212,6 +214,7 @@ export class AssistantEngine {
   readonly spend: SpendLedger;
   readonly titles: ConversationTitles;
   readonly #validator = coreValidator();
+  readonly #history = new DeviceHistoryPages(() => this.options.deviceHistory);
   readonly #subscriptions: Subscription[] = [];
   readonly #graph;
   readonly #deviceDisplay: DeviceReadDisplay;
@@ -1530,7 +1533,11 @@ export class AssistantEngine {
       const ledger: DisclosureLedger = {fields: []};
       const access = recordDisclosures(modelFields, ledger);
       let text: string;
-      if (owner !== undefined) {
+      if (call.name === READ_HUB_GUIDE) {
+        text = deviceHistoryGuide(new Set(tools.map(tool => tool.name)));
+      } else if (call.name === READ_DEVICE_HISTORY) {
+        text = this.#history.read(call.input, {taskId: task.id, destination: provider.name, now, timeZone: this.spend.timeZone}, access);
+      } else if (owner !== undefined) {
         const name = call.input.device;
         const records = this.options.devices?.(owner)?.filter(device => access('devices', 'index', device.id) && access('devices', 'label', device.id)
           && (name === '' || access('devices', 'details', device.id) && access('devices', 'status', device.id)));

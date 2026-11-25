@@ -620,12 +620,13 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   definitions from the list at start and checks membership again when a call
   executes, so a changed section cannot widen an effect. The built-in
   `ask_owner` is always available; the synthetic fixture read is never listed.
-  Device and catalog tools stay B.U.N.N.Y.'s (Hub #2026): Reachy's and
-  MicroDuck's models are offered only the listed tools that are neither, such
-  as `read_sessions`, `set_mode` and `delegate_coding`, and a proposal from them
-  still needs your approval. **Details** lists the tools the open profile's
-  model is offered under **Allowed tools**, and the listed ones it is not under
-  **B.U.N.N.Y. only**.
+  All three companions use the same configured allowlist. Details shows
+  it under **Allowed tools**. To answer device-history questions, allow
+  `read_hub_guide`, `read_devices` and `read_device_history`. The guide
+  distinguishes current device observations, Wemo maximum-on deadlines and
+  retained power evidence. History currently covers Wemo and LIFX, reports
+  observed on, off and unknown time, and returns bounded evidence pages.
+  An expired cursor or restart requires a fresh read.
 - Requests go to `https://api.anthropic.com/v1/messages` through the module's
   own fetch with API version `2026-10-21`, carrying the fixed instructions, the
   current Hub mode, the task's transcript, the tool definitions marked strict,

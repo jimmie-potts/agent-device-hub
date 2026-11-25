@@ -1,6 +1,8 @@
 import {assistantRoutes, catalogFamily, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {ToolDefinition, ToolInputSchema} from './tool-types.js';
 
+export const READ_HUB_GUIDE = 'read_hub_guide';
+export const READ_DEVICE_HISTORY = 'read_device_history';
 export const READ_DEVICES = 'read_devices';
 export const READ_PLAYBACK = 'read_playback';
 export const READ_VACUUM = 'read_roborock';
@@ -38,6 +40,13 @@ const draft = text('The exact draft ID from the authoring or preview tool.');
 const draftRevision = integer('The exact draft revision the owner requested, or the previewed revision if the owner did not specify one.');
 const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family => family !== 'nanoleaf-show-save' && family !== 'art-request');
 export const catalogTools = [
+  define(READ_HUB_GUIDE, 'read', 'Discover the Hub sources and read operations that answer current device, deadline and historical power questions.', {}),
+  define(READ_DEVICE_HISTORY, 'read', 'Read a bounded page of observed power evidence and deterministic duration totals. Use the same query on later pages.', {
+    source: text('Exact device owner from read_devices.'), target: text('Exact device ID from read_devices.'),
+    period: {type: 'string', enum: ['', 'yesterday'], description: 'Use yesterday in the owner’s local timezone, or empty for explicit times.'},
+    fromAtMs: integer('Inclusive epoch milliseconds, or zero for yesterday.'), toAtMs: integer('Exclusive epoch milliseconds, or zero for yesterday.'),
+    cursor: text('Empty to start, or the most recent next cursor.'),
+  }),
   define(READ_DEVICES, 'read', 'Find configured devices and observe their status and permitted commands. A named Wemo plug includes its Hub maximum-on timer status and time remaining. Use empty target to list. Return the exact owner and target to use for a control.', {
     target: text('Device name or ID, or empty to list.'), owner: text('Exact owner such as bunny/modules/pixoo, or auto to search installed owners.'),
   }),

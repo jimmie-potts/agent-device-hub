@@ -99,3 +99,23 @@ export function artDescription(value: unknown): value is string {
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const revision = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 export const routingId = (value: unknown): value is string => typeof value === 'string' && value.length <= 128 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
+
+/** The host's bounded, read-only view of core-owned device power history. */
+export const DEVICE_HISTORY_VERSION = 'device-history/1.0';
+export const DEVICE_HISTORY_SOURCES = ['bunny/modules/wemo', 'bunny/modules/lifx'] as const;
+export type DeviceHistorySource = typeof DEVICE_HISTORY_SOURCES[number];
+export type DeviceHistoryQuery = {source: DeviceHistorySource; target: string; fromAtMs: number; toAtMs: number};
+export type DevicePower = 'on' | 'off' | 'unknown';
+export type DeviceHistoryEvidence = {seq: number; messageId: string | null; atMs: number; power: DevicePower;
+  kind: 'observation' | 'gap' | 'removal'; confirmedThroughMs: number};
+export type DeviceHistorySnapshot = {schema: typeof DEVICE_HISTORY_VERSION; query: DeviceHistoryQuery; boundary: number;
+  complete: boolean; evidence: DeviceHistoryEvidence[]; durations: Record<DevicePower, number>;
+  lastChange: {atMs: number; from: 'on' | 'off'; to: 'on' | 'off'; seq: number} | null;
+  causes: {requestId: string; observationSeq: number; outcomeSeq: number; sentSeq: number}[]};
+export function deviceHistoryQuery(value: Record<string, unknown>): DeviceHistoryQuery | undefined {
+  const {source, target, fromAtMs, toAtMs} = value;
+  const owner = DEVICE_HISTORY_SOURCES.find(candidate => candidate === source);
+  if (owner === undefined || !routingId(target) || typeof fromAtMs !== 'number' || !Number.isSafeInteger(fromAtMs) ||
+    typeof toAtMs !== 'number' || !Number.isSafeInteger(toAtMs) || fromAtMs < 0 || fromAtMs >= toAtMs || toAtMs > 8_640_000_000_000_000 || toAtMs - fromAtMs > 7 * 86_400_000) return undefined;
+  return {source: owner, target, fromAtMs, toAtMs};
+}
