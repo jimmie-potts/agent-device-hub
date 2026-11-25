@@ -35,7 +35,7 @@ export type CodingSeams = {
   jobUpdate?: (job: CodingJob, kind: 'sent' | 'stop-unconfirmed' | 'result', text: string, parent: TraceContext, startup: boolean) => Promise<void>;
   companionOf?: (taskId: string) => CodingCompanion | undefined;
   awaits?: (taskId: string) => boolean;
-  sent?: (taskId: string, parent: TraceContext) => void;
+  sent?: (taskId: string, operationId: string, parent: TraceContext) => void | Promise<void>;
 };
 type Phase = CodingRunEntry['status'];
 type Active = CodingResponsibility & {companion: CodingCompanion; phase: Phase; wallClockMs: number; cancel: Cancel; settling: boolean};
@@ -135,6 +135,7 @@ export class CodingCoordinator {
   }
   async start(): Promise<void> {
     this.#starting = true;
+    this.#store.recoverDeliveries();
     // Responsibility that was pending at the last stop is uncertain now: the worker may have run, nothing is resent, and the task hears so.
     for (const record of this.#store.records('pending')) {
       await this.#settle(record, 'uncertain', undefined, 'lost', record.started ? undefined : {result: Outcome.uncertain}, true);
@@ -142,7 +143,7 @@ export class CodingCoordinator {
     // A hand-off whose dispatch had left without its acceptance recorded may have reached the core: its fate is unknown
     // and it is never sent again. One that never left keeps its place and is sent when its slot frees.
     for (const record of this.#store.waiting().filter(waiting => waiting.sending)) await this.#endWait(record);
-    await this.#deliverJobUpdates(undefined, true);
+    await this.#deliverObservations();
     this.#starting = false;
     this.#subscriptions.push(await this.context.sdk.respond<CodingEndpointControl>('bunny.cmd.coding-endpoint.*', command => this.#control(command)));
     this.#subscriptions.push(await this.context.sdk.respond<CodingRun>('bunny.cmd.coding-run.assistant', command => this.#accept(command)));
@@ -261,56 +262,59 @@ export class CodingCoordinator {
     await this.#persistTerminal(record, () => this.outbox.transaction(() => {
       const {operationId} = record;
       const job = this.#store.job(operationId);
-      if (answer !== undefined && (answer.status === 'accepted' || this.#store.accepted(operationId))) return {kind: 'sent', job} as const;
+      if (answer !== undefined && (answer.status === 'accepted' || this.#store.accepted(operationId))) {
+        if (!this.#store.resultSaved(operationId)) this.#store.update({...record, kind: 'sent', text: 'The core accepted the worker dispatch. The worker start is a separate observation.'});
+        return false;
+      }
       const code = answer?.error.error.code;
       const uncertain = answer === undefined || answer.status === Outcome.uncertain || code === 'uncertain-result';
       const stopped = !uncertain && code === 'invalid-state' && this.#store.stopRequested(operationId);
       const text = describeResult(uncertain ? 'uncertain' : stopped ? 'cancelled' : 'failed', undefined,
         uncertain ? 'lost' : stopped ? 'stopped before worker start' : `refused: ${code}`);
       this.#store.unwait(operationId);
-      if (job !== undefined) this.#store.update({...record, kind: 'result', text});
-      return {kind: 'ended', job, text, uncertain} as const;
-    }), async settlement => {
-      try {
-        if (settlement.kind === 'ended') this.#changed();
-        if (settlement.job !== undefined) {
-          if (settlement.kind === 'sent' && !this.#store.resultSaved(record.operationId)) {
-            this.#store.update({...record, kind: 'sent', text: 'The core accepted the worker dispatch. The worker start is a separate observation.'});
-          }
-          await this.#deliverJobUpdates(record.operationId, startup);
-        } else if (settlement.kind === 'sent') this.#seams.sent?.(record.taskId, record);
-        else if (!this.#cancelled.delete(record.taskId)) await this.deliver(record.taskId, settlement.text, record,
-          {requestId: record.operationId, source: 'effect', text: settlement.uncertain ? 'the coding worker outcome is unknown' : 'the coding hand-off was refused'}, startup);
-      } finally {this.#drain();}
+      if (job !== undefined || !this.#cancelled.has(record.taskId)) this.#store.update({...record, kind: 'result', text, startup,
+        ...(job === undefined ? {legacyEvidence: uncertain ? 'the coding worker outcome is unknown' : 'the coding hand-off was refused'} : {})});
+      return true;
+    }), async ended => {
+      if (ended) {this.#cancelled.delete(record.taskId); this.#changed();}
+      try {await this.#deliverObservations(record.operationId);}
+      finally {this.#drain();}
     });
   }
-  async #deliverJobUpdates(operationId?: string, startup = false): Promise<void> {
-    if (this.#seams.jobUpdate === undefined || this.#closed || this.context.signal.aborted) return;
+  async #deliverObservations(operationId?: string): Promise<void> {
+    if (this.#closed || this.context.signal.aborted) return;
     try {
-      for (const update of this.#store.undelivered(operationId)) {
-        if (this.#closed || this.context.signal.aborted) return;
-        const id = `${update.operationId}:${update.kind}`;
+      const operations = operationId === undefined ? new Set(this.#store.undelivered().map(update => update.operationId)) : [operationId];
+      for (const id of operations) {
         if (this.#delivering.has(id)) continue;
         this.#delivering.add(id);
+        let parent: TraceContext | undefined;
         try {
-          const job = this.#store.job(update.operationId);
-          if (job === undefined) continue;
-          await this.#seams.jobUpdate(job, update.kind, update.text, update, startup);
-          if (!this.#closed && !this.context.signal.aborted) this.#store.delivered(update);
-        } catch (error) {this.#scheduleDelivery(error, startup, update);}
+          while (!this.#closed && !this.context.signal.aborted) {
+            const update = this.#store.undelivered(id)[0];
+            if (update === undefined) break;
+            parent = update;
+            const job = this.#store.job(id);
+            if (job !== undefined) await this.#seams.jobUpdate?.(job, update.kind, update.text, update, update.startup === true);
+            else if (update.kind === 'sent') await this.#seams.sent?.(update.taskId, id, update);
+            else if (update.kind === 'result' && update.legacyEvidence !== undefined) await this.deliver(update.taskId, update.text, update,
+              {requestId: id, source: 'effect', text: update.legacyEvidence}, update.startup === true);
+            if (!this.#closed && !this.context.signal.aborted) this.#store.delivered(update);
+          }
+        } catch (error) {this.#scheduleDelivery(error, parent);}
         finally {this.#delivering.delete(id);}
       }
-    } catch (error) {this.#scheduleDelivery(error, startup);}
+    } catch (error) {this.#scheduleDelivery(error);}
     if (operationId === undefined && this.#deliveryRetry === undefined) this.#deliveryRetryMs = STORAGE_RETRY_MS;
   }
-  #scheduleDelivery(error: unknown, startup: boolean, parent?: TraceContext): void {
+  #scheduleDelivery(error: unknown, parent?: TraceContext): void {
     if (this.#closed || this.context.signal.aborted || this.#deliveryRetry !== undefined) return;
     const delay = this.#deliveryRetryMs;
     if (delay === STORAGE_RETRY_MS) this.#storageFailure(error, parent);
     this.#deliveryRetryMs = Math.min(delay * 2, MAX_STORAGE_RETRY_MS);
     this.#deliveryRetry = this.context.scheduler.after(delay, () => {
       this.#deliveryRetry = undefined;
-      void this.#deliverJobUpdates(undefined, startup);
+      void this.#deliverObservations();
     });
   }
   /** Records stop intent inside the caller's transaction; the returned work can run after commit. */
@@ -329,7 +333,7 @@ export class CodingCoordinator {
       return {committed: async () => {
         this.#changed();
         this.#drain();
-        await this.#deliverJobUpdates(operationId);
+        await this.#deliverObservations(operationId);
       }};
     }
     return {committed: () => {
@@ -361,7 +365,7 @@ export class CodingCoordinator {
     try {
       this.#store.update({...active, kind: 'stop-unconfirmed', text: confirmed ? 'The worker accepted the stop request. The stop itself is unconfirmed.'
           : 'The worker did not confirm receipt of the stop request. Its stop is unconfirmed.'});
-      await this.#deliverJobUpdates(active.operationId);
+      await this.#deliverObservations(active.operationId);
     } catch (error) {this.#storageFailure(error, active);}
   }
   #workerStop(active: Active): Promise<RequestResult> {
@@ -510,16 +514,13 @@ export class CodingCoordinator {
     await this.#persistTerminal(record, () => this.outbox.transaction(add => {
       const job = this.#store.job(record.operationId);
       this.#store.settle(record.operationId, status);
-      if (job !== undefined) this.#store.update({...record, kind: 'result', text});
+      this.#store.update({...record, kind: 'result', text, startup,
+        ...(job === undefined ? {legacyEvidence: status === 'uncertain' ? 'the coding worker outcome is unknown' : `the coding worker reported that the task ${status}`} : {})});
       if (outcome !== undefined) this.#addOutcome(add, record, outcome, record.started ? 'observed' : 'none');
-      return job;
-    }), async job => {
+    }), async () => {
       if (active !== undefined) {this.#active.delete(active.operationId); this.#changed();}
-      try {
-        if (job !== undefined) await this.#deliverJobUpdates(record.operationId, startup);
-        else await this.deliver(record.taskId, text, record,
-          {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : `the coding worker reported that the task ${status}`}, startup);
-      } finally {if (active !== undefined) this.#drain();}
+      try {await this.#deliverObservations(record.operationId);}
+      finally {if (active !== undefined) this.#drain();}
     });
   }
   /** Retains the first observation across local write failures. Only the local transaction is retried. */

@@ -312,16 +312,81 @@ void test('an earlier saved delegation interrupt and unsent hand-off survive the
   await w.restart();
   assert.equal(w.starts().length, 0);
   assert.equal(w.task('bunny')?.status, 'waiting');
+  const db = w.database();
+  let sentAttempts = 0, resultAttempts = 0, markAttempts = 0;
+  db.function('fail_legacy_sent', () => {sentAttempts += 1; return sentAttempts === 1 ? 1 : 0;});
+  db.function('fail_legacy_result', () => {resultAttempts += 1; return resultAttempts === 1 ? 1 : 0;});
+  db.function('fail_legacy_mark', () => {markAttempts += 1; return markAttempts === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_legacy_sent BEFORE INSERT ON assistant_messages
+    WHEN NEW.id LIKE '%-delegation-%-sent' AND fail_legacy_sent()=1 BEGIN SELECT RAISE(ABORT, 'synthetic legacy sent copy failure'); END;
+    CREATE TEMP TRIGGER fail_legacy_result BEFORE UPDATE ON assistant_tasks
+    WHEN json_extract(NEW.record, '$.question.answer') LIKE '%Synthetic pre-change result%' AND fail_legacy_result()=1
+    BEGIN SELECT RAISE(ABORT, 'synthetic legacy result copy failure'); END;
+    CREATE TEMP TRIGGER fail_legacy_mark BEFORE UPDATE OF delivered ON companion_coding_job_updates
+    WHEN NEW.kind='result' AND fail_legacy_mark()=1 BEGIN SELECT RAISE(ABORT, 'synthetic legacy marker failure'); END`);
   assert.equal((await w.enable()).status, 'accepted');
+  await settle(() => sentAttempts === 1);
   await settle(() => w.starts().length === 1);
   assert.equal(w.starts()[0]?.data.operationId, operationId);
+  w.advance(1000);
+  await w.waitMessages('bunny', /Delegated to the coding worker/);
   await w.progress({operationId, status: 'started'});
+  await settle(() => w.coding().active?.status === 'started');
   await w.progress({operationId, status: 'completed', result: result('Synthetic pre-change result.')});
+  await settle(() => resultAttempts === 1);
+  assert.equal(w.task('bunny')?.hasAnswer, false);
+  w.advance(1000);
+  await settle(() => markAttempts === 1);
   await w.waitMessages('bunny', /Synthetic pre-change result/);
   await settle(() => w.task('bunny')?.status === 'succeeded');
+  w.advance(2000);
+  await settle(() => new CodingStore(db).undelivered(operationId).length === 0);
+  assert.equal((await w.messages('bunny')).filter(message => message.role === 'tool' && message.text.includes('Synthetic pre-change result')).length, 1);
   assert.deepEqual(w.dispatched, [operationId]);
 });
 
+
+for (const previous of ['sending', 'running'] as const) {
+  void test(`recovery of a legacy ${previous} delegation retains uncertainty across a failed conversation write`, {timeout: 30_000}, async context => {
+    let operationId: string | undefined;
+    const options: CompanionsOptions = {delegate: data => {
+      operationId = data.requestId;
+      return Promise.resolve({status: 'waiting', requestId: data.requestId});
+    }};
+    const w = await world(context, options);
+    assert.equal((await w.control('enable')).status, 'accepted');
+    assert.equal((await w.enable()).status, 'accepted');
+    assert.equal((await w.send('bunny', 'Synthetic recovered legacy job')).status, 'accepted');
+    await w.approved('bunny');
+    await settle(() => w.task('bunny')?.status === 'waiting' && w.task('bunny')?.questionId?.includes('-delegation-') === true);
+    const taskId = w.task('bunny')?.taskId ?? assert.fail('legacy task');
+    assert.ok(operationId !== undefined);
+    const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+    const store = new CodingStore(w.database());
+    if (previous === 'sending') {
+      store.wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic prior brief.', traceparent});
+      store.sending(operationId);
+    } else {
+      store.accept({operationId, taskId, endpointId: ENDPOINT, traceparent});
+      store.started(operationId);
+    }
+    w.database().exec(`CREATE TRIGGER fail_legacy_recovery BEFORE UPDATE ON assistant_tasks
+      WHEN json_extract(NEW.record, '$.question.answer') LIKE 'uncertain (lost)%'
+      BEGIN SELECT RAISE(ABORT, 'synthetic recovery copy failure'); END`);
+    delete options.delegate;
+    await w.restart();
+    const reopened = w.database();
+    assert.ok(new CodingStore(reopened).resultSaved(operationId));
+    assert.equal(w.task('bunny')?.hasAnswer, false);
+    reopened.exec('DROP TRIGGER fail_legacy_recovery');
+    w.advance(1000);
+    await settle(() => w.task('bunny')?.hasAnswer === true);
+    assert.equal(w.task('bunny')?.status, 'paused', 'startup delivery keeps the original graph paused');
+    assert.equal((await w.enable()).status, 'accepted');
+    assert.deepEqual(w.dispatched, []);
+    assert.deepEqual(w.starts(), []);
+  });
+}
 
 void test('a failed terminal commit retries the first evidence without sending another worker command', {timeout: 30_000}, async context => {
   const w = await world(context);
@@ -375,6 +440,25 @@ void test('a dispatch refusal survives failed result persistence without resendi
   assert.match(saved[0]?.text ?? '', /failed \(refused: unavailable\)/);
   assert.deepEqual(w.dispatched, [operationId]);
   assert.equal(w.starts().length, 0);
+});
+
+void test('an accepted dispatch receipt survives a transient insert failure without another dispatch', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  const db = w.database();
+  let attempts = 0;
+  db.function('fail_sent_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_sent_save BEFORE INSERT ON companion_coding_job_updates
+    WHEN NEW.kind='sent' AND fail_sent_save()=1 BEGIN SELECT RAISE(ABORT, 'synthetic send receipt insert failure'); END`);
+  assert.equal((await w.send('bunny', 'Synthetic accepted dispatch')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => attempts === 1 && w.starts().length === 1);
+  w.advance(1000);
+  await w.waitMessages('bunny', /accepted the worker dispatch/);
+  assert.equal(attempts, 2);
+  assert.equal(w.dispatched.length, 1);
+  assert.equal(w.starts().length, 1);
 });
 
 void test('a saved result retries original-exchange delivery and deduplicates after a failed delivery marker', {timeout: 30_000}, async context => {

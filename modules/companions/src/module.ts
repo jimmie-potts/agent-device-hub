@@ -190,7 +190,7 @@ class Companions {
         const task = this.assistant?.store.task(taskId);
         return task !== undefined && !['succeeded', 'failed', 'cancelled'].includes(task.status) && task.question?.kind === 'delegation' && task.question.answer === null;
       },
-      sent: (taskId, parent) => {void this.assistant?.handOffSent(taskId, parent).catch(() => {});},
+      sent: (taskId, operationId, parent) => this.assistant?.handOffSent(taskId, operationId, parent) ?? Promise.resolve(),
     });
     this.coding = coding;
     // An approved hand-off goes to the core now when its companion's slot is free, or waits for it (Hub #2028).

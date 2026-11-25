@@ -1402,11 +1402,11 @@ export class AssistantEngine {
    * A hand-off that waited for its companion's slot was sent (Hub #2028): the delegation now reads as delegated, and the
    * conversation says so once. A task that no longer waits on that hand-off is left as it is.
    */
-  async handOffSent(taskId: string, parent: TraceContext): Promise<void> {
+  async handOffSent(taskId: string, operationId: string, parent: TraceContext): Promise<void> {
     await this.outbox.transaction(add => {
       const task = this.store.task(taskId), question = task?.question;
       if (task === undefined || terminal(task.status) || question === null || question === undefined || question.kind !== 'delegation' || question.answer !== null
-        || !question.text.startsWith(WAITING_PREFIX)) return;
+        || !question.text.startsWith(WAITING_PREFIX) || !this.#matchesDelegation(taskId, question.id, operationId)) return;
       question.text = `Delegated${question.text.slice(WAITING_PREFIX.length)}`.slice(0, 1024);
       this.store.message(task, `${question.id}-sent`, 'assistant', question.text, this.context.clock.now());
       this.store.save(task); this.#publish(add, parent);
@@ -1418,13 +1418,17 @@ export class AssistantEngine {
    * `startup` marks the coordinator's settlement at start of a hand-off left pending at the last stop, which starts no
    * title check, as a start starts no work.
    */
+  #matchesDelegation(taskId: string, questionId: string, operationId: string): boolean {
+    const prefix = `${taskId}-step-`;
+    return operationId.startsWith(prefix) && questionId === `${taskId}-delegation-${operationId.slice(prefix.length)}`;
+  }
   async deliver(taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence, startup = false): Promise<void> {
     let launch = false, delivered: Task | undefined;
     await this.outbox.transaction(add => {
       const task = this.store.task(taskId);
       if (task === undefined || terminal(task.status)) return;
       const question = task.question;
-      if (question === null || question.kind !== 'delegation' || question.answer !== null) return;
+      if (question === null || question.kind !== 'delegation' || question.answer !== null || !this.#matchesDelegation(taskId, question.id, evidence.requestId)) return;
       this.store.observeAction(taskId, evidence);
       question.answer = text.slice(0, LIMITS.toolBytes); delivered = task;
       if (startup && task.status === 'waiting') task.status = 'paused';

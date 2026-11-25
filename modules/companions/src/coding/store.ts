@@ -10,7 +10,7 @@ export type CodingResponsibility = {operationId: string; taskId: string; endpoin
 export type CodingWaitingRecord = {operationId: string; taskId: string; companion: CodingCompanion; repository: string; brief: string; traceparent: string; sending: boolean};
 export type CodingOrigin = {conversationId: string; taskId: string};
 export type CodingJob = CodingOrigin & {jobId: string; operationId: string; repository: string; brief: string};
-type JobUpdate = {operationId: string; kind: 'sent' | 'stop-unconfirmed' | 'result'; text: string; traceparent: string};
+type CodingObservation = {operationId: string; taskId: string; kind: 'sent' | 'stop-unconfirmed' | 'result'; text: string; traceparent: string; legacyEvidence?: string; startup?: boolean};
 const companions: readonly string[] = ['bunny', 'reachy', 'microduck'];
 /**
  * Durable responsibility, final receipts and the hand-offs waiting for a slot (Hub #502, #2028). Availability, the
@@ -33,8 +33,9 @@ export class CodingStore {
       stop_requested INTEGER NOT NULL DEFAULT 0 CHECK(stop_requested IN (0,1))
     ) STRICT`);
     database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_job_updates (
-      operation_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('sent','stop-unconfirmed','result')),
-      text TEXT NOT NULL, traceparent TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0 CHECK(delivered IN (0,1)),
+      operation_id TEXT NOT NULL, task_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('sent','stop-unconfirmed','result')),
+      text TEXT NOT NULL, traceparent TEXT NOT NULL, legacy_evidence TEXT,
+      startup INTEGER NOT NULL DEFAULT 0 CHECK(startup IN (0,1)), delivered INTEGER NOT NULL DEFAULT 0 CHECK(delivered IN (0,1)),
       PRIMARY KEY(operation_id, kind)
     ) STRICT`);
   }
@@ -56,24 +57,29 @@ export class CodingStore {
   stopRequested(operationId: string): boolean {
     return this.database.prepare('SELECT 1 FROM companion_coding_jobs WHERE operation_id=? AND stop_requested=1').get(operationId) !== undefined;
   }
-  update({operationId, kind, text, traceparent}: JobUpdate): void {
-    this.database.prepare('INSERT OR IGNORE INTO companion_coding_job_updates(operation_id,kind,text,traceparent) VALUES(?,?,?,?)').run(operationId, kind, text, traceparent);
+  update({operationId, taskId, kind, text, traceparent, legacyEvidence, startup}: CodingObservation): void {
+    this.database.prepare('INSERT OR IGNORE INTO companion_coding_job_updates(operation_id,task_id,kind,text,traceparent,legacy_evidence,startup) VALUES(?,?,?,?,?,?,?)')
+      .run(operationId, taskId, kind, text, traceparent, legacyEvidence ?? null, startup === true ? 1 : 0);
+  }
+  recoverDeliveries(): void {
+    this.database.prepare('UPDATE companion_coding_job_updates SET startup=1 WHERE delivered=0').run();
   }
   resultSaved(operationId: string): boolean {
     return this.database.prepare("SELECT 1 FROM companion_coding_job_updates WHERE operation_id=? AND kind='result'").get(operationId) !== undefined;
   }
-  undelivered(operationId?: string): JobUpdate[] {
+  undelivered(operationId?: string): CodingObservation[] {
     const rows = operationId === undefined
       ? this.database.prepare('SELECT * FROM companion_coding_job_updates WHERE delivered=0 ORDER BY rowid').all()
       : this.database.prepare('SELECT * FROM companion_coding_job_updates WHERE delivered=0 AND operation_id=? ORDER BY rowid').all(operationId);
     return rows.map(row => {
-      const {operation_id: id, kind, text, traceparent} = row;
-      if (typeof id !== 'string' || typeof text !== 'string' || typeof traceparent !== 'string' ||
-        (kind !== 'sent' && kind !== 'stop-unconfirmed' && kind !== 'result')) throw new Error('coding-job-update-invalid');
-      return {operationId: id, kind, text, traceparent};
+      const {operation_id: id, task_id: taskId, kind, text, traceparent, legacy_evidence: legacyEvidence, startup} = row;
+      if (typeof id !== 'string' || typeof taskId !== 'string' || typeof text !== 'string' || typeof traceparent !== 'string' ||
+        (kind !== 'sent' && kind !== 'stop-unconfirmed' && kind !== 'result') ||
+        (legacyEvidence !== null && typeof legacyEvidence !== 'string') || (startup !== 0 && startup !== 1)) throw new Error('coding-job-update-invalid');
+      return {operationId: id, taskId, kind, text, traceparent, startup: startup === 1, ...(legacyEvidence === null ? {} : {legacyEvidence})};
     });
   }
-  delivered({operationId, kind}: JobUpdate): void {
+  delivered({operationId, kind}: CodingObservation): void {
     this.database.prepare('UPDATE companion_coding_job_updates SET delivered=1 WHERE operation_id=? AND kind=?').run(operationId, kind);
   }
   /** Records the responsibility and, in the same transaction, ends the hand-off's wait if it waited. */

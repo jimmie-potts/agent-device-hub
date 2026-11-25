@@ -2,7 +2,7 @@
 
 ### Requirement: Background coding jobs in Conversation
 
-An approved coding delegation SHALL return a stable job ID and let its Conversation turn finish without waiting for dispatch, worker admission or a result. The approved job SHALL remain independent of subsequent turns and chat selection. The result SHALL reach the original conversation and exchange by the saved attempt identity. Conversation SHALL offer an authenticated stop control on a queued or running job reference. It SHALL name the exact job and attempt, including when opened in an earlier chat.
+An approved coding delegation SHALL return a stable job ID and let its Conversation turn finish without waiting for dispatch, worker admission or a result. The approved job SHALL remain independent of subsequent turns and chat selection. The result SHALL reach the original conversation and exchange by the saved attempt identity. Conversation SHALL offer an authenticated stop control on a queued or running job reference. It SHALL name the exact job and attempt, including when opened in an earlier chat. Settlement SHALL save the observed result and pending conversation delivery together, including for pre-upgrade delegations. If saving an accepted-dispatch observation or delivering a saved observation fails, the coordinator SHALL retry only the local write. Repeated delivery SHALL affect only the original job exchange or saved delegation question. It SHALL never resend a worker command to recover delivery.
 
 #### Scenario: Worker still running
 
@@ -299,3 +299,9 @@ The owner SHALL be able to steer a conversation's unfinished task with a new mes
 #### Scenario: A process exit during the call that read a steer
 - **WHEN** the process exits during the model call whose admission took a steer into the transcript, and the owner cancels the uncertain task after the restart
 - **THEN** the steer is in the transcript and the conversation once, no steer is unread, and nothing is returned to the queue
+
+
+#### Scenario: A pre-upgrade delegation cannot receive its saved observation immediately
+
+- **WHEN** recovery settles a pre-upgrade dispatch or run, and the original conversation cannot be written immediately
+- **THEN** the saved uncertainty remains pending until the local conversation write succeeds, the original legacy turn remains paused for owner resume, and no worker command is resent
