@@ -2146,7 +2146,8 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   assert.match(sent.at(-1) ?? '', /New synthetic topic/);
   assert.doesNotMatch(sent.at(-1) ?? '', /PRIVATE_SUPERSEDED|opaque-reasoning/);
 
-  const requestsBefore = dispatched.length;
+  const countCommands = (): number => dispatched.length;
+  const requestsBefore = countCommands();
   const startAnthropic = async (text: string) => {
     const request = await input(w.core, w.module(), text, false, randomUUID(), {provider: 'anthropic'});
     assert.equal(request.status, 'accepted');
@@ -2154,13 +2155,13 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   await startAnthropic('Is Studio Plug on?');
   await until(() => bunnyTask()?.status === 'succeeded');
   assert.match(anthropicBodies.at(-1) ?? '', /Observed power/);
-  assert.equal(dispatched.length, requestsBefore);
+  assert.equal(countCommands(), requestsBefore);
   await startAnthropic('Could Studio Plug be off?');
   await until(() => bunnyTask()?.status === 'succeeded');
-  assert.equal(dispatched.length, requestsBefore, 'same status question refuses a proposed mutation');
+  assert.equal(countCommands(), requestsBefore, 'same status question refuses a proposed mutation');
   assert.match(anthropicBodies.at(-1) ?? '', /refused/);
   await startAnthropic('Turn off Studio Plug');
-  await until(() => dispatched.length === requestsBefore + 1);
+  await until(() => countCommands() === requestsBefore + 1);
   w.advance(1200);
   await until(() => bunnyTask()?.status === 'succeeded');
   await startAnthropic('What color is it?');
