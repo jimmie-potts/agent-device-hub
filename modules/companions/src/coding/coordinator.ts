@@ -47,7 +47,8 @@ type StartDelivery = {endpointId: string; record: CodingWaitingRecord; discarded
 const noop = (): void => {};
 function attemptResult(result: CodingResult): CodingAttemptResult {
   return {outcome: result.outcome, base: result.base, head: result.head,
-    changedFiles: result.changedFiles.filter(path => /^(?![-/])(?:[^\\/]+\/)*[^\\/]+$/u.test(path) && !path.split('/').some(part => part === '.' || part === '..')),
+    changedFiles: result.changedFiles.filter(path => /^(?![-/]|[A-Za-z]:)[^\\]+$/u.test(path) &&
+      !path.split('/').some(part => part === '' || part === '.' || part === '..')),
     checks: result.checks.filter(check => /^[A-Za-z0-9_. -]{1,80}$/u.test(check.name)).map(({name, status}) => ({name, status}))};
 }
 const DISCONNECTED_BEFORE_START = 'worker became unavailable before start was sent';
@@ -154,7 +155,7 @@ export class CodingCoordinator {
     if (attempts.length === 0) {
       const active = this.#active.get(job.operationId);
       attempts.push({operationId: job.operationId, harness: codingHarness(active?.harness) ? active.harness : null, sessionId: active?.sessionId ?? null,
-        status: active?.phase ?? (this.#store.resultSaved(job.operationId) ? 'uncertain' : 'queued'),
+        status: active?.phase ?? this.#store.terminalStatus(job.operationId) ?? (this.#store.resultSaved(job.operationId) ? 'uncertain' : 'queued'),
         selectionReason: 'Legacy worker selection.', result: null});
     }
     const last = attempts.at(-1);
@@ -394,9 +395,10 @@ export class CodingCoordinator {
       const stopped = !uncertain && (code === 'invalid-state' || disconnectedBeforeStart) && this.#store.stopRequested(operationId);
       const text = describeResult(uncertain ? 'uncertain' : stopped ? 'cancelled' : 'failed', undefined,
         uncertain ? 'lost' : stopped ? 'stopped before worker start' : disconnectedBeforeStart ? DISCONNECTED_BEFORE_START : `refused: ${code}`);
+      const refusalDetail = !uncertain && !stopped && !disconnectedBeforeStart && answer?.status === Outcome.rejected ? answer.error.error.detail : undefined;
       this.#store.unwait(operationId);
       this.#store.observeAttempt(operationId, uncertain ? 'uncertain' : stopped ? 'cancelled' : 'failed');
-      if (job !== undefined || !this.#cancelled.has(record.taskId)) this.#store.update({...record, kind: 'result', text, startup,
+      if (job !== undefined || !this.#cancelled.has(record.taskId)) this.#store.update({...record, kind: 'result', text: refusalDetail === undefined ? text : `${text} ${refusalDetail}`, startup,
         ...(job === undefined ? {legacyEvidence: uncertain ? 'the coding worker outcome is unknown' : disconnectedBeforeStart ? DISCONNECTED_BEFORE_START : 'the coding hand-off was refused'} : {})});
       return true;
     }), async ended => {

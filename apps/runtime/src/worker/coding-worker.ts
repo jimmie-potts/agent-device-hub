@@ -479,7 +479,7 @@ export class CodingWorker {
     // A registration that fails runs the closed handler before there is an endpoint to compare.
     let opened: RemoteEndpoint | undefined;
     const endpoint = await participant.openEndpoint<CodingWork>({family: 'coding-work', respond: command => this.#work(command), onClosed: () => {
-      if (this.#endpoint === opened) this.#endpoint = undefined;
+      if (this.#endpoint === opened) {this.#endpoint = undefined; this.#handoffs.clear();}
       this.log('coding-worker endpoint closed; the running tasks, if any, are lost to the core and will be stopped');
       // The core gives these runs up as uncertain. Each is stopped and keeps its slot, where a cancel or stop() still
       // reaches it, until it ends; its report goes nowhere, since the endpoint that started it is gone.
@@ -493,7 +493,7 @@ export class CodingWorker {
       answer = await endpoint.request('coding-endpoint', draft, {timeoutMs: 5000, requestId});
     } catch {answer = {status: 'uncertain', requestId, error: errorBody('uncertain-result')};}
     if (answer.status !== 'accepted') {
-      if (this.#endpoint === endpoint) this.#endpoint = undefined;
+      if (this.#endpoint === endpoint) {this.#endpoint = undefined; this.#handoffs.clear();}
       await endpoint.close().catch(() => {});
       const {code, traceId} = answer.error.error;
       throw new Error(`coding-worker-enable-${answer.status === 'rejected' ? 'refused' : 'uncertain'}: ${code}${traceId === undefined ? '' : ` trace ${traceId}`} request ${answer.requestId}`);
@@ -790,10 +790,6 @@ export class CodingWorker {
       const fingerprint = await worktreeFingerprint(worktree, args => this.#git(worktree, args, {trim: false, timeoutMs: 15_000}));
       if (fingerprint?.head === head && this.#endpoint === endpoint) {
         handoffToken = randomUUID();
-        if (this.#handoffs.size >= 128) {
-          const first = this.#handoffs.keys().next().value;
-          if (first !== undefined) this.#handoffs.delete(first);
-        }
         this.#handoffs.set(handoffToken, {operationId: running.operationId, endpoint, repository, worktree, harness: adapter.id, base, head, fingerprint: fingerprint.digest});
       }
     }

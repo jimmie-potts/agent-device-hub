@@ -899,7 +899,7 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   await settle(() => w.coding().runs?.some(run => run.sessionId === 'native-codex') === true);
   assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
   const head = 'a'.repeat(40);
-  const stopped = {...result('Synthetic partial work.'), head, changedFiles: ['partial.txt'], checks: [{name: 'git diff', status: 'passed'}]};
+  const stopped = {...result('Synthetic partial work.'), head, changedFiles: ['partial.txt', '/synthetic/absolute', 'C:/synthetic/absolute'], checks: [{name: 'git diff', status: 'passed'}]};
   const handoffToken = randomUUID();
   await w.progress({operationId, status: 'cancelled', reason: 'cancelled', harness: 'codex', sessionId: 'native-codex', result: stopped, handoffToken}, '2.4');
   await w.waitMessages('bunny', /Synthetic partial work/);
@@ -928,3 +928,28 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   ]);
   assert.doesNotMatch(JSON.stringify(detail), new RegExp(handoffToken));
 });
+
+
+for (const scenario of ['codex-exhausted', 'claude-pinned', 'both-exhausted'] as const) {
+  void test(`owner-approved harness selection preserves quota refusals (${scenario})`, {timeout: 30_000}, async context => {
+    const w = await world(context);
+    const healthy: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
+      limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
+    const blocked = (harness: string): CodingHarnessReadiness => ({...healthy, harness,
+      limits: [{window: 'primary', status: 'rejected', resetsAtMs: null, utilization: null}]});
+    const codex = scenario === 'claude-pinned' ? {...healthy, harness: 'codex'} : blocked('codex');
+    assert.equal((await w.control('enable')).status, 'accepted');
+    assert.equal((await w.enable('uncapped', [scenario === 'codex-exhausted' ? healthy : blocked('claude-code'), codex])).status, 'accepted');
+    assert.equal((await w.send('bunny', 'Synthetic quota selection request.')).status, 'accepted');
+    await w.approved('bunny', scenario === 'claude-pinned' ? 'claude-code' : 'auto');
+    if (scenario === 'codex-exhausted') {
+      await settle(() => w.starts().length === 1);
+      const work = w.starts()[0]?.data;
+      assert.ok(work?.action === 'start' && work.harness === 'claude-code');
+      return;
+    }
+    await w.waitMessages('bunny', /Claude Code quota exhausted/);
+    assert.deepEqual(w.dispatched, []);
+    assert.deepEqual(w.starts(), []);
+  });
+}

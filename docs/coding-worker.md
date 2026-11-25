@@ -39,6 +39,23 @@ limits only when the harness supplies that evidence.
 Open **Details**, then **Coding jobs**, to find active jobs and stop a named
 attempt. **Next jobs** reads later jobs without affecting admission.
 
+## Harness choice and continuation
+
+For a new coding job, Auto prefers Claude Code when its subscription is
+eligible and selects Codex if Claude Code has a confirmed quota rejection or
+unavailable subscription. The job shows the selection reason. A named choice
+uses only that subscription. An unknown quota remains unknown. The Hub can
+resolve Auto again while a job is still local and queued. After dispatch,
+slowdown or uncertainty stays with the selected attempt.
+
+The owner can continue a partial attempt on the other available subscription
+after the worker confirms the prior writer stopped. The next attempt uses the
+same worktree and verifies its Git revision and file contents before invoking
+the second harness. Each attempt keeps its own native session, outcome and
+checks. The continuation receives the approved brief and bounded handoff
+facts. If the connection goes away, the worker restarts or the worktree
+changes, the old proof no longer admits a writer.
+
 ## Claude Code delegation
 
 For each run the worker creates `.local/worktrees/bunny-<task>-<random>` under the

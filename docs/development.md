@@ -3520,6 +3520,12 @@ delivery leaves one conversation result and sends no new worker command. The
 browser journeys verify the job reference and its
 linked result through the real gateway with a disposable worker.
 
+Harness routing and continuation (#2112) use the same checks. The Companions
+suite drives staged Auto and pinned approvals, durable attempt readback and
+the explicit continuation command. Worker tests stop a synthetic partial
+writer, compare the replacement's actual worktree and revision, and refuse
+changed files, uncertain stops and proof from an earlier worker process.
+
 Uncapped coding jobs (#2110) use the same runtime, Companions, event contract
 and browser checks. The coding-slots suites exercise same-companion starts,
 setup deadlines and a named stop past the first job page. Loss and disable
