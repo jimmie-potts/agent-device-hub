@@ -18,7 +18,7 @@ void test('two terminal waiters receive only their exact attempt and hold separa
   t.after(async () => {for (const socket of sockets) socket.destroy(); terminal.stop(); await rm(state, {recursive: true, force: true});});
   await terminal.start();
   const reports: string[] = [];
-  const offer = (operationId: string, session: string) => terminal.offer(operationId, session, ['terminal'],
+  const offer = (operationId: string, session: string) => terminal.offer(operationId, session, ['terminal', 'claude-desktop'],
     () => Promise.resolve({executable: '/fixture/harness', cwd: `/fixture/${operationId}`, args: ['resume', session], env: {}}),
     state => {reports.push(`${operationId}:${state}`); return Promise.resolve();});
   await offer('attempt-one', 'session-one');
@@ -46,10 +46,13 @@ void test('two terminal waiters receive only their exact attempt and hold separa
   assert.equal('error' in await terminal.open('attempt-one', allowed), false);
   assert.deepEqual((await first.plan()).args, ['resume', 'session-one']);
 
-  const released = once(second.socket, 'close');
-  second.socket.write('released\n');
-  await released;
-  assert.equal(terminal.writerMayBePresent('attempt-two'), false);
+  const closed = once(second.socket, 'close');
+  second.socket.write('closed\n');
+  await closed;
+  assert.ok(reports.includes('attempt-two:terminal-closed'));
+  assert.equal(terminal.writerMayBePresent('attempt-two'), true);
+  assert.equal('error' in await terminal.open('attempt-two', allowed), true);
+  assert.equal('error' in await terminal.openDesktop('attempt-two', allowed), true);
   first.socket.destroy();
   await waitForObservation(() => reports.includes('attempt-one:uncertain'));
   assert.equal(terminal.writerMayBePresent('attempt-one'), true);

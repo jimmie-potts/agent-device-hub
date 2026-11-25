@@ -598,6 +598,30 @@ void test('explicit uncapped Codex starts share the worker acknowledgement queue
   assert.deepEqual(w.owner().inspect().counts, {runs: 5, waiting: 0});
 });
 
+void test('revocation after uncapped admission prevents sending the brief when the acknowledgement queue advances', async t => {
+  const revoked = new Set<string>();
+  const w = await world(t, undefined, taskId => !revoked.has(taskId));
+  const codex: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', version: '0.163.0', signedIn: 'yes', plan: 'plus',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'saved-session', review: true}};
+  assert.equal((await w.enableAdapters([codex], 'worker-1', true)).status, 'accepted');
+  let release = (): void => {};
+  const firstAck = new Promise<void>(resolve => {release = resolve;});
+  t.after(release);
+  w.onWork(() => firstAck);
+  assert.equal((await w.dispatch('task-first', 'worker-1', 'codex')).status, 'accepted');
+  await until(() => w.work.length === 1);
+  assert.equal((await w.dispatch('task-revoked', 'worker-1', 'codex')).status, 'accepted');
+  assert.equal((await w.dispatch('task-next', 'worker-1', 'codex')).status, 'accepted');
+  assert.equal(w.work.length, 1);
+  revoked.add('task-revoked');
+  release();
+
+  await until(() => w.work.some(command => command.data.operationId === 'task-next-step-1'));
+  assert.deepEqual(w.work.map(command => command.data.operationId), ['task-first-step-1', 'task-next-step-1']);
+  await until(() => w.deliveries.some(item => item.taskId === 'task-revoked'));
+  assert.match(w.deliveries.find(item => item.taskId === 'task-revoked')?.text ?? '', /coding brief sharing was revoked/);
+});
+
 for (const disconnect of ['lose', 'disable'] as const) {
   void test(`disconnect by ${disconnect} reports a queued explicit start as unsent and fences the old ACK queue`, {timeout: 15_000}, async t => {
     const w = await world(t);

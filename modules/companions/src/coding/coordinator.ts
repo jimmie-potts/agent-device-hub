@@ -180,16 +180,16 @@ export class CodingCoordinator {
     if (native !== undefined && this.#connected() && native.selectionId === this.#state.selectionId) return native.view;
     const last = native?.view ?? saved;
     if (last === undefined) return undefined;
-    return {clients: last.clients, state: last.state === 'available' ? 'offline' : 'uncertain', observedAtMs: last.observedAtMs};
+    return {clients: last.clients, state: last.state === 'available' ? 'offline' : last.state === 'terminal-closed' ? 'terminal-closed' : 'uncertain', observedAtMs: last.observedAtMs};
   }
   #continuation(attempt: CodingAttempt | undefined): CodingJobDetail['continuation'] {
     if (attempt === undefined || attempt.handoffToken === undefined || attempt.selectionId === undefined ||
-      attempt.selectionId !== this.#state.selectionId || attempt.harness !== 'codex' ||
+      attempt.selectionId !== this.#state.selectionId || !codingHarness(attempt.harness) ||
       attempt.result?.head == null || attempt.result.changedFiles.length === 0 ||
       (attempt.status === 'completed' && attempt.result.outcome === 'tested-candidate') || !this.#connected() || !this.#uncapped()) return null;
     const client = this.#nativeView(attempt.operationId, attempt.context?.nativeObservation);
     if (client !== undefined && client.state !== 'available') return null;
-    const harness = 'claude-code';
+    const harness = attempt.harness === 'claude-code' ? 'codex' : 'claude-code';
     const choice = chooseCodingHarness(harness, this.#state.harnesses ?? [], this.context.clock.now());
     if (choice.harness === undefined) return null;
     return {fromOperationId: attempt.operationId, harness, head: attempt.result.head, changedFiles: attempt.result.changedFiles};
@@ -219,10 +219,9 @@ export class CodingCoordinator {
     const latest = last, continuation = this.#continuation(latest);
     const activeOperationId = this.#store.resultSaved(current) ? null : current;
     const continuationReason = continuation !== null || activeOperationId !== null || latest === undefined ? undefined :
-      latest.harness === 'claude-code' ? 'Continuation from Claude Code is unavailable until its writers can be confined to the original checkout.' :
       latest.status === 'uncertain' ? 'The previous writer may still be active.' :
       latest.status === 'completed' && latest.result?.outcome === 'tested-candidate' ? 'The previous attempt completed without a partial result.' :
-      'Continuation requires a stopped, confined Codex writer, an unchanged checkout and an eligible Claude Code subscription.';
+      'Continuation requires a stopped, confined writer, an unchanged checkout and an eligible subscription in the other harness.';
     return {version: 1, jobId, choice: saved[0]?.choice ?? 'auto', activeOperationId, attempts, continuation,
       ...(continuationReason === undefined ? {} : {continuationReason})};
   }

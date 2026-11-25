@@ -7,7 +7,7 @@ import {checkoutIdentity, copyWorktree, protectedCheckout, sameCheckout, signalW
 import {spawn, type ChildProcess} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
-import {mkdir, mkdtemp, readFile, realpath, rmdir, stat} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, realpath, rm, rmdir, stat} from 'node:fs/promises';
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
 import {promisify} from 'node:util';
@@ -21,8 +21,9 @@ import {readPrivateFile} from '../state.js';
 import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
 import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type AdapterSteer, type CodingAdapter} from './adapter.js';
-import {codexAdapter, codexArguments, codexEnvironment, workerHome, type CodexConfiguration} from './codex-adapter.js';
+import {codexAdapter, codexArguments, codexEnvironment, verifyCodexNativeResume, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
 import {NATIVE_UUID, NativeClients, nativeTerminal, type NativeTerminalPlan} from './native-clients.js';
+import {claudeWriterArguments, MAC_WRITER_SANDBOX, verifyClaudeWriterBoundary} from './claude-writer.js';
 
 const run = promisify(execFile);
 const CLAUDE = 'claude-code';
@@ -126,12 +127,12 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
 
 /** One run in one of the worker's slots, with the companion that asked and the endpoint that started it. */
 type WriterHandoff = {
-  operationId: string; endpoint: RemoteEndpoint; repository: string; worktree: WorktreeProof;
-  base: string; writerHome: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
+  operationId: string; endpoint: RemoteEndpoint; repository: string; worktree: WorktreeProof; successor: 'claude-code' | 'codex';
+  base: string; writerHome?: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
 };
 type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; model?: string; modelReport?: Promise<void>; steer: AdapterSteer | undefined; controller: AbortController};
-export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true; writerStopped?: boolean};
+export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true; writerStopped?: boolean; fencedRoot?: string};
 export type Harness = {
   /**
    * Runs the headless harness in `cwd` with the brief on its standard input and resolves with its exit code; the worker
@@ -139,7 +140,8 @@ export type Harness = {
    * read as an option and it never shows in the process list. Each output line goes to `onLine` as it arrives; output
    * returned as `stdout` instead is read after the run, line by line, the same way.
    */
-  start(args: string[], cwd: string, input: string, onChild: (child: ChildProcess) => void, onLine?: (line: string) => void): Promise<HarnessRun>;
+  start(args: string[], cwd: string, input: string, onChild: (child: ChildProcess) => void, onLine?: (line: string) => void,
+    continuation?: {root: string; signal: AbortSignal}): Promise<HarnessRun>;
   /** Reports the tool's version and sign-in without starting a task or a session; absent means all unknown. */
   readiness?(): Promise<HarnessReadiness>;
   subscriptionRefused?(): Promise<boolean>;
@@ -196,17 +198,26 @@ export type HarnessOptions = {
  * use the same environment.
  */
 export const claudeHarness = (executable: string, environment: NodeJS.ProcessEnv = process.env, options: HarnessOptions = {}): Harness => ({
-  start: (args, cwd, input, onChild, onLine) => new Promise(resolvePromise => {
-    const child = spawn(executable, args, {cwd, detached: true, stdio: ['pipe', 'pipe', 'ignore'], env: harnessEnvironment(environment, options.environment)});
-    onChild(child);
-    child.stdin?.on('error', () => {});
-    child.stdin?.end(input);
-    const decoder = new StringDecoder('utf8');
-    const lines = lineSplitter(line => {onLine?.(line);});
-    child.stdout?.on('data', (chunk: Buffer) => {lines.write(decoder.write(chunk));});
-    child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated, spawnFailed: true});});
-    child.on('close', (code, signal) => {lines.end(decoder.end()); resolvePromise({code, signal, truncated: lines.truncated, writerStopped: writerGone(child.pid)});});
-  }),
+  async start(args, cwd, input, onChild, onLine, continuation) {
+    const fencedRoot = continuation !== undefined && await verifyClaudeWriterBoundary(cwd, continuation.root) ? continuation.root : undefined;
+    if (continuation?.signal.aborted === true) return {code: null, signal: null, truncated: false};
+    const launch = fencedRoot === undefined ? executable : MAC_WRITER_SANDBOX;
+    const launchArgs = fencedRoot === undefined ? args : claudeWriterArguments(fencedRoot, executable, args);
+    return new Promise(resolvePromise => {
+      const child = spawn(launch, launchArgs, {cwd, detached: true, stdio: ['pipe', 'pipe', 'ignore'], env: harnessEnvironment(environment, options.environment)});
+      onChild(child);
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(input);
+      const decoder = new StringDecoder('utf8');
+      const lines = lineSplitter(line => {onLine?.(line);});
+      child.stdout?.on('data', (chunk: Buffer) => {lines.write(decoder.write(chunk));});
+      child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated, spawnFailed: true});});
+      child.on('close', (code, signal) => {
+        lines.end(decoder.end());
+        resolvePromise({code, signal, truncated: lines.truncated, writerStopped: writerGone(child.pid), ...(fencedRoot === undefined ? {} : {fencedRoot})});
+      });
+    });
+  },
   subscriptionRefused: async () => {
     const result = await probe(executable, ['auth', 'status', '--json'], harnessEnvironment(environment, options.environment),
       options.probeCwd, options.probeMs ?? PROBE_MS, options.probeTimer ?? realTimer);
@@ -581,7 +592,7 @@ export class CodingWorker {
     if (data.continuation !== undefined) {
       proof = this.#handoffs.get(data.continuation.token);
       if (proof === undefined || proof.operationId !== data.continuation.fromOperationId || proof.endpoint !== this.#endpoint ||
-        proof.repository !== repository.name || harness !== CLAUDE || this.configuration.uncapped !== true) {
+        proof.repository !== repository.name || harness !== proof.successor || this.configuration.uncapped !== true) {
         return errorBody('invalid-state', {detail: 'The verified handoff is no longer available.'});
       }
       if (this.#native?.writerMayBePresent(proof.operationId) === true) return errorBody('invalid-state');
@@ -822,7 +833,7 @@ export class CodingWorker {
       finished = await this.#harness.start(args, worktree, input.brief, process => {
         child = process;
         if (signal.aborted) stop();
-      }, watch);
+      }, watch, input.continuationRoot === undefined ? undefined : {root: input.continuationRoot, signal});
     } finally {
       signal.removeEventListener('abort', stop);
       if (killTimer !== undefined) clearTimeout(killTimer);
@@ -841,18 +852,23 @@ export class CodingWorker {
     const reason = assembled.reason ?? (stream.providers.some(provider => provider !== 'firstParty') ? 'refused' : finished.code === 0 ? undefined : 'exit');
     return {structured: result, windows, usage: result.usage,
       ...(finished.writerStopped === true ? {writerStopped: true} : finished.writerStopped === false ? {uncertain: true} : {}),
+      ...(finished.fencedRoot === undefined || sessionId === undefined ? {} : {writerFence: {root: finished.fencedRoot}}),
       ...(reason === undefined ? {} : {reason}), ...(sessionId === undefined ? {} : {sessionId}),
       ...(result.limit === undefined ? {} : {limit: result.limit})};
   }
-  async #offerNative(running: Running, adapter: CodingAdapter, worktree: string, evidence: AdapterEvidence): Promise<void> {
+  async #offerNative(running: Running, adapter: CodingAdapter, worktree: string, evidence: AdapterEvidence, handoffToken?: string): Promise<void> {
     const {endpoint, operationId, sessionId} = running;
     const native = this.#native, qualified = this.configuration.nativeClients;
     if (native === undefined || this.configuration.uncapped !== true || endpoint === undefined || endpoint !== this.#endpoint || sessionId === undefined ||
-      !NATIVE_UUID.test(sessionId) || evidence.sessionId !== sessionId || evidence.writerStopped !== true || evidence.uncertain === true ||
+      !NATIVE_UUID.test(sessionId) || evidence.sessionId !== sessionId || evidence.uncertain === true ||
       evidence.reason === 'refused' || evidence.reason === 'lost' || (adapter.id !== CLAUDE && adapter.id !== 'codex')) return;
+    const proof = handoffToken === undefined ? undefined : this.#handoffs.get(handoffToken);
     const clients: CodingNativeClientKind[] = [];
-    if (qualified?.harnesses.includes(adapter.id) === true) clients.push('terminal');
-    if (adapter.id === CLAUDE && qualified?.claudeDesktop === true && process.platform === 'darwin' && supportsClaudeDesktop(this.#adapterHealth.get(CLAUDE)?.version)) clients.push('claude-desktop');
+    if (qualified?.harnesses.includes(adapter.id) === true && (adapter.id === 'codex'
+      ? proof?.writerHome !== undefined && this.#adapterHealth.get('codex')?.version === '0.163.0'
+      : evidence.originalCheckoutReleased === true)) clients.push('terminal');
+    if (adapter.id === CLAUDE && evidence.originalCheckoutReleased === true && qualified?.claudeDesktop === true &&
+      process.platform === 'darwin' && supportsClaudeDesktop(this.#adapterHealth.get(CLAUDE)?.version)) clients.push('claude-desktop');
     if (clients.length === 0) return;
     const identity = (cwd: string) => checkoutIdentity(cwd, (path, args) => this.#git(path, args, {trim: false, timeoutMs: 15_000}));
     const original = await identity(worktree).catch(() => undefined);
@@ -864,10 +880,23 @@ export class CodingWorker {
       if (readiness.signedIn !== 'yes') return undefined;
       const codex = this.configuration.codex;
       if (adapter.id === 'codex') {
-        if (codex === undefined || evidence.writerHome === undefined) return undefined;
+        if (codex === undefined || proof?.writerHome === undefined || readiness.version !== '0.163.0' ||
+          handoffToken === undefined || this.#handoffs.get(handoffToken) !== proof) return undefined;
         const home = await workerHome(codex.home, process.env);
-        if (home !== evidence.writerHome) return undefined;
-        return {executable: codex.executable, cwd: worktree, args: ['resume', sessionId, ...codexArguments(worktree, 'bunny-native', home)], env: codexEnvironment(process.env, home)};
+        if (home !== proof.writerHome) return undefined;
+        const git = (path: string, args: string[]) => this.#git(path, args, {trim: false, timeoutMs: 15_000});
+        const successor = join(proof.protectedRoot.path, `bunny-native-${randomUUID()}`);
+        const target = await copyWorktree(proof.worktree, successor, proof.protectedRoot, home, proof.base, git);
+        if (target === undefined) return undefined;
+        const cwd = target.identity.root, profile = `bunny-native-${randomUUID()}`, env = codexEnvironment(process.env, home);
+        if (!await verifyClaudeWriterBoundary(cwd, worktree) ||
+          !await verifyCodexWriterBoundary(codex.executable, cwd, home, worktree, profile, env) ||
+          !await verifyCodexNativeResume(codex.executable, cwd, worktree, home, profile, sessionId, env)) {
+          await rm(cwd, {recursive: true, force: true}).catch(() => {});
+          return undefined;
+        }
+        const args = ['resume', '--no-daemon', '--cd', cwd, ...codexArguments(cwd, profile, home, worktree), sessionId];
+        return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(worktree, codex.executable, args, [proof.worktree.identity.common])};
       }
       const {claude} = this.configuration;
       if (process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined || await projectSettingsRefusal(worktree) !== undefined) return undefined;
@@ -881,7 +910,7 @@ export class CodingWorker {
         '--strict-mcp-config', '--settings', JSON.stringify({env: Object.fromEntries(BLANKED_SWITCHES.map(name => [name, '']))})]};
     };
     // The advertised terminal uses an exact ID in the worker's verified local profile.
-    if (adapter.id === 'codex' && evidence.writerHome === undefined || adapter.id === CLAUDE && process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined) return;
+    if (adapter.id === CLAUDE && process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined) return;
     await native.offer(operationId, `${adapter.id}:${sessionId}`, clients, build, async state => {
       if (endpoint !== this.#endpoint) return;
       const data: CodingNativeClient = {operationId, status: 'native-client', clients, state, observedAtMs: this.#now()};
@@ -893,7 +922,8 @@ export class CodingWorker {
   async #runAdapter(running: Running, adapter: CodingAdapter, repository: string, worktree: string, base: string | null, brief: string, bounds: CodingBounds): Promise<void> {
     let timedOut = false, evidence: AdapterEvidence;
     const started = this.#now();
-    const protectedRoot = this.configuration.uncapped === true && adapter.id === 'codex'
+    const successor = adapter.id === CLAUDE ? 'codex' : adapter.id === 'codex' ? CLAUDE : undefined;
+    const protectedRoot = this.configuration.uncapped === true && successor !== undefined && this.#adapters.has(successor)
       ? await realpath(dirname(worktree)).then(parent => mkdtemp(join(parent, '.bunny-continuation-'))).then(protectedCheckout).catch(() => undefined)
       : undefined;
     const sourceIdentity = protectedRoot === undefined ? undefined : await checkoutIdentity(worktree,
@@ -930,7 +960,7 @@ export class CodingWorker {
     const result = assembleAdapterResult(repository, base, head, changedFiles, evidence, reason, running.sessionId, this.#now() - started);
     let handoffToken: string | undefined;
     const endpoint = running.endpoint;
-    if (this.configuration.uncapped === true && adapter.id === 'codex' && sourceIdentity !== undefined && protectedRoot !== undefined && evidence.writerHome !== undefined &&
+    if (successor !== undefined && sourceIdentity !== undefined && protectedRoot !== undefined && evidence.writerFence?.root === protectedRoot.path &&
       evidence.writerStopped === true && evidence.uncertain !== true && endpoint !== undefined &&
       base !== null && head !== null && changedFiles.length > 0 && reason !== 'refused' &&
       (reason !== undefined || result.outcome !== 'tested-candidate')) {
@@ -939,8 +969,9 @@ export class CodingWorker {
       if (fingerprint?.head === head && sameCheckout(fingerprint.identity, sourceIdentity) &&
         reserved?.identity === protectedRoot.identity && this.#endpoint === endpoint) {
         handoffToken = randomUUID();
-        this.#handoffs.set(handoffToken, {operationId: running.operationId, endpoint, repository, worktree: fingerprint, base,
-          writerHome: evidence.writerHome, protectedRoot, checks: continuationChecks(result.checks)});
+        const {home} = evidence.writerFence;
+        this.#handoffs.set(handoffToken, {operationId: running.operationId, endpoint, repository, successor, worktree: fingerprint, base,
+          ...(home === undefined ? {} : {writerHome: home}), protectedRoot, checks: continuationChecks(result.checks)});
       } else if (this.#endpoint === endpoint) {
         result.limitations = [
           'A continuation could not verify this checkout and its Git index. New files must be staged; untracked files and ignored build artifacts are never moved.',
@@ -950,7 +981,7 @@ export class CodingWorker {
     }
     if (handoffToken === undefined && protectedRoot !== undefined) await rmdir(protectedRoot.path).catch(() => {});
     const handoff = handoffToken === undefined ? {} : {handoffToken};
-    await this.#offerNative(running, adapter, worktree, evidence);
+    await this.#offerNative(running, adapter, worktree, evidence, handoffToken);
     if (reason === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'completed', result, ...handoff}); return;}
     const status = evidence.uncertain === true && !timedOut ? 'uncertain' : running.cancelled ? 'cancelled' : 'failed';
     await this.#progress(running, {operationId: running.operationId, status, reason, result, ...handoff});

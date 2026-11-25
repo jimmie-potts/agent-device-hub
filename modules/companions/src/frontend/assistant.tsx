@@ -1,3 +1,4 @@
+import {codingChoice, type CodingChoice} from '../coding/routing.js';
 import type {CodingJobEntry} from '../coding/job-page.js';
 import React, {useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore} from 'react';
 import type {AssistantProfile, AssistantState, AssistantStatus} from '@jimmie-potts/event-contracts/v2/assistant';
@@ -10,7 +11,7 @@ import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 
 import type {ConversationListEntry, SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, readConversationList, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
-import {CodingJobs, ConversationCodingJob, explicitJobInstruction, messageCodingJob, openNativeClient, readJobTargets, stopCodingJob, useCodingState} from './coding-jobs.js';
+import {CodingJobs, ConversationCodingJob, continueCodingJob, explicitJobInstruction, messageCodingJob, openNativeClient, readJobTargets, stopCodingJob, useCodingState} from './coding-jobs.js';
 import {ConversationDetails, useDetailsOverlay, type ConversationTitle} from './conversation-details.js';
 import {spendNotice, useSpend} from './conversation-spend.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
@@ -54,6 +55,10 @@ function TaskControls({context, command, state, profile, live, question, coding,
   const open = task !== undefined && !finished(task.status);
   const pending = task !== undefined && task.questionId !== null && !task.hasAnswer && ['waiting', 'paused'].includes(task.status);
   const approval = pending && question?.kind === 'approval';
+  const [codingSelection, setCodingSelection] = useState<{questionId: string; choice: CodingChoice}>();
+  const codingQuestion = approval && question?.proposal?.family === 'coding-dispatch' &&
+    (coding?.harnesses?.length ?? 0) > 0 ? question : undefined;
+  const chosenHarness = codingSelection?.questionId === codingQuestion?.id ? codingSelection?.choice ?? 'auto' : 'auto';
   const clarification = pending && question?.kind === 'clarification';
   const unavailableDecision = pending && (question === undefined || (approval && question.proposal === null));
   const delegated = pending && question?.kind === 'delegation';
@@ -105,6 +110,7 @@ function TaskControls({context, command, state, profile, live, question, coding,
     // queued as the next message, and one aimed at a turn a newer turn followed is refused instead of joining another.
     const input = {action, profile, text, expectedRevision: state.revision,
       ...(action === 'answer' && task !== undefined ? {taskId: task.taskId, questionId: task.questionId} : {}),
+      ...(action === 'answer' && text === 'approve' && codingQuestion !== undefined ? {harness: chosenHarness} : {}),
       ...(action === 'steer' && task !== undefined ? {taskId: task.taskId, ...(questionId === undefined ? {} : {questionId})} : {})};
     if (action !== 'answer' || (text !== 'approve' && text !== 'decline')) setSubmitted({requestId, key: draftKey, text});
     void command.run({family: 'assistant-input', target: 'assistant', requestId,
@@ -165,6 +171,16 @@ function TaskControls({context, command, state, profile, live, question, coding,
               <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{JSON.stringify(question.proposal, null, 2)}</pre>
             </details>
           : <p><code>{question.proposal.target}</code> · {question.proposal.family === 'power-set' ? (question.proposal.data.on ? 'Power on' : 'Power off') : `Brightness ${String(question.proposal.data.percent)}%`}</p>}
+        {codingQuestion !== undefined && <p><label>Coding harness{' '}
+          <select value={chosenHarness} onChange={event => {
+            const choice = event.target.value;
+            if (codingChoice(choice)) setCodingSelection({questionId: codingQuestion.id, choice});
+          }}>
+            <option value="auto">Auto</option>
+            <option value="claude-code" disabled={coding?.harnesses?.some(item => item.harness === 'claude-code') !== true}>Claude Code</option>
+            <option value="codex" disabled={coding?.harnesses?.some(item => item.harness === 'codex') !== true}>Codex</option>
+          </select>
+        </label></p>}
         <button type="button" disabled={!enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', 'answer');}}>Approve proposal</button>
         <button type="button" className="secondary" disabled={!enabled} onClick={() => {send('decline', 'answer');}}>Decline proposal</button>
         <p>Approval sends one tracked command; its outcome is reported separately. Declining changes nothing.</p>
@@ -450,6 +466,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
     <Command context={context} target="assistant">{command => {
       const locked = command.locked || !live || !context.control || !context.operationsLive;
       const stopJob = (jobId: string, operationId: string): void => {stopCodingJob(command, jobId, operationId);};
+      const continueJob = (commandData: Parameters<typeof continueCodingJob>[1]): void => {continueCodingJob(command, commandData);};
       const speakReceipt = speakRequest !== undefined && command.requestId === speakRequest;
       const operation = context.operations.find(value => value.target === 'assistant' && value.requestId === command.requestId);
       const routineReceipt = !speakReceipt && !command.locked && (command.requestId === undefined || (
@@ -522,7 +539,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                   : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
                 <p className="conversation-message-text" dir="auto">{message.text}</p>
                 {jobReceipt && <ConversationCodingJob jobId={message.id} revision={coding?.revision}
-                  read={readCodingJobs} locked={locked} stop={stopJob} operations={context.operations}
+                  read={readCodingJobs} locked={locked} stop={stopJob} continueJob={continueJob} operations={context.operations}
                   openNative={input => {openNativeClient(command, input);}}
                   message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}/>}
                 {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
@@ -567,9 +584,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
         <ConversationDetails id={detailsId} open={detailsOpen} overlay={detailsOverlay} onClose={closeDetails}
           codingJobs={<><a href="#/module/companions/jobs">Open Jobs</a>
             {coding?.counts !== undefined && detailsOpen && <CodingJobs revision={coding.revision}
-              read={readCodingJobs} stop={stopJob} locked={locked} operations={context.operations}
+              read={readCodingJobs} stop={stopJob} continueJob={continueJob} locked={locked} operations={context.operations}
               openNative={input => {openNativeClient(command, input);}}
-                  message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}/>}</>}
+              message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}/>}</>}
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live} spend={spend}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}

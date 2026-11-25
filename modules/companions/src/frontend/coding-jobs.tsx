@@ -4,6 +4,7 @@ import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend'
 import type {SyncedCopy} from '@jimmie-potts/sdk';
 import type {MessageCodingInput, OpenNativeClientInput, StopCodingInput} from '../assistant/history-contract.js';
 import {conversationRail} from './conversation-rail.js';
+import {codingHarness, type CodingHarness} from '../coding/routing.js';
 import type {CodingJobEntry, CodingJobPage, JobMessage} from '../coding/job-page.js';
 import {companionName} from './coding-status.js';
 
@@ -18,7 +19,7 @@ function isNativeClient(value: unknown): boolean {
   const native = record(value);
   return native !== undefined && typeof native.observedAtMs === 'number' && Array.isArray(native.clients) &&
     native.clients.every(client => client === 'terminal' || client === 'claude-desktop') &&
-    ['available', 'opening', 'terminal', 'desktop', 'offline', 'uncertain'].includes(String(native.state)) &&
+    ['available', 'opening', 'terminal', 'terminal-closed', 'desktop', 'offline', 'uncertain'].includes(String(native.state)) &&
     (native.refusal === undefined || typeof native.refusal === 'string');
 }
 
@@ -91,6 +92,14 @@ export function stopCodingJob(command: FrontendCommand, jobId: string, operation
   submitJobInput(command, {action: 'stop-coding-job', jobId, operationId}, crypto.randomUUID());
 }
 
+type ContinueJobInput = {jobId: string; operationId: string; harness: CodingHarness};
+type ContinueJob = (input: ContinueJobInput) => void;
+
+export function continueCodingJob(command: FrontendCommand, input: ContinueJobInput): void {
+  void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),
+    data: {action: 'continue-coding-job', ...input}});
+}
+
 export function messageCodingJob(command: FrontendCommand, job: Pick<CodingJobEntry, 'jobId' | 'operationId'>, text: string, requestId: string): void {
   submitJobInput(command, {action: 'message-coding-job', jobId: job.jobId, operationId: job.operationId, text}, requestId);
 }
@@ -155,24 +164,36 @@ function AttemptResults({value}: {value: unknown}): React.JSX.Element | null {
   </li>;
 }
 
-function JobAttempts({jobId, revision, read}: {jobId: string; revision: number | undefined; read: (path: string) => Promise<unknown>}): React.JSX.Element {
+function JobAttempts({jobId, operationId, revision, read, continueJob, locked}: {
+  jobId: string; operationId: string; revision: number | undefined; read: (path: string) => Promise<unknown>; continueJob: ContinueJob; locked: boolean;
+}): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
-  const [detail, setDetail] = useState<{attempts: readonly unknown[]; continuationReason?: string} | null>();
+  const [loaded, setLoaded] = useState<{revision: number; detail: {attempts: readonly unknown[]; continuationReason?: string; offer?: ContinueJobInput} | null}>();
   useEffect(() => {
     if (!expanded || revision === undefined) return;
     let current = true;
     void read(`/modules/companions/content/coding-job?${new URLSearchParams({jobId}).toString()}`).then(value => {
+      if (!current) return;
       const detail = record(value);
-      if (current) setDetail(detail?.version === 1 && detail.jobId === jobId && Array.isArray(detail.attempts)
-        ? {attempts: detail.attempts as unknown[], ...(typeof detail.continuationReason === 'string' ? {continuationReason: detail.continuationReason} : {})} : null);
-    }, () => {if (current) setDetail(null);});
+      const continuation = record(detail?.continuation);
+      const offer = detail?.activeOperationId === null && continuation?.fromOperationId === operationId && codingHarness(continuation.harness)
+        ? {jobId, operationId, harness: continuation.harness} : undefined;
+      setLoaded({revision, detail: detail?.version === 1 && detail.jobId === jobId && Array.isArray(detail.attempts)
+        ? {attempts: detail.attempts as unknown[], ...(typeof detail.continuationReason === 'string' ? {continuationReason: detail.continuationReason} : {}),
+          ...(offer === undefined ? {} : {offer})} : null});
+    }, () => {if (current) setLoaded({revision, detail: null});});
     return () => {current = false;};
-  }, [expanded, jobId, read, revision]);
+  }, [expanded, jobId, operationId, read, revision]);
+  const detail = loaded?.revision === revision ? loaded?.detail : undefined;
+  const offer = detail?.offer?.jobId === jobId && detail.offer.operationId === operationId ? detail.offer : undefined;
   return <details onToggle={event => {setExpanded(event.currentTarget.open);}}>
     <summary>Attempts and results</summary>
     {expanded && (detail === undefined ? <p>Loading attempts…</p> : detail === null ? <p>Attempts unavailable.</p>
       : <>{detail.continuationReason !== undefined && <p>{detail.continuationReason}</p>}
-        <ol>{detail.attempts.map((attempt, index) => <AttemptResults key={index} value={attempt}/>)}</ol></>)}
+        <ol>{detail.attempts.map((attempt, index) => <AttemptResults key={index} value={attempt}/>)}</ol>
+        {offer !== undefined && <button type="button" disabled={locked} onClick={() => {continueJob(offer);}}>
+          Continue with {offer.harness === 'codex' ? 'Codex' : 'Claude Code'}
+        </button>}</>)}
   </details>;
 }
 
@@ -183,6 +204,7 @@ function NativeClients({job, openNative, locked}: {job: CodingJobEntry; openNati
   const active = job.status === 'queued' || job.status === 'dispatching' || job.status === 'started' || job.status === 'cancelling';
   const writer = active ? 'Coding worker' : client?.state === 'terminal' ? 'Native terminal' :
     client?.state === 'desktop' ? 'Claude Desktop, activity unobserved' :
+      client?.state === 'terminal-closed' ? 'Terminal exited, writer release unverified' :
       client?.state === 'opening' || client?.state === 'uncertain' ? 'Unconfirmed' : client === undefined ? 'Native writer unknown' : 'No active writer reported';
   const available = client?.state === 'available' && !active;
   const desktop = client?.clients.includes('claude-desktop') === true;
@@ -195,16 +217,17 @@ function NativeClients({job, openNative, locked}: {job: CodingJobEntry; openNati
       <dt>Live terminal</dt><dd>{job.harness === 'claude-code'
         ? 'Unavailable for the worker’s headless Claude sessions.' : 'Unavailable for the worker’s private app-server connection.'}</dd>
       <dt>Desktop</dt><dd>{job.harness === 'claude-code'
-        ? desktop ? 'Saved session takeover. The Hub cannot observe a return from Desktop.' : 'Saved session takeover is not qualified on this worker.'
+        ? desktop ? 'Saved session takeover. The Hub cannot observe a return from Desktop.' : 'Saved takeover requires verified release of the original checkout.'
         : 'Access to this worker profile’s exact thread in Codex Desktop is unverified.'}</dd>
     </dl>
-    {client?.state === 'terminal' && <p>The Hub can observe writer release. Native messages and progress stay in the terminal.</p>}
+    {client?.state === 'terminal' && <p>The Hub can observe the terminal exit. Native messages and progress stay in the terminal.</p>}
+    {client?.state === 'terminal-closed' && <p>A background writer may still be active. This attempt stays reserved.</p>}
     {client?.state === 'desktop' && <p>The launcher acknowledged the exact attempt. The Hub cannot observe Desktop activity or release its writer.</p>}
     {client?.state === 'opening' && <p>Waiting for the native launch receipt.</p>}
     {client?.state === 'uncertain' && <p>The native client may still hold write control.</p>}
     <p>{available && terminal
       ? 'Start the native helper on the worker host with this attempt ID, then continue the saved session.'
-      : 'Saved terminal continuation is unavailable for this attempt.'}</p>
+      : 'Saved terminal continuation requires verified release of the original checkout.'}</p>
     {client?.refusal !== undefined && <p role="status">Native client request refused · {client.refusal}</p>}
     {available && terminal && <>
       <button type="button" className="secondary" onClick={() => {void navigator.clipboard.writeText(job.operationId).catch(() => {});}}>Copy attempt ID</button>
@@ -217,8 +240,8 @@ function NativeClients({job, openNative, locked}: {job: CodingJobEntry; openNati
 }
 
 type MessageJob = (job: CodingJobEntry, text: string, requestId: string) => void;
-export function CodingJobCard({job, stop, message, openNative, locked, read, revision, operations, inConversation = false}: {
-  job: CodingJobEntry; stop: (jobId: string, operationId: string) => void; message: MessageJob; openNative: OpenNative; locked: boolean; read: (path: string) => Promise<unknown>; revision: number | undefined; operations: FrontendContext['operations']; inConversation?: boolean;
+export function CodingJobCard({job, stop, message, openNative, continueJob, locked, read, revision, operations, inConversation = false}: {
+  job: CodingJobEntry; stop: (jobId: string, operationId: string) => void; message: MessageJob; openNative: OpenNative; continueJob: ContinueJob; locked: boolean; read: (path: string) => Promise<unknown>; revision: number | undefined; operations: FrontendContext['operations']; inConversation?: boolean;
 }): React.JSX.Element {
   const {companion, conversationId} = job;
   const [draft, setDraft] = useState('');
@@ -245,7 +268,7 @@ export function CodingJobCard({job, stop, message, openNative, locked, read, rev
       <dt>Worktree</dt><dd>{job.worktreeRef ?? 'Unknown'}</dd>
       <dt>Native session</dt><dd>{job.sessionId ?? 'Unknown'}</dd>
     </dl>
-    <JobAttempts jobId={job.jobId} read={read} revision={revision}/>
+    <JobAttempts jobId={job.jobId} operationId={job.operationId} read={read} revision={revision} continueJob={continueJob} locked={locked}/>
     <NativeClients job={job} openNative={openNative} locked={locked}/>
     {!inConversation && job.latestUpdate !== undefined && <p className="conversation-message-text">{job.latestUpdate}</p>}
     {!inConversation && companion !== undefined && <a href="#/module/companions/assistant"
@@ -272,12 +295,13 @@ export function CodingJobCard({job, stop, message, openNative, locked, read, rev
   </article>;
 }
 
-export function CodingJobs({read, revision, stop, message, openNative, operations, locked, standalone = false}: {
+export function CodingJobs({read, revision, stop, message, openNative, continueJob, operations, locked, standalone = false}: {
   read: (path: string) => Promise<unknown>;
   revision: number;
   stop: (jobId: string, operationId: string) => void;
   message: MessageJob;
   openNative: OpenNative;
+  continueJob: ContinueJob;
   operations: FrontendContext['operations'];
   locked: boolean;
   standalone?: boolean;
@@ -304,7 +328,7 @@ export function CodingJobs({read, revision, stop, message, openNative, operation
   const list = <>{page === undefined ? <p>Loading coding jobs…</p>
     : page === null ? <p>Coding jobs unavailable. <button type="button" onClick={() => {setRetry(value => value + 1);}}>Retry</button></p>
     : page.jobs.length === 0 ? <p>{standalone ? 'No jobs on this page.' : 'No active jobs on this page.'}</p>
-    : <ul className="coding-job-list">{page.jobs.map(job => <li key={job.jobId}><CodingJobCard job={job} stop={stop} message={message} openNative={openNative} locked={locked} read={read} revision={revision} operations={operations}/></li>)}</ul>}
+    : <ul className="coding-job-list">{page.jobs.map(job => <li key={job.jobId}><CodingJobCard job={job} stop={stop} message={message} openNative={openNative} continueJob={continueJob} locked={locked} read={read} revision={revision} operations={operations}/></li>)}</ul>}
     {cursors.length > 1 && <button type="button" onClick={() => {setCursors(values => values.slice(0, -1));}}>Previous jobs</button>}
     {page?.next != null && <button type="button" onClick={() => {
       const next = page.next;
@@ -317,9 +341,9 @@ export function CodingJobs({read, revision, stop, message, openNative, operation
   </details>;
 }
 
-export function ConversationCodingJob({jobId, revision, read, locked, stop, message, openNative, operations}: {
+export function ConversationCodingJob({jobId, revision, read, locked, stop, message, openNative, continueJob, operations}: {
   jobId: string; revision: number | undefined; read: (path: string) => Promise<unknown>;
-  locked: boolean; stop: (jobId: string, operationId: string) => void; message: MessageJob; openNative: OpenNative; operations: FrontendContext['operations'];
+  locked: boolean; stop: (jobId: string, operationId: string) => void; message: MessageJob; openNative: OpenNative; continueJob: ContinueJob; operations: FrontendContext['operations'];
 }): React.JSX.Element | null {
   const [job, setJob] = useState<CodingJobEntry>();
   useEffect(() => {
@@ -330,7 +354,7 @@ export function ConversationCodingJob({jobId, revision, read, locked, stop, mess
     }, () => {if (current) setJob(undefined);});
     return () => {current = false;};
   }, [jobId, read, revision]);
-  return job === undefined ? null : <CodingJobCard job={job} stop={stop} message={message} openNative={openNative} locked={locked || revision === undefined} read={read} revision={revision} operations={operations} inConversation/>;
+  return job === undefined ? null : <CodingJobCard job={job} stop={stop} message={message} openNative={openNative} continueJob={continueJob} locked={locked || revision === undefined} read={read} revision={revision} operations={operations} inConversation/>;
 }
 
 export function JobsPage({context}: {context: FrontendContext}): React.JSX.Element {
@@ -345,6 +369,7 @@ export function JobsPage({context}: {context: FrontendContext}): React.JSX.Eleme
           stop={(jobId, operationId) => {stopCodingJob(command, jobId, operationId);}}
           openNative={input => {openNativeClient(command, input);}}
           message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}
+          continueJob={input => {continueCodingJob(command, input);}}
           locked={command.locked || !control || !operationsLive}/>
         {command.requestId !== undefined && <p role="status">{command.text}</p>}
       </>}</Command>}

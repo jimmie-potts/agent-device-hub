@@ -21,6 +21,7 @@
       "enum": [
         "available",
         "terminal",
+        "terminal-closed",
         "desktop",
         "uncertain"
       ]

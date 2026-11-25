@@ -11,6 +11,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import type {DatabaseSync} from 'node:sqlite';
 import {test, type TestContext} from 'node:test';
 import type {AssistantProfile, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingHarnessReadiness, CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
@@ -310,16 +311,15 @@ void test('an uncapped worker starts more jobs from one companion than a page ca
   assert.deepEqual(w.work.filter(command => command.data.action === 'cancel').map(command => command.data.operationId), [job.operationId]);
 });
 
-function seedReadyJobs(store: CodingStore, operations: string[]): void {
-  const assistant = new AssistantStore(store.database);
+function seedReadyJobs(database: DatabaseSync, operations: string[]): void {
+  const jobs = new CodingStore(database), tasks = new AssistantStore(database);
   for (const operationId of operations) {
-    const repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
-    const task = assistant.newTask('bunny', brief);
+    const task = tasks.newTask('bunny', 'Synthetic restored request.');
     task.status = 'succeeded';
-    assistant.save(task);
-    const taskId = task.id;
-    store.create({jobId: `${operationId}-job`, operationId, taskId, repository, brief, conversationId: task.conversationId});
-    store.wait({operationId, taskId, companion: 'bunny', repository, brief,
+    tasks.save(task);
+    const taskId = task.id, repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
+    jobs.create({jobId: `${operationId}-job`, operationId, taskId, repository, brief, conversationId: task.conversationId});
+    jobs.wait({operationId, taskId, companion: 'bunny', repository, brief,
       traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
   }
 }
@@ -328,7 +328,7 @@ void test('a restored uncapped backlog paces the serial worker acknowledgement w
   const w = await world(context);
   assert.equal((await w.control('enable')).status, 'accepted');
   const restored = Array.from({length: 35}, (_, index) => `restored-${String(index)}`);
-  seedReadyJobs(new CodingStore(w.database()), restored);
+  seedReadyJobs(w.database(), restored);
   await w.restart();
   w.serializeStarts();
   assert.equal((await w.enable('uncapped')).status, 'accepted');
@@ -368,7 +368,7 @@ for (const failFirstWrite of [false, true]) {
         WHEN NEW.operation_id='stale-dispatch' AND NEW.kind='result' AND fail_stale_dispatch_result()=1
         BEGIN SELECT RAISE(ABORT,'synthetic disconnect result failure'); END`);
     }
-    seedReadyJobs(store, ['stale-dispatch', 'unassigned-dispatch']);
+    seedReadyJobs(db, ['stale-dispatch', 'unassigned-dispatch']);
     const release = w.holdDispatch();
     context.after(release);
     try {
@@ -397,7 +397,7 @@ void test('a disconnected delivery settles uncertain while its late reply leaves
   const w = await world(context);
   const operations = ['lost-delivery', 'next-delivery', 'last-delivery'];
   const store = new CodingStore(w.database());
-  seedReadyJobs(store, operations);
+  seedReadyJobs(w.database(), operations);
   w.serializeStarts();
   assert.equal((await w.enable('uncapped')).status, 'accepted');
   await settle(() => w.starts().length === 1);
@@ -989,51 +989,62 @@ void test('an uncapped attempt uses observed setup deadlines without timing out 
 });
 
 
-void test('an owner-approved Auto job routes from exhausted Claude to Codex and explicitly continues on the same job', {timeout: 30_000}, async context => {
+for (const [origin, destination] of [['codex', 'claude-code'], ['claude-code', 'codex']] as const)
+void test(`an owner-approved Auto job runs on ${origin} and explicitly continues on ${destination}`, {timeout: 30_000}, async context => {
   const brief = 'Exact owner-approved brief. ' + 'x'.repeat(4096 - 'Exact owner-approved brief. '.length);
   const w = await world(context, {provider: delegating('bunny', brief)});
   const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
     limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
   const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus', capabilities: {...claude.capabilities, steering: 'live'}};
   const exhausted: CodingHarnessReadiness = {...claude, limits: [{window: 'primary', status: 'rejected', resetsAtMs: null, utilization: null}]};
+  const initialSession = `native-${origin}`, resumedSession = `native-${destination}`;
   assert.equal((await w.control('enable')).status, 'accepted');
-  assert.equal((await w.enable('uncapped', [exhausted, codex])).status, 'accepted');
+  assert.equal((await w.enable('uncapped', [origin === 'codex' ? exhausted : claude, codex])).status, 'accepted');
   assert.equal((await w.send('bunny', 'Synthetic partially edited coding task')).status, 'accepted');
   await w.approved('bunny');
   await settle(() => w.starts().length === 1);
   const initial = w.starts()[0]?.data;
-  assert.ok(initial?.action === 'start' && initial.harness === 'codex');
+  assert.ok(initial?.action === 'start' && initial.harness === origin);
   const {operationId} = initial, jobId = `${operationId}-job`;
-  assert.match((await w.jobDetail(jobId)).attempts[0]?.selectionReason ?? '', /Claude Code quota exhausted \(reset unknown\)/);
-  assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
-  await w.progress({operationId, status: 'started', setup: 'ready', harness: 'codex', sessionId: 'native-codex'}, '2.3');
-  await settle(() => w.coding().runs?.some(run => run.sessionId === 'native-codex' && run.status === 'started') === true);
+  if (origin === 'codex') assert.match((await w.jobDetail(jobId)).attempts[0]?.selectionReason ?? '', /Claude Code quota exhausted \(reset unknown\)/);
+  assert.equal((await w.continueJob(jobId, operationId, destination)).status, 'rejected');
+  await w.progress({operationId, status: 'started', setup: 'ready', harness: origin, sessionId: initialSession}, '2.3');
+  await settle(() => w.coding().runs?.some(run => run.sessionId === initialSession && run.status === 'started') === true);
   await w.progress({operationId, status: 'attempt-context', worktreeRef: 'bunny-fixture-partial', branch: null, model: 'fixture-reported-model'}, '2.5');
-  const message = await w.message(jobId, operationId, 'Keep the fixture intact.', true);
-  assert.equal(message.status, 'accepted', JSON.stringify(message));
-  await settle(() => w.work.filter(command => command.data.action === 'message').length === 1);
-  await w.progress({operationId, messageId: message.requestId, sessionId: 'wrong-session', status: 'message-observed'}, '2.5');
-  assert.equal((await w.jobs({jobId})).jobs[0]?.messages?.[0]?.observed, false);
-  await w.progress({operationId, messageId: message.requestId, sessionId: 'native-codex', status: 'message-observed'}, '2.5');
-  await settle(() => w.database().prepare('SELECT observed FROM companion_coding_job_messages WHERE message_id=?').get(message.requestId)?.observed === 1);
-  assert.equal((await w.jobs({jobId})).jobs[0]?.messages?.[0]?.observed, true);
+  if (origin === 'codex') {
+    const message = await w.message(jobId, operationId, 'Keep the fixture intact.', true);
+    assert.equal(message.status, 'accepted', JSON.stringify(message));
+    await settle(() => w.work.filter(command => command.data.action === 'message').length === 1);
+    await w.progress({operationId, messageId: message.requestId, sessionId: 'wrong-session', status: 'message-observed'}, '2.5');
+    assert.equal((await w.jobs({jobId})).jobs[0]?.messages?.[0]?.observed, false);
+    await w.progress({operationId, messageId: message.requestId, sessionId: initialSession, status: 'message-observed'}, '2.5');
+    await settle(() => w.database().prepare('SELECT observed FROM companion_coding_job_messages WHERE message_id=?').get(message.requestId)?.observed === 1);
+    assert.equal((await w.jobs({jobId})).jobs[0]?.messages?.[0]?.observed, true);
+  } else {
+    const unsupported = await w.message(jobId, operationId, 'Never message this unsupported harness.');
+    assert.equal(unsupported.status, 'rejected');
+    if (unsupported.status === 'rejected') assert.equal(unsupported.error.error.code, 'unsupported-capability');
+    assert.equal(w.work.filter(command => command.data.action === 'message').length, 0);
+  }
   assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
   const head = 'a'.repeat(40);
   const stopped = {...result('Synthetic partial work.'), head, changedFiles: ['partial.txt', '/synthetic/absolute', 'C:/synthetic/absolute'], checks: [{name: 'git diff', status: 'passed'}]};
   const handoffToken = randomUUID();
-  await w.progress({operationId, status: 'cancelled', reason: 'cancelled', harness: 'codex', sessionId: 'native-codex', result: stopped, handoffToken}, '2.4');
+  await w.progress({operationId, status: 'cancelled', reason: 'cancelled', harness: origin, sessionId: initialSession, result: stopped, handoffToken}, '2.4');
   await w.waitMessages('bunny', /Synthetic partial work/);
   assert.equal((await w.enable('uncapped', [claude, codex])).status, 'accepted');
-  assert.deepEqual((await w.jobDetail(jobId)).continuation, {fromOperationId: operationId, harness: 'claude-code', head, changedFiles: ['partial.txt']});
+  const ready = await w.jobDetail(jobId);
+  assert.deepEqual(ready.continuation, {fromOperationId: operationId, harness: destination, head, changedFiles: ['partial.txt']});
+  assert.equal(ready.continuationReason, undefined);
   const requestId = randomUUID();
-  assert.equal((await w.continueJob(jobId, operationId, 'claude-code', requestId)).status, 'accepted');
-  assert.equal((await w.continueJob(jobId, operationId, 'claude-code', requestId)).status, 'accepted');
+  assert.equal((await w.continueJob(jobId, operationId, destination, requestId)).status, 'accepted');
+  assert.equal((await w.continueJob(jobId, operationId, destination, requestId)).status, 'accepted');
   await settle(() => w.starts().length === 2);
   const resumed = w.starts()[1]?.data;
-  assert.ok(resumed?.action === 'start' && resumed.harness === 'claude-code');
+  assert.ok(resumed?.action === 'start' && resumed.harness === destination);
   assert.deepEqual(resumed.continuation, {fromOperationId: operationId, token: handoffToken});
   assert.equal(resumed.brief, brief);
-  assert.doesNotMatch(resumed.brief, /native-codex|Synthetic partial work/);
+  assert.doesNotMatch(resumed.brief, /native-|Synthetic partial work/);
   assert.equal((await w.jobDetail(jobId)).activeOperationId, resumed.operationId);
   assert.equal((await w.jobs({jobId})).jobs[0]?.operationId, resumed.operationId);
   const stale = await w.message(jobId, operationId, 'Never reach a replacement attempt.');
@@ -1042,25 +1053,20 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   assert.deepEqual((await w.jobDetail(jobId)).attempts[0]?.context, {
     worktreeRef: 'bunny-fixture-partial', branch: null, model: 'fixture-reported-model',
   });
-  assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
-  await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'native-claude'}, '2.3');
-  await settle(() => w.coding().runs?.some(run => run.operationId === resumed.operationId && run.status === 'started') === true);
-  const unsupported = await w.message(jobId, resumed.operationId, 'Never message this unsupported harness.');
-  assert.equal(unsupported.status, 'rejected');
-  if (unsupported.status === 'rejected') assert.equal(unsupported.error.error.code, 'unsupported-capability');
-  assert.equal(w.work.filter(command => command.data.action === 'message').length, 1);
-  await w.progress({operationId: resumed.operationId, status: 'completed', harness: 'claude-code',
+  assert.equal((await w.continueJob(jobId, operationId, destination)).status, 'rejected');
+  await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: destination, sessionId: resumedSession}, '2.3');
+  await w.progress({operationId: resumed.operationId, status: 'completed', harness: destination,
     result: {...result('Synthetic continued work.'), head, changedFiles: ['partial.txt'], checks: [{name: 'unit test', status: 'passed'}]}}, '2.3');
   await w.waitMessages('bunny', /Synthetic continued work/);
   const detail = await w.jobDetail(jobId);
   assert.equal(detail.activeOperationId, null);
   assert.equal(detail.continuation, null);
-  assert.match(detail.continuationReason ?? '', /Continuation from Claude Code is unavailable/);
-  assert.equal((await w.continueJob(jobId, resumed.operationId, 'codex')).status, 'rejected');
+  assert.match(detail.continuationReason ?? '', /previous attempt completed without a partial result/);
+  assert.equal((await w.continueJob(jobId, resumed.operationId, origin)).status, 'rejected');
   assert.equal(w.starts().length, 2);
   assert.deepEqual(detail.attempts.map(attempt => [attempt.operationId, attempt.harness, attempt.sessionId, attempt.status, attempt.result?.checks[0]?.name]), [
-    [operationId, 'codex', 'native-codex', 'cancelled', 'git diff'],
-    [resumed.operationId, 'claude-code', 'native-claude', 'completed', 'unit test'],
+    [operationId, origin, initialSession, 'cancelled', 'git diff'],
+    [resumed.operationId, destination, resumedSession, 'completed', 'unit test'],
   ]);
   assert.doesNotMatch(JSON.stringify(detail), new RegExp(handoffToken));
 });

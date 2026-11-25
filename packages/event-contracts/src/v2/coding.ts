@@ -71,7 +71,7 @@ export type CodingMessageObserved = {operationId: string; sessionId: string; mes
 export type CodingAttemptContext = {operationId: string; status: 'attempt-context'; worktreeRef?: string; branch?: string | null; model?: string};
 export type CodingNativeClientKind = 'terminal' | 'claude-desktop';
 export type CodingNativeClient = {operationId: string; status: 'native-client'; clients: CodingNativeClientKind[];
-  state: 'available' | 'terminal' | 'desktop' | 'uncertain'; observedAtMs: number};
+  state: 'available' | 'terminal' | 'terminal-closed' | 'desktop' | 'uncertain'; observedAtMs: number};
 export type CodingWorkerProgress = CodingProgress | CodingMessageObserved | CodingAttemptContext | CodingNativeClient;
 export type CodingLost = {id: string};
 /** One run the worker holds for a companion's slot, from dispatch to its end. */
@@ -105,7 +105,7 @@ function checkProgress(message: Message): string | undefined {
   if (data.status === 'message-observed' || data.status === 'attempt-context') return undefined;
   if (data.status === 'native-client') {
     if ((data.state === 'desktop' && !data.clients.includes('claude-desktop')) ||
-      (data.state === 'terminal' && !data.clients.includes('terminal'))) return 'native writer must be an offered client';
+      ((data.state === 'terminal' || data.state === 'terminal-closed') && !data.clients.includes('terminal'))) return 'native writer must be an offered client';
     return undefined;
   }
   if (data.status === 'completed' && data.result.summary.trim() === '') return 'payload summary must not be blank';

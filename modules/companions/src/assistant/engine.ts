@@ -1719,7 +1719,8 @@ export class AssistantEngine {
       delegation = pending;
       // A hand-off whose companion's slot is busy waits for it; it was approved and is sent once when the slot frees.
       const companion = PROFILES.find(entry => entry.id === task.profile)?.name ?? task.profile;
-      result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, conversationId: task.conversationId, companion: task.profile, repository: proposal.data.repository, brief: proposal.data.brief,
+      result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, conversationId: task.conversationId,
+        companion: task.profile, repository: proposal.data.repository, brief: proposal.data.brief,
         expectedRevision: proposal.expectedRevision, ...(question.codingChoice === undefined ? {} : {choice: question.codingChoice})}, active.span.context, signal)
         .then(answer => {
           if (answer.status === 'queued') {

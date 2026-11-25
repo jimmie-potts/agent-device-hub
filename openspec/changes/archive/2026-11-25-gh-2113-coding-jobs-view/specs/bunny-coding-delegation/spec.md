@@ -13,3 +13,10 @@ Jobs SHALL offer a bounded authenticated listing and exact job lookup across the
 
 - **WHEN** a job instruction is recorded locally, accepted by a harness, or confirmed by harness activity
 - **THEN** each fact is presented at its own level of evidence, and repeating a delivery identifier cannot apply the instruction twice
+
+#### Scenario: Choose a harness in Conversation and continue from Jobs
+
+- **WHEN** the owner approves a coding proposal with harness selection available
+- **THEN** the chosen Auto, Claude Code or Codex routing is submitted with that exact approval
+- **AND** Jobs offers the named continuation action only for a verified stopped attempt the owner may read and control
+- **AND** explicit continuation preserves the job identity and records a distinct attempt

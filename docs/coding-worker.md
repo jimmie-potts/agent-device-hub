@@ -59,35 +59,45 @@ terminal** on that same card.
 node apps/runtime/bin/coding-worker.mjs native /absolute/private/coding-worker.json <attempt-id>
 ```
 
-The terminal helper uses the exact saved Claude session or Codex thread. The
-worker verifies the same checkout and current subscription before sending
-the launch plan to the local helper. Codex keeps its dedicated profile.
-Claude saved terminal continuation uses restricted mode and a local account
-sign-in. The helper reports release after the terminal process group is clear.
-While the terminal owns the attempt, the Hub can observe release. Native
-messages and progress stay with the native client.
+The eligible Codex CLI 0.163.0 route resumes the exact saved thread in its
+dedicated worker profile. It requires a verified #2112 partial attempt and
+copies its checkout into the protected successor directory. The worker checks
+the new write boundary against the original checkout. A no-turn app-server
+resume must return the same thread, the successor as its only workspace root,
+the selected permissions and current personal subscription. The terminal uses
+that successor with an explicit `--cd` and its own app-server. A Mac host
+sandbox also protects the original checkout and its shared Git metadata.
+This route reserves the same attempt as **Continue with Claude Code**, which instead
+starts a new attempt. Only one can take write control.
 
-On a Mac qualified for Claude Desktop, **Hand off saved session to Claude
-Desktop** takes over the exact attempt using the supported
-`claude --desktop --resume <session-id>` path. The launcher receipt shows the
-exact requested identity. Desktop activity and writer release are unobserved,
-so this handoff is one-way. The worker keeps another writer off that attempt.
-Use the same local account and subscription in Desktop when qualifying this
-action. [Claude Desktop reference](https://code.claude.com/docs/en/desktop#coming-from-the-cli)
+The terminal helper reports client exit. A detached background writer may
+outlive the native terminal, so the worker keeps the attempt reserved after
+exit. Native messages and progress stay with the native client.
+
+Claude terminal and Desktop use the original checkout of a saved session.
+Both require independent evidence that the previous writer and its descendants
+released that checkout. The existing Claude worker cannot supply that evidence.
+The exact Desktop form is `claude --desktop --resume <session-id>`. Its
+acknowledgement names the requested session, and Desktop activity and writer
+release remain unobserved. [Claude Desktop reference](https://code.claude.com/docs/en/desktop#coming-from-the-cli)
 
 Live Claude attachment applies to background sessions. Claude background mode
 rejects the print mode used for the worker's private stdin brief, authenticated
 stream, structured result and turn and spending caps. A fresh, untrusted
 worktree also needs native trust confirmation. The existing worker keeps
-its bounded headless mode.
+its bounded headless mode. The read-only `claude logs` command reads recent
+terminal output for managed background sessions. It can't inspect the headless
+worker's saved UUID. An interactive `--resume` can send another turn and
+change session history, even when local file editing is limited. Jobs therefore
+offers no passive Claude CLI viewer for this worker.
 [Claude agent view](https://code.claude.com/docs/en/agent-view#dispatch-an-agent-from-your-shell)
 [Claude CLI reference](https://code.claude.com/docs/en/cli-reference)
 
-Codex terminal resume selects a saved UUID in the worker profile. The worker's
-live app-server stream cannot be opened by the standalone terminal. The Codex
+The worker's live app-server stream cannot be opened by the standalone terminal. The Codex
 app workspace launcher cannot confirm an exact job thread in the dedicated
 worker profile. Both of those actions stay unavailable.
 [Codex CLI reference](https://developers.openai.com/codex/cli/reference/)
+[Codex 0.163.0 resume cwd selection](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/tui/src/session_resume.rs)
 
 ## Harness choice and continuation
 
@@ -98,9 +108,11 @@ uses only that subscription. An unknown quota remains unknown. The Hub can
 resolve Auto again while a job is still local and queued. After dispatch,
 slowdown or uncertainty stays with the selected attempt.
 
-A partially completed Codex attempt can continue on Claude Code on a Mac
-when the Codex process has stopped and its native sandbox denies the
-successor path. The worker checks that boundary offline, then creates a
+A partially completed attempt can continue on the other harness on a Mac
+when the first process group has stopped and its native sandbox denies writes
+to the successor path. Claude Code uses a macOS process sandbox inherited by
+its subprocesses. Codex uses its verified native permissions profile. The
+worker checks the boundary offline, then creates a
 distinct checkout and Git store at the accepted revision. It verifies the
 source directory, Git directory, staged index and tracked file contents.
 A staged new source file can travel with the partial work. Git-visible
@@ -109,10 +121,9 @@ build artifacts stay with the previous attempt.
 
 Each attempt keeps its own native session, outcome and checks. The worker
 pairs the exact approved brief with bounded Git and check facts at launch.
-Claude Code can receive a continuation. Continuing from Claude Code requires
-equivalent writer confinement and is currently unavailable. Losing the
-connection, restarting the worker or changing the source checkout invalidates
-the old proof.
+Continuation is unavailable when the worker cannot verify the source sandbox.
+Losing the connection, restarting the worker or changing the source checkout
+invalidates the old proof.
 
 ## Claude Code delegation
 

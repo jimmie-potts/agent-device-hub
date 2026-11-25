@@ -158,10 +158,10 @@ export class NativeClients {
       }
       const target = this.#targets.get(operationId);
       if (target?.socket !== socket || target.state !== 'terminal') {socket.destroy(); return;}
-      if (line === 'released') {
-        target.state = 'available';
+      if (line === 'closed') {
+        target.state = 'terminal-closed';
         delete target.socket;
-        void target.changed('available');
+        void target.changed('terminal-closed');
         socket.end();
       } else socket.destroy();
     });
@@ -184,7 +184,7 @@ function parsePlan(line: string): NativeTerminalPlan | undefined {
   } catch {return undefined;}
 }
 
-async function processGroupIsEmpty(): Promise<boolean> {
+async function foregroundHelper(): Promise<boolean> {
   const {stdout} = await exec('/bin/ps', ['-axo', 'pid=,pgid='], {timeout: 2000});
   const members = stdout.trim().split('\n').map(line => line.trim().split(/\s+/u).map(Number));
   const self = members.find(([pid]) => pid === process.pid);
@@ -193,7 +193,7 @@ async function processGroupIsEmpty(): Promise<boolean> {
 
 /** Run on the worker's own account from a foreground terminal. The helper never reads Hub credentials. */
 export async function nativeTerminal(path: string, operationId: string, foreground: boolean, log: (line: string) => void): Promise<void> {
-  if (!ATTEMPT.test(operationId) || !foreground || !await processGroupIsEmpty()) {
+  if (!ATTEMPT.test(operationId) || !foreground || !await foregroundHelper()) {
     throw new Error('coding-worker-native: use a foreground terminal on the worker host');
   }
   await checkStateDirectory(dirname(path));
@@ -202,7 +202,7 @@ export async function nativeTerminal(path: string, operationId: string, foregrou
   const socket = createConnection(path);
   let claimed = false, complete = false;
   await new Promise<void>((resolve, reject) => {
-    socket.on('close', () => {if (!complete) reject(new Error('coding-worker-native: no verified client release')); else resolve();});
+    socket.on('close', () => {if (!complete) reject(new Error('coding-worker-native: terminal connection closed before the exit receipt')); else resolve();});
     socket.on('connect', () => {socket.write(operationId + '\n');});
     lines(socket, line => {
       if (line === 'waiting' && !claimed) {
@@ -217,11 +217,9 @@ export async function nativeTerminal(path: string, operationId: string, foregrou
       const child = spawn(executable, args, {cwd, env: {...env, ...(process.env.TERM === undefined ? {} : {TERM: process.env.TERM})}, stdio: 'inherit'});
       child.once('error', () => {socket.destroy();});
       child.once('close', () => {
-        void processGroupIsEmpty().then(empty => {
-          if (!empty || socket.destroyed) {socket.destroy(); return;}
-          complete = true;
-          socket.write('released\n');
-        }, () => {socket.destroy();});
+        if (socket.destroyed) return;
+        complete = true;
+        socket.write('closed\n');
       });
     });
   });

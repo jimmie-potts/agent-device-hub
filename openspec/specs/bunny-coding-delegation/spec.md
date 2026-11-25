@@ -245,7 +245,7 @@ A new coding job SHALL bind approval to Auto or a named harness. Auto SHALL choo
 
 #### Scenario: Continue a stopped and confined writer
 
-- **WHEN** the owner requests Claude Code after a stopped Codex attempt on a supported Mac worker, the native sandbox excludes the successor, and the worker confirms the source checkout identity, revision, index and selected files
+- **WHEN** the owner requests the other harness after a stopped Claude Code or Codex attempt on a supported Mac worker, the native sandbox excludes the successor, and the worker confirms the source checkout identity, revision, index and selected files
 - **THEN** the job receives a distinct attempt in a separate checkout and Git store with the same verified state, the full approved brief, bounded Git and check facts, and its own native identity and checks
 
 #### Scenario: Incomplete snapshot or confinement
@@ -272,19 +272,31 @@ Jobs SHALL offer a bounded authenticated listing and exact job lookup across the
 - **WHEN** a job instruction is recorded locally, accepted by a harness, or confirmed by harness activity
 - **THEN** each fact is presented at its own level of evidence, and repeating a delivery identifier cannot apply the instruction twice
 
+#### Scenario: Choose a harness in Conversation and continue from Jobs
+
+- **WHEN** the owner approves a coding proposal with harness selection available
+- **THEN** the chosen Auto, Claude Code or Codex routing is submitted with that exact approval
+- **AND** Jobs offers the named continuation action only for a verified stopped attempt the owner may read and control
+- **AND** explicit continuation preserves the job identity and records a distinct attempt
+
 ### Requirement: Exact native client handoff
 
-An authorized owner SHALL be able to request a qualified native client for the current saved coding attempt. The action SHALL bind the selected worker, job, attempt, harness, native identity and original checkout. Client choices SHALL distinguish live attachment from saved-session terminal continuation and one-way Desktop takeover. The worker SHALL reserve write control before launching, refuse another writer while authority is held or uncertain, and return authority only on verified release. The Hub SHALL show the time and limits of its last native observation. Private launch paths, profiles and arguments SHALL remain on the worker host.
+An authorized owner SHALL be able to request a qualified native client for the current saved coding attempt. The action SHALL bind the selected worker, job, attempt, harness, native identity and authorized checkout. An original checkout SHALL require positive release of all prior writers. An isolated successor SHALL enforce a verified write boundary against the original checkout and match the saved identity and effective workspace before native continuation. Client choices SHALL distinguish live attachment from saved-session terminal continuation and one-way Desktop takeover. The worker SHALL reserve write control before launching, refuse another writer while authority is held or uncertain, and return authority only on verified release. The Hub SHALL show the time and limits of its last native observation. Private launch paths, profiles and arguments SHALL remain on the worker host.
 
 #### Scenario: The owner continues one of two saved attempts in its terminal
 
 - **WHEN** the owner selects terminal continuation for one saved attempt and its local helper is waiting
-- **THEN** only that attempt's client receives its exact saved identity and checkout, a competing writer is refused, and verified terminal release makes the attempt eligible again
+- **THEN** only that attempt's client receives its exact saved identity and qualified checkout, and a competing writer is refused
 
 #### Scenario: Claude Desktop acknowledges the saved attempt
 
 - **WHEN** the owner authorizes Claude Desktop takeover after the worker stopped and the exact launcher acknowledgement is observed
 - **THEN** Jobs reports Desktop ownership with activity unobserved and prevents another writer until release can be independently verified
+
+#### Scenario: The terminal exits while release remains unverified
+
+- **WHEN** the helper reports that the terminal client exited
+- **THEN** Jobs reports exit separately from release and the attempt stays reserved against another writer
 
 #### Scenario: The worker loses contact after assigning authority
 
