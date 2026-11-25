@@ -32,6 +32,8 @@ import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
 export type Question = SavedQuestion & {call: string; codingChoice?: CodingChoice};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
+  /** Only the private Conversation page renders this receipt, after a fresh exact Jobs lookup. */
+  localJobStatus?: {question: string; visible?: {jobId: string; operationId: string; status: string}};
   control?: BoundControl;
   supervisor?: SupervisorIdentity;
   clarificationDevices?: readonly string[];
@@ -75,6 +77,7 @@ type RecordRow = {record: string};
 export type MessageSource = Pick<ConversationMessage, 'id' | 'role' | 'taskId'> & {follows?: string | null};
 type MessageVisibility = {
   shows(message: MessageSource): boolean;
+  privateText?(message: MessageSource): string | undefined;
   attachment(requestId: string): boolean;
   task(taskId: string): boolean;
 };
@@ -391,7 +394,7 @@ export class AssistantStore {
    * about, so it is left out and can never become a title.
    */
   titleMessages(conversationId: string, limit = 8, permits?: (message: MessageSource) => boolean): {role: 'owner' | 'assistant'; text: string}[] {
-    const query = "SELECT id,role,text,task_id AS taskId,follows FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' AND id NOT LIKE task_id || '-step-%-job-%' AND (follows IS NULL OR follows NOT LIKE task_id || '-step-%-job') ORDER BY seq DESC";
+    const query = "SELECT id,role,text,task_id AS taskId,follows FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT IN (task_id || '-private-question', task_id || '-private-status') AND id NOT LIKE task_id || '-closing-%' AND id NOT LIKE task_id || '-step-%-job-%' AND (follows IS NULL OR follows NOT LIKE task_id || '-step-%-job') ORDER BY seq DESC";
     const rows = (permits === undefined ? this.database.prepare(query + ' LIMIT ?').all(conversationId, limit)
       : this.database.prepare(query).all(conversationId)) as (MessageSource & {role: 'owner' | 'assistant'; text: string})[];
     return (permits === undefined ? rows : rows.filter(permits).slice(0, limit)).reverse().map(({role, text}) => ({role, text}));
@@ -489,7 +492,7 @@ export class AssistantStore {
     const follows = followed !== undefined && visibility.shows(followed) ? row.follows : null;
     const visible = row.artRequestId !== null && !visibility.attachment(row.artRequestId)
       ? {...row, artRequestId: null, artDescription: null} : row;
-    return messageOf({...visible, follows});
+    return messageOf({...visible, text: visibility.privateText?.(row) ?? visible.text, follows});
   }
   #visibleQuestion(task: Task, visibility?: MessageVisibility): Question | null {
     const question = task.question;

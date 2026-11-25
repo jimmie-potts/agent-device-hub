@@ -809,6 +809,12 @@ For a verified stopped attempt, **Attempts and results** offers continuation
 with the named harness under the same job. If the Hub has a reason to refuse
 continuation, the card shows it.
 
+In the original Conversation, ask “What is the status of coding job ID?” with
+the full Job ID from the card. The reply records the current attempt and its
+reported state. Conversation checks access again when displaying the reply.
+If another attempt has started, ask again for its status. This question runs
+locally and sends no model turn.
+
 Use **Message job** on a card to change instructions for that attempt.
 You can also enter `Message job <name>: <instruction>` or
 `Tell the <name> job to <instruction>` in Conversation. If a name matches

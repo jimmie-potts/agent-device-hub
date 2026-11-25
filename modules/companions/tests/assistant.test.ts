@@ -1,3 +1,4 @@
+import {CodingStore} from '../src/coding/store.js';
 import {DEVICE_HISTORY_VERSION} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
 import assert from 'node:assert/strict';
@@ -145,6 +146,12 @@ void test('owner input, not a model suggestion or status question, authorizes on
     await until(() => status(w) === 'succeeded');
     assert.equal(requests.length, 0, text);
   }
+  await input(w.core, w.module(), 'Is Studio Plug on?');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'What is the status of coding job synthetic-step-1-job?');
+  await input(w.core, w.module(), 'Could you turn it off?');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(requests.length, 0, 'a private question separates the pronoun from the earlier device');
   await input(w.core, w.module(), 'Is Studio Plug on?');
   await until(() => status(w) === 'succeeded');
   await input(w.core, w.module(), 'Could you turn it off?');
@@ -1729,6 +1736,124 @@ void test('a refusal is offered to speech, a result over the spoken bound stays 
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
 });
 
+void test('Responses never substitutes an older owner excerpt for the latest private job question', async context => {
+  const bodies: string[] = [];
+  const allow = sharing();
+  let denied: string | undefined;
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    bodies.push(init.body);
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output: [{type: 'message', role: 'assistant',
+      content: [{type: 'output_text', text: 'Fixture answer.', annotations: []}]}], usage: {input_tokens: 10, output_tokens: 3}})));
+  }});
+  const w = await world(context, {provider, share: query => allow(query) && !(denied !== undefined && query.record === denied &&
+    query.destination === 'openai-supervisor' && query.field === 'excerpt')});
+  await control(w.core, w.module(), 'enable');
+  const ask = async (text: string, profile = 'bunny') => {
+    const latest = () => w.module().inspectAssistant()?.tasks.find(row => row.profile === profile);
+    const previous = latest()?.taskId;
+    assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
+    await until(() => latest()?.taskId !== previous && latest()?.status === 'succeeded');
+    return latest()?.taskId ?? assert.fail('missing turn');
+  };
+  const earlier = 'Synthetic earlier owner statement.';
+  await ask(earlier);
+  await ask('Repeat my last message.');
+  assert.equal(bodies.at(-1)?.includes(earlier), true, 'an authorized actual latest owner message may be quoted');
+  await ask('Synthetic statement private to Reachy.', 'reachy');
+  const deniedTask = await ask('Synthetic newly revoked owner statement.');
+  denied = deniedTask + '-prompt';
+  await ask('Repeat my last message.');
+  assert.doesNotMatch(bodies.at(-1) ?? '', /newly revoked|earlier owner statement|private to Reachy/u);
+  denied = undefined;
+  await ask(earlier);
+  const sent = bodies.length;
+  await ask('What is the status of coding job synthetic-step-1-job?');
+  assert.equal(bodies.length, sent);
+  await ask('Repeat my last message.');
+  assert.doesNotMatch(bodies.at(-1) ?? '', /earlier owner statement|private to Reachy|step-1-job|Private owner question/u);
+});
+
+void test('resuming a local job status request commits its reply before a later paid queue refusal', async context => {
+  const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: () => assert.fail('The held paid message cannot run')};
+  const w = await world(context, {provider, monthlyLimitMicros: 1});
+  await control(w.core, w.module(), 'enable');
+  const conversation = w.store().ensureConversation('bunny');
+  w.store().queue.setHold(conversation, {reason: 'restart', code: null, detail: null});
+  for (const text of ['What is the status of coding job synthetic-step-1-job?', 'Ordinary paid question.']) {
+    assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {action: 'queue'})).status, 'accepted');
+  }
+  const resumed = await control(w.core, w.module(), 'resume-queue', undefined, randomUUID(), {profile: 'bunny'});
+  assert.equal(resumed.status, 'accepted');
+  assert.match((await page(w, 'bunny', 'recent')).messages.at(-1)?.text ?? '', /no readable coding job/iu);
+  assert.deepEqual(w.store().queue.messages(conversation).map(message => message.text), ['Ordinary paid question.']);
+  assert.equal(w.store().queue.hold(conversation)?.code, 'capacity');
+});
+
+void test('a private job status reply follows current access and never becomes provider input', async context => {
+  let revoked = false;
+  let deniedAttempt: string | undefined;
+  const allow = sharing();
+  const share = Object.defineProperty((query: ShareQuery) => allow(query) && !(query.source === 'coding' && query.field === 'status' &&
+    (revoked || deniedAttempt !== undefined && query.record === deniedAttempt)),
+    'revokesFields', {get: () => revoked || deniedAttempt !== undefined});
+  let finish: (() => void) | undefined;
+  const provider = counted(() => new Promise(resolve => {finish = () => {resolve(reply('Ordinary reply.'));};}));
+  const w = await world(context, {provider, share});
+  await control(w.core, w.module(), 'enable');
+  const origin = w.store().newTask('bunny', 'Disposable coding task.');
+  origin.status = 'succeeded';
+  w.store().save(origin);
+  const operation = origin.id + '-step-1', jobId = operation + '-job';
+  const coding = () => new CodingStore(w.host().moduleDatabase() ?? assert.fail('open database'));
+  coding().create({jobId, operationId: operation, taskId: origin.id, conversationId: origin.conversationId, repository: 'synthetic', brief: 'Private fixture.'});
+  const attempt = {jobId, operationId: operation, companion: 'bunny', choice: 'codex', harness: 'codex', selectionReason: 'fixture'} as const;
+  coding().createAttempt(attempt);
+  coding().observeAttempt(operation, 'completed');
+  const question = 'What is the status of the coding job ' + jobId + '? Read status only.';
+  const ask = async (text: string, profile = 'bunny') => {
+    assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
+    return (await page(w, profile, 'recent')).messages.at(-1)?.text ?? assert.fail('missing local reply');
+  };
+  assert.match(await ask(question), /reported status.*completed/iu);
+  const local = (await page(w, 'bunny', 'recent')).messages.at(-1)?.id ?? assert.fail('missing local reply');
+  const savedReply = async () => (await page(w, 'bunny', 'recent')).messages.find(row => row.id === local)?.text;
+  revoked = true;
+  assert.doesNotMatch(await savedReply() ?? '', /completed|step-1-job/iu);
+  assert.match(await ask(question), /no readable coding job/iu);
+  revoked = false;
+  assert.match(await savedReply() ?? '', /reported status.*completed/iu);
+  assert.match(await ask(question, 'reachy'), /no readable coding job/iu);
+  assert.match(await ask(question.replace(operation, randomUUID() + '-step-1')), /no readable coding job/iu);
+  assert.match(await ask(question + ' Also stop it.'), /separate status question/iu);
+  assert.match(await ask(question + ' And ' + jobId + '?'), /separate status question/iu);
+  const successor = randomUUID();
+  coding().createAttempt({...attempt, operationId: successor});
+  assert.match(await savedReply() ?? '', /current attempt changed/iu);
+  deniedAttempt = operation;
+  assert.match(await savedReply() ?? '', /no readable coding job/iu);
+  deniedAttempt = undefined;
+  assert.match(await ask(question), /reported status.*queued/iu);
+  await w.restart();
+  assert.match((await page(w, 'bunny', 'recent')).messages.at(-1)?.text ?? '', new RegExp(successor));
+  revoked = true;
+  assert.doesNotMatch(JSON.stringify((await page(w, 'bunny', 'recent')).messages), new RegExp(successor));
+  revoked = false;
+  assert.equal(provider.calls(), 0);
+  assert.equal((await input(w.core, w.module(), 'Ordinary question.')).status, 'accepted');
+  await until(() => provider.calls() === 1);
+  const active = w.module().inspectAssistant()?.tasks.find(row => row.profile === 'bunny')?.taskId;
+  assert.equal((await input(w.core, w.module(), question, false, randomUUID(), {action: 'steer', taskId: active})).status, 'accepted');
+  assert.equal(w.module().inspectAssistant()?.queues?.find(row => row.profile === 'bunny')?.messages, 1);
+  finish?.();
+  await until(() => w.module().inspectAssistant()?.tasks.find(row => row.profile === 'bunny')?.taskId !== active);
+  assert.match((await page(w, 'bunny', 'recent')).messages.at(-1)?.text ?? '', /reported status.*queued/iu);
+  assert.equal(provider.calls(), 1);
+  assert.doesNotMatch(JSON.stringify(provider.inputs), /step-1-job|reported status|Private fixture|Private owner (?:question|reply)/u);
+  assert.doesNotMatch(JSON.stringify(w.store().titleMessages(origin.conversationId)), /step-1-job|reported status|Private owner (?:question|reply)/u);
+  w.store().newConversation('bunny');
+  assert.match(await ask(question), /no readable coding job/iu);
+});
+
 void test('an approved delegation is handed to the worker once, the turn finishes while the worker runs and a named stop targets its attempt', async context => {
   const CODING = 'bunny/parts/coding-worker';
   let turn = 0;
@@ -1769,14 +1894,18 @@ void test('an approved delegation is handed to the worker once, the turn finishe
   assert.equal(provider.calls(), before + 2, 'the agent can finish without the worker result');
   await progress({operationId: work[0]?.operationId, status: 'started'});
   await until(() => w.module().inspectCoding()?.active?.status === 'started');
+  assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
+  const liveJob = (work[0]?.operationId ?? assert.fail('attempt')) + '-job';
+  assert.equal((await input(w.core, w.module(), 'What is the status of the coding job ' + liveJob + '? Read status only.')).status, 'accepted');
+  assert.match((await page(w, 'bunny', 'recent')).messages.at(-1)?.text ?? '', /reported status.*started/iu);
+  assert.equal(provider.calls(), before + 2);
   await progress({operationId: work[0]?.operationId, status: 'completed', result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: ['scripts/tests/readout.test.mjs'],
     checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: [], summary: 'Added the test; it passes.', sessionId: null, usage: null}});
   await until(() => w.module().inspectCoding()?.active === null);
   await new Promise(resolve => {setImmediate(resolve);});
   assert.equal(provider.calls(), before + 2);
-  const saved = await page(w);
+  const saved = await page(w, 'bunny', 'recent');
   assert.ok(saved.messages.some(message => message.role === 'assistant' && /completed \(tested-candidate\): Added the test; it passes\./.test(message.text)));
-  assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
   assert.equal(w.module().inspectCoding()?.active, null);
   // A second delegation is cancelled by the owner while the worker runs: the worker is asked to stop and its report ends the task's wait.
   turn = 0;
