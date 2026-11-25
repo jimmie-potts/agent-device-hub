@@ -35,10 +35,10 @@ export function catalogCommand(name: string): CatalogFamily | undefined {
 }
 
 const draft = text('The exact draft ID from the authoring or preview tool.');
-const draftRevision = integer('The exact revision from the latest draft preview.');
+const draftRevision = integer('The exact draft revision the owner requested, or the previewed revision if the owner did not specify one.');
 const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family => family !== 'nanoleaf-show-save' && family !== 'art-request');
 export const catalogTools = [
-  define(READ_DEVICES, 'read', 'Find configured devices and observe their status and permitted commands. A named Wemo plug includes its Hub maximum-on timer status and time remaining. Use empty target to list. Return the exact owner and target to use for a proposal.', {
+  define(READ_DEVICES, 'read', 'Find configured devices and observe their status and permitted commands. A named Wemo plug includes its Hub maximum-on timer status and time remaining. Use empty target to list. Return the exact owner and target to use for a control.', {
     target: text('Device name or ID, or empty to list.'), owner: text('Exact owner such as bunny/modules/pixoo, or auto to search installed owners.'),
   }),
   define(READ_PLAYBACK, 'read', 'Read presented playback, current controls and observation time.', {}),
@@ -46,7 +46,7 @@ export const catalogTools = [
   define(READ_VOLCANO, 'read', 'Read Volcano observations and the app’s session-gap setting. Equipment controls are unavailable.', {}),
   define(CREATE_ART, 'command', 'Propose creating one artwork to include in this reply. Requires owner approval before paid generation. Use only when asked for new artwork. It sends nothing to displays.', {
     format: {type: 'string', enum: ['still', 'gif'], description: 'A still image or animated GIF.'},
-    showTargets: {type: 'array', items: {type: 'string'}, description: 'Requested display names for a separate show approval once ready. Use [] for chat alone. Only include browser for an explicit dashboard presentation.'},
+    showTargets: {type: 'array', items: {type: 'string'}, description: 'Display names the owner requested for a separate presentation once ready. Use [] for chat alone. Only include browser for an explicit dashboard presentation.'},
     description: text('A short visual description of the requested artwork, used for generation and to describe the image. Include only details the owner wants illustrated.'),
   }),
   define(READ_ART, 'read', 'List saved artwork IDs, usable rendition kinds, and exact configured destinations. Use the routing ID of an eligible destination for a show.', {}),
@@ -55,8 +55,8 @@ export const catalogTools = [
     id: text('Exact show, draft or light ID for details, or empty to list.'),
     offset: integer('Use zero to start and nextOffset for the next page.'),
   }),
-  define(READ_OPERATION, 'read', 'Read a tracked command result, including evidence and error. Acceptance alone does not confirm the effect.', {requestId: text('Exact operation ID from the approved action.')}),
-  define(READ_ART_EFFECTS, 'read', 'Read per-display preparation and presentation operations for an approved saved-art show.', {requestId: text('The art-show operation ID.')}),
+  define(READ_OPERATION, 'read', 'Read a tracked command result, including evidence and error. Acceptance alone does not confirm the effect.', {requestId: text('Exact operation ID from the tracked action.')}),
+  define(READ_ART_EFFECTS, 'read', 'Read per-display preparation and presentation operations for a tracked saved-art show.', {requestId: text('The art-show operation ID.')}),
   define(CREATE_SHOW, 'draft', 'Create a private, editable light-show draft from the chosen starting timeline. Send no lighting command.', {
     name: text('The requested show name.'), starter: {type: 'string', enum: ['ocean', 'warm'], description: 'The starter timeline.'},
   }),
@@ -64,13 +64,14 @@ export const catalogTools = [
     draftId: draft, revision: draftRevision, cue: text('Exact cue ID.'), changes: text('JSON object with some of offsetMs, durationMs, intensity, recipe. Recipe fields include pattern, colors, speed, loop, direction.'),
   }),
   define(PREVIEW_SHOW, 'read', 'Preview the draft as a cue storyboard. Send no lighting command.', {draftId: draft}),
-  define(SAVE_SHOW, 'command', 'Propose saving the current draft as an immutable catalog version. Requires approval and sends no lighting command.', {
+  define(SAVE_SHOW, 'command', 'Save the requested draft as an immutable catalog version. Sends no lighting command.', {
     draftId: draft, revision: draftRevision, versionName: text('Name of this saved version.'),
   }),
   ...actions.map(family => define(catalogTool(family), 'command',
-    family === 'art-show' ? 'Propose showing one saved artwork on exact display targets. Use hub and bunny/core, with artworkId and targets.'
-      : family === 'music-lighting-control' ? 'Propose start-show with showId and version on an eligible Nanoleaf light, or stop, pause-show, resume-show, or seek-show for the current generation. Use bunny/core.'
-      : `Propose ${family} on a configured, supported target. Requires owner approval.`, {
+    family === 'art-show' ? 'Show the requested saved artwork on all requested display targets. Use hub and bunny/core, with artworkId and targets. Keep status visible with coversStatus=false when requested.'
+      : family === 'music-lighting-control' ? 'Use start-show with showId and version on an eligible Nanoleaf light, or stop, pause-show, resume-show, or seek-show for the current generation. Use bunny/core.'
+      : family === 'moment-play' ? 'Play a named mood on a configured display. For an immediate moment, ask only for missing display, mood, or duration. Use {} in arguments for this immediate form.'
+        : `Run ${family} on a configured, supported target only when explicitly requested by the owner.`, {
     owner: text('The exact owner source returned by the read tool.'), target: text('Exact target ID, or its label if unambiguous.'),
     arguments: text(`JSON object with the appropriate owner command fields: ${assistantRoutes[family].fields}. Do not supply revision or generation guards.`),
   })),

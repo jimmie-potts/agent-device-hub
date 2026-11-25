@@ -18,7 +18,8 @@ async function until(check: () => boolean): Promise<void> {
 }
 const result = (): CodingResult => ({outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'b'.repeat(40), changedFiles: ['scripts/readout.mjs'],
   checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: [], summary: 'Added the generator and its test.', sessionId: 'session-1', usage: {turns: 9, costUsd: 0.3, durationMs: 120000}});
-async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleContext = context => context) {
+async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleContext = context => context,
+  mayShare: (taskId: string, repository: string) => boolean = () => true) {
   let now = Date.now();
   const timers = new Set<{at: number; run(): void}>();
   const clock = {now: () => now}, scheduler = {after: (ms: number, run: () => void) => {const timer = {at: now + ms, run}; timers.add(timer); return () => {timers.delete(timer);};}};
@@ -59,7 +60,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     const outbox = new Outbox({sdk: context.sdk, database: context.database(), clock, validator, log: context.log, trace: context.trace});
     // A task's companion is in its synthetic ID here; the module reads it from the engine's saved task.
     engine = new CodingCoordinator(context, outbox, (taskId, text, given, _evidence, startup) => {deliveries.push({taskId, text, parent: given, startup}); return Promise.resolve();},
-      {companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
+      {mayShare, companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
         // A task waits on its hand-off until the test ends it, as a cancel the coordinator never heard of would.
         awaits: taskId => {if (unreadable.has(taskId)) throw new Error('synthetic store read failure'); return !finished.has(taskId);}, sent: taskId => {sent.push(taskId);}});
     await engine.start(); await outbox.republish();
@@ -463,6 +464,27 @@ void test('a waiting hand-off whose task cannot be read keeps its place and is s
   assert.equal(w.dispatched.filter(id => id === 'task-bunny-2-step-1').length, 1);
 });
 
+void test('a queued approved brief rechecks the grant before any worker dispatch', async t => {
+  const revoked = new Set<string>();
+  const w = await world(t, undefined, taskId => !revoked.has(taskId));
+  await w.enable22();
+  await w.handOff('task-bunny-1');
+  await turned(() => starts(w.work).length === 1);
+  const first = starts(w.work)[0]?.data;
+  assert.ok(first?.action === 'start');
+  assert.equal(first.repository, 'agent-device-hub');
+  assert.equal(first.brief, 'Add a test.');
+  assert.deepEqual(Object.keys(first).sort(), ['action', 'bounds', 'brief', 'companion', 'operationId', 'repository', 'requestId', 'taskId']);
+  assert.equal((await w.handOff('task-bunny-2')).status, 'waiting');
+  revoked.add('task-bunny-2');
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'started'});
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'completed', result: result()});
+  await turned(() => w.deliveries.some(delivery => delivery.taskId === 'task-bunny-2'));
+  assert.deepEqual(w.dispatched, ['task-bunny-1-step-1']);
+  assert.equal(starts(w.work).length, 1);
+  assert.match(w.deliveries.find(delivery => delivery.taskId === 'task-bunny-2')?.text ?? '', /refused: forbidden/);
+});
+
 void test('a waiting hand-off whose task cannot be read holds its slot\'s line: a later hand-off for that companion never goes first', async t => {
   const w = await world(t); await w.enable22();
   await w.handOff('task-bunny-1'); await turned(() => starts(w.work).length === 1);
@@ -574,6 +596,30 @@ void test('explicit uncapped Codex starts share the worker acknowledgement queue
   assert.ok(reachy?.action === 'start' && reachy.companion === 'reachy' && reachy.harness === 'claude-code');
   assert.deepEqual(w.owner().inspect().harnesses, [claude, codex]);
   assert.deepEqual(w.owner().inspect().counts, {runs: 5, waiting: 0});
+});
+
+void test('revocation after uncapped admission prevents sending the brief when the acknowledgement queue advances', async t => {
+  const revoked = new Set<string>();
+  const w = await world(t, undefined, taskId => !revoked.has(taskId));
+  const codex: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', version: '0.163.0', signedIn: 'yes', plan: 'plus',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'saved-session', review: true}};
+  assert.equal((await w.enableAdapters([codex], 'worker-1', true)).status, 'accepted');
+  let release = (): void => {};
+  const firstAck = new Promise<void>(resolve => {release = resolve;});
+  t.after(release);
+  w.onWork(() => firstAck);
+  assert.equal((await w.dispatch('task-first', 'worker-1', 'codex')).status, 'accepted');
+  await until(() => w.work.length === 1);
+  assert.equal((await w.dispatch('task-revoked', 'worker-1', 'codex')).status, 'accepted');
+  assert.equal((await w.dispatch('task-next', 'worker-1', 'codex')).status, 'accepted');
+  assert.equal(w.work.length, 1);
+  revoked.add('task-revoked');
+  release();
+
+  await until(() => w.work.some(command => command.data.operationId === 'task-next-step-1'));
+  assert.deepEqual(w.work.map(command => command.data.operationId), ['task-first-step-1', 'task-next-step-1']);
+  await until(() => w.deliveries.some(item => item.taskId === 'task-revoked'));
+  assert.match(w.deliveries.find(item => item.taskId === 'task-revoked')?.text ?? '', /coding brief sharing was revoked/);
 });
 
 for (const disconnect of ['lose', 'disable'] as const) {

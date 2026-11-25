@@ -304,3 +304,23 @@ What does not change:
 - Every other rule of this record stands, including the exclusion of
   credentials, authentication tokens, API keys and secrets, and the GitHub
   boundary.
+
+## Private Conversation controls and destination grants, 2026-11-24
+
+[Hub #2106](https://github.com/jimmie-potts/agent-device-hub/issues/2106)
+supersedes the profile-name restriction in #2026 for configured Hub controls.
+An explicit instruction in private Conversation authorizes a supported
+control once the runtime binds its action, setting, recipients and revision.
+The instruction grants no new access to retained fields. A paid generation
+request and a coding hand-off keep their own approval. The worker receives
+the selected repository and approved brief through the existing connection.
+
+The owner authorizes the OpenAI Responses supervisor for all three companions
+to receive the current request, excerpts needed from the same conversation,
+and relevant device facts or requested historical summaries. The title
+purpose receives only the minimum needed current request and same-conversation
+excerpts. Credentials, raw logs, unrelated sessions and conversations, raw
+coding transcripts, media, bulk history and unrelated fields stay private.
+Apply the scope before discovery, paging and submission. The adapter and its
+enabled operation belong to
+[Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108).

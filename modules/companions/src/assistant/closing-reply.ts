@@ -1,5 +1,6 @@
 import {Outcome} from '@jimmie-potts/sdk';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {BoundControl} from './control-intent.js';
 import type {Proposal} from './history-contract.js';
 import type {Call, Task} from './store.js';
 
@@ -7,7 +8,7 @@ import type {Call, Task} from './store.js';
 type Summary = {source: 'operation'; revision: number; text: string} | {source: 'effect'; text: string};
 type Phase = {phaseId: string; revision: number; text: string};
 export type ActionEvidence = {requestId: string} & (Summary | ({source: 'phase'} & Phase));
-export type ApprovedAction = {questionId: string; description: string; observed?: Summary; phases?: Phase[]};
+export type ApprovedAction = {questionId: string; description: string; control?: BoundControl; observed?: Summary; phases?: Phase[]};
 
 export function actionDescription(proposal: Proposal, approvalText: string): string {
   switch (proposal.family) {
@@ -56,7 +57,7 @@ function actionOutcome(call: Call & {action: ApprovedAction}): string {
 
 export function closingReply(task: Task, calls: readonly Call[], cause?: string): string {
   const actions = calls.filter((call): call is Call & {action: ApprovedAction} => call.action !== undefined).sort((a, b) => a.ordinal - b.ordinal);
-  const sentences = actions.map(call => `You approved “${call.action.description}”. ${actionOutcome(call)}`);
+  const sentences = actions.map(call => `You ${call.action.control === undefined ? 'approved' : 'requested'} “${call.action.description}”. ${actionOutcome(call)}`);
   const question = task.question;
   if (question?.kind === 'approval' && question.answer === 'approve' && question.proposal !== null &&
       !actions.some(call => call.action.questionId === question.id)) {

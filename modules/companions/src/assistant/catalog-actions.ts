@@ -1,3 +1,6 @@
+import {randomUUID} from 'node:crypto';
+import {normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
+import type {FieldAccess} from './sharing.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {ART_SHOW_EFFECTS_FAMILY, acceptsArtRendition, artDestination, artShowSurfaces, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
@@ -32,7 +35,20 @@ function textResult(value: unknown): string {
   if (textBytes(text) <= 4000) return text;
   return new TextDecoder().decode(new TextEncoder().encode(text).slice(0, 3950)) + '… (narrow the read to one item)';
 }
-type Proposed = {proposal: CatalogProposal; text: string} | {question: string} | {code: ErrorCode};
+type Proposed = {proposal: CatalogProposal; text: string; targets?: readonly (readonly string[])[]; knownTargets?: readonly (readonly string[])[]; artworkRequestId?: string; artRecipientsBound?: true; draftRevision?: number}
+  | {question: string} | {code: ErrorCode};
+type OwnerInput = {instruction: string; answer: string; canNameDevice: (id: string) => boolean};
+
+export function deviceClarification(noun: string, ids: readonly string[], canName: OwnerInput['canNameDevice']): string {
+  const visible: string[] = [];
+  for (const id of new Set(ids)) {
+    if (canName(id)) visible.push(id);
+    if (visible.length === 4) break;
+  }
+  return visible.length > 1
+    ? `Which ${noun} did you mean? Matching device IDs: ${visible.map(id => noun === 'display' ? `id:${id}` : id).join(', ')}.`
+    : `Which ${noun} did you mean? Give its exact device ID.`;
+}
 type Refusal = {code: ErrorCode};
 type Match = {owner: string; device: DeviceRecord};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
@@ -73,36 +89,68 @@ export class ConversationActions {
       row.owner === 'bunny/modules/' + item.kind && row.device.id === item.target)?.device));
   }
 
-  async #artSelection(names: unknown, parent: TraceContext, artwork?: ArtworkSummary, requestedFormat?: 'png' | 'gif'): Promise<
+  async #artSelection(names: unknown, parent: TraceContext, owner: OwnerInput, artwork?: ArtworkSummary, requestedFormat?: 'png' | 'gif', recipients?: readonly string[]): Promise<
     {targets: string[]; labels: string[]; guards: ArtShowGuard[]} | {question: string} | Refusal> {
     if (!Array.isArray(names) || names.length > 3 || !names.every((value): value is string =>
       typeof value === 'string' && value.trim().length > 0 && value.length <= (value.startsWith('id:') ? 131 : 128))) return {code: 'invalid-request'};
     const targets: string[] = [], labels: string[] = [], guards: ArtShowGuard[] = [];
     if (names.length === 0) return {targets, labels, guards};
-    const devices = names.every(name => normalize(name) === 'browser') ? [] : await this.#artDestinations(parent);
+    let selectedNames: readonly string[] = names;
+    const devices = [...names, ...(recipients ?? [])].every(name => normalize(name) === 'browser') ? [] : await this.#artDestinations(parent);
     if (devices === undefined) return {code: 'unavailable'};
-    for (const name of names) {
-      const key = normalize(name);
-      if (key === 'browser' || key === 'ui' && !devices.some(device => device.target === 'ui')) {
+    const lookup = (name: string) => {
+      const key = normalizedControlText(name);
+      const exactId = name.startsWith('id:') ? name.slice(3) : name;
+      const exact = devices.filter(device => device.target === exactId);
+      const matches = name.startsWith('id:') ? exact : key === 'pixoo' || key === 'tidbyt' ? devices.filter(device => device.kind === key || device.target === key)
+        : devices.filter(device => normalizedControlText(device.target) === key || normalizedControlText(device.label ?? device.target) === key);
+      const eligible = matches.filter(device => device.guard !== undefined &&
+        (requestedFormat === undefined || device.formats?.includes(requestedFormat) === true) &&
+        (artwork === undefined || acceptsArtRendition(device, usableArtComposition(artwork, device.kind)?.renditions[0])));
+      return {matches, eligible};
+    };
+    const browser = (name: string) => normalize(name) === 'browser' || normalize(name) === 'ui' && !devices.some(device => device.target === 'ui');
+    if (recipients !== undefined) {
+      const answer = owner.answer.trim().split(/\s+and\s+|\s*,\s*/iu).map(name => name.trim().replace(/^(?:the )/iu, '').replace(/[.?!]$/u, ''));
+      const expected: string[] = [], unresolved: ArtDestination[][] = [];
+      for (const name of recipients) {
+        if (browser(name)) {expected.push('browser'); continue;}
+        const candidates = lookup(name).eligible;
+        if (candidates.length === 0) return {question: 'No configured art display matches the request. Which destination would you like?'};
+        if (candidates.length > 1) unresolved.push(candidates);
+        else if (candidates[0] !== undefined) expected.push(candidates[0].target);
+      }
+      if (unresolved.length > 0) {
+        const choices = unresolved.map(candidates => candidates.filter(candidate => answer.some(name =>
+          name.replace(/^id:/iu, '').toLowerCase() === candidate.target)));
+        if (choices.some(choice => choice.length !== 1)) {
+          return {question: deviceClarification('display', unresolved.flatMap(candidates => candidates.map(candidate => candidate.target)), owner.canNameDevice)};
+        }
+        expected.push(...choices.flatMap(choice => choice.map(candidate => candidate.target)));
+      }
+      if (expected.length !== names.length || new Set(expected).size !== expected.length) return {code: 'invalid-request'};
+      selectedNames = names.map(name => !browser(name) && expected.includes(name) ? `id:${name}` : name);
+      if (!selectedNames.every(name => {
+        if (browser(name)) return expected.includes('browser');
+        const hits = lookup(name).eligible;
+        return hits.length === 1 && hits[0] !== undefined && expected.includes(hits[0].target);
+      })) return {code: 'invalid-request'};
+    }
+    for (const name of selectedNames) {
+      if (browser(name)) {
         if (artwork !== undefined && usableArtComposition(artwork, 'ui') === undefined) return {question: 'This artwork has no browser rendition. Which available destination would you like?'};
         if (targets.includes('browser')) return {code: 'invalid-request'};
         targets.push('browser'); labels.push('Browser');
         continue;
       }
-      const exactId = name.startsWith('id:') ? name.slice(3) : name;
-      const exact = devices.filter(device => device.target === exactId);
-      const matches = name.startsWith('id:') ? exact : key === 'pixoo' || key === 'tidbyt' ? devices.filter(device => device.kind === key || device.target === key)
-        : exact.length > 0 ? exact : devices.filter(device => normalize(device.label ?? device.target) === key);
-      const eligible = matches.filter(device => device.guard !== undefined &&
-        (requestedFormat === undefined || device.formats?.includes(requestedFormat) === true) &&
-        (artwork === undefined || acceptsArtRendition(device, usableArtComposition(artwork, device.kind)?.renditions[0])));
-      if (eligible.length > 1) return {question: 'Which display did you mean? ' + eligible.map(device => (device.label ?? device.kind) + ' (id:' + device.target + ')').join(', ')};
+      const {matches, eligible} = lookup(name);
+      if (eligible.length > 1) return {question: deviceClarification('display', eligible.map(device => device.target), owner.canNameDevice)};
       const selected = eligible[0];
       if (selected?.guard === undefined) {
-        if (matches.length === 0) return {question: 'No configured art display matches "' + name + '". Which destination would you like?'};
+        if (matches.length === 0) return {question: 'No configured art display matches the request. Which destination would you like?'};
         if (matches.every(device => device.guard === undefined)) return {question: 'The selected display is unavailable for an art show. Which destination would you like?'};
         if (requestedFormat !== undefined) return {question: 'The selected display does not accept ' + requestedFormat.toUpperCase() + '. Which format or destination would you like?'};
-        return {question: 'This artwork has no compatible rendition within the limits of "' + name + '". Choose another destination or request a new rendition separately.'};
+        return {question: 'This artwork has no compatible rendition for the selected display. Choose another destination or request a new rendition separately.'};
       }
       if (targets.includes(selected.target) || guards.length === 2) return {code: 'invalid-request'};
       targets.push(selected.target);
@@ -152,16 +200,15 @@ export class ConversationActions {
     if (head < draft.value.expectedVersion) return {code: 'revision-conflict'};
     const value = {...draft.value, expectedVersion: head, versionName};
     if (draftProblem(value) !== undefined) return {code: 'invalid-request'};
-    if (head > draft.value.expectedVersion) drafts.bindSaveToHead(draft, head);
     return value;
   }
 
   /** The input's effect fields never supply routing or revision guards. */
-  async propose(family: CatalogFamily, call: ToolCall, parent: TraceContext): Promise<Proposed> {
+  async propose(family: CatalogFamily, call: ToolCall, parent: TraceContext, current: OwnerInput): Promise<Proposed> {
     if (family === 'art-request') {
       const {format, description} = call.input;
       if (!artDescription(description) || (format !== 'gif' && format !== 'still')) return {code: 'invalid-request'};
-      const selected = await this.#artSelection(call.input.showTargets ?? [], parent, undefined, format === 'gif' ? 'gif' : 'png');
+      const selected = await this.#artSelection(call.input.showTargets ?? [], parent, current, undefined, format === 'gif' ? 'gif' : 'png');
       if (!('targets' in selected)) return selected;
       const data = {format, description: description.trim(), ...(selected.targets.length > 0 ? {showTargets: selected.targets} : {})};
       const binding = {kind: 'fixed', owner: ART, target: 'art'} as const;
@@ -174,6 +221,8 @@ export class ConversationActions {
     if (typeof owner !== 'string' || typeof name !== 'string' || name.length === 0 || name.length > 128) return {code: 'invalid-request'};
     let data: Record<string, unknown>;
     if (family === 'nanoleaf-show-save') {
+      const revision = /^(?:please )?save draft .+? revision (\d+) as /iu.exec(current.instruction.trim())?.[1];
+      if (revision !== undefined && Number(revision) !== call.input.revision) return {code: 'revision-conflict'};
       const saved = await this.#saveData(call, parent);
       if (typeof saved.code === 'string') return {code: saved.code === 'not-found' || saved.code === 'revision-conflict' ||
         saved.code === 'unavailable' || saved.code === 'uncertain-result' ? saved.code : 'invalid-request'};
@@ -186,17 +235,28 @@ export class ConversationActions {
       if (!object(value)) return {code: 'invalid-request'};
       data = value;
     }
+    if (family === 'moment-play') {
+      const immediate = requestedMoment(current.instruction, current.answer);
+      if (immediate !== undefined) {
+        const {subject: _, ...effect} = immediate;
+        data = {...effect, momentId: randomUUID(), priorityClass: 'flourish', startAtMs: this.context.clock.now(), toleranceMs: 2000};
+      }
+    }
     let binding: CatalogBinding;
     let deviceApproval: string | undefined;
+    let targets: readonly (readonly string[])[] | undefined;
+    let knownTargets: readonly (readonly string[])[] | undefined;
     if (route.binding === 'device') {
       const owners = owner === 'auto' ? route.owners : route.owners.filter(source => source === owner);
       if (owners.length === 0) return {code: 'unsupported-capability'};
-      const {rows, unreadable} = await this.#deviceRecords(owners, parent);
-      const found = matchingDevices(rows, name, owner);
+      const {rows, unreadable} = await this.#deviceRecords(route.owners, parent);
+      const found = matchingDevices(rows.filter(row => owners.some(eligible => eligible === row.owner)), name, owner);
       const selected = found[0];
-      if (found.length > 1) return {question: `Which device did you mean? ${found.map(({owner, device}) => `${owner} / ${device.id}`).join(', ')}`};
+      if (found.length > 1) return {question: deviceClarification('device', found.map(({device}) => device.id), current.canNameDevice)};
       if (selected === undefined) return {code: unreadable.length > 0 ? 'unavailable' : 'not-found'};
       const {device} = selected;
+      targets = [[device.id, deviceLabel(device)]];
+      knownTargets = rows.filter(row => permitsDevice(route, row.device)).map(row => [row.device.id, deviceLabel(row.device)]);
       if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
       if (family === 'lifx-color-set' || family === 'lifx-temperature-set') {
         const lights = await this.#snapshot<LifxColor>(LIFX, 'lifx-light', parent);
@@ -217,7 +277,9 @@ export class ConversationActions {
     } else if (route.binding === 'record') {
       if (owner !== route.owner) return {code: 'forbidden'};
       const guarded = family === 'playback-control' ? await this.#playback(name, data, parent)
-        : family === 'volcano-session-gap' ? await this.#volcano(name, data, parent) : await this.#lighting(name, data, parent);
+        : family === 'volcano-session-gap' ? await this.#volcano(name, data, parent)
+          : family === 'music-lighting-control' ? await this.#lighting(name, data, parent)
+            : await this.#coreSetting(family, route.record, name, data, parent);
       if ('code' in guarded) return guarded;
       ({binding, data} = guarded);
     } else {
@@ -225,6 +287,8 @@ export class ConversationActions {
       binding = {kind: 'fixed', target: route.target, owner};
     }
     let showText: string | undefined;
+    let artworkRequestId: string | undefined;
+    let artRecipientsBound: true | undefined;
     if (family === 'art-show') {
       if (typeof data.artworkId !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(data.artworkId) || !Array.isArray(data.targets) || data.targets.length === 0 || 'guards' in data) return {code: 'invalid-request'};
       const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
@@ -235,22 +299,44 @@ export class ConversationActions {
       if (retained !== undefined && 'error' in retained) return {code: retained.error.code};
       const artwork = recent ?? retained;
       if (artwork === undefined) return {code: 'not-found'};
-      const selected = await this.#artSelection(data.targets, parent, artwork);
+      const recipients = requestedArtRecipients(current.instruction, data);
+      const selected = await this.#artSelection(data.targets, parent, current, artwork, undefined, recipients);
       if (!('targets' in selected)) return selected;
+      if (recipients !== undefined) artRecipientsBound = true;
       const sourceRequestId = job?.requestId ?? retained?.sourceRequestId;
+      artworkRequestId = sourceRequestId;
       const attached = sourceRequestId === undefined ? undefined : this.context.database().prepare(
         'SELECT description FROM assistant_art_attachments WHERE request_id=?').get(sourceRequestId);
       const title = typeof attached?.description === 'string' ? attached.description : 'saved artwork ' + artwork.artworkId;
       showText = 'Show ' + title + ' on ' + selected.labels.join(', ') + '?' + (data.coversStatus === false ? ' Keep status visible.' : '');
+      targets = selected.targets.map((target, index) => [target, selected.labels[index]?.split(' (')[0] ?? target]);
       data = {...data, targets: selected.targets, guards: selected.guards};
     }
     const proposal = catalogProposal({family: 'catalog-action', command: family, target: binding.target, binding, data});
     if (proposal === undefined) return {code: 'invalid-request'};
+    if (family === 'nanoleaf-show-save' && typeof data.showId === 'string') targets = [[data.showId]];
     const effect = family === 'nanoleaf-show-save'
       ? `Save draft ${String(data.name)} (${String(data.showId)}) as “${String(data.versionName)}”, version ${Number(data.expectedVersion) + 1}?`
       : deviceApproval ?? showText ?? `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
     if (effect.length > 1024) return {code: 'capacity'};
-    return {proposal, text: effect};
+    return {proposal, text: effect, ...(targets === undefined ? {} : {targets}), ...(knownTargets === undefined ? {} : {knownTargets}),
+      ...(artworkRequestId === undefined ? {} : {artworkRequestId}), ...(artRecipientsBound === undefined ? {} : {artRecipientsBound}),
+      ...(family === 'nanoleaf-show-save' && typeof call.input.revision === 'number' ? {draftRevision: call.input.revision} : {})};
+  }
+
+  async #coreSetting(family: CatalogFamily, recordFamily: string, target: string, data: Record<string, unknown>,
+    parent: TraceContext): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
+    const recordId = family === 'mode-override-set' ? 'hub' : target;
+    const row = (await this.#snapshot<{id: string; revision: number}>(CORE, recordFamily, parent))?.find(item => item.id === recordId);
+    if (row === undefined) return {code: 'unavailable'};
+    if (family === 'mode-override-set') {
+      const {rows} = await this.#deviceRecords([LIFX, NANOLEAF, 'bunny/modules/pixoo', 'bunny/modules/tidbyt'], parent);
+      const selected = matchingDevices(rows, target, 'auto');
+      if (selected.length !== 1 || selected[0] === undefined) return {code: selected.length === 0 ? 'not-found' : 'invalid-state'};
+      if (!selected[0].device.capabilities.modes.supported) return {code: 'unsupported-capability'};
+      target = selected[0].device.id;
+    }
+    return {binding: {kind: 'record', owner: CORE, target, revision: row.revision}, data};
   }
 
   async #volcano(name: string, data: Record<string, unknown>, parent: TraceContext): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
@@ -287,9 +373,9 @@ export class ConversationActions {
     return {binding: {kind: 'record', owner: CORE, target: name, revision: current.revision}, data};
   }
 
-  beforeDispatch(proposal: CatalogProposal, requestId: string, admitByMs: number): ErrorCode | undefined {
+  beforeDispatch(proposal: CatalogProposal, requestId: string, admitByMs: number, draftRevision?: number): ErrorCode | undefined {
     if (proposal.command === 'nanoleaf-show-save') {
-      return this.#authoring().noteSave(proposal.data, {requestId, admitByMs});
+      return draftRevision === undefined ? 'revision-conflict' : this.#authoring().noteSave(proposal.data, {requestId, admitByMs}, draftRevision);
     }
     if (proposal.command === 'art-show' && idList(proposal.data.targets)) {
       const db = this.context.database();
@@ -305,22 +391,24 @@ export class ConversationActions {
     }
   }
 
-  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void): Promise<string | undefined> {
+  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean): Promise<string | undefined> {
     const input = call.input;
     switch (call.name) {
       case CREATE_SHOW: case EDIT_SHOW: case PREVIEW_SHOW: {
+        if (!access('shows', 'details', typeof input.draftId === 'string' ? input.draftId : undefined)) return 'refused: forbidden';
         const drafts = this.#authoring();
         const result = call.name === CREATE_SHOW ? drafts.create(input) : call.name === EDIT_SHOW ? drafts.edit(input) : drafts.preview(input.draftId);
         return 'code' in result ? `refused: ${result.code}` : result.text;
       }
-      case READ_DEVICES: return this.#readDevices(input, parent);
-      case READ_SHOWS: return this.#readShows(input, parent);
+      case READ_DEVICES: return this.#readDevices(input, parent, access);
+      case READ_SHOWS: return this.#readShows(input, parent, access);
       case READ_ART: {
         const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
         if (art === undefined) return 'Saved art unavailable.';
+        const artworks = art.artworks.filter(item => access('artwork', 'index', item.artworkId) && access('artwork', 'details', item.artworkId));
         for (const job of art.jobs) {
-          if (job.status !== 'finished') continue;
-          const saved = art.artworks.find(item => item.artworkId === job.artworkId);
+          if (job.status !== 'finished' || !ownsOperation(job.requestId)) continue;
+          const saved = artworks.find(item => item.artworkId === job.artworkId);
           if (saved?.compositions.some(item => item.outcome === Outcome.succeeded && item.renditions.length > 0) === true) {
             observe({requestId: job.requestId, source: 'effect', text: 'the artwork was saved'});
           } else if (job.outcome === Outcome.failed || job.outcome === Outcome.rejected || job.outcome === 'cancelled') {
@@ -328,67 +416,80 @@ export class ConversationActions {
           }
         }
         const destinations = await this.#artDestinations(parent);
-        return textResult({displays: destinations?.map(({target, kind, label, guard, formats, maxBytes}) => ({routingId: target, kind, label, available: guard !== undefined, formats, maxBytes})) ?? null,
+        return textResult({displays: destinations?.filter(({target}) => access('devices', 'index', target) && access('devices', 'details', target)).map(({target, kind, label, guard, formats, maxBytes}) => ({routingId: target, kind, label: access('devices', 'label', target) ? label : undefined, available: access('devices', 'status', target) ? guard !== undefined : undefined, formats, maxBytes})) ?? null,
           // `sourceRequestId` is the generation request a Conversation attachment names (Hub #2029), so a follow-up such as
           // "show that animation" can find the attached artwork's ID.
-          artworks: art.artworks.map(item => ({artworkId: item.artworkId, sourceRequestId: art.jobs.find(job => job.artworkId === item.artworkId)?.requestId ?? null,
-            createdAtMs: item.createdAtMs, favorite: item.favorite,
-            renditionKinds: item.compositions.filter(part => usableArtComposition(item, part.target) !== undefined).map(part => part.target)}))});
+          artworks: artworks.map(item => {
+            const requestId = art.jobs.find(job => job.artworkId === item.artworkId)?.requestId;
+            const sourceRequestId = requestId !== undefined && access('operations', 'details', requestId) && access('artwork', 'attachment', requestId)
+              ? requestId : null;
+            return {artworkId: item.artworkId, sourceRequestId, createdAtMs: item.createdAtMs, favorite: item.favorite,
+              renditionKinds: item.compositions.filter(part => usableArtComposition(item, part.target) !== undefined).map(part => part.target)};
+          })});
       }
       case READ_PLAYBACK: {
         const records = await this.#snapshot<PlaybackState>(PLAYBACK, 'playback', parent);
-        return records === undefined ? 'Playback unavailable.' : textResult(records.map(({id, observedAtMs, availability, playback}) => ({id, observedAtMs, availability, playback})));
+        return records === undefined ? 'Playback unavailable.' : textResult(records.filter(({id}) => access('playback', 'index', id) && access('playback', 'details', id)).map(({id, observedAtMs, availability, playback}) => ({id, observedAtMs, availability, playback})));
       }
       case READ_VACUUM: return this.#status('bunny/modules/roborock', 'roborock-vacuum',
-        ['id', 'observedAtMs', 'availability', 'activity', 'status'], parent);
+        ['id', 'observedAtMs', 'availability', 'activity', 'status'], parent, access);
       case READ_VOLCANO: return this.#status('bunny/modules/volcano', 'volcano-status',
-        ['id', 'observedAtMs', 'availability', 'link', 'heater', 'pump', 'currentDeciC', 'targetDeciC', 'gapMinutes'], parent);
+        ['id', 'observedAtMs', 'availability', 'link', 'heater', 'pump', 'currentDeciC', 'targetDeciC', 'gapMinutes'], parent, access);
       case READ_OPERATION: {
+        if (typeof input.requestId !== 'string' || !ownsOperation(input.requestId) ||
+          !access('operations', 'details', input.requestId)) return 'Operation unavailable.';
         const operation = await this.#operation(input.requestId, parent);
         if (operation !== undefined) observe({requestId: operation.requestId, source: 'operation', revision: operation.revision, text: operationOutcome(operation)});
         return textResult(operation ?? 'Operation unavailable.');
       }
-      case READ_ART_EFFECTS: return this.#artEffects(input.requestId, parent, observe);
+      case READ_ART_EFFECTS: return typeof input.requestId === 'string' && ownsOperation(input.requestId) &&
+        access('operations', 'details', input.requestId) ? this.#artEffects(input.requestId, parent, observe, access) : 'Show request unavailable.';
       default: return undefined;
     }
   }
 
-  async #readShows(input: ToolCall['input'], parent: TraceContext): Promise<string> {
+  async #readShows(input: ToolCall['input'], parent: TraceContext, access: FieldAccess): Promise<string> {
     const {view, id, offset} = input;
     if (typeof id !== 'string' || id.length > 128 || typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) {
       return 'refused: invalid-request';
     }
     const size = 8;
     const page = (items: readonly unknown[]) => JSON.stringify({items: items.slice(0, size), nextOffset: items.length > size ? offset + size : null});
-    if (view === 'drafts') return page(this.#authoring().list(offset, size + 1, id));
+    if (view === 'drafts') {
+      if (!access('shows', 'index') || !access('shows', 'details', id === '' ? undefined : id)) return page([]);
+      return page(this.#authoring().list(offset, size + 1, id, record =>
+        access('shows', 'index', record) && access('shows', 'details', record) && access('shows', 'label', record)));
+    }
     if (view === 'lighting') {
       const states = await this.#snapshot<LightingState>(CORE, 'music-lighting-state', parent);
-      return states === undefined ? 'Lighting sessions unavailable.' : page(states.filter(state => id === '' || id === state.id)
+      return states === undefined ? 'Lighting sessions unavailable.' : page(states.filter(state => (id === '' || id === state.id) && access('shows', 'index', state.id) && access('shows', 'details', state.id))
         .map(({id, revision, session, last}) => ({id, revision, session, last})).slice(offset, offset + size + 1));
     }
     if (view !== 'saved') return 'refused: invalid-request';
     const catalog = (await this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent))?.[0];
     if (catalog === undefined) return 'Saved shows unavailable.';
-    if (id === '') return page(catalog.shows.slice(offset, offset + size + 1).map(({id, name, version}) => ({id, name, latestVersion: version})));
-    const show = catalog.shows.find(row => row.id === id);
+    const visible = catalog.shows.filter(show => access('shows', 'index', show.id) && access('shows', 'details', show.id));
+    if (id === '') return page(visible.slice(offset, offset + size + 1).map(({id, name, version}) => ({id, name: access('shows', 'label', id) ? name : undefined, latestVersion: version})));
+    const show = visible.find(row => row.id === id);
     if (show === undefined) return 'refused: not-found';
-    return page(show.versions.slice(offset, offset + size + 1).map(({version, versionName, kind}) => ({showId: id, version, versionName, kind})));
+    return page(show.versions.slice(offset, offset + size + 1).map(({version, versionName, kind}) => ({showId: id, version, versionName: access('shows', 'label', id) ? versionName : undefined, kind})));
   }
 
-  async #status(owner: string, family: string, fields: readonly string[], parent: TraceContext): Promise<string> {
+  async #status(owner: string, family: string, fields: readonly string[], parent: TraceContext, access: FieldAccess): Promise<string> {
     const records = await this.#snapshot<Record<string, unknown>>(owner, family, parent);
-    return textResult(records?.map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
+    return textResult(records?.filter(record => typeof record.id === 'string' && access('status', 'index', record.id) && access('status', 'details', record.id)).map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
   }
 
-  async #readDevices(input: ToolCall['input'], parent: TraceContext): Promise<string> {
+  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess): Promise<string> {
     const {target, owner} = input;
     if (typeof target !== 'string' || typeof owner !== 'string') return 'refused: invalid-request';
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     if (owners.length === 0) return 'refused: unsupported-capability';
     const {rows, unreadable} = await this.#deviceRecords(owners, parent);
-    const selected = target === '' ? rows : matchingDevices(rows, target, owner);
+    const visible = rows.filter(({device}) => access('devices', 'index', device.id) && access('devices', 'label', device.id));
+    const selected = target === '' ? visible : matchingDevices(visible, target, owner).filter(({device}) => access('devices', 'details', device.id) && access('devices', 'status', device.id));
     if (target === '') return textResult({devices: selected.map(({owner, device}) => ({owner, id: device.id,
-      name: deviceLabel(device), lastReportedAvailability: device.availability})), unreadable});
+      name: deviceLabel(device), lastReportedAvailability: access('devices', 'status', device.id) ? device.availability : undefined})), unreadable});
     if (selected.length > 1) return textResult({matches: selected.map(({owner, device}) => ({owner, id: device.id})),
       guidance: 'Select the exact owner and ID.'});
     const colors = selected.some(row => row.owner === LIFX) ? await this.#snapshot<LifxColor>(LIFX, 'lifx-light', parent) : undefined;
@@ -423,7 +524,7 @@ export class ConversationActions {
     return textResult({devices, unreadable});
   }
 
-  async #artEffects(requestId: unknown, parent: TraceContext, observe: (evidence: ActionEvidence) => void): Promise<string> {
+  async #artEffects(requestId: unknown, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess): Promise<string> {
     if (typeof requestId !== 'string') return 'refused: invalid-request';
     const db = this.context.database();
     db.exec('CREATE TABLE IF NOT EXISTS assistant_art_shows (request_id TEXT PRIMARY KEY, targets TEXT NOT NULL)');
@@ -440,6 +541,7 @@ export class ConversationActions {
       : {status: record.status, result: record.result, evidence: record.evidence, code: record.error?.code};
     const effects = await artShowSurfaces(requestId, list);
     const phaseResult = (id: string, target: string, phase: 'prepare' | 'present') => {
+      if (!access('operations', 'details', id)) return undefined;
       const skip = skipped.find(entry => entry.target === target && entry.phase === phase);
       const label = phase === 'prepare' ? 'preparation' : 'presentation';
       if (skip !== undefined) {
@@ -451,7 +553,7 @@ export class ConversationActions {
         text: operation === undefined ? `${label} on ${target} is unconfirmed` : `for ${label} on ${target}, ${operationOutcome(operation)}`});
       return summary(operation);
     };
-    const perDisplay = effects.map(surface => surface.kind === 'browser'
+    const perDisplay = effects.filter(surface => access('devices', 'index', surface.target) && access('devices', 'status', surface.target)).map(surface => surface.kind === 'browser'
       ? {target: surface.target, presentation: phaseResult(surface.presentRequestId, surface.target, 'present')}
       : {target: surface.target, preparation: phaseResult(surface.prepareRequestId, surface.target, 'prepare'), presentation: phaseResult(surface.momentRequestId, surface.target, 'present')});
     const operation = result(requestId);

@@ -1,3 +1,4 @@
+import {artSchemas} from '@jimmie-potts/event-contracts/v2/art-state';
 // The core forwards the companions module's approved assistant commands through its tracked dispatcher (Hub #46):
 // one operation requested by the module, only the allowlisted family and target, and only from that module.
 import assert from 'node:assert/strict';
@@ -131,6 +132,14 @@ it('every catalog route delivers its exact input and guards to the existing owne
     'nanoleaf-reactive-preset-save': {presetId: 'preset-synthetic', expectedRevision: 7, name: 'Fixture preset',
       recipe: {rendererVersion: 1, effect: 'ambient', palette: ['#ffaabb']}},
     'wemo-hold-release': {heldRequestId: 'held-operation'},
+    'mode-override-set': {mode: 'quiet'},
+    'notice-clear': {noticeId: null},
+    'session-label-set': {label: 'Synthetic session'},
+    'inbox-handle': {action: 'dismiss'},
+    'home-layout-set': {layouts: {desktop: [], phone: []}},
+    'lighting-layout-set': {layout: {rooms: [], assignments: [], groups: [], home: null}},
+    'playback-layout-set': {assignments: []},
+    'art-catalog-edit': {action: 'favorite', artworkId: uuid, favorite: true},
     'playback-control': {action: 'pause'},
     'volcano-session-gap': {gapMinutes: 30},
     'art-request': {format: 'gif', description: 'Blue fixture'},
@@ -143,14 +152,16 @@ it('every catalog route delivers its exact input and guards to the existing owne
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
   registerDeviceFamilies(validator);
-  const schemas = {...lifxSchemas, ...nanoleafSchemas, ...pixooOwnSchemas, ...wemoSchemas, ...volcanoSchemas};
+  const schemas = {...artSchemas, ...lifxSchemas, ...nanoleafSchemas, ...pixooOwnSchemas, ...wemoSchemas, ...volcanoSchemas};
   for (const [id, schema] of Object.entries(schemas)) validator.register(id, schema);
 
   for (const [family, data] of Object.entries(input).filter((entry): entry is [CatalogFamily, Record<string, unknown>] => catalogFamily(entry[0]))) {
     const route = catalogRoute(family);
     const owners = route.binding === 'device' ? route.owners : [route.owner];
     for (const owner of owners) {
-      const target = route.binding === 'fixed' ? route.target : 'device';
+      const target = route.binding === 'fixed' ? route.target : family === 'home-layout-set' ? 'home'
+        : family === 'lighting-layout-set' ? 'lighting' : family === 'playback-layout-set' ? 'playback'
+          : family === 'notice-clear' || family === 'session-label-set' ? hash : 'device';
       const held = family === 'wemo-hold-release';
       const record = deviceRecord(target, 7, owner.split('/').at(-1) ?? 'device', held ? 'unavailable' : 'available');
       if (held) record.held = {requestId: 'held-operation', heldAtMs: timestamp};
@@ -185,7 +196,7 @@ it('every catalog route delivers its exact input and guards to the existing owne
       const answer = await dispatchCatalogAction({dispatch: operation, operation: () => undefined, clock: {now: () => timestamp}},
         {...common, ...draft({requestId, family: 'catalog-action', command: family, target, binding, data,
           ...(family === 'nanoleaf-show-save' ? {admitByMs: timestamp + 1000} : {})}),
-        id: requestId, source: 'bunny/modules/companions'}, device, operation);
+        id: requestId, source: 'bunny/modules/companions'}, device, operation, operation);
       assert.deepEqual(answer, {status: 'accepted', requestId}, `${family} for ${owner}`);
     }
   }

@@ -22,11 +22,11 @@ export async function conversationQueueJourney(browser: Browser): Promise<void> 
       return Promise.resolve({text: null, calls: [{id: 'call-ask', name: 'ask_owner', input: {text: 'Which synthetic detail?'}}], stop: 'tool', units: 1});
     }
     if (text.includes('PROPOSE') && !input.transcript.some(item => item.role === 'tool')) {
-      return Promise.resolve({text: null, calls: [{id: 'call-mode', name: 'set_mode', input: {mode: 'quiet'}}], stop: 'tool', units: 1});
+      return Promise.resolve({text: null, calls: [{id: 'call-art', name: 'create_artwork', input: {format: 'still', showTargets: [], description: 'Blue synthetic fixture'}}], stop: 'tool', units: 1});
     }
     return new Promise<Reply>(resolve => {waiting.push({text, resolve}); arrived?.();});
   }};
-  const world = await startWorld({companions: true, assistantProvider: provider});
+  const world = await startWorld({companions: true, assistantProvider: provider, assistantCatalog: ['create_artwork']});
   /** Answers the model call that waits, once it arrives, after checking which message it is for. */
   const answer = async (expected: string): Promise<void> => {
     if (waiting.length === 0) {
@@ -169,16 +169,16 @@ export async function conversationQueueJourney(browser: Browser): Promise<void> 
     assert.equal(await conversation.getByRole('button', {name: 'New messages', exact: true}).count(), 0, 'the transcript still follows the latest message');
     await conversation.getByText('Task completed', {exact: true}).waitFor();
     // So does approving a proposal with a message queued: only Queue shows during the approval.
-    await message.fill('PROPOSE a synthetic mode');
+    await message.fill('PROPOSE synthetic artwork');
     await send.click();
     const proposal = conversation.getByRole('article', {name: 'Proposed command', exact: true});
-    await proposal.getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
+    await proposal.getByText('Create a still image for this reply? This may use the art allowance. Blue synthetic fixture', {exact: true}).waitFor();
     assert.equal(await send.count(), 0, 'during an approval only Queue shows');
     await message.fill('Synthetic queued behind an approval');
     await queueButton.click();
     await items.first().waitFor();
     await proposal.getByRole('button', {name: 'Approve proposal', exact: true}).click();
-    await answer('PROPOSE a synthetic mode');
+    await answer('PROPOSE synthetic artwork');
     await conversation.locator('li[data-role="owner"]').filter({hasText: 'Synthetic queued behind an approval'}).waitFor();
     await answer('Synthetic queued behind an approval');
     await transcript('Synthetic reply to: Synthetic queued behind an approval').waitFor();

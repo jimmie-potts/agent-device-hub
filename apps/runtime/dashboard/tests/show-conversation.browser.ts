@@ -24,15 +24,10 @@ export async function showConversationJourney(browser: Browser): Promise<void> {
     assert.ok(id !== undefined);
     await send('edit_light_show_cue', {draftId: id, revision: 1, cue: 'opening', changes: '{"intensity":0.25}'});
     await conversation.getByText(/Synthetic result: Draft Warm test.*revision 2/s).waitFor();
-    await send('save_light_show', {draftId: id, revision: 2, versionName: 'Version one'});
-    const proposal = conversation.getByRole('article', {name: 'Proposed command', exact: true});
-    await proposal.getByText(/Save draft Warm test/).waitFor();
-    await page.reload();
-    await feed(page, 'connected');
-    await proposal.getByText(/Save draft Warm test/).waitFor();
-    await proposal.getByText('nanoleaf-show-save on shows', {exact: true}).click();
-    await proposal.getByText(/"intensity": 0\.25/).waitFor();
-    await proposal.getByRole('button', {name: 'Approve proposal', exact: true}).click();
+    await conversation.getByRole('textbox', {name: 'Message', exact: true})
+      .fill(`Save draft Warm test (${id}) revision 2 as Version one`);
+    await conversation.getByRole('button', {name: 'Send', exact: true}).click();
+    assert.equal(await conversation.getByRole('article', {name: 'Proposed command', exact: true}).count(), 0);
     const tool = conversation.getByRole('article', {name: 'tool message', exact: true}).filter({
       has: page.locator('p', {hasText: 'accepted: nanoleaf-show-save on shows'}),
     });
@@ -44,7 +39,7 @@ export async function showConversationJourney(browser: Browser): Promise<void> {
     await context.close();
     await world.close();
   }
-  process.stdout.write('Light-show Conversation browser: draft, cue edit, exact saved approval across reload and immutable catalog receipt passed.\n');
+  process.stdout.write('Light-show Conversation browser: draft, cue edit, direct guarded save and immutable catalog receipt passed.\n');
 }
 
 if (import.meta.main) {
