@@ -605,7 +605,11 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   provider leaves the task readable and paused. An earlier task with no
   saved supervisor stays paused, and its unpinned queued work stays held.
   Cancel the paused task and withdraw any unpinned messages to start a new
-  conversation. Worker results remain in the private conversation.
+  conversation. If a recovered coding job has no verifiable original
+  supervisor, the job stays readable and receives a receipt explaining that it
+  did not start. Create a new job to authorize it. A recovered job with a saved
+  supervisor uses that supervisor's grants even when its credential is
+  unavailable. Worker results remain in the private conversation.
 - Responses calls use Standard service and a 30-minute prompt cache. The
   published `gpt-6.2-sol` rates on 2026-11-24 are $2 per million input tokens,
   $2.50 for cache writes, $0.10 for cache reads and $10 for output, which

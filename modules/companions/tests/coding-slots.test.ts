@@ -233,7 +233,7 @@ void test('an uncapped worker starts more jobs from one companion than a page ca
 function seedReadyJobs(database: DatabaseSync, operations: string[]): void {
   const jobs = new CodingStore(database), tasks = new AssistantStore(database);
   for (const operationId of operations) {
-    const task = tasks.newTask('bunny', 'Synthetic restored request.');
+    const task = tasks.newTask('bunny', 'Synthetic restored request.', {provider: 'synthetic', model: 'synthetic', variant: ''});
     task.status = 'succeeded';
     tasks.save(task);
     const taskId = task.id, repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
@@ -242,6 +242,24 @@ function seedReadyJobs(database: DatabaseSync, operations: string[]): void {
       traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
   }
 }
+
+void test('an unpinned restored coding row does not block a verified sibling', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  const db = w.database(), operations = ['old-unpinned', 'restored-pinned'];
+  seedReadyJobs(db, operations);
+  const old = new CodingStore(db).job('old-unpinned') ?? assert.fail('old approved job');
+  const store = new AssistantStore(db);
+  const task = store.task(old.taskId) ?? assert.fail('old task');
+  delete task.supervisor;
+  store.save(task);
+  await w.restart();
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  const saved = await w.waitMessages('bunny', /original supervisor could not be verified/);
+  assert.ok(saved.some(message => message.id === 'old-unpinned-job-result' && message.text.includes('Create a new job')));
+  assert.doesNotMatch(JSON.stringify(saved), /refused: forbidden/);
+  await settle(() => w.starts().length === 1);
+  assert.deepEqual(w.dispatched, ['restored-pinned']);
+});
 
 void test('a restored uncapped backlog paces the serial worker acknowledgement without holding active runs', {timeout: 30_000}, async context => {
   const w = await world(context);
@@ -939,11 +957,13 @@ void test('an uncapped attempt uses observed setup deadlines without timing out 
   await w.waitMessages('reachy', /Synthetic ready sibling result/);
 });
 
-void test('a restored Responses coding job keeps its supervisor pin and rechecks the worker grant', {timeout: 30_000}, async context => {
-  let permitBrief = true;
+for (const restoredGrant of ['granted', 'worker denied', 'source denied'] as const) {
+void test(`a restored Responses coding job with sharing ${restoredGrant} keeps its supervisor pin without a model turn`, {timeout: 30_000}, async context => {
+  let denied: 'worker denied' | 'source denied' | undefined;
   const ordinary = sharing();
   const share = Object.assign((query: ShareQuery) => ordinary(query) &&
-    (permitBrief || query.destination !== 'coding-worker' || query.source !== 'coding' || query.field !== 'brief'),
+    !(denied === 'worker denied' && query.destination === 'coding-worker' && query.source === 'coding' && query.field === 'brief') &&
+    !(denied === 'source denied' && query.destination === 'openai-supervisor' && query.source === 'conversation' && query.field === 'request'),
   {revokesFields: true, allowsDerived: (query: ShareQuery) => ordinary.allowsDerived?.(query) !== false});
   const openAIRequests: string[] = [];
   const provider = new OpenAIProvider({model: OPENAI_MODEL, effort: 'medium', key: 'synthetic', transport: (_url, init) => {
@@ -954,7 +974,8 @@ void test('a restored Responses coding job keeps its supervisor pin and rechecks
       usage: {input_tokens: 40, output_tokens: 40},
     })));
   }});
-  const w = await world(context, {provider, share});
+  const options: CompanionsOptions = {provider, share};
+  const w = await world(context, options);
   assert.equal((await w.control('enable')).status, 'accepted');
   assert.equal((await w.enable()).status, 'accepted');
   assert.equal((await w.send('bunny', 'Delegate the initial synthetic coding task.')).status, 'accepted');
@@ -966,12 +987,22 @@ void test('a restored Responses coding job keeps its supervisor pin and rechecks
   const waiting = w.coding().waiting?.at(0) ?? assert.fail('expected waiting approved job');
   assert.equal(openAIRequests.length, 2);
   assert.equal(new AssistantStore(w.database()).task(waiting.taskId)?.supervisor?.provider, 'openai');
-  permitBrief = false;
+  if (restoredGrant !== 'granted') denied = restoredGrant;
+  options.provider = {name: 'synthetic', model: 'synthetic', turn: () => assert.fail('recovery does not switch supervisors')};
   await w.restart();
   assert.equal(new AssistantStore(w.database()).task(waiting.taskId)?.supervisor?.provider, 'openai');
   assert.equal((await w.enable('uncapped')).status, 'accepted');
-  await w.waitMessages('bunny', /refused: forbidden/);
-  assert.equal(w.dispatched.length, 1, 'the restored grant is rechecked before dispatch');
-  assert.equal(w.starts().length, 1);
+  if (restoredGrant === 'granted') {
+    await settle(() => w.starts().length === 2);
+    const continued = w.starts().at(-1)?.data;
+    assert.ok(continued?.action === 'start');
+    assert.equal(continued.taskId, waiting.taskId);
+    assert.equal(continued.operationId, waiting.operationId);
+  } else {
+    await w.waitMessages('bunny', /refused: forbidden/);
+    assert.equal(w.dispatched.length, 1, 'the restored grant is rechecked before dispatch');
+    assert.equal(w.starts().length, 1);
+  }
   assert.equal(openAIRequests.length, 2, 'recovery did not rerun the original supervisor');
 });
+}

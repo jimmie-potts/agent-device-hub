@@ -218,7 +218,7 @@ class Companions {
     // A waiting hand-off is sent only while its task still waits on it, so a cancel that the coordinator missed, as during
     // a stop, still sends nothing.
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
-      mayShare: (taskId, repository) => this.assistant?.canShareCodingBrief(taskId, repository) === true,
+      briefRefusal: (taskId, repository) => this.assistant === undefined ? 'unverified-supervisor' : this.assistant.codingBriefRefusal(taskId, repository),
       jobQueued: (job, add, parent) => this.assistant?.codingJobQueued(job, add, parent),
       jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,

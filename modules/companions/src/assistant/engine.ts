@@ -10,7 +10,7 @@ import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contrac
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
 import type {CodingJob} from '../coding/store.js';
-import type {CodingCoordinator, HandOffAnswer} from '../coding/coordinator.js';
+import type {CodingBriefRefusal, CodingCoordinator, HandOffAnswer} from '../coding/coordinator.js';
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
@@ -1238,16 +1238,25 @@ export class AssistantEngine {
     return accessFor(this.options.share, {caller: destination === 'private-conversation' || destination === 'conversation-speech' || destination === 'coding-worker' ? 'owner' : 'companion',
       companion, purpose, destination});
   }
-  canShareCodingBrief(taskId: string, repository: string): boolean {
+  codingBriefRefusal(taskId: string, repository: string): CodingBriefRefusal | undefined {
     const task = this.store.task(taskId);
-    if (task === undefined) return false;
+    const pin = task?.supervisor;
+    if (task === undefined || pin === undefined ||
+      task.graphVersion !== (pin.provider === 'openai' ? RESPONSES_GRAPH_VERSION : GRAPH_VERSION)) return 'unverified-supervisor';
     const target = this.#fields(task.profile, 'brief', 'coding-worker');
-    if (!target('coding', 'repository', repository) || !target('coding', 'brief', repository)) return false;
-    const scoped = this.#taskProvider(task).name === 'openai' ? this.#openAIScope(task) : undefined;
-    const current = scoped?.fields ?? this.#taskFields(task), share = this.options.share;
-    return this.#replayable(taskId, (source, field, record) => current(source, field, record) &&
-      (share?.allowsDerived?.({caller: 'owner', companion: task.profile, purpose: 'brief', destination: 'coding-worker', source, field,
-        ...(record === undefined ? {} : {record})}) ?? (share === undefined || share.revokesFields === false || target(source, field, record))), scoped?.effects);
+    if (!target('coding', 'repository', repository) || !target('coding', 'brief', repository)) return 'grant-denied';
+    // The worker executes an already approved brief. Its grant follows the stored supervisor scope
+    // even when that supervisor is unavailable to start a model turn.
+    const scoped = pin.provider === 'openai' ? this.#openAIScope(task) : undefined;
+    const current = scoped?.fields ?? this.#modelFields(task.profile, pin.provider), share = this.options.share;
+    const allowed = this.#replayable(taskId, (source, field, record) => {
+      // The approved handoff's own receipt records its worker destination fields, which were never supervisor inputs.
+      if (source === 'coding' && (field === 'repository' || field === 'brief') && record === repository) return target(source, field, record);
+      return current(source, field, record) &&
+        (share?.allowsDerived?.({caller: 'owner', companion: task.profile, purpose: 'brief', destination: 'coding-worker', source, field,
+          ...(record === undefined ? {} : {record})}) ?? (share === undefined || share.revokesFields === false || target(source, field, record)));
+    }, scoped?.effects);
+    return allowed ? undefined : 'grant-denied';
   }
   #toolsFor(task: Task): ReturnType<typeof permittedTools> {
     const provider = this.#taskProvider(task);
@@ -1871,7 +1880,7 @@ export class AssistantEngine {
         this.store.artReply(current, id, artDescription, this.context.clock.now(), Array.isArray(displays) && displays.every((v): v is string => typeof v === 'string') ? displays : undefined);
       });
     } else {
-      if (!this.canShareCodingBrief(task.id, proposal.data.repository)) return refuse('refused', 'Coding brief sharing is not permitted.');
+      if (this.codingBriefRefusal(task.id, proposal.data.repository) !== undefined) return refuse('refused', 'Coding brief sharing is not permitted.');
       const delegate = this.options.delegate;
       if (delegate === undefined) return refuse('refused', 'This tool is not permitted.');
       // The task waits on the delegation before the hand-off leaves, so a worker's word that comes back faster than this
