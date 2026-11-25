@@ -13,7 +13,7 @@ import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/e
 import {test, type TestContext} from 'node:test';
 import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult, type Snapshot} from '@jimmie-potts/sdk';
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
-import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
+import {configureCompanions, createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AnthropicProvider} from '../src/assistant/anthropic.js';
 import {OPENAI_MODEL, OPENAI_URL, OpenAIProvider, OpenAITitleProvider} from '../src/assistant/openai.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
@@ -2644,6 +2644,44 @@ for (const kind of ['timer', 'brightness'] as const) {
     }
   });
 }
+
+void test('both hosted supervisors read the owner calendar while the spend ledger stays on UTC', async context => {
+  const config = configureCompanions({assistant: {historyTimeZone: 'America/New_York'}});
+  assert.ok('config' in config);
+  const source = 'bunny/modules/lifx', target = 'desk';
+  const queryTimes: {fromAtMs: number; toAtMs: number}[] = [];
+  const argumentsFor = (name: string) => name === 'openai'
+    ? {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''}
+    : {source, target, period: 'yesterday', fromAtMs: 0, toAtMs: 0, cursor: ''};
+  const makeProvider = (name: 'anthropic' | 'openai', model: string): ModelProvider => ({
+    name, model, turn: input => Promise.resolve(input.transcript.some(item => item.role === 'tool')
+      ? reply('Synthetic answer.') : call('read_device_history', argumentsFor(name))),
+  });
+  const now = Date.parse('2026-11-02T01:00:00Z');
+  const w = await world(context, {
+    provider: makeProvider('anthropic', 'claude-sonnet-5-5'), alternateProvider: makeProvider('openai', OPENAI_MODEL),
+    timeZone: 'UTC', tools: ['read_device_history'], devices: owner => owner === source ? [light(target, 'Desk Lamp')] : [],
+    deviceHistory: query => {
+      assert.equal(query.target, target);
+      assert.equal(query.source, source);
+      const {fromAtMs, toAtMs} = query;
+      queryTimes.push({fromAtMs, toAtMs});
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 1, complete: false, durations: {on: 0, off: 0, unknown: toAtMs - fromAtMs},
+        lastChange: null, evidence: [], links: []};
+    },
+  }, ctx => ({...ctx, config: config.config}), now);
+  await control(w.core, w.module(), 'enable');
+  for (const provider of ['anthropic', 'openai']) {
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), 'How long was Desk Lamp on yesterday?', false, randomUUID(), {provider})).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+  }
+  const interval = {fromAtMs: Date.parse('2026-10-31T04:00:00Z'), toAtMs: Date.parse('2026-11-01T04:00:00Z')};
+  assert.deepEqual(queryTimes, [interval, interval]);
+  const spend = await w.module().manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
+  assert.ok(spend !== undefined && !('error' in spend));
+  assert.equal((JSON.parse(Buffer.from(spend.bytes).toString()) as {day: {period: string}}).day.period, '2026-11-02');
+});
 
 void test('Responses history requires one exact device and current summary grants', async context => {
   const target = 'desk', source = 'bunny/modules/lifx';

@@ -46,6 +46,7 @@ export type Dispatch = (data: AssistantDispatch, parent: TraceContext, signal: A
  */
 export type AssistantOptions = {
   deviceHistory?: DeviceHistoryRead;
+  historyTimeZone?: string;
   share?: Share;
   provider?: ModelProvider;
   alternateProvider?: ModelProvider;
@@ -246,6 +247,7 @@ export class AssistantEngine {
   readonly titles: ConversationTitles;
   readonly #validator = coreValidator();
   readonly #history = new DeviceHistoryPages(() => this.options.deviceHistory);
+  readonly #historyTimeZone: string;
   readonly #subscriptions: Subscription[] = [];
   readonly #graph;
   readonly #deviceDisplay: DeviceReadDisplay;
@@ -275,6 +277,7 @@ export class AssistantEngine {
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly options: AssistantOptions = {}) {
     this.store = new AssistantStore(context.database());
     this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone, options.monthlyLimitMicros, options.provider?.name === 'openai' || options.alternateProvider?.name === 'openai');
+    this.#historyTimeZone = options.historyTimeZone ?? this.spend.timeZone;
     this.titles = new ConversationTitles(context.database(), {outbox, spend: this.spend, now: () => context.clock.now(), after: (ms, callback) => context.scheduler.after(ms, callback),
       provider: () => options.titleProvider ?? options.syntheticTitleProvider,
       previousTitle: (conversationId, profile, title) => {
@@ -1382,7 +1385,7 @@ export class AssistantEngine {
       [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject);
     const historyRequest = purpose === 'supervisor' ? this.store.messages.get(requestId) : undefined;
     const history = historyRequest?.speakerId === 'owner' && historyRequest.conversationId === task.conversationId
-      ? requestedHistory(request, historyRequest.createdAtMs, this.spend.timeZone) : undefined;
+      ? requestedHistory(request, historyRequest.createdAtMs, this.#historyTimeZone) : undefined;
     const historyMatches = history === undefined ? [] : configured.filter(({device}) => named(history.subject, device));
     const historyTarget = historyMatches.length === 1 ? historyMatches[0] : undefined;
     let historySummary: DeviceHistorySummary | undefined;
@@ -1916,8 +1919,15 @@ export class AssistantEngine {
       if (call.name === READ_HUB_GUIDE) {
         text = deviceHistoryGuide(new Set(tools.map(tool => tool.name)));
       } else if (call.name === READ_DEVICE_HISTORY) {
-        text = scope === undefined ? this.#history.read(call.input, {taskId: task.id, destination: provider.name, now, timeZone: this.spend.timeZone}, access)
-          : this.#history.summary(call.input, scope.fields('conversation', 'request', scope.requestId) ? scope.historySummary : undefined, access);
+        if (scope === undefined) {
+          const owner = task.transcript.filter(item => item.role === 'owner').at(-1);
+          const requestId = owner === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, owner);
+          const request = requestId === undefined ? undefined : this.store.messages.get(requestId);
+          text = this.#history.read(call.input, {taskId: task.id, destination: provider.name, now,
+            requestedAtMs: request?.createdAtMs ?? now, timeZone: this.#historyTimeZone}, access);
+        } else {
+          text = this.#history.summary(call.input, scope.fields('conversation', 'request', scope.requestId) ? scope.historySummary : undefined, access);
+        }
       } else if (owner !== undefined) {
         const name = call.input.device;
         if (scope !== undefined && !/\b(?:status|state|power|brightness|list|show|is|are|was|were|on|off)\b/i.test(scope.request)) {
