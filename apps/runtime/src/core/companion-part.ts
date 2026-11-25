@@ -6,7 +6,7 @@ import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import {ASSISTANT_LIGHT_OWNER, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingDispatch, CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
 import {coreValidator, type AgentOccurrence, type AttentionRaised, type Session30Record, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
@@ -20,6 +20,7 @@ export class CompanionPart implements CorePart {
   readonly #eligibility = new LivePublication();
   readonly #sessions = new Map<string, Session30Record>();
   #closed = false;
+  #codingSelection: {endpointId: string; selectionId: string} | undefined;
   constructor(private readonly device: (id: string) => Message<DeviceRecord> | undefined = () => undefined,
     private readonly dispatchLighting: (action: Action) => Promise<ActionAnswer> = () => Promise.resolve(errorBody('unavailable'))) {}
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
@@ -69,6 +70,11 @@ export class CompanionPart implements CorePart {
           dataschema: 'https://bunny.invalid/events/companion-speech-play/2.0', data: command.data}});
       return 'error' in answer ? answer : {status: 'accepted'};
     });
+    await core.sdk.subscribe<CodingState>('bunny.state.coding-state.coding', message => {
+      if (this.#closed || message.source !== 'bunny/modules/companions' || !validator.validate(message).ok) return;
+      const {endpointId, selectionId} = message.data;
+      this.#codingSelection = endpointId !== null && selectionId !== undefined ? {endpointId, selectionId} : undefined;
+    }, {onOverflow: () => {this.#codingSelection = undefined;}});
     // A delegation (Hub #502) is one tracked operation the module requested: the core forwards it to the module's own
     // coding-run responder, which hands it to the worker endpoint; the tracked effect is "handed to the worker".
     await core.sdk.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
@@ -76,8 +82,10 @@ export class CompanionPart implements CorePart {
       if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
+      const selectionId = this.#codingSelection?.endpointId === command.data.endpointId ? this.#codingSelection.selectionId : undefined;
+      const version = selectionId === undefined ? command.data.harness === undefined ? '2.0' : '2.1' : '2.2';
       const answer = await core.dispatch({key: 'bunny.cmd.coding-run.assistant', requestedBy: command.source, requestId: command.data.requestId, parent: command,
-        draft: {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${command.data.harness === undefined ? '2.0' : '2.1'}`, data: command.data}});
+        draft: {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${version}`, data: {...command.data, ...(selectionId === undefined ? {} : {selectionId})}}});
       return 'error' in answer ? answer : {status: 'accepted'};
     });
     await core.sdk.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', async command => {

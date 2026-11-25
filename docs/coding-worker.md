@@ -23,8 +23,9 @@ Acknowledgement frees the next delivery while the earlier job keeps running.
 When a worker disconnects or is disabled, the Hub drops starts assigned to
 that connection. A start the Hub had not sent ends with a definite failure.
 If the start may have reached the worker, the outcome stays uncertain. The Hub
-does not resend either start. Unassigned jobs keep their place for the next
-worker connection.
+does not resend either start. A delayed explicit dispatch keeps its original
+connection binding even when the next worker uses the same endpoint name.
+Unassigned jobs keep their place for the next worker connection.
 
 An uncapped worker reports whether an attempt is waiting for Git setup,
 preparing its worktree or ready to run the harness. A waiting report renews

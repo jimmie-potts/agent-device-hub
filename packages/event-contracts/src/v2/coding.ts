@@ -13,7 +13,7 @@ export const DEFAULT_CODING_BOUNDS: CodingBounds = Object.freeze({wallClockMs: 1
 export type CodingBounds = {wallClockMs: number; maxTurns: number; budgetUsd: number};
 /** What the module asks the core to dispatch, and what the core's tracked operation carries to the module. */
 export type CodingDispatch = {requestId: string; endpointId: string; taskId: string; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId};
-export type CodingRun = CodingDispatch;
+export type CodingRun = CodingDispatch & {selectionId?: string};
 /**
  * The worker's readiness (Hub #1743, `coding-endpoint/2.1` and `coding-state/2.1`): what its harness reported without
  * starting a task, with `unknown` or null wherever the tool did not say. `limits` are the windows the latest run
@@ -74,7 +74,7 @@ export type CodingWaiting = {operationId: string; taskId: string; companion: Cod
  */
 export type CodingState = {id: 'coding'; revision: number; endpointId: string | null; availability: 'off' | 'available' | 'unavailable';
   active: {operationId: string; taskId: string; status: 'dispatching' | 'started' | 'cancelling' | 'uncertain'} | null; readiness?: CodingReadiness | null;
-  slots?: number | null; capacity?: 'uncapped' | null; harnesses?: CodingHarnessReadiness[] | null; counts?: {runs: number; waiting: number}; runs?: CodingRunEntry[]; waiting?: CodingWaiting[]};
+  slots?: number | null; capacity?: 'uncapped' | null; selectionId?: string; harnesses?: CodingHarnessReadiness[] | null; counts?: {runs: number; waiting: number}; runs?: CodingRunEntry[]; waiting?: CodingWaiting[]};
 
 const codingSubject = (message: Message): string | undefined => message.subject === 'coding' ? undefined : 'envelope /subject must be coding';
 const assistantSubject = (message: Message): string | undefined => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant';
@@ -151,6 +151,7 @@ export const codingFamilies = [
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.2'),
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.3'),
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.4'),
+  defineFamily('coding-run', 'command', 'org.bunny.coding.run.requested', assistantSubject, '2.2'),
 ] as const;
 export const codingSchemas: Readonly<Record<string, object>> = Object.fromEntries(codingFamilies.map(family => [family.dataschema, family.schema]));
 export function registerCodingFamilies(validator: MessageValidator): void { registerFamilies(validator, codingFamilies); }

@@ -1212,7 +1212,11 @@ responsibility twice.
 
 `coding-endpoint/2.4` enables uncapped admission with `capacity: "uncapped"`.
 The worker still uses the existing disable command. Older declarations keep
-finite behavior. `coding-state/2.4` gives total run and waiting counts with
+finite behavior. An available uncapped selection has an opaque
+`selectionId` in `coding-state/2.4`. The core captures it when it receives a
+dispatch and includes it in `coding-run/2.2`. The coordinator requires that
+selection to still match before sending the start. The public dispatch keeps its
+existing contract. `coding-state/2.4` gives total run and waiting counts with
 bounded previews of 8 runs and 32 waits. Conversation reads active jobs
 through its independently paged content endpoint.
 

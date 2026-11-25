@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import type {ActionEvidence} from '../assistant/closing-reply.js';
 // One coding worker endpoint with one slot per companion (Hub #502, #2028). The core's tracked dispatcher hands the
 // module a `coding-run`; the module saves responsibility, sends one `coding-work` start to the worker's connection-bound
@@ -89,7 +90,7 @@ export class CodingCoordinator {
   readonly #store: CodingStore;
   readonly #validator = coreValidator();
   readonly #subscriptions: Subscription[] = [];
-  #state: Pick<CodingState, 'revision' | 'endpointId' | 'availability' | 'readiness' | 'slots' | 'capacity' | 'harnesses'> = {revision: 0, endpointId: null, availability: 'off', readiness: null, slots: null};
+  #state: Pick<CodingState, 'revision' | 'endpointId' | 'availability' | 'readiness' | 'slots' | 'capacity' | 'harnesses' | 'selectionId'> = {revision: 0, endpointId: null, availability: 'off', readiness: null, slots: null};
   #bound = 0;
   /** Every operation the worker holds, by operation ID, in the order they were accepted. */
   readonly #active = new Map<string, Active>();
@@ -465,8 +466,13 @@ export class CodingCoordinator {
         // The slots are the endpoint's own: an enable from the selected endpoint keeps them unless it declares others.
         this.#state.endpointId = command.subject; this.#state.availability = 'available'; this.#state.readiness = readiness;
         if (!selected || command.data.slots !== undefined || capacity === 'uncapped') this.#state.slots = slots;
-        if (capacity === undefined) delete this.#state.capacity;
-        else this.#state.capacity = capacity;
+        if (capacity === undefined) {
+          delete this.#state.capacity;
+          delete this.#state.selectionId;
+        } else {
+          this.#state.capacity = capacity;
+          this.#state.selectionId ??= randomUUID();
+        }
         if (harnesses === undefined) delete this.#state.harnesses;
         else this.#state.harnesses = harnesses;
         // A readiness report from the selected worker is published but does not move what a pending proposal is bound to.
@@ -484,7 +490,7 @@ export class CodingCoordinator {
     const delivery = this.#startDelivery;
     this.#startDelivery = undefined;
     this.#workerReply = undefined;
-    this.#state.availability = availability; this.#state.endpointId = null; this.#state.readiness = null; this.#state.slots = null; delete this.#state.capacity; delete this.#state.harnesses;
+    this.#state.availability = availability; this.#state.endpointId = null; this.#state.readiness = null; this.#state.slots = null; delete this.#state.capacity; delete this.#state.harnesses; delete this.#state.selectionId;
     if (delivery !== undefined) {
       delivery.discarded = true;
       const {record} = delivery;
@@ -527,6 +533,9 @@ export class CodingCoordinator {
     }
     const delivery = this.#startDelivery?.record.operationId === data.requestId && this.#startDelivery.endpointId === data.endpointId
       ? this.#startDelivery : undefined;
+    if (data.selectionId !== undefined ? data.selectionId !== this.#state.selectionId : this.#uncapped() && delivery === undefined) {
+      return errorBody('unavailable', {detail: 'the worker selection changed before the start was sent'});
+    }
     // The wait's end, which follows this refusal, forgets the cancel and tells the cancelled task nothing.
     if (this.#cancelled.has(data.taskId)) {
       try {this.#store.unwait(data.requestId);} catch (error) {this.#storageFailure(error);}

@@ -208,3 +208,14 @@ test('bounded setup transitions and a spawn failure retain attempt and harness i
   invalid(at('coding-progress', '2.1', {operationId: 'independent', status: 'started', setup: 'ready'}));
   valid(at('coding-progress', '2.3', {operationId: 'independent', status: 'failed', reason: 'spawn', result: null}));
 });
+
+
+test('a tracked run can carry the selected uncapped connection without changing the public dispatch', () => {
+  const selectionId = '01234567-89ab-4cde-8fab-0123456789ab';
+  const data = {...family('coding-run').data, harness: 'codex'};
+  valid(at('coding-run', '2.2', {...data, selectionId}));
+  invalid(at('coding-run', '2.2', data));
+  invalid(at('coding-run', '2.2', {...data, selectionId: 'worker-logical-name'}));
+  invalid(at('coding-run', '2.1', {...data, selectionId}));
+  invalid(at('coding-dispatch', '2.1', {...data, selectionId}));
+});

@@ -209,7 +209,10 @@ job to finish. On connection loss or disable, an uncapped start assigned to that
 SHALL be discarded. When the coordinator knows the start did not leave for the
 worker, it SHALL record that it was never sent. A start that may have reached
 the worker SHALL remain uncertain without resending it. Jobs that have never
-been assigned to a connection SHALL keep their place.
+been assigned to a connection SHALL keep their place. The core SHALL bind an
+explicit dispatch to the current uncapped selection before tracked forwarding.
+A forward delayed past replacement SHALL be rejected even if the endpoint
+name is reused.
 Finite workers SHALL retain their supported admission behavior. The worker SHALL serialize conflicting Git setup, leave a cancelled
 queued attempt without a new worktree, and report setup and execution progress
 using the original operation identity. The coordinator SHALL use the attempt's

@@ -33,13 +33,16 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
   let coreReply: 'forward' | 'refuse' | 'held' | 'held-forward' | 'lost-answer' = 'forward', release = (): void => {};
   const dispatched: string[] = [];
   await core.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
+    const selectionId = published.at(-1)?.data.selectionId;
     dispatched.push(command.data.requestId);
     if (coreReply === 'refuse') return errorBody('unavailable');
     // A held dispatch is answered only when the test releases it, by refusal, after the module that sent it stopped.
     if (coreReply === 'held') {await new Promise<void>(resolve => {release = resolve;}); return errorBody('unavailable');}
     if (coreReply === 'held-forward') await new Promise<void>(resolve => {release = resolve;});
     const lost = coreReply === 'lost-answer';
-    const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${command.data.harness === undefined ? '2.0' : '2.1'}`, data: command.data},
+    const version = selectionId === undefined ? command.data.harness === undefined ? '2.0' : '2.1' : '2.2';
+    const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${version}`,
+      data: {...command.data, ...(selectionId === undefined ? {} : {selectionId})}},
       {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
     if (lost) return errorBody('uncertain-result');
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
@@ -607,3 +610,29 @@ for (const disconnect of ['lose', 'disable'] as const) {
     } finally {release();}
   });
 }
+
+
+void test('the coding-run receiver refuses a held explicit dispatch from a previous uncapped selection', async t => {
+  const w = await world(t);
+  const codex: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', version: '0.163.0', signedIn: 'yes', plan: 'plus',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'saved-session', review: true}};
+  assert.equal((await w.enableAdapters([codex], 'worker-1', true)).status, 'accepted');
+  await until(() => w.published.at(-1)?.data.selectionId !== undefined);
+  const original = w.published.at(-1)?.data.selectionId;
+  w.core('held-forward');
+  const stale = w.dispatch('task-stale-codex', 'worker-1', 'codex');
+  try {
+    await until(() => w.dispatched.length === 1);
+    assert.equal((await w.control('disable')).status, 'accepted');
+    assert.equal((await w.enableAdapters([codex], 'worker-1', true)).status, 'accepted');
+    await until(() => w.published.at(-1)?.data.selectionId !== undefined && w.published.at(-1)?.data.selectionId !== original);
+    w.release();
+    assert.equal((await stale).status, 'rejected');
+    assert.equal(w.work.length, 0);
+    w.core('forward');
+    assert.equal((await w.dispatch('task-fresh-codex', 'worker-1', 'codex')).status, 'accepted');
+    await until(() => w.work.length === 1);
+    const start = w.work[0]?.data;
+    assert.ok(start?.action === 'start' && start.harness === 'codex' && start.operationId === 'task-fresh-codex-step-1');
+  } finally {w.release();}
+});
