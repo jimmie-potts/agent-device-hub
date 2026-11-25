@@ -23,6 +23,21 @@ const browser = await chromium.launch({headless: true});
 const shapes: readonly HomeShape[] = ['square', 'wide', 'tall', 'large-square'];
 const storedSize = {square: 'small', tall: 'small', wide: 'medium', 'large-square': 'medium'} as const;
 
+/**
+ * What the page held when a wait on a Home card expired: the feed, the copies, whether Home's layout was stale and the
+ * card's text and buttons (#2123). It reads the page once and adds nothing to the wait.
+ */
+async function held(page: Page, id: string): Promise<string> {
+  try {
+    return await page.evaluate(widget => {
+      const main = document.querySelector('main#main'), card = document.querySelector(`[data-home-card="${CSS.escape(widget)}"]`);
+      const buttons = card === null ? [] : [...card.querySelectorAll('button')].map(button => `${button.textContent.trim()}${button.disabled ? ' (disabled)' : ''}`);
+      return [`data-feed=${String(main?.getAttribute('data-feed'))}`, `data-copies=${String(main?.getAttribute('data-copies'))}`,
+        `layout stale: ${String(document.body.innerText.includes('Home layout is unavailable or stale'))}`,
+        card === null ? `no card ${widget}` : `card: ${(card as HTMLElement).innerText.replace(/\s+/g, ' ').slice(0, 160)}; buttons: ${buttons.join(', ')}`].join('; ');
+    }, id);
+  } catch (problem) {return `the page could not be read: ${String(problem).split('\n')[0] ?? ''}`;}
+}
 async function settle(page: Page): Promise<void> {
   await page.evaluate(async () => {await document.fonts.ready;await new Promise<void>(resolve => {requestAnimationFrame(() => {requestAnimationFrame(() => {resolve();});});});});
 }
@@ -1064,7 +1079,8 @@ try {
     await expect(line).toHaveText('Pixoo records are stale.');await expect(line).toHaveAttribute('title', 'Pixoo records are stale.');
     assert.deepEqual(misfits((await measure(page)).cards), [], 'the reason line stays inside the card');
     await page.reload();await feed(page, 'connected');
-    await expect(card.getByRole('button', {name: 'Screen off', exact: true})).toBeEnabled();
+    await expect(card.getByRole('button', {name: 'Screen off', exact: true})).toBeEnabled()
+      .catch(async (error: unknown) => {throw new Error(`the Pixoo card after the reload: ${await held(page, pixoo)}`, {cause: error});});
   }
   assert.deepEqual(errors, []);
 } finally {
