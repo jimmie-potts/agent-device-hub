@@ -1683,7 +1683,7 @@ void test('a refusal is offered to speech, a result over the spoken bound stays 
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
 });
 
-void test('an approved delegation is handed to the worker once, the owner cannot answer it, the worker\'s result resumes the task and a cancel stops the worker', async context => {
+void test('an approved delegation is handed to the worker once, the turn finishes while the worker runs and a named stop targets its attempt', async context => {
   const CODING = 'bunny/parts/coding-worker';
   let turn = 0;
   const provider = counted(() => {
@@ -1717,32 +1717,32 @@ void test('an approved delegation is handed to the worker once, the owner cannot
   assert.equal(proposal?.kind, 'approval');
   assert.deepEqual(proposal?.proposal, {family: 'coding-dispatch', target: 'assistant', data: {repository: 'agent-device-hub', brief: 'Add a unit test for the readout generator.'}, expectedRevision: w.module().inspectCoding()?.revision});
   assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
-  await until(() => work.length === 1 && status(w) === 'waiting');
+  await until(() => work.length === 1 && status(w) === 'succeeded');
   assert.equal(work[0]?.action, 'start'); assert.equal(work[0]?.taskId, task(w)?.taskId);
-  const delegation = (await page(w)).currentTask?.question; assert.equal(delegation?.kind, 'delegation'); assert.equal(delegation?.answer, null);
-  const owner = await input(w.core, w.module(), 'done yet?', true); assert.equal(owner.status, 'rejected'); if (owner.status === 'rejected') assert.equal(owner.error.error.code, 'invalid-state');
-  assert.equal(provider.calls(), before + 1, 'the model is not called while the worker runs');
+  assert.notEqual((await page(w)).currentTask?.question?.kind, 'delegation');
+  assert.equal(provider.calls(), before + 2, 'the agent can finish without the worker result');
   await progress({operationId: work[0]?.operationId, status: 'started'});
   await until(() => w.module().inspectCoding()?.active?.status === 'started');
   await progress({operationId: work[0]?.operationId, status: 'completed', result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: ['scripts/tests/readout.test.mjs'],
     checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: [], summary: 'Added the test; it passes.', sessionId: null, usage: null}});
-  await until(() => status(w) === 'succeeded');
+  await until(() => w.module().inspectCoding()?.active === null);
+  await new Promise(resolve => {setImmediate(resolve);});
   assert.equal(provider.calls(), before + 2);
   const saved = await page(w);
-  assert.ok(saved.messages.some(message => message.role === 'tool' && /^completed \(tested-candidate\): Added the test; it passes\./.test(message.text)));
-  assert.equal(saved.messages.at(-1)?.text, 'Synthetic summary of the worker result.');
+  assert.ok(saved.messages.some(message => message.role === 'assistant' && /completed \(tested-candidate\): Added the test; it passes\./.test(message.text)));
   assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
   assert.equal(w.module().inspectCoding()?.active, null);
   // A second delegation is cancelled by the owner while the worker runs: the worker is asked to stop and its report ends the task's wait.
   turn = 0;
   assert.equal((await input(w.core, w.module(), 'Please delegate: another test')).status, 'accepted'); await until(() => status(w) === 'waiting');
-  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted'); await until(() => work.length === 2 && status(w) === 'waiting');
-  const id = task(w)?.taskId ?? assert.fail('task');
-  assert.equal((await control(w.core, w.module(), 'cancel', id)).status, 'accepted'); await until(() => status(w) === 'cancelled');
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted'); await until(() => work.length === 2 && status(w) === 'succeeded');
+  const id = work[1]?.operationId ?? assert.fail('attempt');
+  await progress({operationId: id, status: 'started'});
+  assert.deepEqual(await w.module().stopCodingJob(`${id}-job`, id), {status: 'accepted'});
   await until(() => work.length === 3); assert.equal(work[2]?.action, 'cancel');
   await progress({operationId: work[1]?.operationId, status: 'cancelled', reason: 'cancelled', result: null});
   await until(() => w.module().inspectCoding()?.active === null);
-  assert.equal(status(w), 'cancelled');
+  assert.equal(status(w), 'succeeded');
   assert.equal(JSON.stringify(w.host().logs).includes('readout generator'), false, 'briefs reach no diagnostic record');
 });
 

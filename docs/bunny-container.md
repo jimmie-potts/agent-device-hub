@@ -1115,9 +1115,19 @@ choose newest main, change private settings or select a physical test.
 
 Before executing the batch, retain matching built Node 24 host source in the
 selected private release outside development and preview checkouts. Run the batch
-and subsequent maintenance from that stable source. Loading a container image does
-not update the host operator. Retained older operators do not participate in the
-new shared operation lease.
+and subsequent maintenance from that stable source. For the project installed
+in the Mac sign-in agent, place the source at
+`~/.local/share/bunny/releases/<revision>/source` or retain the historical
+`<revision>/build/source` layout. The revision directory uses the full image
+revision. If the retained source is a Git checkout elsewhere, register it with a
+`source` symlink in the revision directory. Its HEAD must match the revision and
+its tracked files must be clean. If both paths exist, they must resolve to the
+same operator. The batch verifies this selection before stopping the core and
+checks it again against the replacement container's labels before recording
+success. A missing or conflicting selection refuses the batch.
+
+Loading a container image does not update the host operator. Retained older
+operators do not participate in the new shared operation lease.
 
 Prepare a mode-600 request outside Git in an owner-only directory. Select the
 whole included batch and assess its actual stored-format changes and affected

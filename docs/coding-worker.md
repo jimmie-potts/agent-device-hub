@@ -314,23 +314,18 @@ keeps its process, reconnects and declares again with backoff, as above.
 
 On the Conversation page, ask B.U.N.N.Y. to delegate a task, naming the
 repository. The model proposes a delegation showing the repository, the brief
-and the coding worker revision it is bound to; approve it. The core tracks the
-hand-off as one operation that completes when the worker reports it started;
-the page then shows the delegated work waiting, with Cancel task asking the
-worker to stop. The worker's result arrives as the tool's later word (the
-model reads it as text naming the call) and the next reply reports it.
+and the bound coding worker revision. After approval, Conversation shows the
+saved Hub job ID. The core tracks the hand-off as an operation that completes
+when the worker reports it started. Conversation remains available and the
+worker's result links to the job receipt in its original exchange.
 
-Each companion has its own slot. A delegation is proposed while the worker is
-connected even when the companion's slot is busy, and the approval says so.
-Approved, it waits, saved, until that slot frees, and the page shows "Waiting
-for the coding worker: it is busy". It is then sent once, without asking again.
-Cancel task removes a waiting hand-off and sends nothing. A waiting hand-off
-keeps its place across a restart of the core. The proposal is bound to the
-worker's connection only, so another companion's run starting or ending never
-refuses it; a worker that disconnected and came back does. The Conversation
-details show the worker's slots, the companion's own slot and the plan usage
-windows the latest run reported, which every run shares. The per-run caps stay
-twenty minutes, sixty turns and five dollars.
+Each companion has its own slot. If that slot is busy, the approved job waits
+and sends once when the slot frees. A restart preserves unsent jobs and
+reports ambiguous starts as uncertain without repeating their dispatch.
+**Cancel task** ends the Conversation turn. A named job stop targets one
+worker attempt and remains unconfirmed until there is terminal evidence.
+Conversation details show occupied slots and the reported plan usage windows.
+The per-run caps are twenty minutes, sixty turns and five dollars.
 
 A worker that stays connected but never reports again has each of its runs
 given up as uncertain about 34 minutes after the run's start report: the

@@ -3,7 +3,7 @@
 // a task works saves a steer at once, shows it above the composer, and the task's next model call reads it after the
 // last call's tool results. A steer forces one more call when the model was about to finish; one that reaches its turn
 // after the turn ended starts as the next message. Skip question and send and Decline with message settle a question
-// and steer in one step; a delegation wait keeps the steer until the worker's result; Stop returns unread steers to the
+// and steer in one step; a background delegation leaves the next Hub turn steerable; Stop returns unread steers to the
 // queue, which may pass its limit; a restart starts no work and keeps the steer. Desktop and phone widths, no horizontal
 // page scroll. No device is contacted and no paid call is made.
 import assert from 'node:assert/strict';
@@ -191,7 +191,7 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
     declined.resolve(end('Synthetic: the mode stays work.'));
     await completed();
 
-    // 6. A steer during a delegation wait is kept until the worker's result arrives.
+    // 6. A background coding job leaves the next conversation turn free to read its own steer.
     const work: CodingWork[] = [];
     const endpoint = await worker.openEndpoint<CodingWork>({family: 'coding-work', respond: command => {work.push(command.data); return {status: 'accepted'};}});
     assert.equal((await endpoint.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0',
@@ -200,23 +200,37 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
     delegating.resolve(tool('call-delegate', 'delegate_coding', {repository: 'agent-device-hub', brief: 'Add a synthetic test.'}));
     await proposal.getByText(/Delegation to the coding worker in repository/).waitFor();
     await proposal.getByRole('button', {name: 'Approve proposal', exact: true}).click();
-    await conversation.getByRole('article', {name: 'Delegated work', exact: true}).waitFor();
+    const queuedJob = await call('after the background job was queued');
     for (let waited = 0; work.length === 0 && waited < 100; waited += 1) await new Promise(resolve => setTimeout(resolve, 50));
     const started = work[0]; assert.ok(started?.action === 'start', 'the hand-off reached the worker');
-    await steer('Synthetic steer: also report the test count', 1);
-    await steering.getByText('The task reads these after the coding worker\'s result. Cancel task moves them to the queue.', {exact: true}).waitFor();
-    await new Promise(resolve => setTimeout(resolve, 300));
-    assert.equal(waiting.length, 0, 'the steer makes no model call before the worker\'s result');
-    await shot(page, '07-steer-during-delegation');
+    const jobId = `${started.operationId}-job`;
+    const receipt = queuedJob.input.transcript.at(-1);
+    assert.ok(receipt?.role === 'tool' && receipt.name === 'delegate_coding');
+    assert.match(receipt.result, /^accepted: Coding job /);
+    assert.ok(receipt.result.includes(jobId));
+    const jobMessage = conversation.locator(`[data-message="${jobId}"]`);
+    await jobMessage.getByText(/^Coding job .* was queued/).waitFor();
+    queuedJob.resolve(end('Synthetic: the coding job is queued.'));
+    await completed();
+
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'started'}});
+    const hub = await start('Synthetic separate Hub status check');
+    await steer('Synthetic steer: explain the current Hub mode instead', 1);
+    await shot(page, '07-steer-with-background-job');
+    hub.resolve(end('Synthetic superseded status draft.'));
+    const steered = await call('after steering the independent Hub turn');
+    assert.equal(brief(steered.input.transcript.at(-1) ?? assert.fail('missing steer')), 'owner: Synthetic steer: explain the current Hub mode instead');
+    steered.resolve(end('Synthetic: the Hub stays in work mode.'));
+    await assistantLine('Synthetic: the Hub stays in work mode.').waitFor();
+    await completed();
+    assert.equal(await conversation.getByText(/Added the synthetic test/).count(), 0);
+
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'completed',
       result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: [], checks: [], findings: [], limitations: [], summary: 'Added the synthetic test.', sessionId: null, usage: null}}});
-    const reported = await call('after the worker\'s result');
-    const [result, after] = reported.input.transcript.slice(-2).map(brief);
-    assert.match(result ?? '', /^tool delegate_coding: completed/, 'the worker\'s result comes first');
-    assert.equal(after, 'owner: Synthetic steer: also report the test count');
-    reported.resolve(end('Synthetic: the worker added one test.'));
-    await completed();
+    const update = conversation.locator(`[data-message="${jobId}-result"]`);
+    await update.getByText(/Added the synthetic test/).waitFor();
+    assert.equal(await update.getByRole('link', {name: 'Update to earlier reply', exact: true}).getAttribute('href'), `#conversation-message-${jobId}`);
+    assert.equal(waiting.length, 0, 'the background result does not reopen the completed turn');
 
     // 7. Stop returns unread steers to the head of the queue, which may pass its limit of 8.
     const stopping = await start('Synthetic long task');
@@ -326,7 +340,7 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
     await queued.waitFor({state: 'detached'});
     assert.deepEqual(errors, []);
     assert.equal(JSON.stringify(world.logs).includes('Synthetic steer'), false, 'no steer text reaches the logs');
-    process.stdout.write('Conversation steer: steer during tool use, forced call, late steer as the next turn, Skip question and send, Decline with message, delegation wait, Stop returning steers past the queue limit, restart and the phone layout passed.\n');
+    process.stdout.write('Conversation steer: steer during tool use, forced call, late steer as the next turn, Skip question and send, Decline with message, steering alongside a background job, Stop returning steers past the queue limit, restart and the phone layout passed.\n');
   } finally {
     for (const pending of waiting.splice(0)) pending.resolve(end('Synthetic closing reply'));
     await worker.close();
