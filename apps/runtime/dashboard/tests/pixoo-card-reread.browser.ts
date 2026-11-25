@@ -13,6 +13,7 @@ const deviceId = SIMULATED_SECTION.config.device.id;
 const world = await startWorld({pixooPages: true});
 const browser = await chromium.launch({headless: true});
 const results: Record<string, boolean | string> = {};
+let evidence = (): Promise<string> => Promise.resolve('none');
 try {
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); });
@@ -24,13 +25,28 @@ try {
     const body = JSON.parse(request.postData() ?? '{}') as {data?: Record<string, unknown>};
     bodies.push({path: new URL(request.url()).pathname, data: body.data ?? {}});
   });
+  // On a miss, what the page showed: the route, the feed, each Home Pixoo placement, each Pixoo card with its shape,
+  // state line, result line and buttons, the reads held or answered, and the device and display records the runtime holds.
+  let reads = 0;
+  evidence = async (): Promise<string> => JSON.stringify({heldReads: held.length, reads, hold, failReads, page: await page.evaluate(async id => {
+    const snapshot = async (family: string): Promise<unknown> => ((await (await fetch(`/api/v2/snapshot?families=${family}&owner=bunny/modules/pixoo`)).json()) as {records: Record<string, {id: string}[]>}).records[family]?.find(value => value.id === id);
+    return {hash: location.hash, feed: document.querySelector('main#main')?.getAttribute('data-feed') ?? null,
+      // A Home placement without a Pixoo card in it shows here by its text, such as the card's loading line.
+      home: [...document.querySelectorAll('[data-home-card^="device:bunny/modules/pixoo:"]')].map(node => ({shape: node.getAttribute('data-home-shape'),
+        packed: node.closest('.home-layout-grid')?.getAttribute('data-packed') ?? null, text: node.textContent.slice(0, 200)})),
+      cards: [...document.querySelectorAll('article.pixoo-card')].map(node => ({home: node.closest('[data-home-card]')?.getAttribute('data-home-card') ?? null,
+        shape: node.getAttribute('data-pixoo-shape'), state: node.querySelector('.light-card-heading p')?.textContent ?? null,
+        result: node.querySelector('[role=status]')?.textContent ?? null, alert: node.querySelector('[role=alert]')?.textContent ?? null,
+        buttons: [...node.querySelectorAll('button')].map(button => `${button.getAttribute('aria-label') ?? button.textContent.trim()}${button.disabled ? ' (disabled)' : ''}`)})),
+      device: await snapshot('device'), display: await snapshot('pixoo-display')};
+  }, deviceId).catch((error: unknown) => String(error))});
   // The card's player reads pass through until the journey holds them; a held read answers only when released.
   let hold = false; let failReads = false;
   const held: Route[] = [];
   await page.route('**/modules/pixoo/content/player', route => {
     if (failReads) void route.fulfill({status: 503, contentType: 'application/json', body: '{"error":{"code":"unavailable","retryable":true}}'});
     else if (hold) held.push(route);
-    else void route.continue();
+    else { reads += 1; void route.continue(); }
   });
   const release = async (): Promise<void> => { hold = false; for (const route of held.splice(0)) await route.continue(); };
   // A request another surface could make, sent by the page itself, so the shell's operation records include it.
@@ -329,6 +345,6 @@ try {
   await context.close();
   process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-card-reread', results})}\n`);
 } catch (error) {
-  process.stdout.write(`${JSON.stringify({passed: false, journey: 'pixoo-card-reread', results})}\n`);
+  process.stdout.write(`${JSON.stringify({passed: false, journey: 'pixoo-card-reread', results})}\nPage at the miss: ${await evidence()}\n`);
   throw error;
 } finally { await browser.close(); await world.close(); }
