@@ -69,6 +69,7 @@ export async function artBackdropJourney(): Promise<void> {
     await expectShown(first, 'unavailable');
     await page.unrouteAll({behavior: 'wait'});
     await page.screenshot({path: join(artifacts, 'art-backdrop-home-1440.png'), fullPage: true});
+    throw new Error('PROBE #2059, do not merge: deliberate failure after the first screenshot');
     // The art module stopped mounts no source; Home still renders and nothing throws.
     await page.route('**/api/v2/modules', async route => {
       const answer = await route.fetch(), body: unknown = await answer.json();
