@@ -3,7 +3,7 @@
 // synthetic still image and held reads only; no installed services or devices.
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {chromium, expect, type Route} from 'playwright/test';
+import {chromium, expect, type Locator, type Route} from 'playwright/test';
 import sharp from 'sharp';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {SIMULATED_SECTION} from '@jimmie-potts/pixoo';
@@ -45,13 +45,22 @@ try {
     const record = data.records.device.find(value => value.id === id); if (record === undefined) throw new Error('pixoo-record');
     return {configurationRevision: record.configurationRevision, generation: record.generation};
   }, deviceId);
-  const display = async (): Promise<{moments: {overStatus: boolean}; player: {state: string}}> => page.evaluate(async id => {
-    const data = await (await fetch('/api/v2/snapshot?families=pixoo-display&owner=bunny/modules/pixoo')).json() as {records: {'pixoo-display': {id: string; moments: {overStatus: boolean}; player: {state: string}}[]}};
+  type Display = {moments: {overStatus: boolean}; player: {state: string; intent: string; itemId: string | null; lastError: string | null}};
+  const display = async (): Promise<Display> => page.evaluate(async id => {
+    const data = await (await fetch('/api/v2/snapshot?families=pixoo-display&owner=bunny/modules/pixoo')).json() as {records: {'pixoo-display': (Display & {id: string})[]}};
     const record = data.records['pixoo-display'].find(value => value.id === id); if (record === undefined) throw new Error('pixoo-display-record');
     return record;
   }, deviceId);
   // A display change that leaves playback alone: Moments over the status view. It makes the card read the player again.
   const displayChange = async (): Promise<void> => { await setup('pixoo-moments-set', {overStatus: !(await display()).moments.overStatus}); };
+  const playerRead = (): Promise<unknown> => page.waitForResponse(response => new URL(response.url()).pathname === '/modules/pixoo/content/player' && response.status() === 200);
+  // A press on a control that should refuse it: the click reaches the page and no request leaves it.
+  const refused = async (control: Locator, why: string): Promise<void> => {
+    assert.equal(await control.isDisabled(), true, why);
+    const before = bodies.length;
+    await control.click({force: true}); await delay(300);
+    assert.equal(bodies.length, before, `${why}: no request`);
+  };
 
   // Setup: one synthetic still in a two-item playlist, each item shown for two minutes, so no item changes on its own.
   await world.createPlaylist('Synthetic re-read');
@@ -103,6 +112,12 @@ try {
   await next.click({force: true});
   await delay(300);
   assert.equal(bodies.length, mark + 1, 'a press while a command is in flight sends nothing');
+  // A read that lands while the command is in flight re-enables nothing and sends nothing.
+  const landed = playerRead(); await displayChange(); await landed;
+  mark = bodies.length;
+  for (const control of [next, previous, toggle, screenOn]) await refused(control, 'a read landing during a command in flight keeps the controls disabled');
+  assert.equal(bodies.length, mark);
+  results['read-lands-in-flight'] = true;
   answer(); await page.unroute('**/api/v2/commands/media-control');
   await expect(pause).toBeEnabled(); await expect(screenOn).toBeEnabled();
   results['command-in-flight'] = true;
@@ -113,37 +128,66 @@ try {
   await expect(resume).toBeEnabled(); await expect(screenOn).toBeEnabled();
   await expect.poll(async () => (await display()).player.state).toBe('paused');
 
-  // (b) The player resumes from another surface while the card's read is held. Whatever the card shows then, a press
-  // sends the command its label names or nothing, never the other one. When the read lands, the label and the command
-  // change together: the next press sends pause.
+  // (b) The player resumes from another surface while the card's read is held. The card still shows Resume over the
+  // paused content it read, but the newer display record says the player runs again, so Resume refuses the press and
+  // sends nothing: resuming a running player would restart its item (#2124 F1). When the read lands, the label and the
+  // command change together: Pause shows and sends pause.
   hold = true;
   await setup('media-control', {action: 'resume'});
   await expect.poll(() => held.length).toBeGreaterThan(0);
   await expect.poll(async () => (await display()).player.state).toBe('playing');
-  // Let the setup command settle, so only the held read can keep the card's controls disabled.
-  await delay(500);
+  // Let the setup command settle, so only the held read decides the card's controls.
+  await delay(500); await expect(screenOn).toBeEnabled();
   assert.equal(await pause.count(), 0, 'the label stays with the content the card holds');
-  const shown = await toggle.textContent(), enabled = await toggle.isEnabled();
-  assert.equal(shown, 'Resume');
-  guard = await sentData(); mark = bodies.length;
-  await toggle.click({force: true});
-  if (enabled) {
-    await expect.poll(() => bodies.length).toBe(mark + 1);
-    assert.deepEqual(bodies.at(-1)?.data, {action: 'resume', ...guard}, 'Resume shown, resume sent');
-  } else {
-    await delay(300);
-    assert.equal(bodies.length, mark, 'a disabled Resume sends nothing');
-  }
+  assert.equal(await card.locator('.light-card-heading p').textContent(), 'paused', 'a control blocked for a re-read is not a stale card');
+  await refused(resume, 'Resume over a player the newer record says is playing');
   await release();
   await expect(pause).toBeEnabled(); await expect(screenOn).toBeEnabled();
   assert.equal(await resume.count(), 0);
-  await expect.poll(async () => (await display()).player.state).toBe('playing');
   guard = await sentData(); mark = bodies.length;
   await pause.click();
   await expect.poll(() => bodies.length).toBe(mark + 1);
   assert.deepEqual(bodies.at(-1)?.data, {action: 'pause', ...guard}, 'Pause shown, pause sent');
-  results['label-names-command'] = enabled ? 'sent resume' : 'refused while disabled';
+  results['label-names-command'] = true;
   await expect(resume).toBeEnabled(); await expect(screenOn).toBeEnabled();
+  await expect.poll(async () => (await display()).player.state).toBe('paused');
+
+  // Another surface moves to the next item while the card's read is held: Next, Previous and Resume would act on an
+  // item the card no longer shows, so they refuse the press. Pause-like absolute controls stay live.
+  const item = (await display()).player.itemId;
+  hold = true;
+  await setup('media-control', {action: 'next'});
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  await expect.poll(async () => (await display()).player.itemId).not.toBe(item);
+  await delay(500); await expect(screenOn).toBeEnabled();
+  for (const control of [next, previous, resume]) await refused(control, 'an item-relative control over an item the record has left');
+  results['item-mismatch'] = true;
+  await release();
+  await expect(next).toBeEnabled(); await expect(resume).toBeEnabled();
+  // When the record agrees with the read on the item, a routine re-read leaves Next live and a press sends once.
+  hold = true;
+  await displayChange();
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  await expect(next).toBeEnabled({timeout: 5000});
+  guard = await sentData(); mark = bodies.length;
+  await next.click();
+  await expect.poll(() => bodies.length).toBe(mark + 1); await delay(300);
+  assert.equal(bodies.length, mark + 1);
+  assert.deepEqual(bodies.at(-1), {path: '/api/v2/commands/media-control', data: {action: 'next', ...guard}});
+  results['item-agreement'] = true;
+  await release();
+  await expect(next).toBeEnabled(); await expect(screenOn).toBeEnabled();
+
+  // Work mode, set from another surface while the card's read is held, still blocks every content control.
+  hold = true;
+  await setup('device-mode-set', {mode: 'work'});
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  await delay(500); await expect(screenOn).toBeEnabled();
+  for (const control of [next, previous, toggle]) await refused(control, 'work mode during a re-read');
+  results['work-mode'] = true;
+  await release();
+  await setup('device-mode-set', {mode: 'free'});
+  await expect(next).toBeEnabled(); await expect(resume).toBeEnabled();
 
   // A failed re-read: the card drops the content it held, says why and disables the controls until a read succeeds.
   failReads = true;
@@ -197,6 +241,58 @@ try {
   results['press-during-re-read'] = true;
   await release();
   await expect(pause).toBeEnabled(); await expect(screenOn).toBeEnabled();
+  await expect.poll(async () => (await display()).player.state).toBe('playing');
+
+  // The #1789 sequence: after Resume the read and the record both say playing; the record changes again and the card
+  // reads again; Pause stays live and one press sends pause once.
+  hold = true;
+  await displayChange();
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  await expect(pause).toBeEnabled({timeout: 5000});
+  guard = await sentData(); mark = bodies.length;
+  await pause.click();
+  await expect.poll(() => bodies.length).toBe(mark + 1); await delay(300);
+  assert.equal(bodies.length, mark + 1, 'Pause during a re-read sends once');
+  assert.deepEqual(bodies.at(-1)?.data, {action: 'pause', ...guard});
+  results['pause-during-re-read'] = true;
+  await release();
+  await expect(resume).toBeEnabled(); await expect(screenOn).toBeEnabled();
+  await expect.poll(async () => (await display()).player.state).toBe('paused');
+
+  // The compact face on Home decides Pause and Resume as the full face does.
+  await page.goto(`${world.url}/#/home`); await feed(page, 'connected');
+  const homeCard = page.locator('[data-home-card^="device:bunny/modules/pixoo:"]').first();
+  const widget = await homeCard.getAttribute('data-home-card'); assert.ok(widget !== null);
+  assert.equal(await page.evaluate(async widget => {
+    const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': {revision: number}[]}};
+    const record = data.records['home-layout'][0]; if (record === undefined) throw new Error('home-record');
+    const layout = [{widget, size: 'medium', hidden: false, shape: 'wide'}];
+    return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+      body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record.revision, layouts: {desktop: layout, phone: layout}}})})).status;
+  }, widget), 200);
+  const compact = page.locator(`[data-home-card="${widget}"] [data-pixoo-shape="wide"]`);
+  const compactPause = compact.getByRole('button', {name: 'Pause', exact: true}), compactResume = compact.getByRole('button', {name: 'Resume', exact: true});
+  await expect(compactResume).toBeEnabled();
+  hold = true;
+  await setup('media-control', {action: 'resume'});
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  await expect.poll(async () => (await display()).player.state).toBe('playing');
+  await delay(500); await expect(compact.getByRole('button', {name: 'Screen on', exact: true})).toBeEnabled();
+  await refused(compactResume, 'the compact Resume over a player the newer record says is playing');
+  await release();
+  await expect(compactPause).toBeEnabled();
+  hold = true;
+  await displayChange();
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  await expect(compactPause).toBeEnabled({timeout: 5000});
+  guard = await sentData(); mark = bodies.length;
+  await compactPause.click();
+  await expect.poll(() => bodies.length).toBe(mark + 1); await delay(300);
+  assert.equal(bodies.length, mark + 1);
+  assert.deepEqual(bodies.at(-1), {path: '/api/v2/commands/media-control', data: {action: 'pause', ...guard}});
+  results['compact-face'] = true;
+  await release();
+  await expect(compactResume).toBeEnabled();
 
   assert.deepEqual(errors, []);
   await context.close();
