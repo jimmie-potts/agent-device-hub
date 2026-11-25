@@ -10,11 +10,34 @@ device or dashboard authority. Its credential role grants exactly three
 families on its endpoint: it answers `coding-work`, publishes `coding-progress`
 and declares `coding-endpoint`.
 
-The worker has three slots, one each for B.U.N.N.Y., Reachy and MicroDuck (Hub
-#2028). It runs one task per companion, three at once, and refuses another
-start with `capacity`. Each start names the companion that asked, and runs on
-the same repository each get their own fresh worktree; their fetch and worktree
-setup take turns, so git's locks never race.
+Workers configured with `coding-worker/1.2` declare uncapped admission.
+Companions can submit independent jobs regardless of which companion already
+has work running. The worker uses a fresh worktree for each attempt and
+serializes conflicting Git setup on the same underlying repository, including
+linked worktrees. A cancelled attempt waiting for that lock skips setup when
+its turn comes. Finite worker declarations keep their original slot behavior.
+
+Approved uncapped jobs wait durably until their start can be delivered. The Hub
+paces the tracked dispatch and the worker's acknowledgement as one exchange.
+Acknowledgement frees the next delivery while the earlier job keeps running.
+When a worker disconnects or is disabled, the Hub drops starts assigned to
+that connection. A start the Hub had not sent ends with a definite failure.
+If the start may have reached the worker, the outcome stays uncertain. The Hub
+does not resend either start. A delayed explicit dispatch keeps its original
+connection binding even when the next worker uses the same endpoint name.
+The core reads current selection at startup and after a state-stream gap. It
+refuses explicit dispatch until that read confirms an available worker.
+Unassigned jobs keep their place for the next worker connection.
+
+An uncapped worker reports whether an attempt is waiting for Git setup,
+preparing its worktree or ready to run the harness. A waiting report renews
+only the wait deadline. Once setup starts, the attempt has its own setup
+deadline. A ready worktree starts the harness deadline. A spawn failure
+ends that attempt and leaves its siblings running. The worker reports usage
+limits only when the harness supplies that evidence.
+
+Open **Details**, then **Coding jobs**, to find active jobs and stop a named
+attempt. **Next jobs** reads later jobs without affecting admission.
 
 ## Claude Code delegation
 
@@ -167,9 +190,10 @@ be listed.
 
 ## Readiness
 
-Workers using `coding-worker/1.1` also declare each configured adapter in
-`coding-endpoint/2.3`. The core uses `coding-state/2.3` for those declarations
-and active session IDs. The existing readiness field still describes Claude
+Workers declare each configured adapter through `coding-endpoint/2.4`
+with `coding-worker/1.2`, or through `coding-endpoint/2.3` with
+`coding-worker/1.1`. The core includes those declarations and active
+session IDs in coding state. The existing readiness field still describes Claude
 Code.
 
 Before it connects, the worker asks its tool what it is, without starting a
@@ -210,13 +234,13 @@ Disable the Codex worker if either becomes managed, pending review of the
 new setup. This is a setup decision. Jobs can run without asking again.
 The worker checks the reported sign-in and settings before sending a brief.
 
-Use `coding-worker/1.1` and add a `codex` object with absolute `executable`
+Use `coding-worker/1.2` and add a `codex` object with absolute `executable`
 and `home` paths and, optionally, a `model` name. Select the local CLI in
 the worker configuration and give it a separate mode-700 directory outside
 every checkout. Standalone Codex 0.163.0 supports the app-server checks in
 a signed-out profile. Use a CLI that confirms the required effective settings,
 account mode and thread scope. Upgrade the core first so it accepts
-`coding-endpoint/2.3`. Existing Claude-only configuration and requests without
+`coding-endpoint/2.4`. Existing Claude-only configuration and requests without
 a harness selection continue to use Claude Code.
 
 As the worker's host user, create that directory and sign in to ChatGPT in
@@ -284,6 +308,13 @@ with `coding-worker-enable-refused: unsupported-version`. A core from #2028 on
 works with an older worker as one slot for every companion (see
 [the runtime upgrade procedure](../apps/runtime/UPGRADE.md)).
 
+For the established worker, #2115 owns the compatible release and installed
+verification. Upgrade the core and then the worker executable before changing
+the existing private configuration's `schema` to `coding-worker/1.2`. Preserve
+its allowlisted repositories, token file and harness settings. A configuration
+using the older worker contract keeps finite admission. No host cap field is
+needed in the current contract.
+
 1. Grant the credential. Add one entry with the `coding-worker` role to the
    installation's private `edge-credentials/1.0` file, bound to the source
    `bunny/parts/coding-worker` with no scopes; the digest is the SHA-256 of a
@@ -302,7 +333,7 @@ works with an older worker as one slot for every companion (see
 3. Write the private configuration, mode 600, outside every checkout:
 
    ```json
-   {"schema": "coding-worker/1.0", "edge": "http://127.0.0.1:18788", "tokenFile": "/absolute/private/coding-worker.token",
+   {"schema": "coding-worker/1.2", "edge": "http://127.0.0.1:18788", "tokenFile": "/absolute/private/coding-worker.token",
     "repositories": [{"name": "agent-device-hub", "path": "/absolute/path/to/checkout"}],
     "claude": {"executable": "/opt/homebrew/bin/claude", "permissionMode": "acceptEdits"}}
    ```
