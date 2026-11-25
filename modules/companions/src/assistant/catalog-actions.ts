@@ -33,7 +33,8 @@ function textResult(value: unknown): string {
   if (textBytes(text) <= 4000) return text;
   return new TextDecoder().decode(new TextEncoder().encode(text).slice(0, 3950)) + '… (narrow the read to one item)';
 }
-type Proposed = {proposal: CatalogProposal; text: string; targets?: readonly (readonly string[])[]; artworkRequestId?: string} | {question: string} | {code: ErrorCode};
+type Proposed = {proposal: CatalogProposal; text: string; targets?: readonly (readonly string[])[]; knownTargets?: readonly (readonly string[])[]; artworkRequestId?: string}
+  | {question: string} | {code: ErrorCode};
 type Refusal = {code: ErrorCode};
 type Match = {owner: string; device: DeviceRecord};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
@@ -189,16 +190,18 @@ export class ConversationActions {
     let binding: CatalogBinding;
     let deviceApproval: string | undefined;
     let targets: readonly (readonly string[])[] | undefined;
+    let knownTargets: readonly (readonly string[])[] | undefined;
     if (route.binding === 'device') {
       const owners = owner === 'auto' ? route.owners : route.owners.filter(source => source === owner);
       if (owners.length === 0) return {code: 'unsupported-capability'};
-      const {rows, unreadable} = await this.#deviceRecords(owners, parent);
-      const found = matchingDevices(rows, name, owner);
+      const {rows, unreadable} = await this.#deviceRecords(route.owners, parent);
+      const found = matchingDevices(rows.filter(row => owners.some(eligible => eligible === row.owner)), name, owner);
       const selected = found[0];
       if (found.length > 1) return {question: `Which device did you mean? ${found.map(({owner, device}) => `${owner} / ${device.id}`).join(', ')}`};
       if (selected === undefined) return {code: unreadable.length > 0 ? 'unavailable' : 'not-found'};
       const {device} = selected;
       targets = [[device.id, deviceLabel(device)]];
+      knownTargets = rows.filter(row => permitsDevice(route, row.device)).map(row => [row.device.id, deviceLabel(row.device)]);
       if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
       if (family === 'lifx-color-set' || family === 'lifx-temperature-set') {
         const lights = await this.#snapshot<LifxColor>(LIFX, 'lifx-light', parent);
@@ -258,7 +261,8 @@ export class ConversationActions {
       ? `Save draft ${String(data.name)} (${String(data.showId)}) as “${String(data.versionName)}”, version ${Number(data.expectedVersion) + 1}?`
       : deviceApproval ?? showText ?? `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
     if (effect.length > 1024) return {code: 'capacity'};
-    return {proposal, text: effect, ...(targets === undefined ? {} : {targets}), ...(artworkRequestId === undefined ? {} : {artworkRequestId})};
+    return {proposal, text: effect, ...(targets === undefined ? {} : {targets}), ...(knownTargets === undefined ? {} : {knownTargets}),
+      ...(artworkRequestId === undefined ? {} : {artworkRequestId})};
   }
 
   async #coreSetting(family: CatalogFamily, recordFamily: string, target: string, data: Record<string, unknown>,

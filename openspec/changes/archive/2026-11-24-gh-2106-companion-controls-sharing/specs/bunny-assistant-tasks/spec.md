@@ -15,6 +15,12 @@ For an explicit request by the authorized owner in private Conversation, each co
 - **THEN** Conversation asks for the missing setting or the exact device
 - **AND** the owner's answer completes the original request and one tracked command dispatches without another approval
 
+#### Scenario: Matching words alone do not authorize effects
+
+- **WHEN** a model requests brightness using a number the owner supplied for a different property or a relative change
+- **THEN** no brightness command is sent
+- **AND** a saved-art show must match every requested recipient and the requested status visibility
+
 #### Scenario: A stored admission has no reply after restart
 
 - **WHEN** the runtime restarts after admitting the command but before receiving its reply
@@ -28,6 +34,13 @@ Before disclosing retained fields, the owning module SHALL check the current gra
 
 - **WHEN** the owner withdraws a grant for a retained record
 - **THEN** a later read cannot return the record, its fields or its contribution to counts through a different companion, task, tool, page or ungranted destination
+
+#### Scenario: Revocation follows saved answers and selected briefs
+
+- **WHEN** a later turn repeats an earlier tool-derived answer and the owner revokes its source field
+- **THEN** the derived answer cannot reach a page, a new model prompt or read-aloud delivery after restart
+- **AND** an approved brief with a source denied to the worker does not leave through a new or queued dispatch
+- **AND** a retained question cannot expose an answer whose own message grant was revoked
 
 ## MODIFIED Requirements
 

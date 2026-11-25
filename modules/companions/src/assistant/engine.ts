@@ -16,7 +16,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {ALL_WEMO_PLUGS, authorizesControl, missingMode, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
+import {ALL_WEMO_PLUGS, authorizesControl, missingBrightness, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {buildContext, type ContextEntry} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
@@ -99,7 +99,8 @@ export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSig
 /** An engine refusal; `closingReason` is fixed text for the owner, such as the spend limit a new turn met. */
 class Fault extends Error {constructor(readonly code: ErrorCode, readonly closingReason?: string) {super(code);}}
 /** What one call answered: its text, its reported usage total, and a paid provider's usage by price class. */
-type Answer = {text: string; units: number | null; usage?: TokenUsage | null; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[]; disclosures?: readonly DisclosedField[]};
+type Answer = {text: string; units: number | null; usage?: TokenUsage | null; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[];
+  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true};
 /** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
 type Budget = {units: number; unit: string; spend?: {model: string; inputUnits: number; outputUnits: number}};
 function fail(code: ErrorCode): never {throw new Fault(code);}
@@ -111,11 +112,14 @@ function conversationMessageId(taskId: string, item: TurnInput['transcript'][num
   return item.role === 'owner' ? `${taskId}-prompt` : undefined;
 }
 
-function recordDisclosures(access: FieldAccess, disclosures: DisclosedField[]): FieldAccess {
+const MAX_DISCLOSED_FIELDS = 512;
+type DisclosureLedger = {fields: DisclosedField[]; incompleteDisclosures?: true};
+function recordDisclosures(access: FieldAccess, ledger: DisclosureLedger): FieldAccess {
   return (source, field, record) => {
     if (!access(source, field, record)) return false;
-    if (!disclosures.some(item => item.source === source && item.field === field && item.record === record)) {
-      disclosures.push({source, field, ...(record === undefined ? {} : {record})});
+    if (!ledger.fields.some(item => item.source === source && item.field === field && item.record === record)) {
+      if (ledger.fields.length === MAX_DISCLOSED_FIELDS) ledger.incompleteDisclosures = true;
+      else ledger.fields.push({source, field, ...(record === undefined ? {} : {record})});
     }
     return true;
   };
@@ -288,9 +292,14 @@ export class AssistantEngine {
   /** Each profile's current conversation whose queue holds messages (Hub #2030): how many, and whether and why it is held. */
   #queues(): AssistantQueueSummary[] {
     return profiles.flatMap(owner => {
-      const conversationId = this.store.conversation(owner), messages = conversationId === undefined ? 0 : this.store.queue.count(conversationId);
-      if (conversationId === undefined || messages === 0) return [];
-      const hold = this.store.queue.hold(conversationId);
+      const conversationId = this.store.conversation(owner);
+      if (conversationId === undefined) return [];
+      const discover = this.#fields(owner, 'discovery', 'private-conversation'), read = this.#fields(owner, 'read', 'private-conversation');
+      if (!discover('conversation', 'index', conversationId)) return [];
+      const stored = this.store.queue.messages(conversationId);
+      const messages = stored.filter(message => discover('conversation', 'index', message.id) && read('conversation', 'text', message.id)).length;
+      if (messages === 0) return [];
+      const hold = messages === stored.length && read('conversation', 'details', conversationId) ? this.store.queue.hold(conversationId) : null;
       return [{conversationId, profile: owner, messages, held: hold?.reason ?? null, code: hold?.code ?? null}];
     });
   }
@@ -508,6 +517,13 @@ export class AssistantEngine {
   #queueRevision(revision: number, conversationId: string | undefined): void {
     if (revision > this.store.meta().revision || (conversationId !== undefined && this.store.queue.changedAt(conversationId) > revision)) fail('revision-conflict');
   }
+  canSpeak(taskId: string, messageId: string): boolean {
+    const task = this.store.task(taskId);
+    if (task === undefined || this.store.savedMessage(taskId, messageId)?.role !== 'assistant' || !spokenAloud(task.profile)) return false;
+    const read = this.#fields(task.profile, 'read', 'private-conversation'), speech = this.#fields(task.profile, 'read', 'conversation-speech');
+    const allowed: FieldAccess = (source, field, record) => read(source, field, record) && speech(source, field, record);
+    return allowed('conversation', 'text', task.conversationId) && allowed('conversation', 'text', messageId) && this.#replayable(taskId, allowed);
+  }
   /**
    * Offers one durable assistant message to be spoken through the companions speech endpoint. Text over the browser driver's
    * bound stays on the page unspoken rather than cut; the coordinator decides availability, Quiet and one-at-a-time.
@@ -516,8 +532,7 @@ export class AssistantEngine {
     if (this.options.speak === undefined || this.#closed || this.context.signal.aborted || text.trim() === '' || text.length > LIMITS.spokenChars) return;
     try {
       const task = this.#task(taskId);
-      // A quacks-only persona's English text is its intended meaning, never spoken English (Hub #2026).
-      if (!spokenAloud(task.profile)) return;
+      if (!this.canSpeak(taskId, messageId)) return;
       this.options.speak({taskId, messageId, text, validUntilMs: this.context.clock.now() + SPOKEN_REPLY_TTL_MS}, key, parent, task.conversationId);
     }
     catch { /* Speech is an output of the saved message, never a condition of it. */ }
@@ -626,6 +641,7 @@ export class AssistantEngine {
         const message = this.store.savedMessage(data.taskId ?? fail('invalid-request'), data.messageId ?? fail('invalid-request')) ?? fail('not-found');
         if (message.role !== 'assistant') fail('invalid-request');
         if (!spokenAloud(this.#task(data.taskId ?? fail('invalid-request')).profile)) throw new Fault('invalid-request', UNSPOKEN);
+        if (!this.canSpeak(data.taskId ?? fail('invalid-request'), message.id)) fail('forbidden');
         spoken = message; return undefined;
       }
       const task = this.#task(data.taskId ?? fail('invalid-request'));
@@ -915,13 +931,18 @@ export class AssistantEngine {
         const current = this.store.conversation(selected), requested = query.conversationId ?? current;
         if (requested !== undefined && requested !== current && !this.store.owns(selected, requested)) return errorBody('not-found');
         const queue = this.store.queue.document(selected, requested, this.store.meta().revision, requested === current);
-        const visible = (message: {id: string}) => fields('conversation', 'text', message.id);
-        return {type: 'application/json', bytes: Buffer.from(JSON.stringify({...queue, messages: queue.messages.filter(visible), steers: queue.steers.filter(visible)}))};
+        const discover = this.#fields(selected, 'discovery', 'private-conversation');
+        const visible = (message: {id: string}) => discover('conversation', 'index', message.id) && fields('conversation', 'text', message.id);
+        const messages = queue.messages.filter(visible), steers = queue.steers.filter(visible);
+        const held = messages.length === queue.messages.length && steers.length === queue.steers.length &&
+          fields('conversation', 'details', requested) ? queue.held : null;
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify({...queue, held, messages, steers}))};
       }
       const visibility = {
         shows: (message: {id: string; role: string; taskId: string}) => fields('conversation', 'text', message.id) &&
           (message.role === 'owner' || this.#replayable(message.taskId, fields)),
         attachment: (requestId: string) => fields('artwork', 'attachment', requestId),
+        task: (taskId: string) => fields('conversation', 'details', taskId),
       };
       if (query.view === 'recent') {
         if (Object.keys(query).some(key => !['profile', 'view', 'before', 'conversationId'].includes(key)) ||
@@ -1064,8 +1085,18 @@ export class AssistantEngine {
     }, parent);
   }
   #fields(companion: AssistantProfile, purpose: ShareQuery['purpose'], destination: ShareQuery['destination'] = this.provider(companion).name): FieldAccess {
-    return accessFor(this.options.share, {caller: destination === 'private-conversation' || destination === 'coding-worker' ? 'owner' : 'companion',
+    return accessFor(this.options.share, {caller: destination === 'private-conversation' || destination === 'conversation-speech' || destination === 'coding-worker' ? 'owner' : 'companion',
       companion, purpose, destination});
+  }
+  canShareCodingBrief(taskId: string, repository: string): boolean {
+    const task = this.store.task(taskId);
+    if (task === undefined) return false;
+    const target = this.#fields(task.profile, 'brief', 'coding-worker');
+    if (!target('coding', 'repository', repository) || !target('coding', 'brief', repository)) return false;
+    const current = this.#modelFields(task.profile), share = this.options.share;
+    return this.#replayable(taskId, (source, field, record) => current(source, field, record) &&
+      (share?.allowsDerived?.({caller: 'owner', companion: task.profile, purpose: 'brief', destination: 'coding-worker', source, field,
+        ...(record === undefined ? {} : {record})}) ?? (share === undefined || share.revokesFields === false || target(source, field, record))));
   }
   #modelFields(companion: AssistantProfile): FieldAccess {
     const prompt = this.#fields(companion, 'prompt'), read = this.#fields(companion, 'read'), discover = this.#fields(companion, 'discovery');
@@ -1073,8 +1104,8 @@ export class AssistantEngine {
   }
   #replayable(taskId: string, access: FieldAccess): boolean {
     const acceptsOldRecords = this.options.share === undefined || this.options.share.revokesFields === false;
-    return this.store.calls(taskId).every(call => call.disclosures === undefined
-      ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => access(field.source, field.field, field.record)));
+    return this.store.calls(taskId).every(call => call.incompleteDisclosures !== true && (call.disclosures === undefined
+      ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => access(field.source, field.field, field.record))));
   }
   #core(): CoreCopy {return this.options.core?.() ?? {sessions: [], mode: undefined, synced: false};}
   /**
@@ -1120,8 +1151,8 @@ export class AssistantEngine {
     const id = `${state.taskId}-step-${String(state.step)}`;
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
     const paid = provider.name !== 'synthetic';
-    const disclosures: DisclosedField[] = [];
-    const fields = recordDisclosures(this.#fields(task.profile, 'prompt'), disclosures);
+    const ledger: DisclosureLedger = {fields: []};
+    const fields = recordDisclosures(this.#fields(task.profile, 'prompt'), ledger);
     const modelFields = this.#modelFields(task.profile);
     if (!fields('conversation', 'text', task.conversationId)) throw new Fault('forbidden', 'This conversation is not shared with the configured model.');
     let request: TurnInput | undefined;
@@ -1131,11 +1162,13 @@ export class AssistantEngine {
     // unread, and a replayed node whose call was admitted takes none again.
     const text = await this.#call(state.taskId, state.step, 'model', signal => {
       const allow = this.#fields(task.profile, 'prompt');
-      if (disclosures.some(field => !allow(field.source, field.field, field.record)) || includesReplay && !this.#replayable(task.id, modelFields)) {
+      if (ledger.fields.some(field => !allow(field.source, field.field, field.record)) || includesReplay && !this.#replayable(task.id, modelFields) ||
+        ledger.incompleteDisclosures === true && this.options.share !== undefined && this.options.share.revokesFields !== false) {
         throw new Fault('forbidden', 'Sharing changed before the configured model could receive this turn.');
       }
       return provider.turn(request ?? fail('internal'), signal)
-        .then(reply => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null, disclosures}));
+        .then((reply): Answer => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null, disclosures: ledger.fields,
+          ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})}));
     }, undefined, current => {
       this.#drain(current);
       const visible = (item: TurnInput['transcript'][number]) => fields('conversation', 'text', conversationMessageId(current.id, item));
@@ -1172,6 +1205,7 @@ export class AssistantEngine {
     }
     let question: Question | undefined;
     let targets: readonly (readonly string[])[] | undefined;
+    let knownTargets: readonly (readonly string[])[] | undefined;
     let artworkRequestId: string | undefined;
     let direct: BoundControl | undefined;
     const command = call === undefined ? undefined : catalogCommand(call.name);
@@ -1203,14 +1237,24 @@ export class AssistantEngine {
       else {
         question = {id, kind: 'approval', text: selected.text, answer: null, call: call.id, proposal: selected.proposal};
         targets = selected.targets;
+        knownTargets = selected.knownTargets;
         artworkRequestId = selected.artworkRequestId;
+        const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
+        const matches = namedControlTargets(selected.proposal, instruction, knownTargets ?? []);
+        if (matches.length > 1 && this.#controlClarification(task)?.answer == null) {
+          const read = this.#fields(task.profile, 'read', 'private-conversation'), prompt = this.#modelFields(task.profile);
+          const choices = matches.flatMap(([id]) => id !== undefined && read('devices', 'index', id) && prompt('devices', 'index', id) ? [id] : []).slice(0, 4);
+          const text = choices.length === 0 ? 'Which device do you mean? Give its exact device ID.'
+            : `Which device do you mean? Matching device IDs: ${choices.join(', ')}.`;
+          question = {id, kind: 'clarification', text, answer: null, call: call.id, proposal: null};
+        }
       }
     } else if ((next === 'ask' || next === 'approve') && call !== undefined) {
       question = this.#question(state.taskId, call, copy);
     }
     const proposal = question?.proposal;
     if (call !== undefined && question !== undefined && proposal != null && proposal.family !== 'coding-dispatch' && command !== 'art-request') {
-      direct = this.#bindControl(task, proposal, call, question.text, state.step + 1, targets, artworkRequestId);
+      direct = this.#bindControl(task, proposal, call, question.text, state.step + 1, targets, artworkRequestId, false, knownTargets);
       next = direct === undefined ? 'tool' : 'act';
       if (direct === undefined) result = 'refused: this control needs a clear current owner request naming the action, target and setting.';
       question = undefined;
@@ -1273,6 +1317,9 @@ export class AssistantEngine {
       const task = this.#task(taskId);
       const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
       const answer = task.question?.kind === 'clarification' ? task.question.answer : null;
+      if (call.name === SET_LIFX_BRIGHTNESS && answer === null && missingBrightness(instruction)) {
+        return {id, text: 'What brightness percentage do you want?', answer: null, kind: 'clarification', call: call.id, proposal: null};
+      }
       const subject = powerSubject(instruction);
       const addressed = subject !== undefined && answer === null ? devices?.filter(device =>
         subject === normalizedControlText(device.id) || subject === normalizedControlText(deviceLabel(device))) : undefined;
@@ -1296,16 +1343,21 @@ export class AssistantEngine {
     const proposal: Proposal = {family: 'mode-set', target: 'hub', data: {mode}, expectedRevision: copy.mode.revision};
     return {id, text: `Set the Hub mode to ${proposal.data.mode}?`, answer: null, kind: 'approval', call: call.id, proposal};
   }
+  #controlClarification(task: Task): Question | undefined {
+    const latest = task.transcript.filter(item => item.role === 'owner').at(-1);
+    const afterInstruction = task.transcript.slice(latest === undefined ? 0 : task.transcript.lastIndexOf(latest) + 1);
+    return task.question?.kind === 'clarification' && afterInstruction.some(item =>
+      item.role === 'tool' && 'effect' in item && item.effect === `${task.question?.id}-answer`) ? task.question : undefined;
+  }
   #bindControl(task: Task, proposal: BoundControl['proposal'], call: ToolCall, text: string, ordinal: number,
-    targets: readonly (readonly string[])[] | undefined, artworkRequestId?: string, explicitGroup = false): BoundControl | undefined {
+    targets: readonly (readonly string[])[] | undefined, artworkRequestId?: string, explicitGroup = false,
+    knownTargets: readonly (readonly string[])[] = []): BoundControl | undefined {
     if (this.store.queue.steers(task.id).length > 0) return undefined;
     const inputs = task.transcript.filter(item => item.role === 'owner');
     const latest = inputs.at(-1);
     const instruction = latest?.text ?? task.prompt;
     const sourceId = latest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, latest) ?? `${task.id}-prompt`;
-    const afterInstruction = task.transcript.slice(latest === undefined ? 0 : task.transcript.lastIndexOf(latest) + 1);
-    const clarification = task.question?.kind === 'clarification' && afterInstruction.some(item =>
-      item.role === 'tool' && 'effect' in item && item.effect === `${task.question?.id}-answer`) ? task.question : undefined;
+    const clarification = this.#controlClarification(task);
     const answer = clarification?.answer ?? '';
     const ownerMessageIds = clarification !== undefined && clarification.answer !== null ? [sourceId, `${clarification.id}-answer`] : [sourceId];
     if (this.store.calls(task.id).some(receipt => {
@@ -1319,7 +1371,6 @@ export class AssistantEngine {
     const knownArtwork = artworkRequestId !== undefined && (this.store.call(artworkRequestId)?.taskId === task.id ||
       attached?.requestId === artworkRequestId) && this.#modelFields(task.profile)('artwork', 'attachment', artworkRequestId);
     const owner = deviceToolOwner(call.name);
-    let knownTargets: readonly (readonly string[])[] = [];
     if (targets === undefined && owner !== undefined) {
       const devices = this.options.devices?.(owner);
       knownTargets = devices?.map(device => [device.id, deviceLabel(device)]) ?? [];
@@ -1390,8 +1441,8 @@ export class AssistantEngine {
     const modelFields = this.#modelFields(task.profile);
     const result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
       const now = this.context.clock.now();
-      const disclosures: DisclosedField[] = [];
-      const access = recordDisclosures(modelFields, disclosures);
+      const ledger: DisclosureLedger = {fields: []};
+      const access = recordDisclosures(modelFields, ledger);
       let text: string;
       if (owner !== undefined) {
         const name = call.input.device;
@@ -1404,11 +1455,13 @@ export class AssistantEngine {
         const evidence: ActionEvidence[] = [];
         text = await this.#catalog().read(call, parent, item => evidence.push(item), access,
           id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id)) ?? fail('invalid-state');
-        return {text, units: 0, evidence, disclosures};
+        return {text, units: 0, evidence, disclosures: ledger.fields, ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})};
       } else {
         text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now, access) : fail('invalid-state');
       }
-      return {text, units: 0, disclosures};
+      const answer: Answer = {text, units: 0, disclosures: ledger.fields};
+      if (ledger.incompleteDisclosures === true) answer.incompleteDisclosures = true;
+      return answer;
     });
     await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result, ok: true, effect: id}, active.span.context);
     return {step: state.step + 1};
@@ -1505,8 +1558,7 @@ export class AssistantEngine {
         this.store.artReply(current, id, artDescription, this.context.clock.now(), Array.isArray(displays) && displays.every((v): v is string => typeof v === 'string') ? displays : undefined);
       });
     } else {
-      const fields = this.#fields(task.profile, 'brief', 'coding-worker');
-      if (!fields('coding', 'repository', proposal.data.repository) || !fields('coding', 'brief', proposal.data.repository)) return refuse('refused', 'Coding brief sharing is not permitted.');
+      if (!this.canShareCodingBrief(task.id, proposal.data.repository)) return refuse('refused', 'Coding brief sharing is not permitted.');
       const delegate = this.options.delegate;
       if (delegate === undefined) return refuse('refused', 'This tool is not permitted.');
       // The task waits on the delegation before the hand-off leaves, so a worker's word that comes back faster than this
@@ -1671,6 +1723,7 @@ export class AssistantEngine {
         // Whether a steer reached the task before this model call's answer was saved (Hub #2031); one after it is late.
         if (kind === 'model' && this.store.queue.steers(taskId).length > 0) call.steered = true;
         if (reply.disclosures !== undefined) call.disclosures = reply.disclosures;
+        if (reply.incompleteDisclosures === true) call.incompleteDisclosures = true;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
         for (const confirmation of reply.confirmations ?? []) this.store.saveConfirmation(confirmation);
         for (const evidence of reply.evidence ?? []) this.store.observeAction(taskId, evidence);

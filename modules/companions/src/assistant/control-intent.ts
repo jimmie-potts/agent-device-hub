@@ -1,5 +1,4 @@
 import {isDeepStrictEqual} from 'node:util';
-import type {CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {Proposal} from './history-contract.js';
 
 export type BoundControl = {
@@ -15,46 +14,6 @@ export const normalizedControlText = (value: string): string => value.toLowerCas
 export const containsControlValue = (input: string, value: string): boolean =>
   normalizedControlText(value) !== '' && ` ${normalizedControlText(input)} `.includes(` ${normalizedControlText(value)} `);
 
-const actionWords: Readonly<Record<CatalogFamily, RegExp>> = {
-  'power-set': /^(?:turn|switch|power|shut)\b/u,
-  'brightness-set': /^(?:set|change|dim|brighten)\b/u,
-  'device-mode-set': /^(?:set|change|switch)\b/u,
-  'lifx-color-set': /^(?:set|change)\b/u,
-  'lifx-temperature-set': /^(?:set|change)\b/u,
-  'scene-activate': /^(?:activate|use|apply|start)\b/u,
-  'moment-play': /^(?:play|start|show)\b/u,
-  'media-start': /^(?:play|start|show)\b/u,
-  'media-control': /^(?:play|start|stop|pause|resume|skip|next|previous)\b/u,
-  'pixoo-media-show': /^(?:play|show|display)\b/u,
-  'pixoo-monitor-set': /^(?:set|change|update)\b/u,
-  'pixoo-now-playing-set': /^(?:set|change|show|clear)\b/u,
-  'pixoo-moments-set': /^(?:set|change|enable|disable)\b/u,
-  'pixoo-playlist-change': /^(?:add|remove|rename|delete|edit|create|update|change|reorder)\b/u,
-  'pixoo-asset-change': /^(?:add|remove|rename|delete|edit|update|change)\b/u,
-  'pixoo-notice-dismiss': /^(?:dismiss|clear)\b/u,
-  'nanoleaf-animation-play': /^(?:play|start|show)\b/u,
-  'nanoleaf-wall-edit': /^(?:edit|add|remove|delete|update|change|set)\b/u,
-  'nanoleaf-machine-edit': /^(?:edit|add|remove|delete|update|change|set)\b/u,
-  'nanoleaf-favorite-edit': /^(?:edit|add|remove|delete|update|change|set)\b/u,
-  'nanoleaf-notice-acknowledge': /^(?:acknowledge|clear|dismiss)\b/u,
-  'nanoleaf-reactive-preset-save': /^(?:save|create|update)\b/u,
-  'wemo-hold-release': /^(?:release|clear)\b/u,
-  'mode-override-set': /^(?:set|change|switch|enter|put)\b/u,
-  'notice-clear': /^(?:clear|acknowledge|dismiss)\b/u,
-  'session-label-set': /^(?:name|rename|label|set|clear)\b/u,
-  'inbox-handle': /^(?:dismiss|send again|retry)\b/u,
-  'home-layout-set': /^(?:set|change|update)\b/u,
-  'lighting-layout-set': /^(?:set|change|update)\b/u,
-  'playback-layout-set': /^(?:set|change|update)\b/u,
-  'art-catalog-edit': /^(?:favorite|unfavorite|delete|reuse|rate)\b/u,
-  'playback-control': /^(?:play|stop|pause|resume|skip|next|previous)\b/u,
-  'volcano-session-gap': /^(?:set|change)\b/u,
-  'art-request': /^$/u,
-  'art-show': /^(?:show|display|put)\b/u,
-  'nanoleaf-show-save': /^save\b/u,
-  'music-lighting-control': /^(?:play|start|stop|pause|resume|seek)\b/u,
-};
-
 export const ALL_WEMO_PLUGS = 'all wemo plugs';
 
 function explicitWords(text: string): string | undefined {
@@ -62,7 +21,7 @@ function explicitWords(text: string): string | undefined {
   const request = /^(?:(?:please|could you|would you|can you|will you) )+/u;
   if (text.trimEnd().endsWith('?') && !request.test(addressed)) return undefined;
   const words = addressed.replace(request, '');
-  if (/\b(?:if|hypothetically|example|suggest|whether|should|not|never|don t|instead of|would happen|tomorrow|later|after|when|unless|before|either|or|minus|negative)\b/u.test(words)
+  if (/\b(?:if|hypothetically|example|suggest|whether|should|not|never|don t|instead of|would happen|tomorrow|later|after|when|unless|before|either|or|minus|negative|except|without|other than|avoid)\b/u.test(words)
     || /["“”`]|(?:^|\s)[-−]\d/u.test(text)) return undefined;
   return words;
 }
@@ -84,54 +43,126 @@ export function missingMode(text: string): boolean {
   const words = explicitWords(text);
   return words !== undefined && /^(?:set|change|switch) (?:the )?(?:hub )?mode(?: to)?$/u.test(words);
 }
-const namedNumber = (input: string): number | undefined => {
-  const matches = [...input.matchAll(/(?:^| )(\d+)(?= |$)/gu)];
-  return matches.length === 1 ? Number(matches[0]?.[1]) : undefined;
-};
-const authorityFields = new Set(['guards', 'generation', 'heldRequestId', 'expectedRevision', 'expectedVersion', 'timeline']);
-function literalMatches(input: string, data: unknown): boolean {
-  if (typeof data === 'string' || typeof data === 'number') return containsControlValue(input, String(data));
-  if (typeof data === 'boolean') return containsControlValue(input, String(data));
-  if (Array.isArray(data)) return data.length > 0 && data.every(value => literalMatches(input, value));
-  if (typeof data !== 'object' || data === null) return false;
-  return Object.entries(data).every(([key, value]) => authorityFields.has(key) || literalMatches(input, value));
-}
 
-function settingMatches(instruction: string, answer: string, proposal: BoundControl['proposal'], knownArtwork: boolean): boolean {
+export function missingBrightness(text: string): boolean {
+  const words = explicitWords(text);
+  return words !== undefined && /^(?:set|change) .+ brightness(?: to| at)?$/u.test(words);
+}
+type Setting = {subject?: string; recipients?: readonly string[]};
+const optionalArticle = (value: string) => value.replace(/^(?:the|my) /u, '');
+const matchNumber = (expression: RegExp, input: string, requested: unknown): Setting | undefined => {
+  const match = expression.exec(input);
+  return match?.[1] !== undefined && match[2] !== undefined && Number(match[2]) === requested ? {subject: optionalArticle(match[1])} : undefined;
+};
+
+function setting(instruction: string, answer: string, rawInstruction: string, rawAnswer: string, proposal: BoundControl['proposal'], knownArtwork: boolean): Setting | undefined {
   const data: Readonly<Record<string, unknown>> = proposal.data;
   const input = `${instruction} ${answer}`.trim();
   const family = proposal.family === 'catalog-action' ? proposal.command : proposal.family;
-  if (family === 'power-set') return typeof data.on === 'boolean' && requestedPower(instruction)?.on === data.on;
-  if (family === 'mode-set' || family === 'mode-override-set') {
-    if (family === 'mode-set') {
-      const explicit = /^(?:set|change|switch|enter|put) (?:(?:the )?hub )?(?:mode )?(?:to |in |into )?(work|free|quiet)(?: mode)?(?: now| please)?$/u.exec(input);
-      return explicit?.[1] === data.mode;
+  switch (family) {
+    case 'power-set': {
+      const power = requestedPower(instruction);
+      return power !== undefined && power.on === data.on ? {subject: power.subject} : undefined;
     }
-    const possibilities = ['work', 'free', 'quiet'].filter(mode => containsControlValue(input, mode));
-    return possibilities.length === 1 && possibilities[0] === data.mode;
+    case 'mode-set': {
+      const mode = /^(?:set|change|switch|enter|put) (?:(?:the )?hub )?(?:mode )?(?:to |in |into )?(work|free|quiet)(?: mode)?(?: now| please)?$/u.exec(input);
+      return mode?.[1] !== undefined && mode[1] === data.mode ? {} : undefined;
+    }
+    case 'mode-override-set':
+    case 'device-mode-set': {
+      const mode = /^(?:set|change|switch) (.+?) (?:mode to|to) ([a-z]+) mode(?: now| please)?$/u.exec(input)
+        ?? /^(?:set|change|switch) (.+?) mode to ([a-z]+)(?: now| please)?$/u.exec(input);
+      return mode?.[1] !== undefined && mode[2] === data.mode ? {subject: optionalArticle(mode[1])} : undefined;
+    }
+    case 'brightness-set':
+      return matchNumber(/^(?:set|change) (.+?) brightness (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u, instruction, data.percent)
+        ?? matchNumber(/^(?:set|change) (?:the )?brightness (?:of|on|for) (.+?) (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u, instruction, data.percent)
+        ?? matchNumber(/^(?:set|change) (.+?) brightness (?:to )?(\d+)(?: percent)?$/u, input, data.percent);
+    case 'lifx-temperature-set':
+      return matchNumber(/^(?:set|change) (.+?) (?:color )?temperature to (\d+) kelvin(?: now| please)?$/u, input, data.kelvin);
+    case 'volcano-session-gap':
+      return matchNumber(/^(?:set|change) (.+?) session gap to (\d+) minutes?(?: now| please)?$/u, input, data.gapMinutes);
+    case 'lifx-color-set': {
+      const color = /^(?:set|change) (.+?) (?:color )?to hue (\d+)(?: degrees?)? (?:and )?saturation (\d+)(?: percent)?(?: now| please)?$/u.exec(input);
+      return color?.[1] !== undefined && Number(color[2]) === data.hue && Number(color[3]) === data.saturation ? {subject: optionalArticle(color[1])} : undefined;
+    }
+    case 'session-label-set': {
+      if (data.label === null) {
+        const clear = /^(?:clear|remove) (?:the )?label (?:on|for|of) (?:session )?(.+)$/u.exec(instruction);
+        return clear?.[1] === undefined ? undefined : {subject: optionalArticle(clear[1])};
+      }
+      const raw = rawAnswer === '' ? rawInstruction : `${rawInstruction} ${rawAnswer}`;
+      const rename = /^(?:(?:please|could you|would you|can you) )*(?:rename|label) (?:the )?session (.+?) (?:to|as) (.+?)[.?!]?$/iu.exec(raw.trim());
+      return rename?.[1] !== undefined && rename[2] === data.label ? {subject: optionalArticle(normalizedControlText(rename[1]))} : undefined;
+    }
+    case 'inbox-handle': {
+      const request = /^(dismiss|send again|retry) (?:the )?(?:inbox (?:item|operation) )?(.+)$/u.exec(instruction);
+      const action = request?.[1] === 'dismiss' ? 'dismiss' : 'send-again';
+      return request?.[2] !== undefined && action === data.action ? {subject: request[2]} : undefined;
+    }
+    case 'wemo-hold-release': {
+      const request = /^(?:release|clear) (?:the )?hold (?:on|for) (.+)$/u.exec(instruction);
+      return request?.[1] === undefined ? undefined : {subject: optionalArticle(request[1])};
+    }
+    case 'art-show': {
+      const keepStatus = /(?: and)? keep status visible$/u;
+      const requestedKeep = keepStatus.test(instruction);
+      const request = /^(?:show|display|put) (.+?) (?:on|in) (.+)$/u.exec(instruction.replace(keepStatus, ''));
+      if (request?.[1] === undefined || request[2] === undefined || typeof data.artworkId !== 'string' ||
+        (data.coversStatus === false) !== requestedKeep) return undefined;
+      const artwork = request[1];
+      if (normalizedControlText(data.artworkId) !== optionalArticle(artwork) &&
+        !(knownArtwork && /^(?:it|(?:this|that) (?:artwork|animation|image|picture))$/u.test(artwork))) return undefined;
+      const recipients = request[2].split(' and ').map(optionalArticle);
+      return {recipients};
+    }
+    case 'nanoleaf-show-save': {
+      const request = /^(?:please )?save draft (.+?) (?:revision \d+ )?as (.+)$/iu.exec(rawInstruction.trim());
+      return request?.[1] !== undefined && typeof data.name === 'string' && containsControlValue(request[1], data.name)
+        && request[2] === data.versionName ? {} : undefined;
+    }
+    case 'scene-activate':
+    case 'nanoleaf-animation-play':
+    case 'media-start': {
+      const content = /^(?:activate|use|play|start|show) (?:the )?(scene|animation|playlist) (.+?) on (.+)$/u.exec(instruction);
+      if (content?.[2] === undefined || content[3] === undefined) return undefined;
+      const selected = family === 'scene-activate' && content[1] === 'scene' ? data.sceneId
+        : family === 'nanoleaf-animation-play' && content[1] === 'animation' ? data.animation
+          : family === 'media-start' && content[1] === 'playlist' ? data.playlistId : undefined;
+      return typeof selected === 'string' && normalizedControlText(selected) === content[2] ? {subject: optionalArticle(content[3])} : undefined;
+    }
+    case 'playback-control': {
+      const request = /^(play|stop|pause|resume|next|previous) (?:the )?(?:playback on )?(.+)$/u.exec(instruction);
+      return request?.[2] !== undefined && request[1] === data.action ? {subject: optionalArticle(request[2])} : undefined;
+    }
+    case 'music-lighting-control': {
+      const request = /^(stop|pause|resume) (?:the )?light show on (.+)$/u.exec(instruction);
+      const verb = request?.[1];
+      return request?.[2] !== undefined && (verb === 'stop' ? verb : `${verb}-show`) === data.action ? {subject: optionalArticle(request[2])} : undefined;
+    }
+    // Structured edits require named fields. A list of matching words cannot bind their effect.
+    case 'art-catalog-edit':
+    case 'art-request':
+    case 'home-layout-set':
+    case 'lighting-layout-set':
+    case 'media-control':
+    case 'moment-play':
+    case 'nanoleaf-favorite-edit':
+    case 'nanoleaf-machine-edit':
+    case 'nanoleaf-notice-acknowledge':
+    case 'nanoleaf-reactive-preset-save':
+    case 'nanoleaf-wall-edit':
+    case 'notice-clear':
+    case 'pixoo-asset-change':
+    case 'pixoo-media-show':
+    case 'pixoo-moments-set':
+    case 'pixoo-monitor-set':
+    case 'pixoo-notice-dismiss':
+    case 'pixoo-now-playing-set':
+    case 'pixoo-playlist-change':
+    case 'playback-layout-set':
+      return undefined;
   }
-  if (family === 'brightness-set') {
-    if (/\b(?:by|less|more|higher|lower|brighter|dimmer)\b/u.test(input)) return false;
-    const explicit = /\b(?:to|at) (\d+)(?: percent)?(?: please| now)?$/u.exec(input);
-    return (explicit?.[1] === undefined ? namedNumber(input) : Number(explicit[1])) === data.percent;
-  }
-  if (family === 'lifx-temperature-set') return namedNumber(input) === data.kelvin;
-  if (family === 'volcano-session-gap') return namedNumber(input) === data.gapMinutes;
-  if (family === 'session-label-set' && data.label === null) return /^(?:clear|remove)\b/u.test(input) && containsControlValue(input, 'label');
-  if (family === 'inbox-handle' && data.action === 'send-again') return /^(?:send again|retry)\b/u.test(input);
-  if (family === 'wemo-hold-release') return containsControlValue(input, 'hold');
-  if (family === 'art-show') return typeof data.artworkId === 'string' &&
-    (containsControlValue(input, data.artworkId) || (knownArtwork && /\b(?:it|that (?:artwork|animation|image|picture)|this (?:artwork|animation|image|picture))\b/u.test(input)));
-  if (family === 'nanoleaf-show-save') return typeof data.name === 'string' && containsControlValue(input, data.name) &&
-    typeof data.versionName === 'string' && containsControlValue(input, data.versionName);
-  if (family === 'playback-control') return typeof data.action === 'string' && input.startsWith(data.action.replaceAll('-', ' '));
-  if (family === 'music-lighting-control') {
-    if (typeof data.action !== 'string' || !containsControlValue(input, data.action.replace(/-show$/u, ''))) return false;
-    if (data.action === 'start-show') return literalMatches(input, {showId: data.showId, version: data.version}) &&
-      (data.positionMs === 0 || literalMatches(input, data.positionMs)) && (data.startDelayMs === 0 || literalMatches(input, data.startDelayMs));
-    return data.action !== 'seek-show' || literalMatches(input, data.positionMs);
-  }
-  return literalMatches(input, data);
 }
 
 function exactCatalogRequest(proposal: BoundControl['proposal'], instruction: string): boolean {
@@ -153,6 +184,12 @@ function exactCatalogRequest(proposal: BoundControl['proposal'], instruction: st
   } catch {return false;}
 }
 
+export function namedControlTargets(proposal: BoundControl['proposal'], instruction: string, targets: readonly (readonly string[])[]): readonly (readonly string[])[] {
+  const words = explicitWords(instruction);
+  const subject = words === undefined ? undefined : setting(words, '', instruction, '', proposal, false)?.subject;
+  return subject === undefined ? [] : targets.filter(aliases => aliases.some(name => normalizedControlText(name) === subject));
+}
+
 /** The current owner supplies the action and setting. A clarification can resolve a detail in that request. */
 export function authorizesControl(proposal: BoundControl['proposal'], instruction: string, answer: string,
   targets: readonly (readonly string[])[], precedingOwnerText: string, knownTargets: readonly (readonly string[])[] = [], knownArtwork = false, explicitGroup = false): boolean {
@@ -163,13 +200,17 @@ export function authorizesControl(proposal: BoundControl['proposal'], instructio
     ? /\band ((?:show|display|put) .+)$/u.exec(requested)?.[1] ?? requested : requested;
   const choice = answer === '' ? '' : explicitWords(answer);
   if (choice === undefined) return false;
-  const action = proposal.family === 'mode-set' ? /^(?:set|change|switch|enter|put)\b/u
-    : actionWords[proposal.family === 'catalog-action' ? proposal.command : proposal.family];
-  if (!action.test(words) || !settingMatches(words, choice, proposal, knownArtwork)) return false;
-  const power = proposal.family === 'power-set' || (proposal.family === 'catalog-action' && proposal.command === 'power-set')
-    ? requestedPower(words) : undefined;
-  if (power?.subject === ALL_WEMO_PLUGS) return explicitGroup && proposal.family === 'power-set' && 'owner' in proposal;
-  const namesTarget = (name: string): boolean => power === undefined ? containsControlValue(words, name) : power.subject === normalizedControlText(name);
+  const selected = setting(words, choice, instruction, answer, proposal, knownArtwork);
+  if (selected === undefined) return false;
+  if (selected.recipients !== undefined) {
+    const names = selected.recipients;
+    if (names.length !== targets.length) return false;
+    if (names.length === 1 && choice !== '') return targets[0]?.some(name => normalizedControlText(name) === optionalArticle(choice)) === true;
+    return names.every(requestedName => targets.filter(aliases => aliases.some(name => normalizedControlText(name) === requestedName)).length === 1)
+      && targets.every(aliases => aliases.some(name => names.includes(normalizedControlText(name))));
+  }
+  if (selected.subject === ALL_WEMO_PLUGS) return explicitGroup && proposal.family === 'power-set' && 'owner' in proposal;
+  const namesTarget = (name: string): boolean => selected.subject === undefined ? containsControlValue(words, name) : selected.subject === normalizedControlText(name);
   if (targets.every(names => names.some(name => namesTarget(name) || containsControlValue(choice, name)))) {
     const named = knownTargets.filter(names => names.some(namesTarget));
     if (named.length > 0 && targets.some(target => !named.some(names => names[0] === target[0]))) return false;
@@ -178,8 +219,8 @@ export function authorizesControl(proposal: BoundControl['proposal'], instructio
       matchingChoice.every(names => targets.some(target => target[0] === names[0]));
     return named.length <= targets.length;
   }
-  if (targets.length !== 1 || (power === undefined ? !/\b(?:it|that one|this one|the same)\b/u.test(words)
-    : !/^(?:it|that one|this one|the same)$/u.test(power.subject))) return false;
+  if (targets.length !== 1 || selected.subject === undefined ||
+    !/^(?:it|that one|this one|the same)$/u.test(selected.subject)) return false;
   if (knownTargets.some(names => names.some(name => containsControlValue(words, name)))) return false;
   const referenced = knownTargets.filter(names => names.some(name => containsControlValue(precedingOwnerText, name)));
   return referenced.length === 1 && referenced[0]?.[0] === targets[0]?.[0];

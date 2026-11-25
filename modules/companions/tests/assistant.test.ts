@@ -29,6 +29,7 @@ import {describePowerLimit, localInstant} from '../src/assistant/power-limits.js
 import {readDevices} from '../src/assistant/devices.js';
 import {confirmationEvidence, type Confirmation} from '../src/assistant/confirmation.js';
 import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
+import {authorizesControl} from '../src/assistant/control-intent.js';
 import {catalogTools} from '../src/assistant/catalog-tools.js';
 import {deviceToolOwner, FIXTURE_TEXT, summarizeSessions, TOOLS} from '../src/assistant/tools.js';
 import {DEVICE_TOOLS} from '../src/assistant/tool-scope.js';
@@ -85,7 +86,7 @@ const status = (w: {module: () => CompanionsModule}) => task(w)?.status;
 async function page(w: {module: () => CompanionsModule}, profile = 'bunny', view?: 'recent') {
   const content = await w.module().manifest.content?.('conversation', {query: {profile, ...(view === undefined ? {} : {view})}, signal: new AbortController().signal});
   assert.ok(content !== undefined && !('error' in content));
-  return JSON.parse(Buffer.from(content.bytes).toString()) as {messages: {role: string; text: string}[]; currentTask: {question: {kind: string; proposal: {data: {mode: string}; expectedRevision: number | null} | null; answer: string | null} | null} | null};
+  return JSON.parse(Buffer.from(content.bytes).toString()) as {messages: {id: string; role: string; text: string}[]; currentTask: {question: {kind: string; proposal: {data: {mode: string}; expectedRevision: number | null} | null; answer: string | null} | null} | null};
 }
 
 const unknown = {status: 'unknown'} as const;
@@ -174,6 +175,75 @@ void test('a mode call cannot substitute its guess for the owner choosing a sett
   assert.deepEqual(requests.map(({data}) => data), [{mode: 'quiet', expectedRevision: 4}]);
 });
 
+void test('identical numbers in unrelated settings and relative commands authorize no brightness write', async context => {
+  const lamp = light('desk-lamp', 'Desk lamp');
+  const writes: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool')
+    ? reply('The dispatcher returned its result.') : call('set_lifx_brightness', {device: lamp.id, percent: 70}));
+  const w = await world(context, {provider, tools: ['set_lifx_brightness'], devices: () => [lamp],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  for (const prompt of ['Set the desk lamp timer to 70', 'Set the desk lamp volume to 70', 'Raise the desk lamp brightness by 70%',
+    'Set the desk lamp brightness to -70%', 'Set the desk lamp brightness to 70 lumens', 'Dim the desk lamp to 70%']) {
+    await input(w.core, w.module(), prompt);
+    await until(() => status(w) === 'succeeded');
+    assert.equal(writes.length, 0, prompt);
+  }
+  await input(w.core, w.module(), 'Please set the desk lamp brightness to 70%');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(writes.length, 1);
+  assert.partialDeepStrictEqual(writes[0], {target: lamp.id, family: 'brightness-set', data: {percent: 70}});
+});
+
+void test('catalog arguments preserve the roles of color and label values', () => {
+  const color = {family: 'catalog-action', command: 'lifx-color-set', target: 'desk-lamp',
+    binding: {kind: 'device', owner: 'bunny/modules/lifx', target: 'desk-lamp', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}},
+    data: {hue: 20, saturation: 40}} as const;
+  const lamp = [['desk-lamp', 'Desk lamp']];
+  assert.equal(authorizesControl(color, 'Set Desk lamp color to hue 20 and saturation 40', '', lamp, ''), true);
+  assert.equal(authorizesControl(color, 'Set Desk lamp color to hue 40 and saturation 20', '', lamp, ''), false);
+  assert.equal(authorizesControl(color, 'Set Desk lamp timer to 40 after 20 minutes', '', lamp, ''), false);
+  const rename = {family: 'catalog-action', command: 'session-label-set', target: 'kitchen',
+    binding: {kind: 'record', owner: 'bunny/core', target: 'kitchen', revision: 1}, data: {label: 'New title'}} as const;
+  assert.equal(authorizesControl(rename, 'Rename session kitchen to New title', '', [['kitchen']], ''), true);
+  assert.equal(authorizesControl(rename, 'Rename session New title to kitchen', '', [['kitchen']], ''), false);
+  assert.equal(authorizesControl(rename, 'Rename session kitchen to new title', '', [['kitchen']], ''), false);
+});
+
+void test('an exact tool ID cannot skip the owner choosing between shared catalog aliases', async context => {
+  const owner = 'bunny/modules/pixoo';
+  const devices = ['first-screen', 'second-screen'].map(id => ({...light(id, 'Studio Display'), kind: 'pixoo' as const}));
+  const writes: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn > 2 ? reply('The dispatcher returned its result.') : call('control_brightness_set', {
+    owner, target: turn === 1 ? 'first-screen' : 'second-screen', arguments: '{"percent":35}',
+  }));
+  const w = await world(context, {provider, tools: ['control_brightness_set'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device'], () => ({revision: 1, states: devices.map(device => ({type: 'org.bunny.device.updated',
+    subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}))}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Set Studio Display brightness to 35%');
+  await until(() => status(w) === 'waiting');
+  assert.match(JSON.stringify((await page(w)).messages), /first-screen, second-screen/);
+  assert.equal(writes.length, 0);
+  await input(w.core, w.module(), 'second-screen', true);
+  await until(() => writes.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  assert.equal(writes[0]?.target, 'second-screen');
+});
+
+void test('showing saved art binds status visibility and the whole display set', () => {
+  const proposal = {family: 'catalog-action', command: 'art-show', target: 'hub', binding: {kind: 'fixed', owner: 'bunny/core', target: 'hub'},
+    data: {artworkId: 'kite', targets: ['pixoo', 'tidbyt'], coversStatus: false}} as const;
+  const prompt = 'Show the kite on Pixoo and Tidbyt and keep status visible';
+  assert.equal(authorizesControl(proposal, prompt, '', [['pixoo'], ['tidbyt']], ''), true);
+  assert.equal(authorizesControl({...proposal, data: {...proposal.data, coversStatus: true}}, prompt, '', [['pixoo'], ['tidbyt']], ''), false);
+  assert.equal(authorizesControl({...proposal, data: {...proposal.data, targets: ['pixoo']}}, prompt, '', [['pixoo']], ''), false);
+});
+
 void test('an explicit Wemo group binds every target once', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
   const requests: AssistantDispatch[] = [];
@@ -222,6 +292,99 @@ void test('a session grant filters discovery, tool results, prompt replay and ti
   assert.ok(!later.includes('Allowed synthetic session'));
   assert.ok(!later.includes('Hidden synthetic data'));
   assert.ok(!JSON.stringify(await page(w)).includes('Allowed synthetic session'));
+});
+
+void test('revocation hides a tool-derived answer across later tasks, restart, prompts and speech', async context => {
+  const phrase = 'Synthetic session display detail';
+  const offers: SpokenReply[] = [];
+  let revoked = false;
+  const policy = sharing();
+  const provider = counted(request => {
+    const current = request.transcript.find(item => item.role === 'owner')?.text;
+    if (current === 'Read the session') return request.transcript.some(item => item.role === 'tool') ? reply(`First: ${phrase}`) : call('read_sessions');
+    return reply(JSON.stringify(request.context).includes(phrase) ? `Repeated: ${phrase}` : 'No shared result.');
+  });
+  const w = await world(context, {provider, tools: ['read_sessions'], speak: offer => {offers.push(offer);},
+    core: () => ({sessions: [session(phrase)], mode: hub(1), synced: true}),
+    share: query => policy(query) && !(revoked && query.source === 'sessions' && query.record === 'session-1')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Read the session');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'Repeat your answer');
+  await until(() => status(w) === 'succeeded');
+  const repeated = (await page(w)).messages.find(message => message.text === `Repeated: ${phrase}`) ?? assert.fail('second answer');
+  const id = task(w)?.taskId ?? assert.fail('repeating task');
+  const offered = offers.length;
+  revoked = true;
+  await w.restart();
+  assert.ok(!(await page(w)).messages.some(message => message.text.includes(phrase)));
+  const spoken = await control(w.core, w.module(), 'speak', id, randomUUID(), {messageId: repeated.id});
+  assert.equal(spoken.status, 'rejected');
+  assert.equal(offers.length, offered);
+  await input(w.core, w.module(), 'Repeat it again');
+  await until(() => status(w) === 'succeeded');
+  assert.ok(!JSON.stringify(provider.inputs.at(-1)).includes(phrase));
+  assert.equal((await page(w)).messages.at(-1)?.text, 'No shared result.');
+});
+
+void test('a revoked owner answer is absent from the saved question metadata as well as its message row', async context => {
+  let revoke = false;
+  const policy = sharing();
+  const answer = deferred<TurnReply>();
+  const provider = counted((_request, turn) => turn === 1 ? call('ask_owner', {text: 'Which value?'}) : answer.promise);
+  const w = await world(context, {provider, share: query => policy(query) && !(revoke && query.destination === 'private-conversation' &&
+    query.source === 'conversation' && query.field === 'text' && query.record?.endsWith('-answer') === true)});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic question request');
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'PRIVATE-SYNTHETIC-ANSWER', true);
+  await until(() => provider.calls() === 2);
+  assert.equal((await page(w)).currentTask?.question?.answer, 'PRIVATE-SYNTHETIC-ANSWER');
+  revoke = true;
+  const document = await page(w);
+  assert.equal(document.currentTask?.question?.answer, null);
+  assert.ok(!JSON.stringify(document).includes('PRIVATE-SYNTHETIC-ANSWER'));
+  answer.resolve(reply('Saved.'));
+  await until(() => status(w) === 'succeeded');
+});
+
+void test('queue pages and state counts omit messages with revoked grants', async context => {
+  const revoked = new Set<string>(), policy = sharing();
+  const w = await world(context, {share: query => policy(query) && !(query.destination === 'private-conversation' &&
+    query.record !== undefined && revoked.has(query.record))});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic question request');
+  await until(() => status(w) === 'waiting');
+  for (const text of ['Synthetic visible queue item', 'Synthetic hidden queue item']) {
+    assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {action: 'queue'})).status, 'accepted');
+  }
+  const queue = async () => {
+    const result = await w.module().manifest.content?.('conversation', {query: {profile: 'bunny', view: 'queue'}, signal: new AbortController().signal});
+    assert.ok(result !== undefined && !('error' in result));
+    return JSON.parse(Buffer.from(result.bytes).toString()) as {messages: {id: string; text: string}[]};
+  };
+  const saved = await queue();
+  const hidden = saved.messages[1] ?? assert.fail('second queue item');
+  assert.equal(w.module().inspectAssistant()?.queues?.[0]?.messages, 2);
+  revoked.add(hidden.id);
+  assert.equal(w.module().inspectAssistant()?.queues?.[0]?.messages, 1);
+  assert.deepEqual((await queue()).messages.map(message => message.text), ['Synthetic visible queue item']);
+});
+
+void test('coding approval cannot release a retained field denied to the worker', async context => {
+  const phrase = 'Synthetic denied working-session label';
+  const provider = counted((_request, turn) => turn === 1 ? call('read_sessions') : turn === 2
+    ? call('delegate_coding', {repository: 'agent-device-hub', brief: `Investigate ${phrase}.`}) : reply('No worker dispatch.'));
+  const w = await world(context, {provider, tools: ['read_sessions', 'delegate_coding'],
+    share: sharing([{caller: 'owner', companion: 'bunny', purpose: 'brief', destination: 'coding-worker', source: 'sessions',
+      field: 'label', record: 'session-1', allow: false}]), core: () => ({sessions: [session(phrase)], mode: hub(2), synced: true}),
+    coding: () => ({available: true, endpointId: 'worker', revision: 1}), delegate: () => assert.fail('a brief with a denied source was sent')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Read the session, then delegate a follow-up');
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'succeeded');
+  assert.match(JSON.stringify((await page(w)).messages), /Coding brief sharing is not permitted/);
 });
 
 void test('light status preserves unknown state after copy loss and evidence older than a write', () => {

@@ -9,7 +9,7 @@ import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './pref
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} from './assistant/anthropic.js';
 import {AnthropicTitleProvider, DEFAULT_TITLE_MODEL} from './assistant/titles.js';
-import {accessFor, parseSharingGrants, sharing, type SharingGrant} from './assistant/sharing.js';
+import {parseSharingGrants, sharing, type SharingGrant} from './assistant/sharing.js';
 import {deviceToolOwner, allowlistable} from './assistant/tools.js';
 import {LIMITS} from './assistant/store.js';
 import {SPEND_LIMITS} from './assistant/limits.js';
@@ -172,7 +172,8 @@ class Companions {
     this.#store = new CompanionStore(database);
     this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator});
     this.speech = new SpeechCoordinator(context, this.#outbox, source => {
-      return source.kind === 'card' ? speechRefusal(source.card, this.#policy(source.card.opportunity)) === undefined : replyRefusal(this.#replyPolicy()) === undefined;
+      return source.kind === 'card' ? speechRefusal(source.card, this.#policy(source.card.opportunity)) === undefined
+        : replyRefusal(this.#replyPolicy()) === undefined && this.assistant?.canSpeak(source.reply.taskId, source.reply.messageId) === true;
     }, () => this.#qualification !== undefined);
     await this.speech.start();
     // The preference store opens first so the engine can read the owner's active entries at each model call (Hub #507).
@@ -188,10 +189,7 @@ class Companions {
     const configured = context.config as CompanionsConfig | undefined;
     const share = this.options.share ?? sharing(configured?.sharing);
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
-      mayShare: (companion, repository) => {
-        const fields = accessFor(share, {caller: 'owner', companion, purpose: 'brief', destination: 'coding-worker'});
-        return fields('coding', 'repository', repository) && fields('coding', 'brief', repository);
-      },
+      mayShare: (taskId, repository) => this.assistant?.canShareCodingBrief(taskId, repository) === true,
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
       awaits: taskId => {
         const task = this.assistant?.store.task(taskId);

@@ -39,7 +39,8 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
    */
   contextThrough?: number};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
-  status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; disclosures?: readonly DisclosedField[]; result: string | null; units: number | null; reservedUnits: number;
+  status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true;
+  result: string | null; units: number | null; reservedUnits: number;
   reservedMs: number; elapsedMs: number | null; traceparent: string;
   /**
    * A model call whose answer was saved while the task held an unread steer (Hub #2031): the steer reached the task
@@ -67,6 +68,7 @@ type RecordRow = {record: string};
 type MessageVisibility = {
   shows(message: Pick<ConversationMessage, 'id' | 'role' | 'taskId'>): boolean;
   attachment(requestId: string): boolean;
+  task(taskId: string): boolean;
 };
 type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
   artStatus: Call['status'] | null; artResult: string | null};
@@ -474,14 +476,20 @@ export class AssistantStore {
       ? {...row, artRequestId: null, artDescription: null} : row;
     return messageOf({...visible, follows});
   }
+  #visibleQuestion(task: Task, visibility?: MessageVisibility): Question | null {
+    const question = task.question;
+    if (question === null || visibility?.shows({id: question.id, role: 'assistant', taskId: task.id}) === false) return null;
+    const answerRole = question.kind === 'delegation' ? 'tool' : 'owner';
+    const answerId = `${question.id}-${answerRole === 'tool' ? 'result' : 'answer'}`;
+    return visibility?.shows({id: answerId, role: answerRole, taskId: task.id}) === false ? {...question, answer: null} : question;
+  }
   page(profile: AssistantProfile, after: number, visibility?: MessageVisibility): ConversationPage {
     const id = this.conversation(profile);
     const page: ConversationPage = {version: 1, conversationId: id ?? null, messages: [], currentTask: null, next: null};
     if (id === undefined) return page;
     const task = this.latest().find(task => task.profile === profile);
-    if (task !== undefined && after === 0) {
-      const question = task.question;
-      page.currentTask = {taskId: task.id, question: question === null || visibility?.shows({id: question.id, role: 'assistant', taskId: task.id}) === false ? null : question};
+    if (task !== undefined && after === 0 && visibility?.task(task.id) !== false) {
+      page.currentTask = {taskId: task.id, question: this.#visibleQuestion(task, visibility)};
     }
     const rows = this.#visibleRows(id, 'seq>?', after, 'ASC', 17, visibility);
     for (const item of rows.slice(0, 16)) {
@@ -507,9 +515,9 @@ export class AssistantStore {
     if (conversationId === null) return page;
     if (cursor === undefined && conversationId === current) {
       const task = parsed<Task>(this.database.prepare('SELECT record FROM assistant_tasks WHERE profile=? ORDER BY seq DESC LIMIT 1').get(profile) as RecordRow | undefined);
-      if (task !== undefined && task.conversationId === conversationId) {
-        const question = task.question;
-        page.currentTask = {taskId: task.id, question: question === null || visibility?.shows({id: question.id, role: 'assistant', taskId: task.id}) === false ? null : {
+      if (task !== undefined && task.conversationId === conversationId && visibility?.task(task.id) !== false) {
+        const question = this.#visibleQuestion(task, visibility);
+        page.currentTask = {taskId: task.id, question: question === null ? null : {
           id: question.id, text: question.text, answer: question.answer, kind: question.kind, proposal: question.proposal,
         }};
       }

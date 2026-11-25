@@ -1,7 +1,7 @@
 import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 
 const callers = ['owner', 'companion'] as const;
-const destinations = ['private-conversation', 'anthropic', 'synthetic', 'coding-worker', 'openai-supervisor'] as const;
+const destinations = ['private-conversation', 'conversation-speech', 'anthropic', 'synthetic', 'coding-worker', 'openai-supervisor'] as const;
 const purposes = ['discovery', 'read', 'prompt', 'title', 'brief', 'supervisor'] as const;
 const sources = ['conversation', 'knowledge', 'preferences', 'sessions', 'devices', 'playback', 'status', 'artwork', 'shows', 'operations', 'coding'] as const;
 const fields = ['index', 'text', 'label', 'status', 'details', 'attachment', 'repository', 'brief', 'request', 'excerpt', 'summary'] as const;
@@ -18,7 +18,7 @@ export type ShareQuery = {
 };
 export type DisclosedField = Pick<ShareQuery, 'source' | 'field' | 'record'>;
 export type SharingGrant = ShareQuery & {allow: boolean};
-export type Share = ((query: ShareQuery) => boolean) & {readonly revokesFields?: boolean};
+export type Share = ((query: ShareQuery) => boolean) & {readonly revokesFields?: boolean; readonly allowsDerived?: (query: ShareQuery) => boolean};
 type Scope = Pick<ShareQuery, 'caller' | 'companion' | 'destination' | 'purpose'>;
 export type FieldAccess = (source: ShareQuery['source'], field: ShareQuery['field'], record?: string) => boolean;
 
@@ -38,7 +38,9 @@ function existing(query: ShareQuery): boolean {
   if (query.destination === 'openai-supervisor') return supervisorScope(query);
   if (query.destination === 'coding-worker') return query.caller === 'owner' && query.purpose === 'brief' && query.source === 'coding' &&
     (query.field === 'repository' || query.field === 'brief');
-  if (query.destination === 'private-conversation') return query.caller === 'owner' && (query.purpose === 'read' || query.purpose === 'discovery');
+  if (query.destination === 'private-conversation' || query.destination === 'conversation-speech') {
+    return query.caller === 'owner' && (query.purpose === 'read' || query.purpose === 'discovery');
+  }
   if (query.caller !== 'companion') return false;
   if (query.purpose !== 'read' && query.purpose !== 'discovery' && query.purpose !== 'prompt' && query.purpose !== 'title') return false;
   return query.companion === 'bunny' || !['artwork', 'shows', 'playback', 'status'].includes(query.source);
@@ -51,7 +53,9 @@ export function sharing(grants: readonly SharingGrant[] = []): Share {
     const match = grants.filter(grant => sameScope(query, grant));
     return !match.some(grant => !grant.allow) && (match.some(grant => grant.allow) || existing(query));
   };
-  return Object.assign(allows, {revokesFields: grants.some(grant => !grant.allow)});
+  // Approval can release the selected brief. An explicit denial on an input to that brief still applies.
+  const allowsDerived = (query: ShareQuery): boolean => !grants.some(grant => !grant.allow && sameScope(query, grant));
+  return Object.assign(allows, {revokesFields: grants.some(grant => !grant.allow), allowsDerived});
 }
 
 export function accessFor(share: Share | undefined, scope: Scope): FieldAccess {

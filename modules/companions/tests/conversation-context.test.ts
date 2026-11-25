@@ -456,7 +456,7 @@ void test('a device follow-up resolves the light discussed, asks which of two, a
   await exchange(w, 'How is the desk lamp?', call('read_lifx', {device: 'desk-lamp'}), reply('The desk lamp is available.'));
   // The configuration changed after the discussion. Bind the current revision.
   devices = [light('desk-lamp', 4), light('hall-lamp')];
-  accepted(await w.send('bunny', 'Dim it to 30%'));
+  accepted(await w.send('bunny', 'Set the brightness on it to 30%'));
   const dim = await w.providers.bunny.next();
   const discussed = [...text(dim.input, 'recent').matchAll(/\b(desk|hall)-lamp\b/g)].map(match => match[0]);
   assert.deepEqual([...new Set(discussed)], ['desk-lamp'], 'only the discussed light is in context');
@@ -464,9 +464,9 @@ void test('a device follow-up resolves the light discussed, asks which of two, a
   (await w.providers.bunny.next()).resolve(reply('The change was accepted.'));
   await settle(() => w.task('bunny')?.status === 'succeeded');
   assert.partialDeepStrictEqual(requests[0], {family: 'brightness-set', target: 'desk-lamp', data: {percent: 30, expectedConfigurationRevision: 4}});
-  // After both lights are discussed, "dim it" could mean either: the companion asks which.
+  // After both lights are discussed, the companion asks which one the owner means.
   await exchange(w, 'How is the hall lamp?', call('read_lifx', {device: 'hall-lamp'}), reply('The hall lamp is available.'));
-  accepted(await w.send('bunny', 'Dim it to 30%'));
+  accepted(await w.send('bunny', 'Set the brightness on it to 30%'));
   const ambiguous = await w.providers.bunny.next();
   assert.deepEqual([...new Set([...text(ambiguous.input, 'recent').matchAll(/\b(desk|hall)-lamp\b/g)].map(match => match[0]))].sort(), ['desk-lamp', 'hall-lamp']);
   ambiguous.resolve(ask('Which light, desk-lamp or hall-lamp?'));

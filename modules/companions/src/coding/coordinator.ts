@@ -31,7 +31,7 @@ export type HandOffAnswer = RequestResult | {status: 'waiting'; requestId: strin
  * or ended, even while the coordinator was stopped, is dropped unsent; and the news that a waiting hand-off was sent.
  */
 export type CodingSeams = {
-  mayShare?: (companion: CodingCompanion, repository: string) => boolean;
+  mayShare?: (taskId: string, repository: string) => boolean;
   companionOf?: (taskId: string) => CodingCompanion | undefined;
   awaits?: (taskId: string) => boolean;
   sent?: (taskId: string, parent: TraceContext) => void;
@@ -155,7 +155,7 @@ export class CodingCoordinator {
   async handOff(data: HandOff, parent: TraceContext): Promise<HandOffAnswer> {
     const refused = (code: 'unavailable' | 'revision-conflict' | 'capacity' | 'internal' | 'forbidden', detail: string): HandOffAnswer => ({status: Outcome.rejected, requestId: data.requestId, error: errorBody(code, {detail})});
     if (!this.#connected()) return refused('unavailable', 'no coding worker is connected');
-    if (this.#seams.mayShare?.(data.companion, data.repository) === false) return refused('forbidden', 'coding brief sharing is not permitted');
+    if (this.#seams.mayShare?.(data.taskId, data.repository) === false) return refused('forbidden', 'coding brief sharing is not permitted');
     if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
     const slot = this.#slotOf(data.companion);
     let waiting: CodingWaitingRecord[];
@@ -174,7 +174,7 @@ export class CodingCoordinator {
   }
   #dispatch(data: Omit<HandOff, 'expectedRevision'>, parent: TraceContext): Promise<RequestResult> {
     const endpointId = this.#state.endpointId;
-    if (this.#seams.mayShare?.(data.companion, data.repository) === false) {
+    if (this.#seams.mayShare?.(data.taskId, data.repository) === false) {
       return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('forbidden')});
     }
     if (endpointId === null) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('unavailable', {detail: 'no coding worker is connected'})});
@@ -304,7 +304,7 @@ export class CodingCoordinator {
     }
     const companion = this.#seams.companionOf?.(data.taskId);
     if (companion === undefined) return errorBody('not-found', {detail: 'the dispatch names no companion task'});
-    if (this.#seams.mayShare?.(companion, data.repository) === false) return errorBody('forbidden');
+    if (this.#seams.mayShare?.(data.taskId, data.repository) === false) return errorBody('forbidden');
     const slot = this.#slotOf(companion), reserved = this.#reserved.get(slot);
     if (reserved !== data.requestId && this.#busy(slot)) return errorBody('capacity', {detail: 'that companion\'s coding slot is busy'});
     const active: Active = {operationId: data.requestId, taskId: data.taskId, endpointId: data.endpointId, traceparent: command.traceparent, started: false, status: 'pending',
@@ -323,7 +323,7 @@ export class CodingCoordinator {
     // A worker that declared slots (2.2) hears which companion asked; an older one gets the 2.0 start it knows.
     const tagged = this.#state.slots !== null;
     try {
-      if (this.#seams.mayShare?.(active.companion, data.repository) === false) {
+      if (this.#seams.mayShare?.(data.taskId, data.repository) === false) {
         await this.#settle(active, 'failed', undefined, 'coding brief sharing was revoked', {result: Outcome.failed, code: 'forbidden'});
         return;
       }
