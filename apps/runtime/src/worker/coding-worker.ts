@@ -6,14 +6,14 @@
 import {spawn, type ChildProcess} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
-import {mkdir, readFile, stat} from 'node:fs/promises';
+import {mkdir, readFile, realpath, stat} from 'node:fs/promises';
 import {isAbsolute, join, resolve} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
 import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
+import {CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
@@ -25,7 +25,7 @@ import {codexAdapter, type CodexConfiguration} from './codex-adapter.js';
 const run = promisify(execFile);
 const CLAUDE = 'claude-code';
 const CLAUDE_CAPABILITIES = {steering: 'unsupported', resume: 'unsupported', review: true} as const;
-export const WORKER_SCHEMA = 'coding-worker/1.0';
+export const WORKER_SCHEMA = 'coding-worker/1.2';
 const MAX_CONFIG_BYTES = 8192;
 /**
  * One stream event longer than this many characters (UTF-16 code units, so up to about three times as many bytes) is
@@ -58,7 +58,7 @@ export const DEFAULT_ALLOWED_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', '
 export const DENIED_TOOLS = ['Bash(git push*)', 'Bash(git -C *)', 'Bash(git --git-dir*)', 'Bash(git --work-tree*)', 'Bash(git remote*)', 'Bash(git worktree*)', 'Bash(git config*)', 'Bash(gh *)', 'Bash(claude *)', 'Bash(curl *)', 'Bash(wget *)',
   'Bash(ssh *)', 'Bash(scp *)', 'Bash(sudo *)', 'Edit(.claude/**)', 'Write(.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Edit(~/.claude.json)', 'Write(~/.claude.json)', 'WebFetch', 'WebSearch'];
 export type WorkerConfiguration = {
-  edge: string; tokenFile: string;
+  edge: string; tokenFile: string; uncapped?: true;
   repositories: readonly {name: string; path: string}[];
   /** `environment` names further variables the harness may inherit; a provider credential or switch is refused. */
   claude: {executable: string; model?: string; permissionMode: string; allowedTools: readonly string[]; maxTurns?: number; environment?: readonly string[]};
@@ -69,8 +69,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 /** Reads and checks the worker's private configuration file. Throws `coding-worker-config` with a fixed reason; never quotes the file. */
 export function parseConfiguration(value: unknown): WorkerConfiguration {
   const bad = (reason: string): never => {throw new Error(`coding-worker-config: ${reason}`);};
-  if (!isRecord(value) || (value.schema !== WORKER_SCHEMA && value.schema !== 'coding-worker/1.1')) return bad('not a coding-worker/1.0 or 1.1 document');
-  if (Object.keys(value).some(key => !['schema', 'edge', 'tokenFile', 'repositories', 'claude', ...(value.schema === 'coding-worker/1.1' ? ['codex'] : [])].includes(key))) return bad('unknown member');
+  if (!isRecord(value) || (value.schema !== WORKER_SCHEMA && value.schema !== 'coding-worker/1.0' && value.schema !== 'coding-worker/1.1')) return bad('not a coding-worker/1.0, 1.1 or 1.2 document');
+  if (Object.keys(value).some(key => !['schema', 'edge', 'tokenFile', 'repositories', 'claude', ...(value.schema !== 'coding-worker/1.0' ? ['codex'] : [])].includes(key))) return bad('unknown member');
   const {edge, tokenFile, repositories, claude, codex} = value;
   let url: URL;
   try {url = new URL(String(edge));} catch {return bad('edge is not a URL');}
@@ -101,14 +101,14 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
     if (codex.model !== undefined && (typeof codex.model !== 'string' || !/^[a-z0-9.-]{1,64}$/.test(codex.model))) return bad('codex.model is not a model name');
     codexConfig = {executable: codex.executable, home: codex.home, ...(codex.model === undefined ? {} : {model: codex.model})};
   }
-  return {edge: url.origin, tokenFile, repositories: list, ...(value.schema === 'coding-worker/1.1' ? {adapterProtocol: true} : {}), ...(codexConfig === undefined ? {} : {codex: codexConfig}), claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
+  return {edge: url.origin, tokenFile, repositories: list, ...(value.schema === WORKER_SCHEMA ? {uncapped: true} : {}), ...(value.schema !== 'coding-worker/1.0' ? {adapterProtocol: true} : {}), ...(codexConfig === undefined ? {} : {codex: codexConfig}), claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
     ...(claude.maxTurns === undefined ? {} : {maxTurns: Number(claude.maxTurns)}), ...(environment === undefined ? {} : {environment: environment as string[]})}};
 }
 
 /** One run in one of the worker's slots, with the companion that asked and the endpoint that started it. */
 type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; controller: AbortController};
-export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean};
+export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true};
 export type Harness = {
   /**
    * Runs the headless harness in `cwd` with the brief on its standard input and resolves with its exit code; the worker
@@ -181,7 +181,7 @@ export const claudeHarness = (executable: string, environment: NodeJS.ProcessEnv
     const decoder = new StringDecoder('utf8');
     const lines = lineSplitter(line => {onLine?.(line);});
     child.stdout?.on('data', (chunk: Buffer) => {lines.write(decoder.write(chunk));});
-    child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated});});
+    child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated, spawnFailed: true});});
     child.on('close', (code, signal) => {lines.end(decoder.end()); resolvePromise({code, signal, truncated: lines.truncated});});
   }),
   subscriptionRefused: async () => {
@@ -372,7 +372,7 @@ export class CodingWorker {
   /**
    * Waits until every stopped run has ended, or for `STOPPED_RUN_MS`, whichever comes first: a tool whose output a
    * leftover process holds open never ends its run, and must not hold the worker undeclared. A run still alive then
-   * keeps its slot, so its companion's start is refused with `capacity` until it ends; it is logged by operation.
+   * keeps its operation identity. In finite mode it also keeps its slot. The worker logs it by operation.
    */
   async #stoppedRunsEnded(): Promise<void> {
     const runs = [...this.#running.values()];
@@ -409,13 +409,15 @@ export class CodingWorker {
       limitsObservedAtMs: freshLimits !== undefined ? this.#now() : previouslyObserved?.limitsObservedAtMs ?? null, checkedAtMs: this.#now()});
   }
   #enable(readiness: CodingReadiness | undefined): {type: string; dataschema: string; data: CodingEndpointControl} {
-    const data: CodingEndpointControl = {requestId: randomUUID(), action: 'enable', slots: CODING_WORKER_SLOTS, ...(readiness === undefined ? {} : {readiness})};
-    if (!this.#adapterProtocol || readiness === undefined) return {type: 'org.bunny.coding.endpoint.requested', dataschema: ENDPOINT_SCHEMA, data};
+    const uncapped = this.configuration.uncapped === true;
+    const schema = uncapped ? 'https://bunny.invalid/events/coding-endpoint/2.4' : ENDPOINT_SCHEMA;
+    const data: CodingEndpointControl = {requestId: randomUUID(), action: 'enable', ...(uncapped ? {capacity: 'uncapped'} : {slots: CODING_WORKER_SLOTS}), ...(readiness === undefined ? {} : {readiness})};
+    if (!this.#adapterProtocol || readiness === undefined) return {type: 'org.bunny.coding.endpoint.requested', dataschema: schema, data};
     data.harnesses = [...this.#adapters.keys()].flatMap(id => {
       const health = this.#adapterHealth.get(id);
       return health === undefined ? [] : [health];
     });
-    return {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.3', data};
+    return {type: 'org.bunny.coding.endpoint.requested', dataschema: uncapped ? schema : 'https://bunny.invalid/events/coding-endpoint/2.3', data};
   }
   #stopping = false;
   #redeclaring = false;
@@ -525,8 +527,8 @@ export class CodingWorker {
     const adapter = this.#adapters.get(harness);
     if (adapter === undefined) return errorBody('unsupported-capability', {detail: 'the worker does not provide that harness'});
     // One slot per companion, three at once; a start from an older core names no companion and takes any free slot.
-    if (this.#running.size >= CODING_WORKER_SLOTS) return errorBody('capacity', {detail: 'every slot is busy'});
-    if (data.companion !== undefined && [...this.#running.values()].some(running => running.companion === data.companion)) return errorBody('capacity', {detail: 'that companion\'s slot is busy'});
+    if (this.configuration.uncapped !== true && this.#running.size >= CODING_WORKER_SLOTS) return errorBody('capacity', {detail: 'every slot is busy'});
+    if (this.configuration.uncapped !== true && data.companion !== undefined && [...this.#running.values()].some(running => running.companion === data.companion)) return errorBody('capacity', {detail: 'that companion\'s slot is busy'});
     const repository = this.configuration.repositories.find(entry => entry.name === data.repository);
     if (repository === undefined) return errorBody('invalid-request', {detail: 'the repository is not on the worker\'s allowlist'});
     let end = (): void => {};
@@ -534,7 +536,11 @@ export class CodingWorker {
       harness, controller: new AbortController(),
       ended: new Promise<void>(resolvePromise => {end = resolvePromise;})};
     this.#running.set(running.operationId, running);
-    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter).finally(() => {
+    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter).catch(async () => {
+      if (running.timer !== undefined) clearTimeout(running.timer);
+      await this.#progress(running, running.cancelled ? {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}
+        : {operationId: running.operationId, status: 'failed', reason: 'exit', result: null});
+    }).finally(() => {
       if (this.#running.get(running.operationId) === running) this.#running.delete(running.operationId);
       end();
       if (running.limitsChanged === true) void this.#refresh();
@@ -560,11 +566,12 @@ export class CodingWorker {
   /** Reports a run's progress on the endpoint that started it, and nowhere once that endpoint is gone. */
   async #progress(running: Running, data: CodingProgress): Promise<void> {
     if (running.endpoint === undefined || running.endpoint !== this.#endpoint) {this.log(`coding-worker dropped ${data.status} for ${data.operationId}: its endpoint is gone`); return;}
-    const attributed = this.#adapterProtocol;
+    const uncapped = this.configuration.uncapped === true;
+    const attributed = this.#adapterProtocol || uncapped;
     if (data.status !== 'started') await running.sessionReport;
     const payload = attributed ? {...data, harness: running.harness, ...(running.sessionId === undefined ? {} : {sessionId: running.sessionId})} : data;
     try {await running.endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed',
-      dataschema: attributed ? 'https://bunny.invalid/events/coding-progress/2.2' : PROGRESS_SCHEMA, data: payload});}
+      dataschema: uncapped ? 'https://bunny.invalid/events/coding-progress/2.3' : attributed ? 'https://bunny.invalid/events/coding-progress/2.2' : PROGRESS_SCHEMA, data: payload});}
     catch {this.log(`coding-worker could not report ${data.status} for ${data.operationId}`);}
   }
   /** Runs one repository's git setup after any other run's on the same repository has finished its own. */
@@ -581,7 +588,7 @@ export class CodingWorker {
     const id = nativeSessionId(value);
     if (id === undefined || running.sessionId !== undefined) return;
     running.sessionId = id;
-    if (this.#adapterProtocol) running.sessionReport = this.#progress(running, {operationId: running.operationId, status: 'started'});
+    if (this.#adapterProtocol || this.configuration.uncapped === true) running.sessionReport = this.#progress(running, {operationId: running.operationId, status: 'started', ...(this.configuration.uncapped === true ? {setup: 'ready'} : {})});
     return running.sessionReport;
   }
   async #gitFacts(worktree: string, base: string | null): Promise<{head: string | null; changedFiles: string[]}> {
@@ -595,23 +602,58 @@ export class CodingWorker {
     return {head, changedFiles};
   }
   async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter): Promise<void> {
-    await this.#progress(running, {operationId: running.operationId, status: 'started'});
-    let worktree: string, base: string | null = null;
+    const uncapped = this.configuration.uncapped === true;
+    const waiting: CodingProgress = {operationId: running.operationId, status: 'started', ...(uncapped ? {setup: 'waiting'} : {})};
+    await this.#progress(running, waiting);
+    let reporting = false;
+    const heartbeat = uncapped ? setInterval(() => {
+      if (reporting) return;
+      reporting = true;
+      void this.#progress(running, waiting).finally(() => {reporting = false;});
+    }, CODING_SETUP_HEARTBEAT_MS) : undefined;
+    heartbeat?.unref();
+    let worktree: string, base: string | null = null, setupStarted: number | undefined;
     try {
-      // Runs on the same repository each get their own fresh worktree (Hub #2028); their git setup takes turns.
-      ({worktree, base} = await this.#serially(repository.path, async () => {
+      const commonDir = uncapped ? await realpath(await this.#git(repository.path, ['rev-parse', '--path-format=absolute', '--git-common-dir'], {timeoutMs: 10_000})) : repository.path;
+      const prepared = await this.#serially(commonDir, async () => {
+        if (heartbeat !== undefined) clearInterval(heartbeat);
+        if (uncapped && running.cancelled) return undefined;
+        if (uncapped) {
+          setupStarted = this.#now();
+          await this.#progress(running, {operationId: running.operationId, status: 'started', setup: 'running'});
+        }
+        if (uncapped && running.cancelled) return undefined;
         await stat(join(repository.path, '.git'));
         try {await this.#git(repository.path, ['fetch', '--quiet', 'origin', 'main'], {timeoutMs: 120_000});} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
+        if (uncapped && running.cancelled) return undefined;
         const revision = await this.#git(repository.path, ['rev-parse', 'origin/main']), checked = SHA.test(revision) ? revision : null;
         const root = join(repository.path, '.local', 'worktrees'); await mkdir(root, {recursive: true, mode: 0o700});
         const fresh = join(root, `bunny-${taskId.slice(0, 8)}-${randomUUID().slice(0, 8)}`);
+        if (uncapped && running.cancelled) return undefined;
         await this.#git(repository.path, ['worktree', 'add', '--detach', '--quiet', fresh, checked ?? 'origin/main']);
         return {worktree: fresh, base: checked};
-      }));
+      });
+      if (prepared === undefined || running.cancelled) {
+        await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}); return;
+      }
+      ({worktree, base} = prepared);
     } catch {
-      await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'worktree', result: assembleResult(repository.name, base, null, [], '', 'worktree').result}); return;
+      if (running.cancelled) await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null});
+      else await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'worktree',
+        result: {...assembleResult(repository.name, base, null, [], '', 'worktree').result, summary: 'The worker could not prepare this attempt’s worktree.'}});
+      return;
+    } finally {
+      if (heartbeat !== undefined) clearInterval(heartbeat);
     }
-    if (running.cancelled) {await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}); return;}
+    if (setupStarted !== undefined && this.#now() - setupStarted >= CODING_SETUP_WORK_MS) {
+      await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'timeout',
+        result: {...assembleResult(repository.name, base, base, [], '', 'timeout').result, summary: 'Worktree setup exceeded its deadline.'}});
+      return;
+    }
+    if (uncapped) await this.#progress(running, {operationId: running.operationId, status: 'started', setup: 'ready'});
+    if (running.cancelled) {
+      await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}); return;
+    }
     await this.#runAdapter(running, adapter, repository.name, worktree, base, brief, bounds);
   }
 
@@ -669,6 +711,7 @@ export class CodingWorker {
     if (keyRefused !== undefined) return {reason: 'refused', windows,
       summary: `The run was stopped at its ${stream.apiKeySource === undefined ? 'first work event' : 'first event'}: ${keyRefused}, and workers use only the subscription sign-in.`};
     const settingsChanged = (await readProjectSettings(worktree)).fingerprint !== settingsBefore;
+    if (this.configuration.uncapped === true && finished.spawnFailed === true) return {reason: 'spawn', summary: 'The worker could not start the harness for this attempt.'};
     const assembled = assembleResult('', null, null, [], finished.truncated && stream.result === undefined ? '' : stream,
       finished.truncated && stream.result === undefined ? 'invalid-output' : undefined, settingsChanged);
     const {result} = assembled;

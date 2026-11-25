@@ -8,18 +8,22 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
+import type {DatabaseSync} from 'node:sqlite';
 import {test, type TestContext} from 'node:test';
 import type {AssistantProfile, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {CodingHarnessReadiness, CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, type Command, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import type {CodingJobPage} from '../src/coding/job-page.js';
 import {CodingStore} from '../src/coding/store.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {OPENAI_MODEL, OpenAIProvider} from '../src/assistant/openai.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
 import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
+import {AssistantStore} from '../src/assistant/store.js';
 
 const PROFILES = ['bunny', 'reachy', 'microduck'] as const;
 const ENDPOINT = 'worker-endpoint-1';
@@ -38,9 +42,10 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   let now = Date.parse('2026-11-24T18:00:00Z');
   const timers = new Map<number, {due: number; callback: () => void}>(); let timerId = 0;
   const time = {clock: {now: () => now}, scheduler: {after: (delay: number, callback: () => void) => {const id = ++timerId; timers.set(id, {due: now + delay, callback}); return () => {timers.delete(id);};}}};
-  const dir = await mkdtemp(join(tmpdir(), 'coding-slots-')), bus = new InProcessBus({now: time.clock.now}), core = bus.connect('bunny/core'), worker = bus.connect('bunny/parts/coding-worker');
+  const dir = await mkdtemp(join(tmpdir(), 'coding-slots-')), bus = new InProcessBus({now: time.clock.now}), core = bus.connect('bunny/core'), worker = bus.connect('bunny/parts/coding-worker'), gateway = bus.connect('bunny/runtime/gateway');
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   // The core's tracked dispatcher forwards a dispatch to the module's coding-run responder, once per request ID.
+  const forwarded = new Map<string, string>();
   const dispatched: string[] = [], work: Command<CodingWork>[] = [];
   let heldDispatch: Promise<void> | undefined;
   let refusesDispatch = false;
@@ -59,11 +64,23 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     if (refusesDispatch) return errorBody('unavailable');
     const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
       {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
+    forwarded.set(command.data.requestId, answer.status);
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
   });
   let refusesStop = false;
-  await worker.respond<CodingWork>('bunny.cmd.coding-work.*', command => {
-    work.push(command);
+  let serialStarts = false;
+  let serial = Promise.resolve();
+  let releaseStart: (() => void) | undefined;
+  await worker.respond<CodingWork>('bunny.cmd.coding-work.*', async command => {
+    if (serialStarts && command.data.action === 'start') {
+      const pending = serial.then(() => new Promise<void>(resolve => {
+        if (!serialStarts) {resolve(); return;}
+        work.push(command);
+        releaseStart = resolve;
+      }));
+      serial = pending;
+      await pending;
+    } else work.push(command);
     return command.data.action === 'cancel' && refusesStop ? errorBody('unavailable') : {status: 'accepted'};
   });
   const make = () => {
@@ -72,7 +89,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   };
   let {module, host} = make();
   await host.start();
-  context.after(async () => {await host.stop(); await worker.close(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  context.after(async () => {serialStarts = false; releaseStart?.(); await host.stop(); await worker.close(); await gateway.close(); await core.close(); await rm(dir, {recursive: true, force: true});});
   const state = () => module.inspectAssistant() ?? assert.fail('assistant state');
   const task = (profile: AssistantProfile): AssistantTaskSummary | undefined => state().tasks.find(value => value.profile === profile);
   const control = (action: string, extra: Record<string, unknown> = {}): Promise<RequestResult> => {
@@ -112,13 +129,15 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return (JSON.parse(Buffer.from(content.bytes).toString()) as {messages: SavedMessage[]}).messages;
   };
   /** The worker declares itself: a worker from Hub #2028 with three slots (2.2), or an older one that declares none (2.0). */
-  const enable = (slots?: number, harnesses?: CodingHarnessReadiness[]) => worker.request(`bunny.cmd.coding-endpoint.${ENDPOINT}`, {
+  const enable = (slots?: number | 'uncapped', harnesses?: CodingHarnessReadiness[]) => worker.request(`bunny.cmd.coding-endpoint.${ENDPOINT}`, {
     type: 'org.bunny.coding.endpoint.requested', subject: ENDPOINT,
-    dataschema: `https://bunny.invalid/events/coding-endpoint/${harnesses !== undefined ? '2.3' : slots === undefined ? '2.0' : '2.2'}`,
-    data: {requestId: randomUUID(), action: 'enable', ...(slots === undefined ? {} : {slots}), ...(harnesses === undefined ? {} : {harnesses})},
+    dataschema: `https://bunny.invalid/events/coding-endpoint/${slots === 'uncapped' ? '2.4' : harnesses !== undefined ? '2.3' : slots === undefined ? '2.0' : '2.2'}`,
+    data: {requestId: randomUUID(), action: 'enable', ...(slots === 'uncapped' ? {capacity: 'uncapped'} : slots === undefined ? {} : {slots}), ...(harnesses === undefined ? {} : {harnesses})},
   }, {timeoutMs: 5000});
-  const progress = (data: object) => worker.publish(`bunny.event.coding-progress.${ENDPOINT}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: ENDPOINT,
-    dataschema: `https://bunny.invalid/events/coding-progress/${'harness' in data ? '2.2' : '2.1'}`, data});
+  const lose = () => gateway.publish(`bunny.event.coding-lost.${ENDPOINT}`, {kind: 'occurrence', type: 'org.bunny.coding.endpoint-lost', subject: ENDPOINT,
+    dataschema: 'https://bunny.invalid/events/coding-lost/2.0', data: {id: ENDPOINT}});
+  const progress = (data: object, version = 'harness' in data ? '2.2' : '2.1') => worker.publish(`bunny.event.coding-progress.${ENDPOINT}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: ENDPOINT,
+    dataschema: `https://bunny.invalid/events/coding-progress/${version}`, data});
   const starts = () => work.filter(command => command.data.action === 'start');
   /** A profile's task asks, waits at its approval and is approved. */
   const approved = async (profile: AssistantProfile): Promise<void> => {
@@ -133,7 +152,10 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     }
     return assert.fail(`Missing message ${String(pattern)}`);
   };
-  return {module: () => module, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
+  return {forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
+    const release = releaseStart ?? assert.fail('serial responder has a delivered start to acknowledge');
+    releaseStart = undefined; release();
+  }, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, lose, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}};
 }
 
@@ -171,6 +193,169 @@ void test('an attributed background job keeps its first native session and deliv
   assert.deepEqual(original.filter(message => message.follows === jobId).map(message => message.id), [`${jobId}-sent`, `${jobId}-result`]);
   assert.ok(!(await w.messages('bunny')).some(message => message.follows === jobId));
   assert.deepEqual(w.dispatched, [operationId]);
+});
+
+void test('an uncapped worker starts more jobs from one companion than a page can hold, alongside another companion', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  for (let job = 0; job < 11; job += 1) {
+    assert.equal((await w.send('bunny', `Synthetic independent job ${String(job)}`)).status, 'accepted');
+    await w.approved('bunny');
+    await settle(() => w.starts().length === job + 1);
+    await settle(() => w.task('bunny')?.status === 'succeeded');
+    assert.equal((await w.newConversation('bunny')).status, 'accepted');
+  }
+  assert.equal((await w.send('reachy', 'Synthetic concurrent Reachy job')).status, 'accepted');
+  await w.approved('reachy');
+  await settle(() => w.starts().length === 12);
+  assert.equal(w.starts().filter(command => command.data.action === 'start' && command.data.companion === 'bunny').length, 11);
+  assert.equal(w.starts().filter(command => command.data.action === 'start' && command.data.companion === 'reachy').length, 1);
+  assert.deepEqual(w.coding().counts, {runs: 12, waiting: 0});
+  assert.equal(w.coding().runs?.length, 8, 'the state preview stays bounded');
+  const page = async (after?: string): Promise<CodingJobPage> => {
+    const result = await w.module().manifest.content?.('coding-jobs', {query: after === undefined ? {} : {after}, signal: new AbortController().signal});
+    assert.ok(result !== undefined && !('error' in result));
+    return JSON.parse(Buffer.from(result.bytes).toString()) as CodingJobPage;
+  };
+  const first = await page();
+  assert.equal(first.jobs.length, 10);
+  assert.ok(first.next !== null);
+  const second = await page(first.next);
+  assert.equal(second.jobs.length, 2);
+  assert.equal(second.next, null);
+  assert.deepEqual([...first.jobs, ...second.jobs].map(job => job.operationId).sort(), w.starts().map(command => command.data.operationId).sort());
+  const job = second.jobs[0] ?? assert.fail('later page job');
+  assert.equal((await w.stop(job.jobId, job.operationId)).status, 'accepted');
+  await settle(() => w.work.some(command => command.data.action === 'cancel'));
+  assert.deepEqual(w.work.filter(command => command.data.action === 'cancel').map(command => command.data.operationId), [job.operationId]);
+});
+
+function seedReadyJobs(database: DatabaseSync, operations: string[]): void {
+  const jobs = new CodingStore(database), tasks = new AssistantStore(database);
+  for (const operationId of operations) {
+    const taskId = operationId.slice(0, -'-step-1'.length);
+    const task = tasks.newTask('bunny', 'Synthetic restored request.', {provider: 'synthetic', model: 'synthetic', variant: ''});
+    tasks.save({...task, id: taskId, status: 'succeeded'});
+    const repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
+    const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+    tasks.saveCall({version: 1, id: operationId, taskId, runId: 'synthetic-run', ordinal: 1, kind: 'tool', status: 'succeeded',
+      result: 'Synthetic queued job.', units: 0, reservedUnits: 0, reservedMs: 0, elapsedMs: 0, traceparent,
+      action: {questionId: `${taskId}-q0`, description: 'Synthetic coding approval.'},
+      codingApproval: {destination: 'coding-worker', repository, briefDigest: createHash('sha256').update(JSON.stringify(brief)).digest('hex')}});
+    jobs.create({jobId: `${operationId}-job`, operationId, taskId, repository, brief, conversationId: task.conversationId});
+    jobs.wait({operationId, taskId, companion: 'bunny', repository, brief, traceparent});
+  }
+}
+
+void test('an unpinned restored coding row does not block a verified sibling', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  const db = w.database(), operations = ['old-unpinned-step-1', 'restored-pinned-step-1'];
+  seedReadyJobs(db, operations);
+  const old = new CodingStore(db).job('old-unpinned-step-1') ?? assert.fail('old approved job');
+  const store = new AssistantStore(db);
+  const task = store.task(old.taskId) ?? assert.fail('old task');
+  delete task.supervisor;
+  store.save(task);
+  await w.restart();
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  const saved = await w.waitMessages('bunny', /original supervisor or coding approval could not be verified/);
+  assert.ok(saved.some(message => message.id === 'old-unpinned-step-1-job-result' && message.text.includes('Create a new job')));
+  assert.doesNotMatch(JSON.stringify(saved), /refused: forbidden/);
+  await settle(() => w.starts().length === 1);
+  assert.deepEqual(w.dispatched, ['restored-pinned-step-1']);
+});
+
+void test('a restored uncapped backlog paces the serial worker acknowledgement without holding active runs', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  const restored = Array.from({length: 35}, (_, index) => `restored-${String(index)}-step-1`);
+  seedReadyJobs(w.database(), restored);
+  await w.restart();
+  w.serializeStarts();
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  await settle(() => w.starts().length === 1);
+  assert.deepEqual(w.dispatched, restored.slice(0, 1), 'the core reply alone does not release delivery');
+  const first = restored[0] ?? assert.fail('restored start');
+  await w.progress({operationId: first, status: 'started', setup: 'ready'}, '2.3');
+  await settle(() => w.coding().runs?.some(run => run.operationId === first && run.setup === 'ready') === true);
+  assert.equal((await w.send('reachy', 'Synthetic sibling approved during the gated acknowledgement')).status, 'accepted');
+  await w.approved('reachy');
+  await w.waitMessages('reachy', /Coding job .* was queued/);
+  assert.deepEqual(w.dispatched, [first], 'an early progress observation does not release the acknowledgement gate');
+  for (let index = 0; index < restored.length + 1; index += 1) {
+    await settle(() => w.starts().length === index + 1);
+    w.acknowledgeStart();
+    const operationId = w.starts()[index]?.data.operationId ?? assert.fail('delivered attempt');
+    // One acknowledged job never reports setup progress during the drain.
+    if (index > 1) await w.progress({operationId, status: 'started', setup: 'ready'}, '2.3');
+  }
+  await settle(() => w.coding().counts?.runs === 36);
+  assert.deepEqual(w.dispatched.slice(0, 35), restored);
+  assert.equal(new Set(w.dispatched).size, 36);
+  const sibling = w.starts().at(-1)?.data;
+  assert.equal(sibling?.action === 'start' && sibling.companion, 'reachy');
+  assert.deepEqual(w.coding().counts, {runs: 36, waiting: 0});
+  assert.equal(w.coding().runs?.find(run => run.operationId === restored[1])?.status, 'dispatching');
+});
+
+for (const failFirstWrite of [false, true]) {
+  void test(`a held core dispatch from an old connection cannot start after the same identity returns (initial write failure: ${String(failFirstWrite)})`, {timeout: 30_000}, async context => {
+    const w = await world(context);
+    const db = w.database(), store = new CodingStore(db);
+    let attempts = 0;
+    if (failFirstWrite) {
+      db.function('fail_stale_dispatch_result', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+      db.exec(`CREATE TEMP TRIGGER fail_stale_dispatch_result BEFORE INSERT ON companion_coding_job_updates
+        WHEN NEW.operation_id='stale-dispatch-step-1' AND NEW.kind='result' AND fail_stale_dispatch_result()=1
+        BEGIN SELECT RAISE(ABORT,'synthetic disconnect result failure'); END`);
+    }
+    seedReadyJobs(db, ['stale-dispatch-step-1', 'unassigned-dispatch-step-1']);
+    const release = w.holdDispatch();
+    context.after(release);
+    try {
+      assert.equal((await w.enable('uncapped')).status, 'accepted');
+      await settle(() => w.dispatched.length === 1);
+      await w.lose();
+      await settle(() => failFirstWrite ? attempts === 1 : store.resultSaved('stale-dispatch-step-1'));
+      assert.equal((await w.enable('uncapped')).status, 'accepted');
+      release();
+      await settle(() => w.forwarded.has('stale-dispatch-step-1') && w.starts().length === 1);
+      assert.equal(w.forwarded.get('stale-dispatch-step-1'), 'rejected');
+      if (failFirstWrite) {
+        assert.equal(store.resultSaved('stale-dispatch-step-1'), false);
+        w.advance(1000);
+        await settle(() => store.resultSaved('stale-dispatch-step-1'));
+      }
+      const row = db.prepare("SELECT text FROM companion_coding_job_updates WHERE operation_id=? AND kind='result'").get('stale-dispatch-step-1');
+      assert.match(String(row?.text ?? ''), /worker became unavailable before start was sent/);
+      assert.deepEqual(w.dispatched, ['stale-dispatch-step-1', 'unassigned-dispatch-step-1']);
+      assert.deepEqual(w.starts().map(message => message.data.operationId), ['unassigned-dispatch-step-1']);
+    } finally {release();}
+  });
+}
+
+void test('a disconnected delivery settles uncertain while its late reply leaves the next delivery held', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  const operations = ['lost-delivery-step-1', 'next-delivery-step-1', 'last-delivery-step-1'];
+  const store = new CodingStore(w.database());
+  seedReadyJobs(w.database(), operations);
+  w.serializeStarts();
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  await settle(() => w.starts().length === 1);
+  await w.lose();
+  await settle(() => store.resultSaved('lost-delivery-step-1'));
+  assert.equal(store.records('uncertain')[0]?.operationId, 'lost-delivery-step-1');
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  await settle(() => w.dispatched.length === 2);
+  w.acknowledgeStart();
+  await settle(() => w.starts().length === 2);
+  assert.deepEqual(w.dispatched, operations.slice(0, 2), 'the late old reply cannot release the current delivery');
+  w.acknowledgeStart();
+  await settle(() => w.starts().length === 3);
+  w.acknowledgeStart();
+  assert.deepEqual(w.starts().map(message => message.data.operationId), operations);
+  assert.deepEqual(w.dispatched, operations);
 });
 
 void test('three companions hand off at once, each run tagged and each result back in its own conversation; another companion\'s run never refuses an approval', {timeout: 30_000}, async context => {
@@ -381,7 +566,7 @@ void test('an earlier saved delegation interrupt and unsent hand-off survive the
   await settle(() => w.task('bunny')?.status === 'waiting' && w.task('bunny')?.questionId?.includes('-delegation-') === true);
   const taskId = w.task('bunny')?.taskId ?? assert.fail('legacy task');
   assert.ok(operationId !== undefined);
-  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic earlier approved brief.',
+  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic bunny brief.',
     traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
   delete options.delegate;
   await w.restart();
@@ -531,7 +716,7 @@ void test('a legacy accepted hand-off is delivered before a fast terminal result
   await settle(() => w.task('bunny')?.status === 'waiting' && w.task('bunny')?.questionId?.includes('-delegation-') === true);
   assert.ok(operationId !== undefined);
   const taskId = w.task('bunny')?.taskId ?? assert.fail('legacy task');
-  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic earlier approved brief.',
+  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic bunny brief.',
     traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
   delete options.delegate;
   await w.restart();
@@ -741,4 +926,172 @@ void test('Responses hands off to the shared background job without sending priv
   const second = JSON.parse(sent[1] ?? '') as {input: unknown};
   assert.deepEqual(second.input, [{role: 'user', content: 'New unrelated request.'}]);
   assert.equal(w.dispatched.length, 1);
+});
+
+void test('an uncapped attempt uses observed setup deadlines without timing out a ready sibling', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  for (const profile of ['bunny', 'reachy'] as const) {
+    assert.equal((await w.send(profile, 'Synthetic setup-bound job')).status, 'accepted');
+    await w.approved(profile);
+  }
+  await settle(() => w.starts().length === 2);
+  const waiting = w.starts()[0]?.data.operationId ?? assert.fail('waiting attempt');
+  const ready = w.starts()[1]?.data.operationId ?? assert.fail('ready attempt');
+  const setup = async (operationId: string, phase: string): Promise<void> => {
+    await w.progress({operationId, status: 'started', setup: phase}, '2.3');
+    await new Promise(resolve => {setImmediate(resolve);});
+  };
+  await setup(waiting, 'waiting');
+  await setup(ready, 'ready');
+  await settle(() => w.coding().runs?.filter(run => run.setup !== undefined).length === 2);
+  for (let repeats = 0; repeats < 3; repeats += 1) {
+    w.advance(30_000);
+    await setup(waiting, 'waiting');
+  }
+  assert.equal(w.coding().runs?.length, 2);
+  await setup(waiting, 'running');
+  await settle(() => w.coding().runs?.find(run => run.operationId === waiting)?.setup === 'running');
+  w.advance(260_000);
+  await setup(waiting, 'running');
+  w.advance(11_000);
+  await w.waitMessages('bunny', /uncertain \(timeout\)/);
+  assert.equal(w.coding().runs?.find(run => run.operationId === ready)?.setup, 'ready');
+  await w.progress({operationId: ready, status: 'completed', result: result('Synthetic ready sibling result.')}, '2.3');
+  await w.waitMessages('reachy', /Synthetic ready sibling result/);
+});
+
+for (const restoredGrant of ['granted', 'worker denied', 'source denied', 'approval missing', 'approval mismatched'] as const) {
+void test(`a restored Responses coding job with sharing ${restoredGrant} keeps its supervisor pin without a model turn`, {timeout: 30_000}, async context => {
+  let denied: 'worker denied' | 'source denied' | undefined;
+  const ordinary = sharing();
+  const share = Object.assign((query: ShareQuery) => ordinary(query) &&
+    !(denied === 'worker denied' && query.destination === 'coding-worker' && query.source === 'coding' && query.field === 'brief') &&
+    !(denied === 'source denied' && query.destination === 'openai-supervisor' && query.source === 'conversation' && query.field === 'request'),
+  {revokesFields: true, allowsDerived: (query: ShareQuery) => ordinary.allowsDerived?.(query) !== false});
+  const openAIRequests: string[] = [];
+  const provider = new OpenAIProvider({model: OPENAI_MODEL, effort: 'medium', key: 'synthetic', transport: (_url, init) => {
+    openAIRequests.push(init.body);
+    return Promise.resolve(new Response(JSON.stringify({
+      status: 'completed', output: [{type: 'function_call', id: 'fc_restored', call_id: 'call_restored',
+        name: 'delegate_coding', arguments: JSON.stringify({repository: 'agent-device-hub', brief: 'Write a synthetic fixture.'})}],
+      usage: {input_tokens: 40, output_tokens: 40},
+    })));
+  }});
+  const options: CompanionsOptions = {provider, share};
+  const w = await world(context, options);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Delegate the initial synthetic coding task.')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1 && w.task('bunny')?.status === 'succeeded');
+  assert.equal((await w.send('bunny', 'Delegate a second synthetic coding task.')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.coding().waiting?.length === 1 && w.task('bunny')?.status === 'succeeded');
+  const waiting = w.coding().waiting?.at(0) ?? assert.fail('expected waiting approved job');
+  assert.equal(openAIRequests.length, 2);
+  assert.equal(new AssistantStore(w.database()).task(waiting.taskId)?.supervisor?.provider, 'openai');
+  if (restoredGrant === 'worker denied' || restoredGrant === 'source denied') denied = restoredGrant;
+  if (restoredGrant === 'approval missing' || restoredGrant === 'approval mismatched') {
+    const store = new AssistantStore(w.database());
+    const approval = store.call(waiting.operationId) ?? assert.fail('saved approval call');
+    if (restoredGrant === 'approval missing') delete approval.codingApproval;
+    else approval.ordinal += 1;
+    store.saveCall(approval);
+  }
+  options.provider = {name: 'synthetic', model: 'synthetic', turn: () => assert.fail('recovery does not switch supervisors')};
+  await w.restart();
+  assert.equal(new AssistantStore(w.database()).task(waiting.taskId)?.supervisor?.provider, 'openai');
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  if (restoredGrant === 'granted') {
+    await settle(() => w.starts().length === 2);
+    const continued = w.starts().at(-1)?.data;
+    assert.ok(continued?.action === 'start');
+    assert.equal(continued.taskId, waiting.taskId);
+    assert.equal(continued.operationId, waiting.operationId);
+  } else {
+    if (restoredGrant === 'approval missing' || restoredGrant === 'approval mismatched') {
+      const messages = await w.waitMessages('bunny', /The original supervisor or coding approval could not be verified/);
+      assert.ok(messages.some(message => message.text === 'Delegate a second synthetic coding task.'));
+    } else await w.waitMessages('bunny', /refused: forbidden/);
+    assert.equal(w.dispatched.length, 1, 'the saved approval and grants are rechecked before dispatch');
+    assert.equal(w.starts().length, 1);
+  }
+  assert.equal(openAIRequests.length, 2, 'recovery did not rerun the original supervisor');
+});
+}
+
+for (const revoked of ['model input', 'derived input', 'private read'] as const) {
+  void test(`a recovered job refuses a revoked ${revoked} grant for its model-disclosed repository`, {timeout: 30_000}, async context => {
+    let revoke = false;
+    const ordinary = sharing();
+    const sameRepository = (query: ShareQuery) => query.source === 'coding' && query.field === 'repository' && query.record === 'agent-device-hub';
+    const share = Object.assign((query: ShareQuery) => ordinary(query) && !(revoke && sameRepository(query) &&
+      (revoked === 'model input' && query.destination === 'synthetic' && query.purpose === 'prompt' ||
+       revoked === 'private read' && query.destination === 'private-conversation' && query.purpose === 'read')),
+    {revokesFields: true, allowsDerived: (query: ShareQuery) => !(revoke && revoked === 'derived input' && sameRepository(query))});
+    const w = await world(context, {share});
+    assert.equal((await w.control('enable')).status, 'accepted');
+    assert.equal((await w.enable()).status, 'accepted');
+    for (const request of ['first', 'second']) {
+      assert.equal((await w.send('bunny', `Delegate the ${request} synthetic coding task.`)).status, 'accepted');
+      await w.approved('bunny');
+      await settle(() => w.task('bunny')?.status === 'succeeded');
+    }
+    const waiting = w.coding().waiting?.at(0) ?? assert.fail('expected waiting approved job');
+    const store = new AssistantStore(w.database());
+    const model = store.calls(waiting.taskId).find(call => call.kind === 'model') ?? assert.fail('saved model call');
+    const approval = store.call(waiting.operationId) ?? assert.fail('saved approval call');
+    assert.equal(approval.kind, 'tool');
+    assert.notEqual(model.id, approval.id);
+    assert.ok(model.disclosures?.some(field => field.source === 'coding' && field.field === 'repository' && field.record === 'agent-device-hub'),
+      'the earlier job receipt disclosed the repository to the supervisor');
+    revoke = true;
+    await w.restart();
+    assert.equal((await w.enable('uncapped')).status, 'accepted');
+    await settle(() => w.starts().length > 1 || w.coding().waiting?.length !== 1);
+    assert.equal(w.dispatched.length, 1, 'revoked model data must not reach the dispatcher');
+    assert.equal(w.starts().length, 1, 'the recovered worker command must not start');
+  });
+}
+
+void test('local clarification choices do not become prior supervisor disclosures on an approved Responses hand-off', {timeout: 30_000}, async context => {
+  const bodies: string[] = [];
+  const replies = [
+    {name: 'set_wemo_power', args: {device: 'Fixture plug', on: false}},
+    {name: 'delegate_coding', args: {repository: 'agent-device-hub', brief: 'Add a synthetic fixture.'}},
+  ];
+  const provider = new OpenAIProvider({model: OPENAI_MODEL, effort: 'medium', key: 'synthetic', transport: (_url, init) => {
+    bodies.push(init.body);
+    const reply = replies.shift();
+    const output = reply === undefined
+      ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Finished.'}]}]
+      : [{type: 'function_call', id: `fc_${bodies.length}`, call_id: `call_${bodies.length}`, name: reply.name, arguments: JSON.stringify(reply.args)}];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 20, output_tokens: 8}})));
+  }});
+  const ids = ['fixture-plug-one', 'fixture-plug-two'];
+  const unknown = {status: 'unknown'} as const;
+  const plugs = ids.map((id): DeviceRecord => ({id, label: 'Fixture plug', kind: 'wemo', revision: 1, configurationRevision: 1,
+    generation: {epoch: 'fixture-epoch', sequence: 0}, availability: 'available',
+    capabilities: {power: {supported: true}, brightness: {supported: false}, modes: {supported: false}, media: {supported: false},
+      moments: {supported: false}, preview: {supported: false}, scenes: {supported: false}, zones: {supported: false}},
+    desired: {power: unknown, brightness: unknown, mode: unknown}, observed: unknown, pending: 0, pendingKinds: [],
+    lastOutcome: unknown, lastTransmission: unknown, externalControl: unknown}));
+  const w = await world(context, {provider, tools: ['set_wemo_power', 'delegate_coding'],
+    devices: owner => owner === 'bunny/modules/wemo' ? plugs : []});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  assert.equal((await w.send('bunny', 'List all Wemo plugs.')).status, 'accepted');
+  const store = new AssistantStore(w.database());
+  const id = w.task('bunny')?.taskId ?? assert.fail('saved task');
+  await settle(() => store.task(id)?.question?.kind === 'clarification');
+  assert.deepEqual(store.task(id)?.clarificationDevices, ids);
+  assert.equal((await w.send('bunny', 'Instead, delegate a synthetic coding fixture.', true)).status, 'accepted');
+  await settle(() => store.task(id)?.question?.kind === 'approval');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1 && w.task('bunny')?.status === 'succeeded');
+  assert.equal(bodies.length, 2);
+  for (const body of bodies) for (const device of ids) assert.ok(!body.includes(device));
+  assert.ok(store.calls(id).filter(call => call.kind === 'model').every(call => call.disclosures?.every(field => field.source !== 'devices') === true));
 });

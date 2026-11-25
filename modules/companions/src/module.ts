@@ -133,7 +133,7 @@ export type CompanionsOptions = AssistantOptions & {readonly transport?: Transpo
 export function createCompanionsModule(options: CompanionsOptions = {}): CompanionsModule {
   const engine = new Companions(options);
   return {manifest: {name: 'companions', apiVersion: '1.3', configure: configureCompanions, pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'microduck', title: 'MicroDuck', presentation: 'react'}, {id: 'assistant', title: 'Conversation', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}, {id: 'knowledge', title: 'Companion knowledge', presentation: 'react'}, {id: 'duck-conversation', title: 'Duck conversation', presentation: 'react'}],
-    content: (ref, request) => engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
+    content: (ref, request) => engine.codingJobs(ref, request) ?? engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
     upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
     setArtCatalog: read => {engine.retainedArtwork = read;},
     setDeviceHistory: read => {engine.deviceHistory = read;},
@@ -178,6 +178,16 @@ class Companions {
   constructor(readonly options: CompanionsOptions) {}
   inspect(): CompanionState | undefined {return this.#store?.read().state;}
   pending(): number {return this.#pending.size + (this.#active === undefined ? 0 : 1);}
+  codingJobs(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
+    if (ref !== 'coding-jobs') return undefined;
+    const query = request?.query ?? {};
+    if (request?.signal.aborted === true || Object.keys(query).some(key => key !== 'after') ||
+      (query.after !== undefined && !/^[A-Za-z0-9._:-]{1,260}$/.test(query.after))) return errorBody('invalid-request');
+    try {
+      const page = this.coding?.jobs(query.after);
+      return page === undefined ? errorBody('unavailable') : {type: 'application/json', bytes: Buffer.from(JSON.stringify(page))};
+    } catch {return errorBody('unavailable');}
+  }
   qualifiedSpeech(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref !== 'speech-qualification') return undefined;
     if (this.#closed || this.#context === undefined || this.#context.signal.aborted || request?.signal.aborted === true || this.#qualification === undefined) return errorBody('unavailable');
@@ -211,7 +221,7 @@ class Companions {
     // A waiting hand-off is sent only while its task still waits on it, so a cancel that the coordinator missed, as during
     // a stop, still sends nothing.
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
-      mayShare: (taskId, repository) => this.assistant?.canShareCodingBrief(taskId, repository) === true,
+      briefRefusal: brief => this.assistant === undefined ? 'unverified-supervisor' : this.assistant.codingBriefRefusal(brief),
       jobQueued: (job, add, parent) => this.assistant?.codingJobQueued(job, add, parent),
       jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,

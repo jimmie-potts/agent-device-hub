@@ -1,4 +1,5 @@
 import type {DatabaseSync} from 'node:sqlite';
+import type {CodingJobEntry} from './job-page.js';
 import type {CodingCompanion, CodingProgress} from '@jimmie-potts/event-contracts/v2/coding';
 
 /** One accepted coding operation: which task it serves, which worker endpoint runs it and how it ended. */
@@ -11,7 +12,6 @@ export type CodingWaitingRecord = {operationId: string; taskId: string; companio
 export type CodingOrigin = {conversationId: string; taskId: string};
 export type CodingJob = CodingOrigin & {jobId: string; operationId: string; repository: string; brief: string};
 type CodingObservation = {operationId: string; taskId: string; kind: 'sent' | 'stop-unconfirmed' | 'result'; text: string; traceparent: string; legacyEvidence?: string; startup?: boolean};
-const companions: readonly string[] = ['bunny', 'reachy', 'microduck'];
 /**
  * Durable responsibility, final receipts and the hand-offs waiting for a slot (Hub #502, #2028). Availability, the
  * worker endpoint and its slots are never recovered.
@@ -53,6 +53,19 @@ export class CodingStore {
     if (typeof jobId !== 'string' || typeof attempt !== 'string' || typeof conversationId !== 'string' || typeof taskId !== 'string' ||
       typeof repository !== 'string' || typeof brief !== 'string') throw new Error('coding-job-invalid');
     return {jobId, operationId: attempt, conversationId, taskId, repository, brief};
+  }
+  activeJobs(after: string, limit: number): Omit<CodingJobEntry, 'status' | 'setup'>[] {
+    return this.database.prepare(`SELECT job.job_id, job.operation_id, job.task_id, job.conversation_id, job.repository, waiting.companion
+      FROM companion_coding_jobs job LEFT JOIN companion_coding_waiting waiting USING (operation_id)
+      WHERE job.job_id > ? AND NOT EXISTS (SELECT 1 FROM companion_coding_job_updates observation
+        WHERE observation.operation_id = job.operation_id AND observation.kind = 'result')
+      ORDER BY job.job_id LIMIT ?`).all(after, limit).map(row => {
+      const {job_id: jobId, operation_id: operationId, task_id: taskId, conversation_id: conversationId, repository, companion} = row;
+      if (typeof jobId !== 'string' || typeof operationId !== 'string' || typeof taskId !== 'string' ||
+        typeof conversationId !== 'string' || typeof repository !== 'string') throw new Error('coding-job-invalid');
+      return {jobId, operationId, taskId, conversationId, repository,
+        ...(companion === 'bunny' || companion === 'reachy' || companion === 'microduck' ? {companion} : {})};
+    });
   }
   requestStop(operationId: string): boolean {
     return this.database.prepare('UPDATE companion_coding_jobs SET stop_requested=1 WHERE operation_id=? AND stop_requested=0').run(operationId).changes === 1;
@@ -124,11 +137,22 @@ export class CodingStore {
   sending(operationId: string): void {this.database.prepare('UPDATE companion_coding_waiting SET sending=1 WHERE operation_id=?').run(operationId);}
   /** Ends a wait without a run: cancelled, refused or of unknown fate. */
   unwait(operationId: string): void {this.database.prepare('DELETE FROM companion_coding_waiting WHERE operation_id=?').run(operationId);}
-  waiting(): CodingWaitingRecord[] {
-    return this.database.prepare('SELECT * FROM companion_coding_waiting ORDER BY rowid').all().map(row => {
-      if (typeof row.operation_id !== 'string' || typeof row.task_id !== 'string' || typeof row.companion !== 'string' || !companions.includes(row.companion)
-        || typeof row.repository !== 'string' || typeof row.brief !== 'string' || typeof row.traceparent !== 'string' || (row.sending !== 0 && row.sending !== 1)) throw new Error('coding-waiting-invalid');
-      return {operationId: row.operation_id, taskId: row.task_id, companion: row.companion as CodingCompanion, repository: row.repository, brief: row.brief, traceparent: row.traceparent, sending: row.sending === 1};
-    });
+  waitingCount(): number {
+    const row = this.database.prepare('SELECT count(*) AS total FROM companion_coding_waiting').get();
+    if (typeof row?.total !== 'number') throw new Error('coding-waiting-invalid');
+    return row.total;
+  }
+  waitingFor(operationId: string): CodingWaitingRecord | undefined {
+    const row = this.database.prepare('SELECT * FROM companion_coding_waiting WHERE operation_id=?').get(operationId);
+    return row === undefined ? undefined : this.#waitingRecord(row);
+  }
+  waiting(limit = -1): CodingWaitingRecord[] {
+    return this.database.prepare('SELECT * FROM companion_coding_waiting ORDER BY rowid LIMIT ?').all(limit).map(row => this.#waitingRecord(row));
+  }
+  #waitingRecord(row: Record<string, unknown>): CodingWaitingRecord {
+    const {operation_id: operationId, task_id: taskId, companion, repository, brief, traceparent, sending} = row;
+    if (typeof operationId !== 'string' || typeof taskId !== 'string' || (companion !== 'bunny' && companion !== 'reachy' && companion !== 'microduck')
+      || typeof repository !== 'string' || typeof brief !== 'string' || typeof traceparent !== 'string' || (sending !== 0 && sending !== 1)) throw new Error('coding-waiting-invalid');
+    return {operationId, taskId, companion, repository, brief, traceparent, sending: sending === 1};
   }
 }

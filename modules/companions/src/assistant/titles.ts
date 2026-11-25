@@ -370,9 +370,9 @@ export type TitleDependencies = {
   /** The metadata observation that carries a title to the conversation's session now. */
   metadata: (conversationId: string, title: Title, observedAtMs: number) => {key: string; draft: object};
 };
-/** A conversation's checks: the call in flight, the labels of the triggers waiting for its one follow-up, and the whole run. */
 type ScopedTitle = {provider: TitleProvider; pricing: PriceSchedule; messages: () => TitleMessage[]};
-type InFlight = {controller: AbortController; scoped?: true; pending: string[] | undefined; work: Promise<void>};
+type TitleCheck = {events: readonly string[]; scoped?: ScopedTitle};
+type InFlight = {controller: AbortController; pending: Map<'ordinary' | 'scoped', TitleCheck>; work: Promise<void>};
 const persona = (profile: AssistantProfile): string => PROFILES.find(value => value.id === profile)?.name ?? profile;
 /** The labels with one more, each once, oldest first, keeping the latest `TITLE_EVENTS`. */
 const merged = (labels: readonly string[], label: string): string[] => labels.includes(label) ? [...labels] : [...labels, label].slice(-TITLE_EVENTS);
@@ -448,25 +448,27 @@ export class ConversationTitles {
   drop(conversationId: string): void {
     const entry = this.#inFlight.get(conversationId);
     if (entry === undefined) return;
-    entry.pending = undefined;
+    entry.pending.clear();
     entry.controller.abort();
   }
   /**
    * Asks the title model to check the conversation's title after `event`. With no call in flight for the conversation
-   * the check starts now; otherwise the event's label joins the one follow-up check that starts when that call settles.
+   * the check starts now. During a call, regular triggers coalesce and the latest scoped request keeps its own check.
    * Resolves once the conversation has no check left to run. Every failure is absorbed: a check never fails, delays or
    * rolls back a task.
    */
   check(conversationId: string, profile: AssistantProfile, event: TitleEvent, scoped?: ScopedTitle): Promise<void> {
     if (this.#stopping || (scoped?.provider ?? this.deps.provider(profile)) === undefined) return Promise.resolve();
     const label = eventLabel(event), running = this.#inFlight.get(conversationId);
+    const check: TitleCheck = {events: [label], ...(scoped === undefined ? {} : {scoped})};
     if (running !== undefined) {
-      if (scoped === undefined && running.scoped !== true) running.pending = merged(running.pending ?? [], label);
+      if (scoped === undefined) running.pending.set('ordinary', {events: merged(running.pending.get('ordinary')?.events ?? [], label)});
+      else running.pending.set('scoped', check);
       return running.work;
     }
-    const entry: InFlight = {controller: new AbortController(), pending: undefined, work: Promise.resolve(), ...(scoped === undefined ? {} : {scoped: true})};
+    const entry: InFlight = {controller: new AbortController(), pending: new Map(), work: Promise.resolve()};
     this.#inFlight.set(conversationId, entry);
-    entry.work = this.#run(conversationId, profile, entry, [label], scoped);
+    entry.work = this.#run(conversationId, profile, entry, check);
     return entry.work;
   }
   /**
@@ -474,17 +476,19 @@ export class ConversationTitles {
    * The run leaves `#inFlight` in the same synchronous step that finds no trigger waiting, so a later trigger starts a
    * new run instead of joining one that has ended.
    */
-  async #run(conversationId: string, profile: AssistantProfile, entry: InFlight, first: string[], scoped?: ScopedTitle): Promise<void> {
-    let events: string[] = first;
+  async #run(conversationId: string, profile: AssistantProfile, entry: InFlight, first: TitleCheck): Promise<void> {
+    let check = first;
     for (;;) {
-      await this.#ask(conversationId, profile, entry.controller, events, scoped).catch(() => { /* The admitted call keeps the evidence. */ });
-      const next = this.#stopping ? undefined : entry.pending;
-      entry.pending = undefined;
+      await this.#ask(conversationId, profile, entry.controller, check.events, check.scoped).catch(() => { /* The admitted call keeps the evidence. */ });
+      const next = this.#stopping ? undefined : entry.pending.entries().next().value;
       if (next === undefined) {
         if (this.#inFlight.get(conversationId) === entry) this.#inFlight.delete(conversationId);
         return;
       }
-      events = next; entry.controller = new AbortController();
+      const [kind, queued] = next;
+      entry.pending.delete(kind);
+      check = queued;
+      entry.controller = new AbortController();
     }
   }
   /**
@@ -500,9 +504,8 @@ export class ConversationTitles {
     let call: TitleCall | undefined, prompt: string | undefined, said: TitleMessage[] = [], priorTitle: StoredTitle | null = null;
     await this.deps.outbox.transaction(() => {
       const record = this.record(conversationId) ?? this.#fresh();
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || scoped !== undefined && record.title !== null) return;
       const messages = messagesForCall();
-      if (scoped !== undefined && record.title !== null) return;
       priorTitle = record.title;
       prompt = titlePrompt(messages, previousTitle(priorTitle), events);
       if (prompt === undefined) return;
@@ -577,7 +580,7 @@ export class ConversationTitles {
   async stop(): Promise<void> {
     this.#stopping = true;
     const pending = [...this.#inFlight.values()];
-    for (const item of pending) {item.pending = undefined; item.controller.abort();}
+    for (const item of pending) {item.pending.clear(); item.controller.abort();}
     await Promise.all(pending.map(item => item.work));
     this.#closed = true;
   }

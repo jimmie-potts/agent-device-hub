@@ -1208,6 +1208,25 @@ harness and, when observed, its native session ID. A second `started`
 observation can attach the ID to the original operation without taking
 responsibility twice.
 
+### Uncapped coding workers
+
+`coding-endpoint/2.4` enables uncapped admission with `capacity: "uncapped"`.
+The worker still uses the existing disable command. Older declarations keep
+finite behavior. An available uncapped selection has an opaque
+`selectionId` in `coding-state/2.4`. The core captures it when it receives a
+dispatch and includes it in `coding-run/2.2`. The coordinator requires that
+selection to still match before sending the start. The public dispatch keeps its
+existing contract. `coding-state/2.4` gives total run and waiting counts with
+bounded previews of 8 runs and 32 waits. Conversation reads active jobs
+through its independently paged content endpoint.
+
+In `coding-progress/2.3`, a started observation includes `setup` as
+`waiting`, `running` or `ready` and can carry harness and native session
+identity. A waiting observation refreshes only the waiting deadline.
+`running` starts the per-attempt setup deadline and `ready` starts the
+harness deadline. A terminal observation can report `spawn` as the reason
+this attempt failed. Earlier wire versions retain their original layouts.
+
 ### Music lighting sessions (`music-lighting-*/2.0`)
 
 `registerMusicLightingFamilies` registers four families, all at 2.0, for the live Music lighting trial (#1272, #722, policy in #40). The browser-safe `v2/music-lighting-data` export owns their types and reason lists.

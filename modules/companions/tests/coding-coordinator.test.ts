@@ -26,20 +26,24 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
   const bus = new InProcessBus({now: clock.now}), core = bus.connect('bunny/core'), worker = bus.connect(CODING_WORKER_SOURCE), gateway = bus.connect('bunny/runtime/gateway'), module = bus.connect('bunny/modules/companions');
   const work: Command<CodingWork>[] = [], deliveries: {taskId: string; text: string; parent: TraceContext; startup: boolean}[] = [], outcomes: {requestId: string; result: string; evidence: string}[] = [];
   let workReply: 'accepted' | 'capacity' = 'accepted';
-  await worker.respond<CodingWork>('bunny.cmd.coding-work.*', command => {work.push(command); return workReply === 'accepted' ? {status: 'accepted'} : errorBody('capacity');});
+  let onWork: (() => Promise<void>) | undefined;
+  await worker.respond<CodingWork>('bunny.cmd.coding-work.*', async command => {work.push(command); await onWork?.(); return workReply === 'accepted' ? {status: 'accepted'} : errorBody('capacity');});
   // The core's dispatcher forwards a dispatch to the module's coding-run responder; a test can make it refuse or never answer.
   // 'held' answers by refusal only when released; 'held-forward' forwards when released; 'lost-answer' forwards and then
   // answers uncertain, as a reply lost after the module accepted the run.
   let coreReply: 'forward' | 'refuse' | 'held' | 'held-forward' | 'lost-answer' = 'forward', release = (): void => {};
   const dispatched: string[] = [];
   await core.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
+    const selectionId = published.at(-1)?.data.selectionId;
     dispatched.push(command.data.requestId);
     if (coreReply === 'refuse') return errorBody('unavailable');
     // A held dispatch is answered only when the test releases it, by refusal, after the module that sent it stopped.
     if (coreReply === 'held') {await new Promise<void>(resolve => {release = resolve;}); return errorBody('unavailable');}
     if (coreReply === 'held-forward') await new Promise<void>(resolve => {release = resolve;});
     const lost = coreReply === 'lost-answer';
-    const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${command.data.harness === undefined ? '2.0' : '2.1'}`, data: command.data},
+    const version = selectionId === undefined ? command.data.harness === undefined ? '2.0' : '2.1' : '2.2';
+    const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${version}`,
+      data: {...command.data, ...(selectionId === undefined ? {} : {selectionId})}},
       {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
     if (lost) return errorBody('uncertain-result');
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
@@ -56,7 +60,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     const outbox = new Outbox({sdk: context.sdk, database: context.database(), clock, validator, log: context.log, trace: context.trace});
     // A task's companion is in its synthetic ID here; the module reads it from the engine's saved task.
     engine = new CodingCoordinator(context, outbox, (taskId, text, given, _evidence, startup) => {deliveries.push({taskId, text, parent: given, startup}); return Promise.resolve();},
-      {mayShare, companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
+      {briefRefusal: ({taskId, repository}) => mayShare(taskId, repository) ? undefined : 'grant-denied', companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
         // A task waits on its hand-off until the test ends it, as a cancel the coordinator never heard of would.
         awaits: taskId => {if (unreadable.has(taskId)) throw new Error('synthetic store read failure'); return !finished.has(taskId);}, sent: taskId => {sent.push(taskId);}});
     await engine.start(); await outbox.republish();
@@ -70,11 +74,12 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
       companion: /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny', repository: 'agent-device-hub', brief: 'Add a test.', expectedRevision}, parent),
     enable22: (endpoint = 'worker-1', slots = 3) => worker.request(`bunny.cmd.coding-endpoint.${endpoint}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpoint,
       dataschema: 'https://bunny.invalid/events/coding-endpoint/2.2', data: {requestId: `control-${String(++n)}`, action: 'enable', slots}}, {timeoutMs: 5000}),
-    enableAdapters: (harnesses: CodingHarnessReadiness[], endpoint = 'worker-1') => worker.request(`bunny.cmd.coding-endpoint.${endpoint}`,
-      {type: 'org.bunny.coding.endpoint.requested', subject: endpoint, dataschema: 'https://bunny.invalid/events/coding-endpoint/2.3',
-        data: {requestId: `control-${String(++n)}`, action: 'enable', slots: 3, harnesses}}, {timeoutMs: 5000}),
-    progressAdapters: (data: CodingProgress, endpoint = 'worker-1') => worker.publish(`bunny.event.coding-progress.${endpoint}`,
-      {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpoint, dataschema: 'https://bunny.invalid/events/coding-progress/2.2', data}, {parent}),
+    onWork: (gate: () => Promise<void>) => {onWork = gate;},
+    enableAdapters: (harnesses: CodingHarnessReadiness[], endpoint = 'worker-1', uncapped = false) => worker.request(`bunny.cmd.coding-endpoint.${endpoint}`,
+      {type: 'org.bunny.coding.endpoint.requested', subject: endpoint, dataschema: `https://bunny.invalid/events/coding-endpoint/${uncapped ? '2.4' : '2.3'}`,
+        data: {requestId: `control-${String(++n)}`, action: 'enable', ...(uncapped ? {capacity: 'uncapped'} : {slots: 3}), harnesses}}, {timeoutMs: 5000}),
+    progressAdapters: (data: CodingProgress, endpoint = 'worker-1', uncapped = false) => worker.publish(`bunny.event.coding-progress.${endpoint}`,
+      {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpoint, dataschema: `https://bunny.invalid/events/coding-progress/${uncapped ? '2.3' : '2.2'}`, data}, {parent}),
     advance: async (ms = 0) => {now += ms; for (const timer of [...timers]) if (timer.at <= now) {timers.delete(timer); timer.run();} await new Promise(resolve => setImmediate(resolve));},
     control: (action: 'enable' | 'disable', endpoint = 'worker-1', readiness?: CodingReadiness) => worker.request(`bunny.cmd.coding-endpoint.${endpoint}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpoint,
       dataschema: `https://bunny.invalid/events/coding-endpoint/${readiness === undefined ? '2.0' : '2.1'}`, data: {requestId: `control-${String(++n)}`, action, ...(readiness === undefined ? {} : {readiness})}}, {timeoutMs: 5000}),
@@ -542,4 +547,138 @@ void test('harness selection requires an advertised adapter and a second started
   await until(() => w.deliveries.length === 1);
   assert.match(w.deliveries[0]?.text ?? '', /^uncertain \(lost\)/);
   assert.equal(w.work.length, 1);
+});
+
+void test('a queued hand-off retains the asking companion even when its task belongs to another profile', async t => {
+  const w = await world(t);
+  assert.equal((await w.enable22()).status, 'accepted');
+  const answered = await w.owner().handOff({requestId: 'reachy-room-attempt', taskId: 'bunny-room-task', conversationId: 'apartment',
+    companion: 'reachy', repository: 'agent-device-hub', brief: 'Synthetic room request.', expectedRevision: w.owner().endpoint().revision}, parent);
+  assert.equal(answered.status, 'queued');
+  await until(() => w.work.length === 1);
+  const started = w.work[0]?.data;
+  assert.ok(started?.action === 'start');
+  assert.equal(started.companion, 'reachy');
+  assert.equal(w.owner().jobs().jobs[0]?.companion, 'reachy');
+});
+
+
+void test('explicit uncapped Codex starts share the worker acknowledgement queue and retain their native identities', async t => {
+  const w = await world(t);
+  const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', version: '1.0.0', signedIn: 'yes', plan: 'max',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
+  const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus', capabilities: {...claude.capabilities, resume: 'saved-session'}};
+  assert.equal((await w.enableAdapters([claude, codex], 'worker-1', true)).status, 'accepted');
+  let release = (): void => {};
+  const held = new Promise<void>(resolve => {release = resolve;});
+  t.after(() => {release();});
+  w.onWork(() => held);
+  const tasks = ['task-codex-a', 'task-codex-b', 'task-codex-c', 'task-codex-d'];
+  assert.equal((await w.dispatch(tasks[0], 'worker-1', 'codex')).status, 'accepted');
+  await until(() => w.work.length === 1);
+  for (const task of tasks.slice(1)) assert.equal((await w.dispatch(task, 'worker-1', 'codex')).status, 'accepted');
+  const sibling = await w.owner().handOff({requestId: 'reachy-sibling-step-1', taskId: 'reachy-sibling', conversationId: 'reachy-conversation',
+    companion: 'reachy', repository: 'agent-device-hub', brief: 'Synthetic sibling', expectedRevision: w.owner().endpoint().revision}, parent);
+  assert.equal(sibling.status, 'queued');
+  await until(() => w.dispatched.includes('reachy-sibling-step-1'));
+  assert.equal(w.work.length, 1);
+  const first = w.work[0]?.data.operationId ?? assert.fail('first Codex start');
+  await w.progressAdapters({operationId: first, harness: 'codex', status: 'started', setup: 'ready', sessionId: 'first-native'}, 'worker-1', true);
+  await until(() => w.owner().inspect().runs?.some(run => run.sessionId === 'first-native') === true);
+  assert.equal(w.work.length, 1);
+  release();
+  await until(() => w.work.length === 5);
+  for (const [index, taskId] of tasks.entries()) {
+    const started = w.work[index]?.data;
+    assert.ok(started?.action === 'start' && started.taskId === taskId && started.harness === 'codex');
+  }
+  const reachy = w.work[4]?.data;
+  assert.ok(reachy?.action === 'start' && reachy.companion === 'reachy' && reachy.harness === undefined);
+  assert.deepEqual(w.owner().inspect().harnesses, [claude, codex]);
+  assert.deepEqual(w.owner().inspect().counts, {runs: 5, waiting: 0});
+});
+
+void test('revocation after uncapped admission prevents sending the brief when the acknowledgement queue advances', async t => {
+  const revoked = new Set<string>();
+  const w = await world(t, undefined, taskId => !revoked.has(taskId));
+  const codex: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', version: '0.163.0', signedIn: 'yes', plan: 'plus',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'saved-session', review: true}};
+  assert.equal((await w.enableAdapters([codex], 'worker-1', true)).status, 'accepted');
+  let release = (): void => {};
+  const firstAck = new Promise<void>(resolve => {release = resolve;});
+  t.after(release);
+  w.onWork(() => firstAck);
+  assert.equal((await w.dispatch('task-first', 'worker-1', 'codex')).status, 'accepted');
+  await until(() => w.work.length === 1);
+  assert.equal((await w.dispatch('task-revoked', 'worker-1', 'codex')).status, 'accepted');
+  assert.equal((await w.dispatch('task-next', 'worker-1', 'codex')).status, 'accepted');
+  assert.equal(w.work.length, 1);
+  revoked.add('task-revoked');
+  release();
+
+  await until(() => w.work.some(command => command.data.operationId === 'task-next-step-1'));
+  assert.deepEqual(w.work.map(command => command.data.operationId), ['task-first-step-1', 'task-next-step-1']);
+  await until(() => w.deliveries.some(item => item.taskId === 'task-revoked'));
+  assert.match(w.deliveries.find(item => item.taskId === 'task-revoked')?.text ?? '', /coding brief sharing was revoked/);
+});
+
+for (const disconnect of ['lose', 'disable'] as const) {
+  void test(`disconnect by ${disconnect} reports a queued explicit start as unsent and fences the old ACK queue`, {timeout: 15_000}, async t => {
+    const w = await world(t);
+    const codex: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', version: '0.163.0', signedIn: 'yes', plan: 'plus',
+      limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'saved-session', review: true}};
+    assert.equal((await w.enableAdapters([codex], 'worker-1', true)).status, 'accepted');
+    let release = (): void => {};
+    const firstAck = new Promise<void>(resolve => {release = resolve;});
+    t.after(release);
+    w.onWork(() => firstAck);
+    try {
+      assert.equal((await w.dispatch('task-crossed', 'worker-1', 'codex')).status, 'accepted');
+      await until(() => w.work.length === 1);
+      assert.equal((await w.dispatch('task-local', 'worker-1', 'codex')).status, 'accepted');
+      assert.equal(w.work.length, 1);
+      if (disconnect === 'lose') await w.lost();
+      else assert.equal((await w.control('disable')).status, 'accepted');
+      await until(() => w.deliveries.length === 2 && w.outcomes.length === 2);
+      assert.match(w.deliveries.find(item => item.taskId === 'task-crossed')?.text ?? '', /^uncertain \(lost\)/);
+      assert.match(w.deliveries.find(item => item.taskId === 'task-local')?.text ?? '', /^failed \(worker became unavailable before start was sent\)/);
+      assert.deepEqual(w.outcomes.map(item => [item.requestId, item.result, item.evidence]).sort(), [
+        ['task-crossed-step-1', 'uncertain', 'none'], ['task-local-step-1', 'failed', 'none'],
+      ]);
+      assert.equal((await w.enableAdapters([codex], 'worker-1', true)).status, 'accepted');
+      w.onWork(() => Promise.resolve());
+      assert.equal((await w.dispatch('task-new', 'worker-1', 'codex')).status, 'accepted');
+      release();
+      await until(() => w.work.length === 2);
+      await w.advance();
+      assert.deepEqual(w.work.map(command => command.data.operationId), ['task-crossed-step-1', 'task-new-step-1']);
+      assert.equal(w.deliveries.length, 2);
+    } finally {release();}
+  });
+}
+
+
+void test('the coding-run receiver refuses a held explicit dispatch from a previous uncapped selection', async t => {
+  const w = await world(t);
+  const codex: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', version: '0.163.0', signedIn: 'yes', plan: 'plus',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'saved-session', review: true}};
+  assert.equal((await w.enableAdapters([codex], 'worker-1', true)).status, 'accepted');
+  await until(() => w.published.at(-1)?.data.selectionId !== undefined);
+  const original = w.published.at(-1)?.data.selectionId;
+  w.core('held-forward');
+  const stale = w.dispatch('task-stale-codex', 'worker-1', 'codex');
+  try {
+    await until(() => w.dispatched.length === 1);
+    assert.equal((await w.control('disable')).status, 'accepted');
+    assert.equal((await w.enableAdapters([codex], 'worker-1', true)).status, 'accepted');
+    await until(() => w.published.at(-1)?.data.selectionId !== undefined && w.published.at(-1)?.data.selectionId !== original);
+    w.release();
+    assert.equal((await stale).status, 'rejected');
+    assert.equal(w.work.length, 0);
+    w.core('forward');
+    assert.equal((await w.dispatch('task-fresh-codex', 'worker-1', 'codex')).status, 'accepted');
+    await until(() => w.work.length === 1);
+    const start = w.work[0]?.data;
+    assert.ok(start?.action === 'start' && start.harness === 'codex' && start.operationId === 'task-fresh-codex-step-1');
+  } finally {w.release();}
 });

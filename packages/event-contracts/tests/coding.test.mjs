@@ -182,3 +182,40 @@ test('additive worker versions carry harness readiness, selection and early nati
   invalid(at('coding-progress', '2.1', progress));
   invalid(at('coding-progress', '2.2', {...progress, sessionId: '/absolute/path'}));
 });
+
+test('uncapped coding declarations and bounded state previews leave earlier schema layouts intact', () => {
+  const declaration = {requestId: 'uncapped', action: 'enable', capacity: 'uncapped'};
+  valid(at('coding-endpoint', '2.4', declaration));
+  invalid(at('coding-endpoint', '2.4', {...declaration, slots: 3}));
+  invalid(at('coding-endpoint', '2.2', declaration));
+  const old = fixtures.valid['coding-state-slots'].data;
+  const runs = Array.from({length: 8}, (_, index) => ({
+    ...old.runs[0], operationId: index === 0 ? old.runs[0].operationId : `independent-${index}`,
+    setup: 'waiting', harness: 'claude-code', sessionId: 'observed-session',
+  }));
+  const state = {...old, slots: null, capacity: 'uncapped', runs, counts: {runs: 12, waiting: old.waiting.length}};
+  valid(at('coding-state', '2.4', state));
+  invalid(at('coding-state', '2.4', {...state, slots: 3}));
+  invalid(at('coding-state', '2.4', {...state, counts: {runs: 7, waiting: old.waiting.length}}));
+  invalid(at('coding-state', '2.2', state));
+});
+
+test('bounded setup transitions and a spawn failure retain attempt and harness identity', () => {
+  for (const setup of ['waiting', 'running', 'ready']) valid(at('coding-progress', '2.3', {
+    operationId: 'independent', status: 'started', setup, harness: 'codex', sessionId: 'observed-session',
+  }));
+  invalid(at('coding-progress', '2.3', {operationId: 'independent', status: 'started'}));
+  invalid(at('coding-progress', '2.1', {operationId: 'independent', status: 'started', setup: 'ready'}));
+  valid(at('coding-progress', '2.3', {operationId: 'independent', status: 'failed', reason: 'spawn', result: null}));
+});
+
+
+test('a tracked run can carry the selected uncapped connection without changing the public dispatch', () => {
+  const selectionId = '01234567-89ab-4cde-8fab-0123456789ab';
+  const data = {...family('coding-run').data, harness: 'codex'};
+  valid(at('coding-run', '2.2', {...data, selectionId}));
+  invalid(at('coding-run', '2.2', data));
+  invalid(at('coding-run', '2.2', {...data, selectionId: 'worker-logical-name'}));
+  invalid(at('coding-run', '2.1', {...data, selectionId}));
+  invalid(at('coding-dispatch', '2.1', {...data, selectionId}));
+});
