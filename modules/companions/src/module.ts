@@ -239,8 +239,7 @@ class Companions {
       jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
       jobVisible: (job, companion) => this.assistant?.canReadCodingJob(companion, job) === true,
-      restrictRead: canRevokeFields(share),
-      operationVisible: ({companion, taskId, operationId}) => this.assistant?.canReadCodingOperation(companion, taskId, operationId) === true,
+      legacyOperationVisible: ({companion, taskId, operationId}) => this.assistant?.canReadLegacyCodingOperation(companion, taskId, operationId) === true,
       jobBriefVisible: (job, companion) => this.assistant?.canReadCodingJobBrief(companion, job) === true,
       allowMessage: (job, companion) => this.assistant?.canMessageCodingJob(companion, job) === true,
       awaits: taskId => {

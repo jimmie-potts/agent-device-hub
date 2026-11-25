@@ -43,8 +43,7 @@ export type CodingSeams = {
   jobUpdate?: (job: CodingJob, kind: 'sent' | 'stop-unconfirmed' | 'result', text: string, parent: TraceContext, startup: boolean) => Promise<void>;
   companionOf?: (taskId: string) => CodingCompanion | undefined;
   jobVisible?: (job: Pick<CodingJob, 'jobId' | 'taskId' | 'conversationId' | 'operationId' | 'repository'>, companion: CodingCompanion) => boolean;
-  restrictRead?: boolean;
-  operationVisible?: (operation: Pick<CodingRunEntry, 'operationId' | 'taskId' | 'companion'>) => boolean;
+  legacyOperationVisible?: (operation: Pick<CodingRunEntry, 'operationId' | 'taskId' | 'companion'>) => boolean;
   jobBriefVisible?: (job: CodingJob, companion: CodingCompanion) => boolean;
   allowMessage?: (job: CodingJob, companion: CodingCompanion) => boolean;
   awaits?: (taskId: string) => boolean;
@@ -261,20 +260,19 @@ export class CodingCoordinator {
   }
   #operationVisible(operation: Pick<CodingRunEntry, 'operationId' | 'taskId' | 'companion'>): boolean {
     const job = this.#store.job(operation.operationId);
-    return job === undefined ? this.#seams.operationVisible?.(operation) !== false
-      : this.#seams.jobVisible?.(job, operation.companion) !== false;
+    return job === undefined ? this.#seams.legacyOperationVisible?.(operation) === true
+      : job.taskId === operation.taskId && this.#seams.jobVisible?.(job, operation.companion) !== false;
   }
   inspect(): CodingState {
     let runs: CodingRunEntry[] = [], runCount = 0;
     let waiting: CodingState['waiting'] = [], waitingCount = 0;
     try {
-      const restricted = this.#seams.restrictRead === true;
-      const visibleRuns = [...this.#active.values()].filter(active => !restricted || this.#operationVisible(active));
+      const visibleRuns = [...this.#active.values()].filter(active => this.#operationVisible(active));
       runCount = visibleRuns.length;
       runs = visibleRuns.slice(0, 8).map(active => ({operationId: active.operationId, taskId: active.taskId,
         companion: active.companion, status: active.phase, ...this.#runContext(active)}));
-      const visibleWaits = restricted ? this.#store.waiting().filter(wait => this.#operationVisible(wait)) : this.#store.waiting(WAITING_LIMIT);
-      waitingCount = restricted ? visibleWaits.length : this.#store.waitingCount();
+      const visibleWaits = this.#store.waiting().filter(wait => this.#operationVisible(wait));
+      waitingCount = visibleWaits.length;
       waiting = visibleWaits.slice(0, WAITING_LIMIT).map(({operationId, taskId, companion}) => ({operationId, taskId, companion}));
     } catch (error) {this.#storageFailure(error);}
     const first = runs[0];

@@ -273,6 +273,11 @@ Jobs SHALL offer a bounded authenticated listing and exact job lookup across the
 - **WHEN** an authorized reader opens Jobs or reloads a job's original Conversation
 - **THEN** the saved job and known outcome remain readable and the job links back to the original Conversation
 
+#### Scenario: Live state with missing attempt provenance
+
+- **WHEN** a running or waiting operation lacks a durable job association
+- **THEN** live coding state includes the operation in its entries and counts only when the original saved legacy delegation identifies that exact operation and the reader's grants allow it
+
 #### Scenario: Distinguish instruction evidence
 
 - **WHEN** a job instruction is recorded locally, accepted by a harness, or confirmed by harness activity

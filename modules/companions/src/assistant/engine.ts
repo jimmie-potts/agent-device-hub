@@ -1058,9 +1058,9 @@ export class AssistantEngine {
     if (asked?.kind === 'approval') queued(); else steered();
     return {launch: undefined};
   }
-  canReadCodingOperation(profile: AssistantProfile, taskId: string, operationId: string): boolean {
-    const task = this.store.task(taskId);
-    if (task?.profile !== profile) return false;
+  canReadLegacyCodingOperation(profile: AssistantProfile, taskId: string, operationId: string): boolean {
+    const task = this.store.task(taskId), question = task?.question;
+    if (task?.profile !== profile || question?.kind !== 'delegation' || !this.#matchesDelegation(taskId, question.id, operationId)) return false;
     const fields = this.#publicRead(profile);
     return fields.task(task.conversationId, taskId) && fields.discover('coding', 'index', operationId) &&
       fields.read('coding', 'details', operationId) && fields.read('coding', 'status', operationId);
