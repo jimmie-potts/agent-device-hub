@@ -19,25 +19,42 @@ for(const gesture of ['notice','attention','neutral'] as const)void test(`passiv
   if(robot.effects.length===2){const first=robot.effects[0],second=robot.effects[1];assert.ok(first&&second);const delta=BigInt(second.atNs)-BigInt(first.atNs);assert.ok(delta>=800000000n&&delta<=900000000n);}
   const duplicate=await f.command('microduck-gesture',{gesture},id);assert.equal('error'in duplicate&&duplicate.error.error.code,'duplicate-conflict');
 });
+/**
+ * Stop must not wait on the vendor's reply, the hold or any module timer. The module, the bus and the simulator share
+ * a test clock that stands still from the Stop to both outcomes, so a Stop that waited on the reply or on any timer
+ * of the module's scheduler, however short, never finishes and fails at `until`'s limit. The earlier bound was 500 ms
+ * of real time, which a host stall after the Stop broke although the module waited on nothing (#2095). A wait on a
+ * timer outside the scheduler is caught only past `until`'s 4 s.
+ */
 void test('Stop completes while a vendor reply is pending and never writes neutral',{timeout:10000},async t=>{
-  const robot=new SimulatedMicroDuck();const f=await fixture(t,adapter(robot,async(yaw,signal,before)=>{await robot.head(yaw,signal,before);await new Promise<void>((_resolve,reject)=>{signal.addEventListener('abort',()=>{reject(new Error('synthetic reply ended'));},{once:true});});}));
+  const clock=new TestClock(),robot=new SimulatedMicroDuck(clock);const f=await fixture(t,adapter(robot,async(yaw,signal,before)=>{await robot.head(yaw,signal,before);await new Promise<void>((_resolve,reject)=>{signal.addEventListener('abort',()=>{reject(new Error('synthetic reply ended'));},{once:true});});}),clock);
   await f.control('takeover');const id='pending-head';await f.command('microduck-gesture',{gesture:'notice'},id);await until(()=>robot.effects.length===1);
-  const start=Date.now(),stop='priority-stop';assert.equal((await f.command('microduck-stop',{},stop)).status,'accepted');await until(()=>f.outcome(stop)!==undefined&&f.outcome(id)!==undefined);
-  assert.ok(Date.now()-start<500);assert.equal(f.outcome(stop)?.result,'succeeded');assert.equal(f.outcome(id)?.result,'uncertain');assert.equal(f.state().latched,true);assert.deepEqual(robot.effects.map(x=>x.yaw),[.1]);
+  const start=clock.now(),stop='priority-stop';assert.equal((await f.command('microduck-stop',{},stop)).status,'accepted');await until(()=>f.outcome(stop)!==undefined&&f.outcome(id)!==undefined);
+  assert.equal(clock.now(),start,'Stop finished without the clock moving');assert.equal(f.outcome(stop)?.result,'succeeded');assert.equal(f.outcome(id)?.result,'uncertain');assert.equal(f.state().latched,true);assert.deepEqual(robot.effects.map(x=>x.yaw),[.1]);
 });
+/**
+ * Recovery needs two advancing zero-input samples within 800 ms of its send, and the sensor freshness limit is 500 ms.
+ * On the real clock a host stall after the recovery's send aged the samples past either bound (#2095), so the module,
+ * the bus and the simulator share a test clock.
+ */
 void test('lost reply is held; only a new exact acknowledged neutral clears it',{timeout:10000},async t=>{
-  const robot=new SimulatedMicroDuck(),f=await fixture(t,robot);await f.control('takeover');robot.loseReply=true;
+  const clock=new TestClock(),robot=new SimulatedMicroDuck(clock),f=await fixture(t,robot,clock);await f.control('takeover');robot.loseReply=true;
   await f.command('microduck-gesture',{gesture:'neutral'},'lost-one');await until(()=>f.state().held?.requestId==='lost-one');assert.equal(f.outcome('lost-one')?.result,'uncertain');
   await f.control('takeover');await f.control('disable-auto');assert.equal(f.state().held?.requestId,'lost-one');
   for(const data of [{gesture:'neutral'},{gesture:'notice',recovered:true,heldRequestId:'lost-one'},{gesture:'neutral',recovered:true,heldRequestId:'other'},{gesture:'neutral',recovered:true,heldRequestId:'lost-one',expectedConfigurationRevision:0}])assert.equal('error'in await f.command('microduck-gesture',data),true);
   await f.command('microduck-gesture',{gesture:'neutral',recovered:true,heldRequestId:'lost-one'},'lost-two');await until(()=>f.state().held?.requestId==='lost-two');
-  robot.loseReply=false;await f.command('microduck-gesture',{gesture:'neutral',recovered:true,heldRequestId:'lost-two'},'recover');await until(()=>f.outcome('recover')!==undefined);
+  robot.loseReply=false;await f.command('microduck-gesture',{gesture:'neutral',recovered:true,heldRequestId:'lost-two'},'recover');await advanceUntil(clock,()=>f.outcome('recover')!==undefined);
   assert.equal(f.state().held,null);assert.deepEqual(f.state().lastRecovery,{requestId:'recover',heldRequestId:'lost-two'});assert.equal(f.outcome('lost-one')?.result,'uncertain');assert.equal(f.outcome('lost-two')?.result,'uncertain');assert.equal(f.state().latched,true);
 });
+/**
+ * Staleness and reconnection run on the module's 500 ms freshness timer and its reconnect backoff, and the check that
+ * no write follows the revoked gesture waits 700 ms. On a shared test clock a host stall neither ages the sensor
+ * evidence nor shortens that wait (#2095).
+ */
 void test('coasted timestamps and changed sessions revoke admission without replay',{timeout:10000},async t=>{
-  const robot=new SimulatedMicroDuck(),f=await fixture(t,robot);robot.coasting=true;await until(()=>f.state().connection!=='available');assert.equal('error'in await f.command('microduck-control',{action:'resume-auto'}),true);
-  robot.coasting=false;await until(()=>f.state().connection==='available');await f.control('takeover');await f.command('microduck-gesture',{gesture:'attention'},'session-change');await until(()=>robot.effects.length===1);robot.session=crypto.randomUUID();
-  await until(()=>f.outcome('session-change')!==undefined);assert.equal(f.outcome('session-change')?.result,'uncertain');await pause(700);assert.equal(robot.effects.length,1);
+  const clock=new TestClock(),robot=new SimulatedMicroDuck(clock),f=await fixture(t,robot,clock);robot.coasting=true;await advanceUntil(clock,()=>f.state().connection!=='available');assert.equal('error'in await f.command('microduck-control',{action:'resume-auto'}),true);
+  robot.coasting=false;await advanceUntil(clock,()=>f.state().connection==='available');await f.control('takeover');await f.command('microduck-gesture',{gesture:'attention'},'session-change');await until(()=>robot.effects.length===1);robot.session=crypto.randomUUID();
+  await advanceUntil(clock,()=>f.outcome('session-change')!==undefined);assert.equal(f.outcome('session-change')?.result,'uncertain');await clock.advance(700);assert.equal(robot.effects.length,1);
 });
 /**
  * Each fence must land after a first move is sent and before its 800 ms return (#1471): Quiet, and the 100 ms deadline
