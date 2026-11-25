@@ -4,6 +4,7 @@ import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend'
 import type {SyncedCopy} from '@jimmie-potts/sdk';
 import type {MessageCodingInput, StopCodingInput} from '../assistant/history-contract.js';
 import {conversationRail} from './conversation-rail.js';
+import {codingHarness, type CodingHarness} from '../coding/routing.js';
 import type {CodingJobEntry, CodingJobPage, JobMessage} from '../coding/job-page.js';
 import {companionName} from './coding-status.js';
 
@@ -82,6 +83,14 @@ export function stopCodingJob(command: FrontendCommand, jobId: string, operation
   submitJobInput(command, {action: 'stop-coding-job', jobId, operationId}, crypto.randomUUID());
 }
 
+type ContinueJobInput = {jobId: string; operationId: string; harness: CodingHarness};
+type ContinueJob = (input: ContinueJobInput) => void;
+
+export function continueCodingJob(command: FrontendCommand, input: ContinueJobInput): void {
+  void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),
+    data: {action: 'continue-coding-job', ...input}});
+}
+
 export function messageCodingJob(command: FrontendCommand, job: Pick<CodingJobEntry, 'jobId' | 'operationId'>, text: string, requestId: string): void {
   submitJobInput(command, {action: 'message-coding-job', jobId: job.jobId, operationId: job.operationId, text}, requestId);
 }
@@ -142,30 +151,42 @@ function AttemptResults({value}: {value: unknown}): React.JSX.Element | null {
   </li>;
 }
 
-function JobAttempts({jobId, revision, read}: {jobId: string; revision: number | undefined; read: (path: string) => Promise<unknown>}): React.JSX.Element {
+function JobAttempts({jobId, operationId, revision, read, continueJob, locked}: {
+  jobId: string; operationId: string; revision: number | undefined; read: (path: string) => Promise<unknown>; continueJob: ContinueJob; locked: boolean;
+}): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
-  const [detail, setDetail] = useState<{attempts: readonly unknown[]; continuationReason?: string} | null>();
+  const [loaded, setLoaded] = useState<{revision: number; detail: {attempts: readonly unknown[]; continuationReason?: string; offer?: ContinueJobInput} | null}>();
   useEffect(() => {
     if (!expanded || revision === undefined) return;
     let current = true;
     void read(`/modules/companions/content/coding-job?${new URLSearchParams({jobId}).toString()}`).then(value => {
+      if (!current) return;
       const detail = record(value);
-      if (current) setDetail(detail?.version === 1 && detail.jobId === jobId && Array.isArray(detail.attempts)
-        ? {attempts: detail.attempts as unknown[], ...(typeof detail.continuationReason === 'string' ? {continuationReason: detail.continuationReason} : {})} : null);
-    }, () => {if (current) setDetail(null);});
+      const continuation = record(detail?.continuation);
+      const offer = detail?.activeOperationId === null && continuation?.fromOperationId === operationId && codingHarness(continuation.harness)
+        ? {jobId, operationId, harness: continuation.harness} : undefined;
+      setLoaded({revision, detail: detail?.version === 1 && detail.jobId === jobId && Array.isArray(detail.attempts)
+        ? {attempts: detail.attempts as unknown[], ...(typeof detail.continuationReason === 'string' ? {continuationReason: detail.continuationReason} : {}),
+          ...(offer === undefined ? {} : {offer})} : null});
+    }, () => {if (current) setLoaded({revision, detail: null});});
     return () => {current = false;};
-  }, [expanded, jobId, read, revision]);
+  }, [expanded, jobId, operationId, read, revision]);
+  const detail = loaded?.revision === revision ? loaded?.detail : undefined;
+  const offer = detail?.offer?.jobId === jobId && detail.offer.operationId === operationId ? detail.offer : undefined;
   return <details onToggle={event => {setExpanded(event.currentTarget.open);}}>
     <summary>Attempts and results</summary>
     {expanded && (detail === undefined ? <p>Loading attempts…</p> : detail === null ? <p>Attempts unavailable.</p>
       : <>{detail.continuationReason !== undefined && <p>{detail.continuationReason}</p>}
-        <ol>{detail.attempts.map((attempt, index) => <AttemptResults key={index} value={attempt}/>)}</ol></>)}
+        <ol>{detail.attempts.map((attempt, index) => <AttemptResults key={index} value={attempt}/>)}</ol>
+        {offer !== undefined && <button type="button" disabled={locked} onClick={() => {continueJob(offer);}}>
+          Continue with {offer.harness === 'codex' ? 'Codex' : 'Claude Code'}
+        </button>}</>)}
   </details>;
 }
 
 type MessageJob = (job: CodingJobEntry, text: string, requestId: string) => void;
-export function CodingJobCard({job, stop, message, locked, read, revision, operations, inConversation = false}: {
-  job: CodingJobEntry; stop: (jobId: string, operationId: string) => void; message: MessageJob; locked: boolean; read: (path: string) => Promise<unknown>; revision: number | undefined; operations: FrontendContext['operations']; inConversation?: boolean;
+export function CodingJobCard({job, stop, message, continueJob, locked, read, revision, operations, inConversation = false}: {
+  job: CodingJobEntry; stop: (jobId: string, operationId: string) => void; message: MessageJob; continueJob: ContinueJob; locked: boolean; read: (path: string) => Promise<unknown>; revision: number | undefined; operations: FrontendContext['operations']; inConversation?: boolean;
 }): React.JSX.Element {
   const {companion, conversationId} = job;
   const [draft, setDraft] = useState('');
@@ -192,7 +213,7 @@ export function CodingJobCard({job, stop, message, locked, read, revision, opera
       <dt>Worktree</dt><dd>{job.worktreeRef ?? 'Unknown'}</dd>
       <dt>Native session</dt><dd>{job.sessionId ?? 'Unknown'}</dd>
     </dl>
-    <JobAttempts jobId={job.jobId} read={read} revision={revision}/>
+    <JobAttempts jobId={job.jobId} operationId={job.operationId} read={read} revision={revision} continueJob={continueJob} locked={locked}/>
     {!inConversation && job.latestUpdate !== undefined && <p className="conversation-message-text">{job.latestUpdate}</p>}
     {!inConversation && companion !== undefined && <a href="#/module/companions/assistant"
       onClick={() => {conversationRail.openConversation(companion, conversationId);}}>Open original conversation</a>}
@@ -218,11 +239,12 @@ export function CodingJobCard({job, stop, message, locked, read, revision, opera
   </article>;
 }
 
-export function CodingJobs({read, revision, stop, message, operations, locked, standalone = false}: {
+export function CodingJobs({read, revision, stop, message, continueJob, operations, locked, standalone = false}: {
   read: (path: string) => Promise<unknown>;
   revision: number;
   stop: (jobId: string, operationId: string) => void;
   message: MessageJob;
+  continueJob: ContinueJob;
   operations: FrontendContext['operations'];
   locked: boolean;
   standalone?: boolean;
@@ -249,7 +271,7 @@ export function CodingJobs({read, revision, stop, message, operations, locked, s
   const list = <>{page === undefined ? <p>Loading coding jobs…</p>
     : page === null ? <p>Coding jobs unavailable. <button type="button" onClick={() => {setRetry(value => value + 1);}}>Retry</button></p>
     : page.jobs.length === 0 ? <p>{standalone ? 'No jobs on this page.' : 'No active jobs on this page.'}</p>
-    : <ul className="coding-job-list">{page.jobs.map(job => <li key={job.jobId}><CodingJobCard job={job} stop={stop} message={message} locked={locked} read={read} revision={revision} operations={operations}/></li>)}</ul>}
+    : <ul className="coding-job-list">{page.jobs.map(job => <li key={job.jobId}><CodingJobCard job={job} stop={stop} message={message} continueJob={continueJob} locked={locked} read={read} revision={revision} operations={operations}/></li>)}</ul>}
     {cursors.length > 1 && <button type="button" onClick={() => {setCursors(values => values.slice(0, -1));}}>Previous jobs</button>}
     {page?.next != null && <button type="button" onClick={() => {
       const next = page.next;
@@ -262,9 +284,9 @@ export function CodingJobs({read, revision, stop, message, operations, locked, s
   </details>;
 }
 
-export function ConversationCodingJob({jobId, revision, read, locked, stop, message, operations}: {
+export function ConversationCodingJob({jobId, revision, read, locked, stop, message, continueJob, operations}: {
   jobId: string; revision: number | undefined; read: (path: string) => Promise<unknown>;
-  locked: boolean; stop: (jobId: string, operationId: string) => void; message: MessageJob; operations: FrontendContext['operations'];
+  locked: boolean; stop: (jobId: string, operationId: string) => void; message: MessageJob; continueJob: ContinueJob; operations: FrontendContext['operations'];
 }): React.JSX.Element | null {
   const [job, setJob] = useState<CodingJobEntry>();
   useEffect(() => {
@@ -275,7 +297,7 @@ export function ConversationCodingJob({jobId, revision, read, locked, stop, mess
     }, () => {if (current) setJob(undefined);});
     return () => {current = false;};
   }, [jobId, read, revision]);
-  return job === undefined ? null : <CodingJobCard job={job} stop={stop} message={message} locked={locked || revision === undefined} read={read} revision={revision} operations={operations} inConversation/>;
+  return job === undefined ? null : <CodingJobCard job={job} stop={stop} message={message} continueJob={continueJob} locked={locked || revision === undefined} read={read} revision={revision} operations={operations} inConversation/>;
 }
 
 export function JobsPage({context}: {context: FrontendContext}): React.JSX.Element {
@@ -289,6 +311,7 @@ export function JobsPage({context}: {context: FrontendContext}): React.JSX.Eleme
         <CodingJobs standalone read={read} revision={coding.revision} operations={context.operations}
           stop={(jobId, operationId) => {stopCodingJob(command, jobId, operationId);}}
           message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}
+          continueJob={input => {continueCodingJob(command, input);}}
           locked={command.locked || !control || !operationsLive}/>
         {command.requestId !== undefined && <p role="status">{command.text}</p>}
       </>}</Command>}

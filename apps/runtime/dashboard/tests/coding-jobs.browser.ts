@@ -30,8 +30,11 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     const enabled = await endpoint.request('coding-endpoint', {
       type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.4',
       data: {requestId: randomUUID(), action: 'enable', capacity: 'uncapped', harnesses: [{
-        harness: 'claude-code', capabilities: {steering: 'live', resume: 'unsupported', review: true},
-        installed: 'yes', version: 'synthetic', signedIn: 'yes', plan: null, limits: null, limitsObservedAtMs: null, checkedAtMs: Date.now(),
+        harness: 'claude-code', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
+        installed: 'yes', version: 'synthetic', signedIn: 'yes', plan: 'max', limits: null, limitsObservedAtMs: null, checkedAtMs: Date.now(),
+      }, {
+        harness: 'codex', capabilities: {steering: 'live', resume: 'unsupported', review: true},
+        installed: 'yes', version: 'synthetic', signedIn: 'yes', plan: 'plus', limits: null, limitsObservedAtMs: null, checkedAtMs: Date.now(),
       }]},
     }, {timeoutMs: 5000});
     assert.equal(enabled.status, 'accepted', JSON.stringify(enabled));
@@ -44,9 +47,14 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
       await conversation.getByRole('textbox', {name: 'Message', exact: true}).fill(text);
       await conversation.locator('.conversation-composer-actions').getByRole('button', {name: text.startsWith('Tell the') ? 'Message job' : 'Send', exact: true}).click();
     };
-    const approve = async (name: string) => {
+    const approve = async (name: string, harness: 'auto' | 'codex' = 'auto') => {
       await send(`Please delegate the ${name} logging check.`);
       const approval = conversation.getByRole('button', {name: 'Approve proposal', exact: true});
+      const choices = conversation.getByRole('combobox', {name: 'Coding harness'});
+      await choices.waitFor();
+      assert.equal(await choices.inputValue(), 'auto');
+      assert.deepEqual(await choices.getByRole('option').allTextContents(), ['Auto', 'Claude Code', 'Codex']);
+      if (harness !== 'auto') await choices.selectOption(harness);
       await approval.press('Enter');
       await conversation.getByText('Task completed', {exact: true}).waitFor();
     };
@@ -61,13 +69,15 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await approve('alpha');
     await waitFor(() => commands.length === 1);
     const first = commands[0] ?? assert.fail('first job missing');
+    assert.ok(first.action === 'start' && first.harness === 'claude-code');
     await progress({operationId: first.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'fixture-alpha-session'});
     const newConversation = conversation.getByRole('button', {name: 'New conversation', exact: true});
     await newConversation.click();
-    await approve('beta');
+    await approve('beta', 'codex');
     await waitFor(() => commands.length === 2);
     const second = commands[1] ?? assert.fail('second job missing');
-    await progress({operationId: second.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'fixture-beta-session'});
+    assert.ok(second.action === 'start' && second.harness === 'codex');
+    await progress({operationId: second.operationId, status: 'started', setup: 'ready', harness: 'codex', sessionId: 'fixture-beta-session'});
     await progress({operationId: second.operationId, status: 'attempt-context', branch: null, worktreeRef: 'bunny-fixture-beta', model: 'fixture-model'}, '2.5');
 
     await send('Tell the logging check job to retain the fixtures.');
@@ -118,5 +128,27 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await conversation.getByRole('button', {name: 'Back to current conversation'}).click();
     await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).waitFor();
     assert.equal(commands.length, 4, 'pending approval stayed in Conversation');
+    await page.goto(`${world.url}/#/module/companions/jobs`);
+    await card(first).getByText('Attempts and results', {exact: true}).click();
+    assert.equal(await card(first).getByRole('button', {name: /^Continue with/}).count(), 0);
+    await card(second).getByRole('button', {name: /Stop coding job/}).click();
+    await waitFor(() => commands.length === 5);
+    const handoffToken = randomUUID();
+    const revision = 'a'.repeat(40);
+    await progress({operationId: second.operationId, status: 'cancelled', reason: 'cancelled', harness: 'codex',
+      sessionId: 'fixture-beta-session', handoffToken, result: {outcome: 'incomplete', repository: 'agent-device-hub',
+        base: revision, head: revision, changedFiles: ['fixture.ts'], checks: [], findings: [], limitations: [],
+        summary: 'Synthetic partial work.', sessionId: 'fixture-beta-session', usage: null}}, '2.4');
+    await card(second).getByText('Attempts and results', {exact: true}).click();
+    await card(second).getByRole('button', {name: 'Continue with Claude Code', exact: true}).press('Enter');
+    await waitFor(() => commands.length === 6);
+    const continuation = commands[5];
+    assert.ok(continuation?.action === 'start' && continuation.harness === 'claude-code');
+    assert.deepEqual(continuation.continuation, {fromOperationId: second.operationId, token: handoffToken});
+    assert.notEqual(continuation.operationId, second.operationId);
+    await card(second).locator('dd').filter({hasText: continuation.operationId}).waitFor();
+    await card(second).locator('code').filter({hasText: second.operationId}).waitFor();
+    assert.equal(await card(second).getByRole('button', {name: /^Continue with/}).count(), 0);
+
   } finally {acceptMessage(); await worker.close(); await context.close(); await world.close();}
 }
