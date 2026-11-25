@@ -78,9 +78,11 @@ const entry = (path: string) => lstat(path).catch((error: unknown) => {
 
 async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise<string> {
   const path = await checkStateDirectory(home);
-  const userHomes = await Promise.all([userInfo().homedir, environment.HOME].flatMap(value => value ? [canonical(resolve(value))] : []));
+  const userHomes = await Promise.all([userInfo().homedir, environment.HOME]
+    .flatMap(value => value === undefined || value === '' ? [] : [canonical(resolve(value))]));
   const profileRoots = userHomes.map(userHome => join(userHome, '.codex'));
-  if (environment.CODEX_HOME) profileRoots.push(resolve(environment.CODEX_HOME));
+  const inheritedCodexHome = environment.CODEX_HOME;
+  if (inheritedCodexHome !== undefined && inheritedCodexHome !== '') profileRoots.push(resolve(inheritedCodexHome));
   const personalRoots = await Promise.all(profileRoots.map(canonical));
   if (userHomes.includes(path) || personalRoots.some(root => inside(root, path) || inside(path, root))) {
     throw new Error('codex worker profile must be separate');
