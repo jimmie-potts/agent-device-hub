@@ -200,11 +200,13 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}};
 }
 
-void test('native continuation respects current brief grants and retains only last-observed authority after restart', async context => {
+void test('native continuation respects current job and brief grants and retains only last-observed authority after restart', async context => {
   const permitted = sharing();
-  let revoked: ShareQuery['destination'] | undefined;
+  let revoked: ShareQuery['destination'] | undefined, hiddenJob: string | undefined;
   const share = Object.assign((query: ShareQuery) => permitted(query) &&
-    !(query.destination === revoked && query.source === 'coding' && query.field === 'brief'),
+    !(query.destination === revoked && query.source === 'coding' && query.field === 'brief') &&
+    !(query.destination === 'private-conversation' && query.source === 'coding' && query.field === 'details' &&
+      hiddenJob !== undefined && query.record === hiddenJob),
   {revokesFields: true, allowsDerived: (query: ShareQuery) => permitted.allowsDerived?.(query) !== false});
   const w = await world(context, {share});
   const readiness: CodingHarnessReadiness = {
@@ -244,21 +246,32 @@ void test('native continuation respects current brief grants and retains only la
   }
 
   revoked = undefined;
-  const release = w.holdNativePreparation();
-  assert.equal((await w.openNative(jobId, operationId)).status, 'accepted');
-  await settle(() => w.work.length === 2);
-  assert.equal(w.work[1]?.data.action, 'prepare-native-client');
-  const preparingRevision = w.coding().revision;
-  revoked = 'coding-worker';
-  release();
-  await settle(() => w.coding().revision > preparingRevision);
-  assert.equal(w.work.some(command => command.data.action === 'open-native-terminal'), false);
+  hiddenJob = jobId;
+  assert.equal(await current(), undefined);
+  const hidden = await w.openNative(jobId, operationId);
+  assert.equal(hidden.status === 'rejected' && hidden.error.error.code, 'not-found');
+  assert.equal(w.work.length, 1);
+  hiddenJob = undefined;
 
-  revoked = undefined;
+  for (const [index, permission] of ['brief', 'job'].entries()) {
+    const release = w.holdNativePreparation();
+    assert.equal((await w.openNative(jobId, operationId)).status, 'accepted');
+    await settle(() => w.work.length === index + 2);
+    assert.equal(w.work[index + 1]?.data.action, 'prepare-native-client');
+    const preparingRevision = w.coding().revision;
+    if (permission === 'brief') revoked = 'coding-worker';
+    else hiddenJob = jobId;
+    release();
+    await settle(() => w.coding().revision > preparingRevision);
+    assert.equal(w.work.some(command => command.data.action === 'open-native-terminal'), false);
+    revoked = undefined;
+    hiddenJob = undefined;
+  }
+
   assert.equal((await current())?.state, 'available');
   assert.equal((await w.openNative(jobId, operationId)).status, 'accepted');
-  await settle(() => w.work.length === 4);
-  const prepared = w.work[2]?.data, launched = w.work[3]?.data;
+  await settle(() => w.work.length === 5);
+  const prepared = w.work[3]?.data, launched = w.work[4]?.data;
   assert.ok(prepared?.action === 'prepare-native-client' && launched?.action === 'open-native-terminal');
   assert.equal(launched.intentId, prepared.requestId);
   assert.equal(launched.operationId, operationId);
@@ -273,7 +286,7 @@ void test('native continuation respects current brief grants and retains only la
   revoked = undefined;
   assert.deepEqual(await current(), {clients: ['terminal'], state: 'uncertain', observedAtMs: 11});
   assert.equal((await w.openNative(jobId, operationId)).status, 'rejected');
-  assert.equal(w.work.length, 4);
+  assert.equal(w.work.length, 5);
 });
 
 void test('an attributed background job keeps its first native session and delivers one result to the original exchange', {timeout: 30_000}, async context => {
