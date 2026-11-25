@@ -9,7 +9,7 @@ import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lightin
 import type {ShowCatalog} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {Outcome, usableArtComposition, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
-import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS} from './devices.js';
+import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS, type DeviceReadDisplay} from './devices.js';
 import {ShowDrafts} from './show-drafts.js';
 import {textBytes, type ToolCall} from './provider.js';
 import {CREATE_SHOW, EDIT_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
@@ -47,7 +47,8 @@ export type RetainedArtworkRead = (artworkId: string, timeoutMs: number) => Prom
 
 export class ConversationActions {
   #drafts: ShowDrafts | undefined;
-  constructor(private readonly context: ModuleContext, private readonly enabled: readonly string[], private readonly retainedArtwork?: RetainedArtworkRead) {}
+  constructor(private readonly context: ModuleContext, private readonly enabled: readonly string[],
+    private readonly deviceDisplay: DeviceReadDisplay, private readonly retainedArtwork?: RetainedArtworkRead) {}
 
   async #snapshot<T extends object>(owner: string, family: string, parent: TraceContext): Promise<readonly T[] | undefined> {
     const result = await this.context.sdk.sync<T>([family], () => {}, {owner, timeoutMs: 1200, parent});
@@ -403,7 +404,9 @@ export class ConversationActions {
       return {
         owner: source, id: device.id, name: deviceLabel(device), lastReportedAvailability: device.availability, hold: device.held ?? null,
         choices: {modes: device.capabilities.modes, media: device.capabilities.media, scenes: device.capabilities.scenes, moments: device.capabilities.moments},
-        observation: {freshness, value: device.observed},
+        observation: {freshness, value: device.observed,
+          ...(device.observed.status === 'known' ? {time: this.deviceDisplay.instant(device.observed.observedAtMs)} : {})},
+        ...(source === WEMO ? {maximumOnLimit: this.deviceDisplay.powerLimit(device.id, now)} : {}),
         ...(color === undefined ? {} : {color: {freshness: color.status === 'unknown' ? 'unknown' : colorStale || device.availability !== 'available' ? 'stale' : 'current', value: color}}),
         lastTransmissionAtMs: device.lastTransmission.status === 'known' ? device.lastTransmission.transmittedAtMs : null,
         controls: this.enabled.filter(tool => {

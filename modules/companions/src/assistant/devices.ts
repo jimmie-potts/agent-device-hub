@@ -4,6 +4,11 @@ import type {Cancel, ModuleContext, SyncedCopy, TraceContext} from '@jimmie-pott
 import type {ToolCall} from './provider.js';
 import {READ_BYTES, SET_LIFX_POWER, SET_WEMO_POWER} from './tools.js';
 
+export type DeviceReadDisplay = {
+  instant: (ms: number) => string;
+  powerLimit: (id: string, nowMs: number) => string;
+};
+
 /** A read-only SDK copy of one owner's device records. A gap makes the copy unavailable until it resyncs. */
 export class AssistantDeviceCopy {
   #copy: SyncedCopy<DeviceRecord> | undefined;
@@ -18,12 +23,12 @@ export class AssistantDeviceCopy {
   records(): readonly DeviceRecord[] | undefined {
     return this.#fresh ? this.#copy?.states().map(record => record.data) : undefined;
   }
-  async read(name: unknown, signal: AbortSignal, parent: TraceContext): Promise<string> {
+  async read(name: unknown, signal: AbortSignal, parent: TraceContext, display: DeviceReadDisplay): Promise<string> {
     const records = this.records(), now = this.context.clock.now();
-    if (this.owner !== ASSISTANT_LIGHT_OWNER || signal.aborted) return readDevices(records, name, now, this.owner);
+    if (this.owner !== ASSISTANT_LIGHT_OWNER || signal.aborted) return readDevices(records, name, now, this.owner, display);
     const selection = chooseDevice(records, name);
     if (!('device' in selection) || (selection.device.observed.status === 'known' &&
-      !observationStale(selection.device, now, MAX_OBSERVATION_AGE_MS))) return readDevices(records, name, now, this.owner);
+      !observationStale(selection.device, now, MAX_OBSERVATION_AGE_MS))) return readDevices(records, name, now, this.owner, display);
 
     // The owner's sync requests a rate-limited LightGet. A read that finds the same
     // state can leave the published timestamp unchanged.
@@ -37,10 +42,10 @@ export class AssistantDeviceCopy {
         if (change.type === 'failed' || (change.type === 'updated' && change.message.data.id === before.id &&
           change.message.data.revision > before.revision)) finish();
       }, {owner: this.owner, timeoutMs: 1000, parent});
-      if (snapshot.status !== 'synced') return readDevices(records, name, this.context.clock.now(), this.owner);
+      if (snapshot.status !== 'synced') return readDevices(records, name, this.context.clock.now(), this.owner, display);
       try {
         if (!snapshot.copy.states().some(({data}) => data.id === before.id && data.revision > before.revision)) await observed;
-        return readDevices(snapshot.copy.states().map(({data}) => data), name, this.context.clock.now(), this.owner);
+        return readDevices(snapshot.copy.states().map(({data}) => data), name, this.context.clock.now(), this.owner, display);
       } finally {await snapshot.copy.close();}
     } finally {
       deadline();
@@ -104,7 +109,7 @@ export function observationStale({observed, lastTransmission}: DeviceRecord, now
     (lastTransmission.status === 'known' && observed.observedAtMs < lastTransmission.transmittedAtMs));
 }
 export function readDevices(devices: readonly DeviceRecord[] | undefined, name: unknown, nowMs: number,
-  owner: AssistantDeviceOwner = ASSISTANT_LIGHT_OWNER): string {
+  owner: AssistantDeviceOwner = ASSISTANT_LIGHT_OWNER, display?: DeviceReadDisplay): string {
   const wemo = owner === ASSISTANT_WEMO_OWNER;
   const brand = wemo ? 'Wemo' : 'LIFX', namePlural = wemo ? 'plugs' : 'lights';
   const maxAgeMs = wemo ? WEMO_OBSERVATION_AGE_MS : MAX_OBSERVATION_AGE_MS;
@@ -123,10 +128,11 @@ export function readDevices(devices: readonly DeviceRecord[] | undefined, name: 
   const last = observed.status !== 'known' ? (wemo ? 'Observed power is unknown.' : 'Observed power and brightness are unknown.') :
     `Observed power: ${observed.power.status === 'known' ? (observed.power.value ? 'on' : 'off') : 'unknown'}. ` +
     (wemo ? '' : `Observed brightness: ${observed.brightness.status === 'known' ? `${String(observed.brightness.value)}%` : 'unknown'}. `) +
-    `Last observation at ${new Date(observed.observedAtMs).toISOString()}.`;
+    `Last observation at ${display?.instant(observed.observedAtMs) ?? new Date(observed.observedAtMs).toISOString()}.`;
   const stale = observationStale(device, nowMs, maxAgeMs);
   const state = availability === 'available' && !stale ? last : `Current state is unknown. ${stale ? 'The observation is stale. ' : ''}${last}`;
-  return `${deviceLabel(device)} (${device.id}). Last reported availability: ${availability}.${device.held === undefined ? '' : ' Device held.'} ${controls} ${state}`;
+  const limit = wemo && display !== undefined ? ' ' + display.powerLimit(device.id, nowMs) : '';
+  return `${deviceLabel(device)} (${device.id}). Last reported availability: ${availability}.${device.held === undefined ? '' : ' Device held.'} ${controls} ${state}${limit}`;
 }
 
 export function deviceProposal(call: ToolCall, device: DeviceRecord): {proposal: AssistantDeviceAction} | {code: 'invalid-request' | 'unavailable' | 'unsupported-capability'} {

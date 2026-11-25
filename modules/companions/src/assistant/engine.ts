@@ -20,12 +20,13 @@ import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type Sp
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions, type RetainedArtworkRead} from './catalog-actions.js';
-import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
+import {catalogCommand, catalogTool, isCatalogTool, READ_DEVICES} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
 import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} from './titles.js';
-import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices} from './devices.js';
-import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
+import {describePowerLimit, followPowerLimits, localInstant} from './power-limits.js';
+import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices, type DeviceReadDisplay} from './devices.js';
+import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_WEMO, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
 
 export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provider.js';
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
@@ -42,7 +43,7 @@ export type AssistantOptions = {
   core?: () => CoreCopy;
   dispatch?: Dispatch;
   devices?: (owner: AssistantDeviceOwner) => readonly DeviceRecord[] | undefined;
-  readDevice?: (owner: AssistantDeviceOwner, name: unknown, signal: AbortSignal, parent: TraceContext) => Promise<string | undefined>;
+  readDevice?: (owner: AssistantDeviceOwner, name: unknown, signal: AbortSignal, parent: TraceContext, display: DeviceReadDisplay) => Promise<string | undefined>;
   available?: () => boolean;
   preferences?: () => readonly ActivePreference[];
   /** The owner's active knowledge notes, read at each model call; a companion's context holds them once the owner turns them on for it (Hub #2029). */
@@ -182,6 +183,8 @@ export class AssistantEngine {
   readonly #validator = coreValidator();
   readonly #subscriptions: Subscription[] = [];
   readonly #graph;
+  readonly #deviceDisplay: DeviceReadDisplay;
+  #powerLimits: ReturnType<typeof followPowerLimits> | undefined;
   /**
    * Each conversation's running task (Hub #2027): one graph invocation per conversation, all on the module's one
    * connection. Keyed by conversation, not by profile, so another conversation can join without a new slot.
@@ -212,6 +215,8 @@ export class AssistantEngine {
       messages: conversationId => this.store.titleMessages(conversationId), reported: conversationId => this.store.report(conversationId).sequence > 0,
       metadata: (conversationId, title, observedAtMs) => observationDraft(titleObservationOf(conversationId, title, observedAtMs))});
     this.#allowed = [...(options.tools ?? [])];
+    const instant = localInstant(this.spend.timeZone);
+    this.#deviceDisplay = {instant, powerLimit: (id, nowMs) => describePowerLimit(this.#powerLimits?.forPlug(id), nowMs, instant)};
     this.#graph = new StateGraph(shape)
       .addNode('turn', state => this.#turn(state))
       .addNode('ask', state => this.#ask(state))
@@ -291,12 +296,14 @@ export class AssistantEngine {
       this.store.queue.aligned();
       if (this.store.queue.changed()) await this.outbox.transaction(add => {this.#publish(add);});
     } finally {this.#starting = false;}
+    if (this.#allowed.includes(READ_WEMO) || this.#allowed.includes(READ_DEVICES)) this.#powerLimits = followPowerLimits(this.context);
     for (const watch of this.store.confirmations()) void this.#followConfirmation(watch);
     this.#subscriptions.push(await this.context.sdk.respond<AssistantControl>('bunny.cmd.assistant-control.assistant', command => this.#control(command)));
     this.#subscriptions.push(await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.assistant', command => this.#input(command)));
   }
   async stop(): Promise<void> {
     this.#closed = true;
+    this.#powerLimits?.stop();
     this.#confirmationsStopped.abort();
     const active = [...this.#active.values()];
     for (const run of active) run.controller.abort();
@@ -1118,7 +1125,7 @@ export class AssistantEngine {
     }
     if (textBytes(JSON.stringify(task.transcript)) > LIMITS.stateBytes) throw new Fault('capacity', 'This turn reached its working transcript limit.');
   }
-  #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed, this.options.retainedArtwork);}
+  #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed, this.#deviceDisplay, this.options.retainedArtwork);}
   #catalogActions: ConversationActions | undefined;
   /** The question a call asks, or undefined when the command cannot be proposed. */
   #question(taskId: string, call: ToolCall, copy: CoreCopy): Question | undefined {
@@ -1211,8 +1218,8 @@ export class AssistantEngine {
       const now = this.context.clock.now();
       if (owner !== undefined) {
         const name = call.input.device;
-        const read = await this.options.readDevice?.(owner, name, signal, parent);
-        return {text: read ?? readDevices(this.options.devices?.(owner), name, now, owner), units: 0};
+        const read = await this.options.readDevice?.(owner, name, signal, parent, this.#deviceDisplay);
+        return {text: read ?? readDevices(this.options.devices?.(owner), name, now, owner, this.#deviceDisplay), units: 0};
       }
       if (isCatalogTool(call.name)) {
         const evidence: ActionEvidence[] = [];

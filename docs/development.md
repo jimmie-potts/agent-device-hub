@@ -3154,6 +3154,13 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+The Conversation maximum-on read uses a disposable Companions engine with
+synthetic Wemo and core SDK records. After the root build, the
+`assistant.test.js` cases exercise both named device reads, every limit status,
+local-time rendering and loss and recovery of the core copy. The existing
+`npm run test:companions:built` CI command discovers those cases and verifies
+the read-only module consumer.
+
 For Conversation uploads, build and run `node apps/runtime/dashboard/tests/conversation-upload.browser.ts`
 to isolate the keyboard picker, drop, private preview, display-only, save-only
 and combined actions. The companions browser suite runs the journey in CI.
