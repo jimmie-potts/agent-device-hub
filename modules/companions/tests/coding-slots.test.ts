@@ -9,6 +9,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import type {DatabaseSync} from 'node:sqlite';
 import {test, type TestContext} from 'node:test';
 import type {AssistantProfile, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingHarnessReadiness, CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
@@ -19,6 +20,8 @@ import type {CodingJobPage} from '../src/coding/job-page.js';
 import {CodingStore} from '../src/coding/store.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
+import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
+import {AssistantStore} from '../src/assistant/store.js';
 
 const PROFILES = ['bunny', 'reachy', 'microduck'] as const;
 const ENDPOINT = 'worker-endpoint-1';
@@ -226,11 +229,15 @@ void test('an uncapped worker starts more jobs from one companion than a page ca
   assert.deepEqual(w.work.filter(command => command.data.action === 'cancel').map(command => command.data.operationId), [job.operationId]);
 });
 
-function seedReadyJobs(store: CodingStore, operations: string[]): void {
+function seedReadyJobs(database: DatabaseSync, operations: string[]): void {
+  const jobs = new CodingStore(database), tasks = new AssistantStore(database);
   for (const operationId of operations) {
-    const taskId = `${operationId}-task`, repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
-    store.create({jobId: `${operationId}-job`, operationId, taskId, repository, brief, conversationId: 'synthetic-older-conversation'});
-    store.wait({operationId, taskId, companion: 'bunny', repository, brief,
+    const task = tasks.newTask('bunny', 'Synthetic restored request.');
+    task.status = 'succeeded';
+    tasks.save(task);
+    const taskId = task.id, repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
+    jobs.create({jobId: `${operationId}-job`, operationId, taskId, repository, brief, conversationId: task.conversationId});
+    jobs.wait({operationId, taskId, companion: 'bunny', repository, brief,
       traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
   }
 }
@@ -239,7 +246,7 @@ void test('a restored uncapped backlog paces the serial worker acknowledgement w
   const w = await world(context);
   assert.equal((await w.control('enable')).status, 'accepted');
   const restored = Array.from({length: 35}, (_, index) => `restored-${String(index)}`);
-  seedReadyJobs(new CodingStore(w.database()), restored);
+  seedReadyJobs(w.database(), restored);
   await w.restart();
   w.serializeStarts();
   assert.equal((await w.enable('uncapped')).status, 'accepted');
@@ -279,7 +286,7 @@ for (const failFirstWrite of [false, true]) {
         WHEN NEW.operation_id='stale-dispatch' AND NEW.kind='result' AND fail_stale_dispatch_result()=1
         BEGIN SELECT RAISE(ABORT,'synthetic disconnect result failure'); END`);
     }
-    seedReadyJobs(store, ['stale-dispatch', 'unassigned-dispatch']);
+    seedReadyJobs(db, ['stale-dispatch', 'unassigned-dispatch']);
     const release = w.holdDispatch();
     context.after(release);
     try {
@@ -308,7 +315,7 @@ void test('a disconnected delivery settles uncertain while its late reply leaves
   const w = await world(context);
   const operations = ['lost-delivery', 'next-delivery', 'last-delivery'];
   const store = new CodingStore(w.database());
-  seedReadyJobs(store, operations);
+  seedReadyJobs(w.database(), operations);
   w.serializeStarts();
   assert.equal((await w.enable('uncapped')).status, 'accepted');
   await settle(() => w.starts().length === 1);
@@ -455,6 +462,40 @@ void test('Conversation answers a Hub question and takes another job while a wor
   assert.equal(w.starts().filter(command => command.data.operationId === first.operationId).length, 1);
 });
 
+
+void test('background coding checks queued grants again and filters retained job results after revocation', {timeout: 30_000}, async context => {
+  const permitted = sharing();
+  let blockBrief = false, hiddenResult: string | undefined;
+  const share = Object.assign((query: ShareQuery) => permitted(query) &&
+    !(blockBrief && query.destination === 'coding-worker' && query.source === 'coding' && query.field === 'brief') &&
+    !(hiddenResult !== undefined && query.destination === 'private-conversation' && query.source === 'coding' &&
+      query.field === 'details' && query.record === hiddenResult),
+  {revokesFields: true, allowsDerived: (query: ShareQuery) => permitted.allowsDerived?.(query) !== false});
+  const w = await world(context, {share});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic first job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  const first = w.starts()[0]?.data;
+  assert.ok(first?.action === 'start');
+  await w.progress({operationId: first.operationId, status: 'started'});
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  assert.equal((await w.send('bunny', 'Synthetic queued job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.task('bunny')?.status === 'succeeded' && w.coding().waiting?.length === 1);
+  blockBrief = true;
+  await w.progress({operationId: first.operationId, status: 'completed', result: result('Synthetic retained outcome.')});
+  const messages = await w.waitMessages('bunny', /Synthetic retained outcome/);
+  assert.ok(messages.some(message => message.id === `${first.operationId}-job-result`));
+  await w.waitMessages('bunny', /refused: forbidden/);
+  assert.equal(w.starts().length, 1, 'revocation prevents a second worker dispatch');
+  hiddenResult = first.operationId;
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /Synthetic retained outcome/);
+  await w.restart();
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /Synthetic retained outcome/);
+  assert.equal(w.starts().length, 1);
+});
 
 void test('a named stop with no worker confirmation leaves a sibling running', {timeout: 30_000}, async context => {
   const w = await world(context);

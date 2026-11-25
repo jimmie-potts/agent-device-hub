@@ -24,9 +24,9 @@ export class ShowDrafts {
     )`);
   }
 
-  list(offset: number, limit: number, exactId: string): {id: string; revision: number; name: string; expectedVersion: number}[] {
-    const records = this.database.prepare("SELECT id FROM assistant_show_drafts WHERE ? = '' OR id = ? ORDER BY rowid DESC LIMIT ? OFFSET ?")
-      .all(exactId, exactId, limit, offset);
+  list(offset: number, limit: number, exactId: string, visible: (id: string) => boolean): {id: string; revision: number; name: string; expectedVersion: number}[] {
+    const records = this.database.prepare("SELECT id FROM assistant_show_drafts WHERE ? = '' OR id = ? ORDER BY rowid DESC")
+      .all(exactId, exactId).filter(({id}) => typeof id === 'string' && visible(id)).slice(offset, offset + limit);
     return records.flatMap(({id}) => {
       const draft = this.read(id);
       return draft === undefined ? [] : [{id: draft.value.showId, revision: draft.revision, name: draft.value.name, expectedVersion: draft.value.expectedVersion}];
@@ -90,13 +90,17 @@ export class ShowDrafts {
     return {text: `Draft ${value.name} (${value.showId}, revision ${String(revision)}), ${String(value.timeline.durationMs)} ms. Preview only.\n${cues.join('\n')}`};
   }
 
-  noteSave(input: Readonly<Record<string, unknown>>, pending: PendingSave): ErrorCode | undefined {
+  noteSave(input: Readonly<Record<string, unknown>>, pending: PendingSave, expectedDraftRevision: number): ErrorCode | undefined {
     const draft = this.read(input.showId);
     if (draft === undefined) return 'not-found';
+    if (draft.revision !== expectedDraftRevision) return 'revision-conflict';
     if (draft.pending !== null) return 'uncertain-result';
-    const value = {...draft.value, versionName: input.versionName};
+    const head = input.expectedVersion;
+    if (typeof head !== 'number' || head < draft.value.expectedVersion) return 'revision-conflict';
+    const value = {...draft.value, versionName: input.versionName, expectedVersion: head};
     if (!isDeepStrictEqual(value, input)) return 'revision-conflict';
-    this.database.prepare('UPDATE assistant_show_drafts SET pending = ? WHERE id = ?').run(JSON.stringify(pending), draft.value.showId);
+    this.database.prepare('UPDATE assistant_show_drafts SET value = ?, pending = ? WHERE id = ?')
+      .run(JSON.stringify({...draft.value, expectedVersion: head}), JSON.stringify(pending), draft.value.showId);
     return undefined;
   }
 
@@ -104,12 +108,6 @@ export class ShowDrafts {
     const pending = this.read(id)?.pending;
     if (pending?.requestId !== requestId) return;
     this.database.prepare('UPDATE assistant_show_drafts SET pending = NULL WHERE id = ? AND pending = ?').run(id, JSON.stringify(pending));
-  }
-
-  bindSaveToHead(draft: Draft, head: number): void {
-    const value = {...draft.value, expectedVersion: head};
-    this.database.prepare('UPDATE assistant_show_drafts SET value = ? WHERE id = ? AND revision = ? AND pending IS NULL')
-      .run(JSON.stringify(value), value.showId, draft.revision);
   }
 
   confirmSave(draft: Draft): void {

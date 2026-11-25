@@ -248,22 +248,23 @@ void test('with no configured prices the paid model is priced from the built-in 
   assert.deepEqual([view.paid?.prices, view.day.spentMicros], ['dearest', 100 * 4 + 10 * 20], 'model-a is unknown, so it takes the dearest known rate, Opus 5.5 here');
 });
 
-void test('a spend limit after dispatch preserves the approved action and names the unsent model call once', async context => {
+void test('a spend limit after dispatch preserves the requested action and names the unsent model call once', async context => {
   const provider = paid(() => ({...answer('', used(1, 1)), text: null, stop: 'tool', calls: [{id: 'mode', name: 'set_mode', input: {mode: 'free'}}]}));
   let sends = 0;
   const w = await world(context, {provider, tools: ['set_mode'], core: () => ({synced: true, sessions: [],
     mode: {id: 'hub', revision: 2, mode: 'work', selectedAtMs: 0}}),
-    dispatch: data => {sends += 1; return Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {} as never});}});
+    dispatch: data => {
+      sends += 1;
+      const ledger = w.ledger();
+      assert.equal(ledger.reserve({id: 'synthetic-title', purpose: 'conversation', owner: 'conversation-1', model: 'model-a', inputUnits: 1, outputUnits: 0}), undefined);
+      ledger.settle('synthetic-title', used(4_950_000, 0));
+      return Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {} as never});
+    }});
   await enable(w.core, w.module());
-  await input(w.core, w.module(), 'Set the synthetic scene to free.');
-  await until(() => task(w)?.status === 'waiting');
-  const ledger = w.ledger();
-  assert.equal(ledger.reserve({id: 'synthetic-title', purpose: 'conversation', owner: 'conversation-1', model: 'model-a', inputUnits: 1, outputUnits: 0}), undefined);
-  ledger.settle('synthetic-title', used(4_950_000, 0));
-  await input(w.core, w.module(), 'approve', {action: 'answer'});
+  await input(w.core, w.module(), 'Set the Hub mode to free.');
   await until(() => task(w)?.status === 'failed');
   const history = await messages(w);
-  assert.match(history.at(-1) ?? '', /approved.*free.*request was accepted.*daily spend limit.*next model call was not sent/i);
+  assert.match(history.at(-1) ?? '', /requested.*free.*request was accepted.*daily spend limit.*next model call was not sent/i);
   assert.equal(history.filter(text => text.includes('daily spend limit')).length, 1);
   assert.equal(sends, 1);
   assert.equal(provider.calls(), 1);
