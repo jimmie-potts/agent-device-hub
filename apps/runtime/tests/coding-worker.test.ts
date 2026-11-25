@@ -406,7 +406,8 @@ void test('the connection-bound worker sends exact Git evidence and early sessio
       [id, 'started', null], [id, 'started', `${id}-native`], [id, 'completed', `${id}-native`],
     ]);
     const context = edge.contexts.find(item => item.operationId === operation);
-    assert.ok(context?.worktreeRef);
+    assert.ok(context?.worktreeRef !== undefined);
+    assert.notEqual(context.worktreeRef, '');
     assert.equal(context.worktreeRef.includes('/'), false);
     assert.equal(context.branch, null);
     const completed = observed.find(item => item.status === 'completed');
