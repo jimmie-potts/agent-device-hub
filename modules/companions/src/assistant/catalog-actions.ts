@@ -348,7 +348,7 @@ export class ConversationActions {
       const retained = recent === undefined || job === undefined ? await this.retainedArtwork?.(data.artworkId, 1200) : undefined;
       if (retained !== undefined && 'error' in retained) return {code: retained.error.code};
       const artwork = recent ?? retained;
-      if (artwork === undefined) return {question: 'I could not find that saved artwork. Which artwork ID should I use?'};
+      if (artwork === undefined) return {code: 'not-found'};
       const selected = await this.#artSelection(data.targets, parent, canNameDevice, artwork);
       if (!('targets' in selected)) return selected;
       const sourceRequestId = job?.requestId ?? retained?.sourceRequestId;

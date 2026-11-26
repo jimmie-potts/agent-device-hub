@@ -4808,8 +4808,9 @@ function catalogPhrases(): CatalogPhrase[] {
   const assetId = '22222222-2222-4222-8222-222222222222';
   const wrongWall = {say: 'Make that change on the spare wall panel instead.', selector: 'spare-wall', code: 'not-found'};
   const wrongScreen = {say: 'Make that change on the spare display instead.', selector: 'spare-screen', code: 'not-found'};
-  const onWall = (family: CatalogFamily, say: string, settings: CatalogPhrase['settings'], refuse: CatalogPhrase['refuse'] = wrongWall): CatalogPhrase =>
-    ({family, say, settings, refuse, owner: nanoleaf, selector: 'Studio Wall', target: wall});
+  const onWall = (family: CatalogFamily, say: string, settings: CatalogPhrase['settings'], refuse: CatalogPhrase['refuse'] = wrongWall,
+    expected?: CatalogPhrase['expected']): CatalogPhrase =>
+    ({family, say, settings, refuse, owner: nanoleaf, selector: 'Studio Wall', target: wall, ...(expected === undefined ? {} : {expected})});
   const onScreen = (family: CatalogFamily, say: string, settings: CatalogPhrase['settings'], refuse: CatalogPhrase['refuse'] = wrongScreen,
     expected?: CatalogPhrase['expected']): CatalogPhrase =>
     ({family, say, settings, refuse, owner: pixoo, selector: 'Kitchen Display', target: screen, ...(expected === undefined ? {} : {expected})});
@@ -4818,8 +4819,9 @@ function catalogPhrases(): CatalogPhrase[] {
     ({family, say, settings, refuse, owner, selector, target});
   return [
     onWall('device-mode-set', 'Switch Studio Wall to free mode.', {mode: 'free'}),
-    onWall('scene-activate', 'Put scene-' + noticeId + ' on Studio Wall.', {sceneId: 'scene-' + noticeId},
-      {say: 'Use sunset on Studio Wall even though it is missing.', settings: {sceneId: 'sunset'}, code: 'unsupported-capability'}),
+    onWall('scene-activate', 'Put Northern Lights on Studio Wall.', {sceneId: 'Northern Lights'},
+      {say: 'Use sunset on Studio Wall even though it is missing.', settings: {sceneId: 'sunset'}, code: 'not-found'},
+      {sceneId: 'scene-' + noticeId}),
     onWall('moment-play', 'Give Studio Wall five seconds of celebration.', {mood: 'celebrate', durationMs: 5000},
       {say: 'Give Studio Wall two hours of celebration.', settings: {mood: 'celebrate', durationMs: 7_200_000}, code: 'invalid-request'}),
     onWall('nanoleaf-animation-play', 'Play Ocean on Studio Wall.', {animation: {preset: 'ocean'}}),
@@ -4935,7 +4937,7 @@ for (const host of ['anthropic', 'openai'] as const) {
       proposal = undefined;
       if (candidate !== undefined) {
         assert.match(JSON.stringify(body.messages ?? body.input), new RegExp(candidate.ownerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
-        assert.ok(body.tools?.some(tool => tool.name === candidate.name), candidate.name);
+        assert.ok(body.tools?.some(tool => tool.name === candidate.name) === true, candidate.name);
       }
       const usage = {input_tokens: 20, output_tokens: 10, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
       return Promise.resolve(Response.json(host === 'anthropic'
@@ -4950,6 +4952,10 @@ for (const host of ['anthropic', 'openai'] as const) {
       : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
     const w = await world(context, {provider, tools: ['set_mode', 'create_light_show_draft', 'edit_light_show_cue', 'save_light_show',
       ...phrases.map(row => catalogTool(row.family))], core: () => ({mode: hub(7), sessions: [], synced: true}),
+      readCatalogIdentity: query => Promise.resolve(
+        query.kind === 'scene' && query.deviceId === 'studio-wall' && query.name === 'Northern Lights'
+          ? {id: 'scene-' + 'a'.repeat(64)}
+          : query.kind === 'asset' && query.name === 'Blue Kite' ? {id: '22222222-2222-4222-8222-222222222222'} : errorBody('not-found')),
       share: query => policy(query) && !(modeDenied && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'hub'), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
       artworkId: id, sourceRequestId: 'kite-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
         outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
@@ -4996,7 +5002,7 @@ for (const host of ['anthropic', 'openai'] as const) {
       await ask(row.say, tool, argumentsFor(row.owner, row.selector, row.settings));
       assert.equal(delivered.length, previous + 1, row.family);
       const write = delivered[previous];
-      assert.ok(write?.valid, row.family);
+      assert.ok(write?.valid === true, row.family);
       const effect = write.data;
       assert.ok(effect.family === 'catalog-action', row.family);
       assert.equal(effect.command, row.family);
@@ -5036,7 +5042,7 @@ for (const host of ['anthropic', 'openai'] as const) {
       {draftId: 'Blue Hour', revision: -1, versionName: 'First Cut'});
     assert.equal(delivered.length, prior + 1);
     const saved = delivered[prior];
-    assert.ok(saved?.valid);
+    assert.ok(saved?.valid === true);
     assert.partialDeepStrictEqual(saved.data, {family: 'catalog-action', command: 'nanoleaf-show-save', target: 'shows',
       data: {showId: draft.id, timeline: current.value.timeline, versionName: 'First Cut', expectedVersion: 0}});
 
@@ -5046,7 +5052,7 @@ for (const host of ['anthropic', 'openai'] as const) {
     modeDenied = false;
     await ask('Put the Hub into quiet mode.', 'set_mode', {mode: 'quiet'});
     assert.equal(delivered.length, prior + 2);
-    assert.ok(delivered[prior + 1]?.valid);
+    assert.ok(delivered[prior + 1]?.valid === true);
     assert.partialDeepStrictEqual(delivered[prior + 1]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 7}});
     const ambiguous = 'Put Shared Wall in free mode.';
     const modeTool = catalogTool('device-mode-set');
@@ -5061,7 +5067,7 @@ for (const host of ['anthropic', 'openai'] as const) {
     assert.equal((await input(w.core, w.module(), answer, true)).status, 'accepted');
     await until(() => status(w) === 'succeeded');
     assert.equal(delivered.length, prior + 3);
-    assert.ok(delivered[prior + 2]?.valid);
+    assert.ok(delivered[prior + 2]?.valid === true);
     assert.partialDeepStrictEqual(delivered[prior + 2]?.data, {family: 'catalog-action', command: 'device-mode-set', target: 'wall-right',
       binding: {kind: 'device', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}}, data: {mode: 'free'}});
   });
