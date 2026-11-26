@@ -499,7 +499,9 @@ export class AssistantStore {
     const follows = followed !== undefined && visibility.shows(followed) ? row.follows : null;
     const visible = row.artRequestId !== null && !visibility.attachment(row.artRequestId)
       ? {...row, artRequestId: null, artDescription: null} : row;
-    return messageOf({...visible, text: visibility.privateText?.(row) ?? visible.text, follows});
+    const message = messageOf({...visible, text: visibility.privateText?.(row) ?? visible.text, follows});
+    return message.role === 'tool' && message.text.startsWith('refused: ') && this.call(message.id)?.codingApproval !== undefined
+      ? {...message, codingRefusal: true} : message;
   }
   #visibleQuestion(task: Task, visibility?: MessageVisibility): Question | null {
     const question = task.question;

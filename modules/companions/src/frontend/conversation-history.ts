@@ -84,12 +84,14 @@ export function decodeConversationWindow(value: unknown, request: WindowRequest)
   const messages: ConversationMessage[] = [];
   for (const message of value.messages) {
     if (!record(message)) return invalidPage();
-    const {seq, id, taskId, role, text, atMs, follows, attachment} = message;
+    const {seq, id, taskId, role, text, atMs, follows, attachment, codingRefusal} = message;
     if (!integer(seq) || seq <= previous || (anchor !== undefined && seq >= anchor.seq) || typeof id !== 'string' || typeof taskId !== 'string' ||
       !(role === 'owner' || role === 'assistant' || role === 'tool') || typeof text !== 'string' || !integer(atMs)) return invalidPage();
     if (follows !== undefined && (role !== 'assistant' || typeof follows !== 'string' ||
       !/^[a-z0-9-]{1,128}$/.test(follows) || !follows.startsWith(taskId + '-'))) return invalidPage();
-    if (attachment === undefined) messages.push({seq, id, taskId, role, text, atMs, ...(follows === undefined ? {} : {follows})});
+    if (codingRefusal !== undefined && (codingRefusal !== true || role !== 'tool')) return invalidPage();
+    if (attachment === undefined) messages.push({seq, id, taskId, role, text, atMs, ...(follows === undefined ? {} : {follows}),
+      ...(codingRefusal === undefined ? {} : {codingRefusal})});
     else {
       if (role !== 'assistant' || !record(attachment) || attachment.kind !== 'artwork' || typeof attachment.requestId !== 'string' ||
         !/^[a-z0-9-]{1,100}$/.test(attachment.requestId) || !artDescription(attachment.description)) return invalidPage();
