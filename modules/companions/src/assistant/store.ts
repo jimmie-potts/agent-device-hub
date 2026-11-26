@@ -54,6 +54,7 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
    */
   contextThrough?: number};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
+  directBrightness?: true;
   codingApproval?: {destination: 'coding-worker'; repository: string; briefDigest: string};
   status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true;
   result: string | null; units: number | null; reservedUnits: number;

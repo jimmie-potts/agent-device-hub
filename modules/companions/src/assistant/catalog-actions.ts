@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
+import {literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -14,8 +14,9 @@ import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {Outcome, usableArtComposition, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
 import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS, type DeviceReadDisplay} from './devices.js';
 import {ShowDrafts} from './show-drafts.js';
+import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
-import {CREATE_SHOW, EDIT_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
+import {catalogTool, CREATE_SHOW, EDIT_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
   READ_PLAYBACK, READ_SHOWS, READ_VACUUM, READ_VOLCANO} from './catalog-tools.js';
 
 const CORE = 'bunny/core', NANOLEAF = 'bunny/modules/nanoleaf';
@@ -52,6 +53,11 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
 type Refusal = {code: ErrorCode};
 type Match = {owner: string; device: DeviceRecord};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
+export function chooseBrightnessSubject(matches: readonly Match[], answer?: string): Match | undefined {
+  const selected = answer === undefined ? matches : matches.filter(({device}) => device.id === answer.trim().replace(/^id:/u, ''));
+  return selected.length === 1 ? selected[0] : undefined;
+}
+
 function matchingDevices(rows: readonly Match[], target: string, owner: string): readonly Match[] {
   const exact = rows.filter(({device}) => device.id === target);
   if (owner !== 'auto' && exact.length > 0) return exact;
@@ -78,6 +84,12 @@ export class ConversationActions {
     const views = await Promise.all(owners.map(async owner => ({owner, devices: await this.#snapshot<DeviceRecord>(owner, 'device', parent)})));
     return {rows: views.flatMap(({owner, devices}) => devices?.map(device => ({owner, device})) ?? []),
       unreadable: views.filter(view => view.devices === undefined).map(view => view.owner)};
+  }
+
+  async deviceSubjectMatches(subject: string, parent: TraceContext): Promise<Match[]> {
+    const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
+    const id = literalDeviceId(subject);
+    return rows.filter(({device}) => id === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === id);
   }
 
   async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {
@@ -391,7 +403,7 @@ export class ConversationActions {
     }
   }
 
-  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined}): Promise<string | undefined> {
+  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined; brightnessControl: boolean}): Promise<string | undefined> {
     const input = call.input;
     switch (call.name) {
       case CREATE_SHOW: case EDIT_SHOW: case PREVIEW_SHOW: {
@@ -480,20 +492,27 @@ export class ConversationActions {
     return textResult(records?.filter(record => typeof record.id === 'string' && access('status', 'index', record.id) && access('status', 'details', record.id)).map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
   }
 
-  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: {subject: string | undefined}): Promise<string> {
+  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: {subject: string | undefined; brightnessControl: boolean}): Promise<string> {
     const {target, owner} = input;
     if (typeof target !== 'string' || typeof owner !== 'string') return 'refused: invalid-request';
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     if (owners.length === 0) return 'refused: unsupported-capability';
     if (scopedFacts !== undefined) {
       if (scopedFacts.subject === undefined) return textResult({devices: []});
-      const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
-      const matches = rows.filter(({device}) => [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === scopedFacts.subject));
+      const matches = await this.deviceSubjectMatches(scopedFacts.subject, parent);
       const selected = matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
           target !== '' && matchingDevices([selected], target, owner).length !== 1 ||
           !access('devices', 'label', selected.device.id)) return textResult({devices: []});
       const {owner: source, device} = selected;
+      if (scopedFacts.brightnessControl) {
+        if (!access('devices', 'status', device.id)) return textResult({devices: []});
+        const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');
+        const controls = this.enabled.filter(name => name === SET_LIFX_BRIGHTNESS && source === LIFX && device.capabilities.brightness.supported ||
+          name === tool && route.binding === 'device' && route.owners.some(owner => owner === source) && permitsDevice(route, device));
+        return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
+          lastReportedAvailability: device.availability, controls}]});
+      }
       return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
         ...(access('devices', 'status', device.id) ? {lastReportedAvailability: device.availability, observation: device.observed,
           ...(source === WEMO ? {maximumOnLimit: this.deviceDisplay.powerLimit(device.id, this.context.clock.now())} : {})} : {})}]});
