@@ -1294,7 +1294,8 @@ The selected Conversation supervisor SHALL interpret the current authenticated o
 
 - **WHEN** the current owner directs a power change using one complete Wemo ID and the supervisor looks up the device first
 - **THEN** the scoped lookup SHALL preserve that literal ID, including when followed by sentence punctuation, and return only its uniquely matched permitted device
-- **AND** an unknown or malformed ID or an unresolved ambiguous subject SHALL grant no device disclosure or power dispatch
+- **AND** an unknown or malformed explicit ID SHALL return no scoped device facts or dispatch, and ambiguous names SHALL require clarification before dispatch
+- **AND** a generic lookup SHALL return no device for an ambiguous name, while the typed Wemo finder MAY return matching permitted candidates for clarification and MAY discover permitted candidates for an open request with no recognized device name
 
 #### Scenario: Two plugs followed by one reference
 

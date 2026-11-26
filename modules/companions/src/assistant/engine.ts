@@ -23,7 +23,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, literalDeviceSubject, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
+import {authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
@@ -224,7 +224,8 @@ function deviceRequestSubject(text: string): string | undefined {
     ?? /^(?:please )?(?:(?:list|show|check|read) (?:the )?(.+)|(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available))$/u.exec(affirmative)?.slice(1).find(value => value !== undefined);
   const subject = readSubject ?? powerSubject(text);
   if (subject === undefined || remainder !== undefined && deviceGroup(subject) !== undefined) return undefined;
-  return literalDeviceSubject(opening, subject);
+  const id = exactControlIds(opening).find(id => literalDeviceId(`id:${id}`) === id && normalizedControlText(`id:${id}`) === subject);
+  return id === undefined ? subject : `id:${id}`;
 }
 
 function matchesCatalogSubject(subject: string | undefined, id: string): boolean {
@@ -2685,7 +2686,15 @@ export class AssistantEngine {
           }
         }
       } else if (call.name === WEMO_TARGETS) {
-        const records = this.options.devices?.(ASSISTANT_WEMO_OWNER)?.filter(device => {
+        const devices = this.options.devices?.(ASSISTANT_WEMO_OWNER);
+        const ownerScope = scope === undefined ? undefined : this.#modelControlScope(task);
+        const exact = ownerScope?.exactTargets ?? [];
+        const names = ownerScope === undefined || exact.length > 0 ? []
+          : controlReferenceIds(ownerScope.references, ownerScope.answer?.text ?? ownerScope.request.text);
+        const matched = exact.length > 0 ? devices?.filter(device => exact.includes(device.id) && literalDeviceId(`id:${device.id}`) === device.id)
+          : names.length > 0 ? devices?.filter(device => names.includes(device.id)) : devices;
+        const candidates = exact.length > 0 && matched?.length !== exact.length ? [] : matched;
+        const records = candidates?.filter(device => {
           scope?.resolvedCatalogDevice(device.id);
           return access('devices', 'index', device.id) && access('devices', 'label', device.id);
         });

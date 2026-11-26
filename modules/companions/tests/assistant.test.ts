@@ -1143,14 +1143,18 @@ void test('a Wemo group cannot silently add an undisclosed plug to a named reque
   assert.ok((await page(w)).messages.some(message => message.text.includes('refused: invalid-request')));
 });
 
-for (const host of ['anthropic', 'openai'] as const) {
-  void test(`exact Wemo power read before dispatch through ${host}`, async context => {
+for (const host of ['anthropic', 'openai'] as const) for (const lookup of ['read_devices', 'find_wemo_power_targets'] as const) {
+  void test(`exact Wemo power read before dispatch through ${host} with ${lookup}`, async context => {
     const plugs = [{...light('fixture-plug', 'Matching Label'), kind: 'wemo' as const},
-      {...light('other-plug', 'Matching Label'), kind: 'wemo' as const}];
-    const misleading = light('lookalike', 'ID Fixture Plug Suffix');
+      {...light('other-plug', 'Matching Label'), kind: 'wemo' as const},
+      {...light('unrelated-plug', 'Separate Lamp'), kind: 'wemo' as const}];
+    const misleading = [light('lookalike', 'ID Fixture Plug Suffix'), light('literal-lookalike', 'ID Fixture Plug')];
     const commands: AssistantDispatch[] = [];
     const reads: string[] = [];
     let step = 0;
+    const toolIds = (result: string): string[] => lookup === 'read_devices'
+      ? (JSON.parse(result) as {devices: {id: string}[]}).devices.map(device => device.id)
+      : [...result.matchAll(/\(([a-z-]+)\)/gu)].map(match => match[1] ?? '');
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
       const body = JSON.parse(init.body) as {
         messages?: {content: {type: string; content?: string}[]}[];
@@ -1160,8 +1164,8 @@ for (const host of ['anthropic', 'openai'] as const) {
         body.messages?.flatMap(message => message.content).filter(item => item.type === 'tool_result').at(-1)?.content;
       const stage = step++;
       if (stage === 1 && result !== undefined) reads.push(result);
-      const tool = stage === 0 ? {name: 'read_devices', input: {owner: 'auto', target: ''}}
-        : stage === 1 && result?.includes('"id":"fixture-plug"') === true
+      const tool = stage === 0 ? {name: lookup, input: lookup === 'read_devices' ? {owner: 'auto', target: ''} : {}}
+        : stage === 1 && result !== undefined && toolIds(result).join() === 'fixture-plug'
           ? {name: 'set_wemo_power', input: wemoPowerArgs(['fixture-plug'], false)} : undefined;
       const id = stage === 0 ? 'call_fixture_read' : 'call_fixture_write';
       return Promise.resolve(Response.json(host === 'anthropic'
@@ -1175,32 +1179,34 @@ for (const host of ['anthropic', 'openai'] as const) {
     const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
       : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
     const w = await world(context, {provider, tools: ['read_devices', 'set_wemo_power'],
-      devices: owner => owner === WEMO_OWNER ? plugs : owner === 'bunny/modules/lifx' ? [misleading] : [],
+      devices: owner => owner === WEMO_OWNER ? plugs : owner === 'bunny/modules/lifx' ? misleading : [],
       dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
     const plugOwner = w.bus.connect(WEMO_OWNER);
     const otherOwner = w.bus.connect('bunny/modules/lifx');
     context.after(async () => {await plugOwner.close(); await otherOwner.close();});
-    await otherOwner.serveSync(['device'], () => ({revision: 1, states: [{
-      type: 'org.bunny.device.updated', subject: misleading.id, dataschema: DEVICE_READBACK_SCHEMA, data: misleading}]}));
+    await otherOwner.serveSync(['device'], () => ({revision: 1, states: misleading.map(device => ({
+      type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}))}));
     await plugOwner.serveSync(['device'], () => ({revision: 1, states: plugs.map(device => ({
       type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}))}));
     await control(w.core, w.module(), 'enable');
-    for (const [prompt, target] of [
-      ['Turn off id:fixture-plug_suffix.', undefined],
-      ['Turn off Matching Label.', undefined],
-      ['Turn off id:not-registered.', undefined],
-      ['Turn off id:fixture-plug.', 'fixture-plug'],
+    for (const [prompt, ids] of [
+      ['Turn off id:fixture-plug_suffix.', []],
+      ['Turn off Matching Label.', lookup === 'read_devices' ? [] : ['fixture-plug', 'other-plug']],
+      ['Cut power to the one near where we read.', lookup === 'read_devices' ? [] : ['fixture-plug', 'other-plug', 'unrelated-plug']],
+      ['Turn off id:not-registered.', []],
+      ['Turn off id:fixture-plug.', ['fixture-plug']],
+      ['Turn off (id:fixture-plug).', ['fixture-plug']],
     ] as const) {
       const prior = task(w)?.taskId;
+      const previousWrites = commands.length;
       step = 0;
       assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
-      await until(() => task(w)?.taskId !== prior && (commands.length > 0 || status(w) === 'succeeded'));
-      if (commands.length > 0) await finishWemoConfirmationWindow(w);
+      await until(() => task(w)?.taskId !== prior && (commands.length > previousWrites || status(w) === 'succeeded'));
+      if (commands.length > previousWrites) await finishWemoConfirmationWindow(w);
       await until(() => status(w) === 'succeeded');
-      const result = JSON.parse(reads.at(-1) ?? assert.fail('missing device tool output')) as {devices: {id: string}[]};
-      assert.deepEqual(result.devices.map(device => device.id), target === undefined ? [] : [target]);
-      assert.deepEqual(commands.flatMap(command => command.family === 'power-set' ? [[command.target, command.data.on]] : []),
-        target === undefined ? [] : [[target, false]]);
+      assert.deepEqual(toolIds(reads.at(-1) ?? assert.fail('missing device tool output')), ids);
+      assert.deepEqual(commands.slice(previousWrites).flatMap(command => command.family === 'power-set' ? [[command.target, command.data.on]] : []),
+        ids.join() === 'fixture-plug' ? [['fixture-plug', false]] : []);
     }
   });
 }
