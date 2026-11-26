@@ -3290,6 +3290,23 @@ void test('Responses resolves an exact brightness instruction before sending one
   await ask('What is the currently reported brightness of fixture-display?');
   assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
   assert.equal(requests.length, 3);
+  devices.push({...display, id: 'literal-label', label: `id:${target}`});
+  active = {...active, attempt: false};
+  for (readTarget of ['', `id:${target}`, target]) {
+    await ask(`What is the current brightness of id:${target}?`);
+    assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+    assert.doesNotMatch(lookup.at(-1) ?? '', /literal-label/u);
+  }
+  for (const destination of ['private-conversation', 'openai-supervisor'] as const) {
+    denied = destination;
+    await ask(`What is the current brightness of id:${target}?`);
+    assert.equal(lookup.at(-1), '{"devices":[]}');
+  }
+  assert.equal(requests.length, 3);
+  denied = undefined;
+  readTarget = '';
+  devices.pop();
+  active = {...active, attempt: true};
   devices.push({...unsupported, id: 'unsupported-alias', label: target});
   active = {...active, id: target, bypassLookup: true};
   await ask('Set fixture-display brightness to 37%', 'reachy');

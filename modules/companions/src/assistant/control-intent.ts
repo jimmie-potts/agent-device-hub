@@ -59,14 +59,19 @@ export function literalToolDeviceId(target: unknown): string | undefined {
 
 export const literalDeviceId = (value: string): string | undefined => /^id:([a-z0-9-]{1,128})$/u.exec(value.trim())?.[1];
 
+/** Keep an explicit ID only when it accounts for the entire subject of the recognized instruction or read. */
+export function literalDeviceSubject(text: string, subject: string): string {
+  const tokens = text.matchAll(/(?:^|\s)(id:[a-z0-9-]{1,128})(?=\s|[?!.;,]?$)/gu);
+  return [...tokens].find(item => normalizedControlText(item[1] ?? '') === subject)?.[1] ?? subject;
+}
+
 export function brightnessSubject(text: string): string | undefined {
   const words = explicitWords(text);
   if (words === undefined) return undefined;
   const match = brightnessAfterTarget.exec(words) ?? brightnessBeforeTarget.exec(words) ?? brightnessWithDetail.exec(words);
   if (match?.[1] === undefined || match[2] === undefined || Number(match[2]) > 100) return undefined;
   const subject = optionalArticle(match[1]);
-  const literal = [...text.matchAll(/(?:^|\s)(id:[a-z0-9-]{1,128})(?=\s|$)/gu)].find(item => normalizedControlText(item[1] ?? '') === subject);
-  return literal?.[1] ?? subject;
+  return literalDeviceSubject(text, subject);
 }
 
 export function missingBrightness(text: string): boolean {
