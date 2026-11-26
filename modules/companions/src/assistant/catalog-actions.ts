@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {literalToolDeviceId, literalDeviceId, normalizedControlText} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
-import {catalogSelectorId, type CatalogSelectorKind} from './catalog-grounding.js';
+import {catalogCueReferences, catalogSelectorId, type CatalogReferenceRole} from './catalog-grounding.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {ART_SHOW_EFFECTS_FAMILY, acceptsArtRendition, artDestination, artShowSurfaces, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
@@ -14,7 +14,7 @@ import type {ShowCatalog} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows'
 import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {Outcome, usableArtComposition, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
 import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS, type DeviceReadDisplay} from './devices.js';
-import {ShowDrafts} from './show-drafts.js';
+import {ShowDrafts, showCueIndex} from './show-drafts.js';
 import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
 import {catalogTool, CREATE_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
@@ -43,7 +43,7 @@ type CanNameDevice = (id: string) => boolean;
 type CatalogTarget = {id: string; label: string};
 type CatalogTargetSource = 'artwork' | 'devices' | 'operations' | 'playback' | 'sessions' | 'shows' | 'status';
 export type CatalogAdmission = {
-  readonly selector: (kind: CatalogSelectorKind, selector: string, contextIds?: readonly string[]) => boolean;
+  readonly selector: (kind: CatalogReferenceRole, selector: string, contextIds?: readonly string[]) => boolean;
   readonly target: (id: string, source: CatalogTargetSource, alternatives: readonly CatalogTarget[], implicit?: boolean, nested?: readonly string[]) => ErrorCode | undefined;
   readonly visible: (source: CatalogTargetSource, id: string) => boolean;
   readonly attachedArtwork?: (sourceRequestId: string, artworkIds: readonly string[], displays: readonly string[]) => boolean;
@@ -83,6 +83,23 @@ function nestedSelectors(family: CatalogFamily, data: Record<string, unknown>): 
   else if (family === 'wemo-hold-release') selectors = [data.heldRequestId];
   return selectors.flatMap(value => typeof value === 'string' && /^[A-Za-z0-9._-]{1,128}$/u.test(literalDeviceId(value) ?? value)
     ? [literalDeviceId(value) ?? value] : []);
+}
+
+function citedNestedIdentity(family: CatalogFamily, data: Record<string, unknown>, admission: CatalogAdmission): boolean {
+  const cited = (role: CatalogReferenceRole, value: unknown): boolean =>
+    typeof value === 'string' && admission.selector(role, value);
+  if (family === 'notice-clear') return data.noticeId === null || cited('notice', data.noticeId);
+  if (family === 'pixoo-notice-dismiss') return cited('session', data.session) && cited('notice', data.noticeId);
+  if (family === 'nanoleaf-notice-acknowledge') return cited('session', data.task) && cited('notice', data.noticeId);
+  if (family === 'wemo-hold-release') return data.heldRequestId === undefined || cited('operation', data.heldRequestId);
+  if (family === 'nanoleaf-favorite-edit' && object(data.edit)) return cited('favorite', data.edit.name);
+  if (family === 'pixoo-playlist-change' && object(data.change)) {
+    const {items, itemIds} = data.change;
+    if (Array.isArray(itemIds) && !itemIds.every(id => cited('playlist-item', id))) return false;
+    if (Array.isArray(items) && !items.every(item =>
+      object(item) && cited('rendition', item.renditionId) && (item.id === undefined || cited('playlist-item', item.id)))) return false;
+  }
+  return true;
 }
 
 function admittedRecord<T extends {id: string}>(records: readonly T[] | undefined, selector: string,
@@ -326,6 +343,7 @@ export class ConversationActions {
       if (refused !== undefined) return refused === 'invalid-state'
         ? {question: deviceClarification('device', alternatives.map(item => item.id), canNameDevice)}
         : {code: refused};
+      if (admission !== undefined && !citedNestedIdentity(family, data, admission)) return {code: 'invalid-request'};
       if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
       if (selected.owner === 'bunny/modules/pixoo') {
         const resolved = await this.#pixooCatalog(family, data, device, parent, guard, admission);
@@ -381,6 +399,7 @@ export class ConversationActions {
       }
     } else if (route.binding === 'record') {
       if (owner !== route.owner) return {code: 'forbidden'};
+      if (admission !== undefined && !citedNestedIdentity(family, data, admission)) return {code: 'invalid-request'};
       const guarded = family === 'playback-control' ? await this.#playback(name, data, parent, admission)
         : family === 'volcano-session-gap' ? await this.#volcano(name, data, parent, admission)
           : family === 'music-lighting-control' ? await this.#lighting(name, data, parent, admission)
@@ -393,6 +412,8 @@ export class ConversationActions {
       if (family !== 'art-show' && family !== 'nanoleaf-show-save' &&
         admission !== undefined && !admission.covers([route.target, ...nestedSelectors(family, data)])) return {code: 'not-found'};
       if (family === 'nanoleaf-reactive-preset-save') {
+        const selector = data.presetId ?? data.name;
+        if (admission !== undefined && (typeof selector !== 'string' || !admission.selector('preset', selector))) return {code: 'not-found'};
         if (admission?.visible('status', route.target) === false) return {code: 'forbidden'};
         const library = (await this.#snapshot<{revision: number; presets: readonly {presetId: string; name: string}[]}>(
           NANOLEAF, 'nanoleaf-reactive-presets', parent))?.[0];
@@ -553,7 +574,9 @@ export class ConversationActions {
 
   async #playback(name: string, data: Record<string, unknown>, parent: TraceContext, admission?: CatalogAdmission): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
     const records = await this.#snapshot<PlaybackState>(PLAYBACK, 'playback', parent);
-    const current = admittedRecord(records, name, () => undefined, 'playback', admission, (name === 'auto' || records?.[0]?.id === name) && records?.length === 1);
+    const visible = records?.filter(record => admission?.visible('playback', record.id) ?? true);
+    const implicit = visible?.length === 1 && (name === 'auto' || visible[0]?.id === name);
+    const current = admittedRecord(visible, name, () => undefined, 'playback', admission, implicit);
     if ('code' in current) return current;
     if (current.availability !== 'available' || current.playback.status !== 'known') return {code: 'unavailable'};
     if (!current.playback.controls.some(control => control === data.action)) return {code: 'unsupported-capability'};
@@ -616,8 +639,12 @@ export class ConversationActions {
     const allowed = (id: string) => access('shows', 'details', id);
     const draft = drafts.find(selector, allowed);
     if ('code' in draft) return {code: 'not-found'};
-    if (admission.target(draft.value.showId, 'shows', drafts.references(allowed)) !== undefined) return {code: 'not-found'};
-    return {...drafts.edit({...call.input, draftId: draft.value.showId}), draftId: draft.value.showId};
+    const {cue} = call.input, {cues} = draft.value.timeline;
+    const index = typeof cue === 'string' ? showCueIndex(cues, cue) : -1;
+    const selected = cues[index];
+    if (selected === undefined || !catalogCueReferences(selected.id, index).some(value => admission.selector('cue', value))) return {code: 'not-found'};
+    if (admission.target(draft.value.showId, 'shows', drafts.references(allowed), false, [selected.id]) !== undefined) return {code: 'not-found'};
+    return {...drafts.edit({...call.input, draftId: draft.value.showId, cue: selected.id}), draftId: draft.value.showId};
   }
 
   async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined; brightnessControl: boolean; resolve: (id: string) => void}): Promise<string | undefined> {

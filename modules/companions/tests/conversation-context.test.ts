@@ -530,7 +530,10 @@ void test('an artwork follow-up resolves "that animation" to the attachment of t
   const attached = library.artworks.find(item => item.sourceRequestId === 'pennant-generation');
   assert.equal(attached?.artworkId, 'pennant');
   assert.equal(library.artworks.length, 2);
-  second.resolve(call('control_art_show', {owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: attached.artworkId, targets: [target]})}));
+  const references = (quote: string, kind: 'prior' | 'named') => [{role: 'artwork', quote, kind, source: 'request'},
+    {role: 'primary', quote: 'blue panel', kind: 'named', source: 'request'}];
+  second.resolve(call('control_art_show', {owner: 'bunny/core', target: 'hub',
+    references: references('that animation', 'prior'), arguments: JSON.stringify({artworkId: attached.artworkId, targets: [target]})}));
   (await w.providers.bunny.next()).resolve(reply('The request was accepted.'));
   await settle(() => w.task('bunny')?.status === 'succeeded');
   assert.equal(requests.length, 1);
@@ -539,6 +542,7 @@ void test('an artwork follow-up resolves "that animation" to the attachment of t
   const refuses = async (prompt: string, artworkId: string) => {
     accepted(await w.send('bunny', prompt));
     (await w.providers.bunny.next()).resolve(call('control_art_show', {owner: 'bunny/core', target: 'hub',
+      references: prompt.includes('id:meadow') ? references('id:meadow', 'named') : references('that animation', 'prior'),
       arguments: JSON.stringify({artworkId, targets: [target]})}));
     const refused = await w.providers.bunny.next();
     assert.match(JSON.stringify(refused.input.transcript.at(-1)), /refused: not-found/);

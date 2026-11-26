@@ -1,4 +1,4 @@
-import {containsControlValue, literalDeviceId} from './control-intent.js';
+import {containsControlValue, literalDeviceId, normalizedControlText} from './control-intent.js';
 import {exactControlIds, type ModelControlScope} from './model-control.js';
 
 export type CatalogSelectorKind = 'artwork' | 'asset' | 'draft' | 'playlist' | 'rendition' | 'scene';
@@ -42,4 +42,60 @@ export function catalogSelectorSelected(kind: CatalogSelectorKind, selector: str
   if (kind === 'asset' && ![answer, scope.request.text].some(text =>
     /\b(?:it|(?:that|this|the same|the previous) (?:one|asset|original|image))\b/iu.test(text))) return false;
   return earlier.some(identifies);
+}
+
+export type CatalogReferenceRole = 'primary' | CatalogSelectorKind | 'notice' | 'preset' | 'operation' | 'session' |
+  'favorite' | 'playlist-item' | 'cue';
+export type CatalogReference = {role: CatalogReferenceRole; kind: 'named' | 'prior'; source: 'request' | 'answer'; quote: string};
+export const catalogReferenceRoles = ['primary', 'artwork', 'asset', 'draft', 'playlist', 'rendition', 'scene',
+  'notice', 'preset', 'operation', 'session', 'favorite', 'playlist-item', 'cue'] as const satisfies readonly CatalogReferenceRole[];
+const referenceRoles = new Set<string>(catalogReferenceRoles);
+export const isCatalogSelectorKind = (role: CatalogReferenceRole): role is CatalogSelectorKind => Object.hasOwn(ids, role);
+
+export function readCatalogReferences(value: unknown, scope: ModelControlScope): readonly CatalogReference[] | undefined {
+  if (!Array.isArray(value) || value.length > 8) return undefined;
+  const refs: CatalogReference[] = [];
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item) || Object.keys(item).length !== 4) return undefined;
+    const {role, kind, source, quote} = item as Record<string, unknown>;
+    if (typeof role !== 'string' || !referenceRoles.has(role) || kind !== 'named' && kind !== 'prior' ||
+      source !== 'request' && source !== 'answer' || typeof quote !== 'string' || quote !== quote.trim() ||
+      quote.length === 0 || quote.length > 131) return undefined;
+    const body = source === 'request' ? scope.request.text : scope.answer?.text;
+    if (body === undefined || !containsControlQuote(body, quote, kind === 'prior')) return undefined;
+    const ref = {role: role as CatalogReferenceRole, kind, source, quote} satisfies CatalogReference;
+    if (refs.some(prior => prior.quote === quote && prior.source === source)) return undefined;
+    refs.push(ref);
+  }
+  return refs;
+}
+
+function containsControlQuote(body: string, quote: string, prior: boolean): boolean {
+  const index = body.indexOf(quote);
+  if (index === -1 || body.indexOf(quote, index + 1) !== -1 ||
+    /[\p{L}\p{N}_-]/u.test(body[index - 1] ?? '') ||
+    /[\p{L}\p{N}_-]/u.test(body[index + quote.length] ?? '')) return false;
+  if (!prior) return true;
+  // A reference in a second instruction cannot identify the target of the first.
+  const before = body.slice(0, index).trim();
+  return /^(?:it|them|(?:this|that|the same|the previous|the first|the second|the last)(?: [\p{L}\p{N}]+){0,2})$/iu
+    .test(normalizedControlText(quote)) && !/[.!?;]|\b(?:and|then|but|or)\b/iu.test(before);
+}
+
+export function catalogQuoteNames(quote: string, id: string, label = id): boolean {
+  if (quote.startsWith('id:')) return quote.slice(3) === id;
+  const name = normalizedControlText(quote).replace(/^(?:the|my) /u, '');
+  return name !== '' && (name === normalizedControlText(label) || name === normalizedControlText(id));
+}
+
+export function catalogReferencesFor(refs: readonly CatalogReference[], role: CatalogReferenceRole): readonly CatalogReference[] {
+  const matching = refs.filter(ref => ref.role === role);
+  return matching.some(ref => ref.source === 'answer') ? matching.filter(ref => ref.source === 'answer') : matching;
+}
+
+const ordinals = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'] as const;
+export function catalogCueReferences(id: string, index: number): readonly string[] {
+  const ordinal = ordinals[index];
+  const position = String(index + 1);
+  return [id, position, `cue ${position}`, `cue number ${position}`, ...(ordinal === undefined ? [] : [`${ordinal} cue`])];
 }

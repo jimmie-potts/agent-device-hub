@@ -1,4 +1,5 @@
-import {assistantRoutes, catalogFamily, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {assistantRoutes, catalogFamily, catalogRoute, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {catalogReferenceRoles, type CatalogReferenceRole} from './catalog-grounding.js';
 import type {ToolDefinition, ToolInputSchema} from './tool-types.js';
 
 export const READ_HUB_GUIDE = 'read_hub_guide';
@@ -95,3 +96,37 @@ export const catalogTools = [
   })),
 ] satisfies readonly ToolDefinition[];
 export const isCatalogTool = (name: string): boolean => catalogTools.some(tool => tool.name === name);
+
+const references = {
+  type: 'array', description: 'Cite the exact current words selecting each target. Include both the primary and nested selections. ' +
+    'Use [] only for a fixed route without a selected record. If an owner target cannot be resolved, ask before calling a control.',
+  items: {type: 'object', properties: {
+    role: {type: 'string', enum: catalogReferenceRoles, description: 'primary is the device or record. Use the specific role for an existing nested target.'},
+    kind: {type: 'string', enum: ['named', 'prior'], description: 'Use named for a current name or ID and prior for a current phrase referring back.'},
+    source: {type: 'string', enum: ['request', 'answer'], description: 'Current owner request or its current clarification answer.'},
+    quote: text('The exact phrase selecting this role, copied verbatim from that owner message. Do not quote a different instruction.'),
+  }, required: ['role', 'kind', 'source', 'quote'], additionalProperties: false},
+} as const satisfies ToolInputSchema['properties'][string];
+export function catalogToolWithReferences(tool: ToolDefinition): ToolDefinition {
+  if (!modelCatalogTool(tool.name) || tool.name === CREATE_SHOW) return tool;
+  return {...tool, description: `${tool.description} If the Hub refuses a target selection or it is unclear, ask the owner which target they mean. Do not substitute a target.`,
+    input: {...tool.input, properties: {...tool.input.properties, references}, required: [...tool.input.required, 'references']}};
+}
+
+const nestedReferenceRoles: Partial<Record<CatalogFamily, readonly CatalogReferenceRole[]>> = {
+  'art-catalog-edit': ['artwork'], 'art-show': ['artwork', 'primary'],
+  'media-start': ['playlist'], 'music-lighting-control': ['draft'],
+  'nanoleaf-favorite-edit': ['favorite'], 'nanoleaf-notice-acknowledge': ['session', 'notice'],
+  'nanoleaf-reactive-preset-save': ['preset'], 'notice-clear': ['notice'],
+  'pixoo-asset-change': ['asset'], 'pixoo-media-show': ['rendition'], 'pixoo-notice-dismiss': ['session', 'notice'],
+  'pixoo-playlist-change': ['playlist', 'playlist-item', 'rendition'], 'scene-activate': ['scene'], 'wemo-hold-release': ['operation'],
+};
+
+export function catalogToolReferenceRoles(name: string): readonly CatalogReferenceRole[] {
+  if (name === EDIT_SHOW) return ['draft', 'cue'];
+  if (name === SAVE_SHOW) return ['draft'];
+  const family = catalogCommand(name);
+  if (family === undefined) return [];
+  const nested = nestedReferenceRoles[family] ?? [];
+  return catalogRoute(family).binding === 'fixed' ? nested : ['primary', ...nested];
+}

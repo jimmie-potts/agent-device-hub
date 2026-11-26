@@ -1460,8 +1460,11 @@ device revisions, generation and capability. The tracked operation shows
 acceptance and available effect evidence.
 
 For B.U.N.N.Y., Reachy and MicroDuck, the model selects the tool and
-supplies the target and settings from the owner's request. Companions uses
-configured owner records to resolve the target, checks the tool's permission,
+supplies the target and settings from the owner's request. For each existing
+target, hosted supervisors cite the verbatim selector from the current request
+or its clarification and identify its role. Companions verifies the current
+words and resolves named targets against permitted owner records. A current
+reference can use eligible conversation history. Companions checks the tool's permission
 and binds the request to the current state. The receiving owner validates
 the settings and any revision guards before applying them. When a required
 setting or the intended target is ambiguous, Conversation asks for it.

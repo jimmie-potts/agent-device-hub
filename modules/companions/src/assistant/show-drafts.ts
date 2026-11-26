@@ -9,6 +9,11 @@ type Draft = {revision: number; value: ShowSave; pending: PendingSave | null};
 type Result = {text: string; draftId: string} | {code: ErrorCode};
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
+export function showCueIndex(cues: ShowSave['timeline']['cues'], cue: string): number {
+  const idIndex = cues.findIndex(item => item.id === cue);
+  return idIndex >= 0 ? idIndex : /^[1-9]\d*$/u.test(cue) ? Number(cue) - 1 : -1;
+}
+
 function readPending(text: string): PendingSave {
   const pending: unknown = JSON.parse(text);
   if (!object(pending) || typeof pending.requestId !== 'string' || typeof pending.admitByMs !== 'number') {
@@ -93,7 +98,7 @@ export class ShowDrafts {
     if (!object(patch) || Object.keys(patch).some(key => !['offsetMs', 'durationMs', 'intensity', 'recipe'].includes(key)) ||
       (patch.recipe !== undefined && !object(patch.recipe))) return {code: 'invalid-request'};
     const timeline = draft.value.timeline;
-    const original = timeline.cues.find(item => item.id === cue) ?? (/^[1-9]\d*$/u.test(cue) ? timeline.cues[Number(cue) - 1] : undefined);
+    const original = timeline.cues[showCueIndex(timeline.cues, cue)];
     if (original === undefined) return {code: 'not-found'};
     const candidate = {...timeline, cues: timeline.cues.map(item => item.id === original.id ? {...original, ...patch,
       recipe: {...original.recipe, ...(object(patch.recipe) ? patch.recipe : {})}} : item)};

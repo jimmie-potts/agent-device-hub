@@ -36,7 +36,7 @@ import {readDevices} from '../src/assistant/devices.js';
 import {confirmationEvidence, type Confirmation} from '../src/assistant/confirmation.js';
 import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
 import {authorizesControl} from '../src/assistant/control-intent.js';
-import {catalogTool, catalogTools, modelCatalogCommand} from '../src/assistant/catalog-tools.js';
+import {catalogTool, catalogToolReferenceRoles, catalogTools, modelCatalogCommand} from '../src/assistant/catalog-tools.js';
 import {deviceToolOwner, FIXTURE_TEXT, summarizeSessions, TOOLS} from '../src/assistant/tools.js';
 import {DEVICE_TOOLS} from '../src/assistant/tool-scope.js';
 
@@ -4720,9 +4720,10 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
       : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
     const calls: AssistantDispatch[] = [];
     const policy = sharing();
-    let denied = true, deniedDraft = false, extraSpeaker = false;
+    let denied = true, deniedDraft = false, extraSpeaker = false, deniedSpeaker = false;
     const w = await world(context, {provider, share: query => policy(query) && !(query.destination === 'private-conversation' &&
-      (denied && query.source === 'playback' || deniedDraft && query.source === 'shows')),
+      (denied && query.source === 'playback' || deniedDraft && query.source === 'shows' ||
+        deniedSpeaker && query.source === 'playback' && query.record === 'hall-speaker')),
       tools: [playback, 'read_playback', edit, 'read_light_shows'],
       dispatch: request => {calls.push(request); return Promise.resolve(accepted(request.requestId));}});
     const owner = w.bus.connect('bunny/modules/playback');
@@ -4745,7 +4746,13 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     await control(w.core, w.module(), 'enable');
     const ask = async (text: string, next: NonNullable<typeof proposal>) => {
       const previous = task(w)?.taskId;
-      proposal = next;
+      const draftReference = ['Desk show', 'Red Dawn', `id:${summary.id}`].find(value => text.includes(value));
+      const subject = ['hall-speaker', 'missing-speaker', 'desk speaker', 'music', 'a different speaker'].find(value => text.includes(value));
+      const exact = /id:[^ ]*/u.exec(text)?.[0]?.replace(/[.]$/u, '');
+      const references = next.name === edit ? [ownerReference('draft', draftReference ?? 'unavailable'), ownerReference('cue', 'first cue')]
+        : next.name !== playback ? [] : subject !== undefined || exact !== undefined ? [ownerReference('primary', exact ?? subject ?? '')]
+          : [ownerReference('primary', 'it', 'prior')];
+      proposal = next.name === edit || next.name === playback ? {...next, input: {...next.input, references}} : next;
       assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
       await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
       assert.equal(proposal, undefined, 'the fake transport received the owner turn');
@@ -4790,7 +4797,14 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     await ask('Pause id:desk-speaker.', {name: playback,
       input: {owner: 'bunny/modules/playback', target: 'hall-speaker', arguments: '{"action":"pause"}'}});
     assert.equal(calls.length, 2, 'a different existing playback record never enters dispatch');
-
+    deniedSpeaker = true;
+    for (const speaker of ['hall-speaker', 'missing-speaker']) {
+      await ask(`Pause ${speaker}.`, {name: playback,
+        input: {owner: 'bunny/modules/playback', target: 'auto', arguments: '{"action":"pause"}'}});
+      const latest = (await page(w, profile, 'recent')).messages.filter(message => message.role === 'tool').at(-1);
+      assert.equal(latest?.text, 'refused: not-found');
+    }
+    assert.equal(calls.length, 2, 'denied and absent selections never redirect to the visible speaker');
 
     await ask('Make the first cue in the Desk show draft half as bright.', {name: edit,
       input: {...stale, draftId: 'Desk show', revision: summary.revision, cue: '1'}});
@@ -4802,6 +4816,10 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     deniedDraft = true;
     assert.ok(!(await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
   });
+}
+
+function ownerReference(role: string, quote: string, kind = 'named', source = 'request') {
+  return {role, quote, kind, source};
 }
 
 type CatalogPhrase = {
@@ -4846,7 +4864,7 @@ function catalogPhrases(): CatalogPhrase[] {
     onWall('nanoleaf-animation-play', 'Play Ocean on Studio Wall.', {animation: {preset: 'ocean'}}),
     onWall('nanoleaf-wall-edit', 'Rotate Studio Wall a quarter turn.', {edit: {kind: 'settings', settings: {rotation: 90}}}),
     onWall('nanoleaf-machine-edit', 'Use project style for Studio Wall machine status.', {edit: {kind: 'settings', settings: {style: 'project'}}}),
-    onWall('nanoleaf-favorite-edit', 'Rename the Studio Wall favorite Evening to Dusk.', {edit: {kind: 'rename', name: 'Evening', newName: 'Dusk'}}),
+    onWall('nanoleaf-favorite-edit', 'Rename the Studio Wall favorite Evening to Dusk.', {edit: {kind: 'animation.rename', name: 'Evening', newName: 'Dusk'}}),
     onWall('nanoleaf-notice-acknowledge', 'Acknowledge notice ' + noticeId + ' for synthetic-task on Studio Wall.', {task: 'synthetic-task', noticeId}),
     onScreen('media-start', 'Start the Evening Loop playlist on Kitchen Display.', {playlistId: 'Evening Loop'}, wrongScreen, {playlistId}),
     onScreen('media-control', 'Could you pause the media on Kitchen Display?', {action: 'pause'}),
@@ -4863,9 +4881,9 @@ function catalogPhrases(): CatalogPhrase[] {
       {change: {operation: 'render', assetId}}),
     onScreen('pixoo-notice-dismiss', 'Dismiss fixture-notice for session ' + noticeId + ' on Kitchen Display.', {session: noticeId, noticeId: 'fixture-notice'}),
     record('wemo-hold-release', 'Release the hold on Bench Plug.', 'Bench Plug', {}, 'bench-plug', 'bunny/modules/wemo',
-      {say: 'Release the hold from an older operation on Bench Plug.', settings: {heldRequestId: 'old-operation'}, code: 'revision-conflict'}),
+      {say: 'Release the hold from an older operation on Bench Plug.', settings: {heldRequestId: 'old-operation'}, code: 'invalid-request'}),
     record('mode-override-set', 'Keep Studio Wall in free mode regardless of Hub mode.', 'Studio Wall', {mode: 'free'}, wall, core,
-      {say: 'Keep id:studio-wall in free mode.', selector: 'id:wall-right', code: 'invalid-state'}),
+      {say: 'Keep id:studio-wall in free mode.', selector: 'id:wall-right', code: 'not-found'}),
     record('notice-clear', 'Clear all notices for the Writing session.', 'Writing', {noticeId: null}, noticeId),
     record('session-label-set', 'Call the Writing session Revised chapter.', 'Writing', {label: 'Revised chapter'}, noticeId),
     record('inbox-handle', 'Dismiss Inbox item fixture-inbox.', 'fixture-inbox', {action: 'dismiss'}),
@@ -5001,9 +5019,32 @@ for (const host of ['anthropic', 'openai'] as const) {
       return validation.ok ? {status: 'accepted'} : {error: validation.error};
     });
     await control(w.core, w.module(), 'enable');
-    const ask = async (ownerText: string, name: string, args: Record<string, unknown>) => {
+    const ask = async (ownerText: string, name: string, args: Record<string, unknown>, selection?: ReturnType<typeof ownerReference>[]) => {
       const prior = task(w)?.taskId, writes = delivered.length;
-      proposal = {ownerText, name, input: args};
+      const nested = typeof args.arguments === 'string' ? JSON.parse(args.arguments) as Record<string, unknown> : {};
+      const change = nested.change as {assetId?: string; playlistId?: string} | undefined;
+      const refs: ReturnType<typeof ownerReference>[] = [];
+      const cite = (role: string, candidates: unknown[]) => {
+        const exact = candidates.find(value => typeof value === 'string' && ownerText.includes(value));
+        if (typeof exact === 'string') refs.push(ownerReference(role, exact));
+      };
+      cite('primary', ['id:studio-wall', 'id:new-pixoo', 'Studio Wall', 'Kitchen Display', 'Bench Plug',
+        'spare wall panel', 'spare display', 'spare speaker', 'Writing', 'fixture-inbox', 'Volcano',
+        'music', 'wall', 'Browser', 'Shared Wall', 'id:wall-left', 'id:wall-right']);
+      cite('artwork', [nested.artworkId]);
+      cite('scene', [nested.sceneId]);
+      cite('playlist', [nested.playlistId, change?.playlistId]);
+      cite('asset', [change?.assetId]);
+      cite('rendition', [nested.renditionId]);
+      cite('draft', [args.draftId]);
+      cite('notice', [nested.noticeId]);
+      cite('session', [nested.session, nested.task]);
+      cite('operation', [nested.heldRequestId, ownerText.includes('older operation') ? 'older operation' : undefined]);
+      cite('favorite', [(nested.edit as {name?: string} | undefined)?.name]);
+      cite('preset', [nested.presetId, nested.name]);
+      if (name === 'edit_light_show_cue') cite('cue', ['first cue']);
+      proposal = {ownerText, name, input: name === 'set_mode' || name === 'create_light_show_draft' ? args
+        : {...args, references: selection ?? refs.filter(ref => catalogToolReferenceRoles(name).some(role => role === ref.role))}};
       const accepted = await input(w.core, w.module(), ownerText);
       assert.equal(accepted.status, 'accepted', `${ownerText} ${JSON.stringify(accepted)}`);
       await until(() => task(w)?.taskId !== prior && (delivered.length > writes || status(w) === 'succeeded' || status(w) === 'failed' || status(w) === 'waiting'));
@@ -5046,13 +5087,28 @@ for (const host of ['anthropic', 'openai'] as const) {
     const deleteAsset = (id: string, owner = 'bunny/modules/pixoo') =>
       argumentsFor(owner, 'new-pixoo', {change: {operation: 'delete', assetId: id}});
     const priorWrites = delivered.length;
-    await ask(`Delete asset id:${assetId} on id:new-pixoo.`, assetTool, deleteAsset(assetId, 'bunny/modules/nanoleaf'));
+    await ask(`Delete asset id:${assetId} on id:new-pixoo.`, assetTool, deleteAsset(assetId, 'bunny/modules/nanoleaf'),
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', `id:${assetId}`)]);
     for (const name of ['Sunrise', 'Missing Sunrise']) {
-      const refusal = await ask(`Delete asset ${name} on id:new-pixoo.`, assetTool, deleteAsset(assetId));
+      const refusal = await ask(`Delete asset ${name} on id:new-pixoo.`, assetTool, deleteAsset(assetId),
+        [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', name)]);
       assert.equal(refusal, 'refused: invalid-request', name);
     }
-    assert.equal(delivered.length, priorWrites, 'neither named replacement falls back to the previous original');
-    await ask('Delete it on id:new-pixoo.', assetTool, deleteAsset(assetId));
+    const redirected = await ask('Delete asset Missing Sunrise on id:new-pixoo, then show it.', assetTool, deleteAsset(assetId),
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'it', 'prior')]);
+    assert.equal(redirected, 'refused: invalid-state');
+    assert.equal(delivered.length, priorWrites, 'neither a replacement name nor an unrelated trailing pronoun selects the previous original');
+    const playlistTool = catalogTool('pixoo-playlist-change');
+    assert.equal(await ask('Delete the Morning Loop playlist on Kitchen Display.', playlistTool,
+      argumentsFor('bunny/modules/pixoo', 'Kitchen Display', {change: {operation: 'delete', playlistId: '11111111-1111-4111-8111-111111111111'}}),
+      [ownerReference('primary', 'Kitchen Display'), ownerReference('playlist', 'Morning Loop')]), 'refused: invalid-request');
+    const sceneTool = catalogTool('scene-activate');
+    assert.equal(await ask('Activate Old Sunrise on Studio Wall.', sceneTool,
+      argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: 'scene-' + 'a'.repeat(64)}),
+      [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Old Sunrise')]), 'refused: invalid-request');
+    assert.equal(delivered.length, priorWrites, 'ordinary current scene and playlist names cannot inherit stale IDs');
+    await ask('Delete it on id:new-pixoo.', assetTool, deleteAsset(assetId),
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'it', 'prior')]);
     assert.equal(delivered.length, priorWrites + 1);
     assert.deepEqual(delivered[priorWrites]?.data.data, {change: {operation: 'delete', assetId}});
 
@@ -5065,8 +5121,9 @@ for (const host of ['anthropic', 'openai'] as const) {
     await ask('In revision zero of Blue Hour set the first cue to 40 percent.', 'edit_light_show_cue',
       {draftId: 'Blue Hour', revision: 0, cue: '1', changes: '{"intensity":0.4}'});
     assert.equal(drafts.read(draft.id)?.revision, draft.revision);
-    await ask('On second thought, dim that first cue to 40 percent.', 'edit_light_show_cue',
-      {draftId: 'Blue Hour', revision: -1, cue: '1', changes: '{"intensity":0.4}'});
+    await ask('In that draft, dim the first cue to 40 percent.', 'edit_light_show_cue',
+      {draftId: 'Blue Hour', revision: -1, cue: '1', changes: '{"intensity":0.4}'},
+      [ownerReference('draft', 'that draft', 'prior'), ownerReference('cue', 'first cue')]);
     const current = drafts.read(draft.id) ?? assert.fail('edited Blue Hour draft');
     assert.equal(current.revision, draft.revision + 1);
     assert.equal(current.value.timeline.cues[0]?.intensity, 0.4);
@@ -5093,14 +5150,16 @@ for (const host of ['anthropic', 'openai'] as const) {
     assert.partialDeepStrictEqual(delivered[prior + 1]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 7}});
     const ambiguous = 'Put Shared Wall in free mode.';
     const modeTool = catalogTool('device-mode-set');
-    proposal = {ownerText: ambiguous, name: modeTool, input: argumentsFor('bunny/modules/nanoleaf', 'Shared Wall', {mode: 'free'})};
+    proposal = {ownerText: ambiguous, name: modeTool, input: {...argumentsFor('bunny/modules/nanoleaf', 'Shared Wall', {mode: 'free'}),
+      references: [ownerReference('primary', 'Shared Wall')]}};
     assert.equal((await input(w.core, w.module(), ambiguous)).status, 'accepted');
     await until(() => status(w) === 'waiting');
     assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which device/);
     assert.equal(delivered.length, prior + 2, 'an ambiguous device sends no command');
 
     const answer = 'Use id:wall-right.';
-    proposal = {ownerText: answer, name: modeTool, input: argumentsFor('bunny/modules/nanoleaf', 'id:wall-right', {mode: 'free'})};
+    proposal = {ownerText: answer, name: modeTool, input: {...argumentsFor('bunny/modules/nanoleaf', 'id:wall-right', {mode: 'free'}),
+      references: [ownerReference('primary', 'id:wall-right', 'named', 'answer')]}};
     assert.equal((await input(w.core, w.module(), answer, true)).status, 'accepted');
     await until(() => status(w) === 'succeeded');
     assert.equal(delivered.length, prior + 3);

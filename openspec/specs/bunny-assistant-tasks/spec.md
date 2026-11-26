@@ -1347,6 +1347,19 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 - **THEN** the Hub sends the existing guarded owner command through the tracked dispatcher once
 - **AND** the private result follows the owner's existing evidence contract
 
+#### Scenario: A hosted catalog proposal cites the current target words
+
+- **WHEN** the hosted supervisor proposes a catalog effect against an existing target
+- **THEN** it cites the verbatim words selecting each target in the current authenticated owner request or its clarification, with the corresponding primary or nested role
+- **AND** the Hub checks each cited source and resolves current named targets in their owner-local permitted records before dispatch
+- **AND** absent, inaccessible, ambiguous or conflicting named targets send no command and require clarification
+
+#### Scenario: Earlier context identifies a genuine reference
+
+- **WHEN** a current target phrase refers back to an eligible record in the same conversation
+- **THEN** eligible prior context may identify that record for the cited role
+- **AND** a pronoun in another instruction cannot replace an absent or conflicting name in the current selection
+
 #### Scenario: A stale draft edit or invalid target is proposed
 
 - **WHEN** the supervisor proposes a stale draft revision, an invalid target, or a target whose permission has changed

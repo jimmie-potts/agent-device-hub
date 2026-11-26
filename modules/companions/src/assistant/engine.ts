@@ -34,8 +34,8 @@ import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {chooseBrightnessSubject, ConversationActions, deviceClarification, type CatalogAdmission, type CatalogIdentityRead, type RetainedArtworkRead} from './catalog-actions.js';
 import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import {catalogSelectorSelected} from './catalog-grounding.js';
-import {catalogCommand, catalogTool, draftMutation, isCatalogTool, modelCatalogCommand, modelCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
+import {catalogQuoteNames, catalogReferencesFor, catalogSelectorSelected, isCatalogSelectorKind, readCatalogReferences} from './catalog-grounding.js';
+import {catalogCommand, catalogTool, catalogToolReferenceRoles, catalogToolWithReferences, draftMutation, isCatalogTool, modelCatalogCommand, modelCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
 import {DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
@@ -1581,7 +1581,7 @@ export class AssistantEngine {
       description: scope.history?.history?.kind === 'timestamps'
         ? 'Read observed power times for the device and interval requested by the owner. Send empty source, target and period and zero for both timestamps. Start with an empty cursor and use the returned cursor for the second page.'
         : 'Summarize the exact device and historical interval in the owner request. Send empty source, target, period and cursor, and zero for both timestamps.'}));
-    return tools.filter(tool => tool.name !== READ_DEVICE_HISTORY && tool.name !== READ_SESSIONS);
+    return tools.filter(tool => tool.name !== READ_DEVICE_HISTORY && tool.name !== READ_SESSIONS).map(catalogToolWithReferences);
   }
   #supervisorScope(task: Task, purpose: 'supervisor' | 'title' = 'supervisor', boundDevice?: string | readonly string[],
     hostedHistory: ReadonlyMap<string, HostedHistoryMessage> = new Map()) {
@@ -2323,7 +2323,7 @@ export class AssistantEngine {
         next = 'act';
       }
     } else if (next === 'approve' && command !== undefined && call !== undefined) {
-      const admission = interpreted ? this.#catalogAdmission(currentTask.id, id, call.name) : undefined;
+      const admission = interpreted ? this.#catalogAdmission(currentTask.id, id, call) : undefined;
       const selected = command === 'art-request' && this.store.hasArtReply(task.id) || admission?.current() === false
         ? {code: 'invalid-state'} : await this.#catalog().propose(command, call, active.span.context, canNameDevice, admission);
       const questionId = `${state.taskId}-q${String(this.#task(state.taskId).questions + 1)}`;
@@ -2592,11 +2592,16 @@ export class AssistantEngine {
     return [scope.request.text, scope.answer?.text ?? '', ...prior];
   }
 
-  #catalogAdmission(taskId: string, modelCallId: string, tool: string): CatalogAdmission {
+  #catalogAdmission(taskId: string, modelCallId: string, call: ToolCall): CatalogAdmission {
     const current = () => {
       const task = this.#task(taskId);
       const scope = this.#currentModelControl(task, modelCallId);
-      return scope !== undefined && this.#toolsFor(task).some(item => item.name === tool) ? {task, scope} : undefined;
+      const definition = this.#toolsFor(task).find(item => item.name === call.name);
+      if (scope === undefined || definition === undefined) return undefined;
+      const refs = readCatalogReferences(call.input.references, scope);
+      if (refs === undefined && definition.input.required.includes('references')) return undefined;
+      const roles = catalogToolReferenceRoles(call.name);
+      return refs?.some(ref => !roles.includes(ref.role)) === true ? undefined : {task, scope, refs};
     };
     const visible: CatalogAdmission['visible'] = (source, id) => {
       const active = current();
@@ -2621,15 +2626,28 @@ export class AssistantEngine {
       selector: (kind, selector, contextIds) => {
         const active = current();
         if (active === undefined) return false;
-        return catalogSelectorSelected(kind, selector, active.scope,
+        if (active.refs !== undefined) {
+          const selected = catalogReferencesFor(active.refs, kind);
+          if (selected.some(ref => ref.kind === 'named')) return selected.some(ref =>
+            ref.kind === 'named' && catalogQuoteNames(ref.quote, literalDeviceId(selector) ?? selector));
+          const ref = selected[0];
+          if (selected.length !== 1 || ref?.kind !== 'prior') return false;
+          const prior = this.#catalogReferenceTexts(active.task, active.scope, modelCallId, true).slice(2);
+          if (!isCatalogSelectorKind(kind)) return prior.some(text => containsControlValue(text, selector));
+          const {request, history, modeRevision, references} = active.scope;
+          return catalogSelectorSelected(kind, selector, {request: {...request, text: ref.quote}, history,
+            modeRevision, references, exactTargets: []}, prior, contextIds);
+        }
+        return !isCatalogSelectorKind(kind) || catalogSelectorSelected(kind, selector, active.scope,
           this.#catalogReferenceTexts(active.task, active.scope, modelCallId, true).slice(2), contextIds);
       },
       visible,
       attachedArtwork: (requestId, artworkIds, displays) => {
         const active = current();
         if (active === undefined) return false;
-        const {task, scope} = active, through = task.contextThrough;
-        if (through === undefined) return false;
+        const {task, scope, refs} = active, through = task.contextThrough;
+        if (through === undefined || refs !== undefined &&
+          !catalogReferencesFor(refs, 'artwork').some(ref => ref.kind === 'prior')) return false;
         const displayIds = displays.filter(id => !artworkIds.includes(id));
         if (scope.exactTargets.some(id => !displayIds.includes(id)) ||
           artworkIds.some(id => catalogSelectorSelected('artwork', id, scope, [], displayIds))) return false;
@@ -2647,12 +2665,30 @@ export class AssistantEngine {
       target: (id, source, alternatives, implicit = false, nested = []) => {
         const active = current();
         if (active === undefined || !visible(source, id)) return 'forbidden';
-        const {task, scope} = active;
+        const {task, scope, refs} = active;
         const texts = this.#catalogReferenceTexts(task, scope, modelCallId, true);
         const references = alternatives.map(target => ({...target, binding: '', allowed: visible(source, target.id), eligible: false}));
         const addressed = new Set([scope.request.text, scope.answer?.text ?? ''].flatMap(text => controlReferenceIds(references, text)));
         const exact = scope.exactTargets.filter(value => !nested.includes(value) || references.some(reference => reference.id === value));
         if (exact.some(value => !references.some(reference => reference.id === value))) return 'not-found';
+        if (refs !== undefined && source !== 'shows') {
+          const primary = catalogReferencesFor(refs, 'primary');
+          if (primary.length === 0) return implicit && alternatives.length === 1 && exact.length === 0 && source === 'status'
+            ? undefined : 'not-found';
+          if (primary.length !== 1 || primary[0] === undefined) return 'invalid-state';
+          const ref = primary[0];
+          if (ref.kind === 'named') {
+            const matches = references.filter(candidate => candidate.allowed && catalogQuoteNames(ref.quote, candidate.id, candidate.label));
+            if (matches.length > 1) return 'invalid-state';
+            if (matches[0]?.id !== id && !(implicit && source === 'playback' && alternatives.length === 1 &&
+              ['music', 'playback'].some(label => catalogQuoteNames(ref.quote, label)))) return 'not-found';
+            if (exact.some(value => value !== id)) return 'not-found';
+            return undefined;
+          }
+          if (addressed.size > 0 || exact.length > 0) return 'not-found';
+          const prior = new Set(texts.slice(2).flatMap(text => controlReferenceIds(references, text)));
+          return prior.size === 1 && prior.has(id) ? undefined : 'not-found';
+        }
         if (implicit && alternatives.length === 1 && exact.length === 0 && addressed.size === 0) return undefined;
         const eligible = new Set(texts.flatMap(text => controlReferenceIds(references, text)));
         const selected = resolveModelControl({...scope, exactTargets: exact,
@@ -2728,6 +2764,19 @@ export class AssistantEngine {
       const artTargets = proposal.command === 'art-show' && Array.isArray(proposal.data.targets)
         ? proposal.data.targets.filter((target): target is string => typeof target === 'string') : [];
       const physical = artTargets.filter(target => target !== 'browser');
+      if (artTargets.length > 0 && this.#taskProvider(task).name !== 'synthetic') {
+        const refs = readCatalogReferences(call.input.references, scope);
+        const primary = refs === undefined ? [] : catalogReferencesFor(refs, 'primary');
+        const destinations = [...(knownTargets ?? []), ['browser', 'dashboard']];
+        const selected = new Set<string>();
+        for (const ref of primary) {
+          if (ref.kind !== 'named') return {code: 'not-found'};
+          const matches = destinations.filter(([id, label]) => id !== undefined && catalogQuoteNames(ref.quote, id, label));
+          if (matches.length !== 1 || matches[0]?.[0] === undefined) return {code: 'not-found'};
+          selected.add(matches[0][0]);
+        }
+        if (selected.size !== artTargets.length || artTargets.some(target => !selected.has(target))) return {code: 'not-found'};
+      }
       if (artTargets.includes('browser') && !['browser', 'dashboard'].some(label =>
         [scope.request.text, scope.answer?.text ?? ''].some(text => containsControlValue(text, label)))) return {code: 'invalid-request'};
       if (physical.length > 0) {
@@ -2898,7 +2947,7 @@ export class AssistantEngine {
         }
         this.#fence(active);
         const privateRead = this.#fields(task.profile, 'read', 'private-conversation');
-        const admission = this.#catalogAdmission(task.id, modelCall, call.name);
+        const admission = this.#catalogAdmission(task.id, modelCall, call);
         return this.outbox.transaction(() => {
           this.#fence(active);
           if (!admission.current()) return {text: 'refused: invalid-state', units: 0, disclosures: []};

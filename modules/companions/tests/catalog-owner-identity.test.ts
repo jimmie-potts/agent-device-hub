@@ -9,8 +9,19 @@ import {InProcessBus, type BunnyModule} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {ConversationActions, type CatalogAdmission, type CatalogIdentityQuery} from '../src/assistant/catalog-actions.js';
 
-import {catalogSelectorSelected} from '../src/assistant/catalog-grounding.js';
+import {catalogSelectorSelected, readCatalogReferences} from '../src/assistant/catalog-grounding.js';
 import {exactControlIds, type ModelControlScope} from '../src/assistant/model-control.js';
+
+void test('catalog references must match a complete phrase in the cited current source', () => {
+  const scope: ModelControlScope = {request: {id: 'request', revision: 1, text: 'Show Dawn on the wall.'},
+    answer: {id: 'answer', revision: 1, text: 'Use id:wall-right.'}, exactTargets: [], history: [], references: [], modeRevision: null};
+  const request = {role: 'artwork', source: 'request', kind: 'named', quote: 'Dawn'};
+  const answer = {role: 'primary', source: 'answer', kind: 'named', quote: 'id:wall-right'};
+  assert.deepEqual(readCatalogReferences([request, answer], scope), [request, answer]);
+  for (const reference of [{...answer, source: 'request'}, {...answer, quote: 'wall'}, {...request, quote: 'Northern Dawn'},
+    {...request, role: 'anything'}]) assert.equal(readCatalogReferences([reference], scope), undefined);
+  assert.equal(readCatalogReferences([request, request], scope), undefined);
+});
 
 void test('a current named destructive asset selection never falls back to an earlier original', () => {
   const previous = '11111111-1111-4111-8111-111111111111';
