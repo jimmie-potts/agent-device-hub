@@ -224,7 +224,7 @@ function deviceRequestSubject(text: string): string | undefined {
     ?? /^(?:please )?(?:(?:list|show|check|read) (?:the )?(.+)|(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available))$/u.exec(affirmative)?.slice(1).find(value => value !== undefined);
   const subject = readSubject ?? powerSubject(text);
   if (subject === undefined || remainder !== undefined && deviceGroup(subject) !== undefined) return undefined;
-  return readSubject === undefined ? subject : literalDeviceSubject(opening, readSubject);
+  return literalDeviceSubject(opening, subject);
 }
 
 function matchesCatalogSubject(subject: string | undefined, id: string): boolean {
@@ -1648,6 +1648,7 @@ export class AssistantEngine {
         return position < 0 ? [] : [{...entry, position}];
       }).sort((a, b) => a.position - b.position);
     };
+    const malformedSelector = exactControlIds(request).some(id => literalDeviceId(`id:${id}`) !== id);
     const matching = exact.length === 1 ? exact : exact.length > 1 ? []
       : subject === undefined || /\band\b/u.test(subject) ? mentioned(request) : [];
     const explicit = group === undefined ? matching : configured.filter(({owner}) => owner === group);
@@ -1660,14 +1661,14 @@ export class AssistantEngine {
     const ordinal = /\b(?:first|former)\b/u.test(words) ? 0 : /\b(?:second|latter)\b/u.test(words) ? 1 : undefined;
     const referred = ordinal !== undefined ? references.slice(ordinal, ordinal + 1)
       : references.length === 1 || /\b(?:both|those)\b/u.test(words) ? references : [];
-    const selected = [...explicit, ...referred];
+    const selected = malformedSelector ? [] : [...explicit, ...referred];
     for (const {device} of selected) devices.add(device.id);
     if (purpose === 'supervisor' && /\bmode\b/u.test(words)) devices.add('hub');
     // Earlier owner text can resolve a reference in the current command. The
     // chronological model background is selected independently.
     const recent = purpose === 'title' || refers ? visibleEarlier : [];
     const selectedDevice = (owner: AssistantDeviceOwner, id: string) => selected.some(entry => entry.owner === owner && entry.device.id === id);
-    const catalogSubject = group !== undefined || exact.length > 1 ? undefined
+    const catalogSubject = malformedSelector || group !== undefined || exact.length > 1 ? undefined
       : subject !== undefined && (!refers || references.length === 0) ? subject
         : selected.length === 1 && selected[0] !== undefined ? `id:${selected[0].device.id}` : undefined;
     const priorCatalogIds = new Set(this.store.calls(task.id).filter(call => effects.has(call.id) && call.kind === 'tool' && call.action === undefined)
