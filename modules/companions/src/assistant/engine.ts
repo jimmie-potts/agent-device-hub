@@ -680,7 +680,7 @@ export class AssistantEngine {
     if (receipt !== undefined && (!this.#canReadBrightnessReceipt(task, receipt.call) ||
         !speech('operations', 'details', receipt.call.id))) return false;
     return allowed('conversation', 'text', task.conversationId) && allowed('conversation', 'text', messageId) &&
-      this.#jobMessageAllowed({...message, taskId}, allowed) && this.#replayable(taskId, allowed);
+      this.#jobMessageAllowed({...message, taskId}, allowed) && this.#savedDisclosureAllowed(taskId, allowed);
   }
   /**
    * Offers one durable assistant message to be spoken through the companions speech endpoint. Text over the browser driver's
@@ -1213,7 +1213,7 @@ export class AssistantEngine {
         const listed = this.store.conversations(selected, cursor === undefined ? undefined : {last: Number(cursor[1]), row: Number(cursor[2])}, {
           conversation: id => fields('conversation', 'index', id),
           message: message => read('conversation', 'text', message.id) &&
-            (message.role === 'owner' || this.#jobMessageAllowed(message, read) && this.#replayable(message.taskId, read)),
+            (message.role === 'owner' || this.#jobMessageAllowed(message, read) && this.#savedDisclosureAllowed(message.taskId, read)),
         });
         const document: ConversationList = {version: 1, profile: selected, older: listed.older,
           conversations: listed.conversations.map(value => {
@@ -1245,7 +1245,7 @@ export class AssistantEngine {
         },
         shows: (message: MessageSource) => fields('conversation', 'text', message.id) &&
           (message.role === 'owner' || this.#brightnessMessage(message) !== undefined ||
-            this.#jobMessageAllowed(message, fields) && this.#replayable(message.taskId, fields)),
+            this.#jobMessageAllowed(message, fields) && this.#savedDisclosureAllowed(message.taskId, fields)),
         attachment: (requestId: string) => fields('artwork', 'attachment', requestId),
         task: (taskId: string) => conversationId !== undefined && task(conversationId, taskId),
       };
@@ -1752,20 +1752,39 @@ export class AssistantEngine {
     return this.#fitHostedHistory(task, provider, {instructions: INSTRUCTIONS, context, transcript, tools, mode: null},
       [...this.#hostedHistory(task).values()]);
   }
-  async #prepareHistoryCompaction(task: Task, provider: ModelProvider, active: Active): Promise<void> {
+  #hostedBase(task: Task, transcript: TurnInput['transcript'], context: PromptContext, tools: TurnInput['tools'],
+    access: FieldAccess, deviceMode: CoreCopy['mode']): TurnInput {
+    const visible = transcript.map(item => {
+      if (item.role === 'owner' && 'submittedAtMs' in item) {
+        const {submittedAtMs: _, ...message} = item;
+        return message;
+      }
+      if (item.role !== 'tool') return item;
+      const record = conversationMessageId(task.id, item);
+      return record !== undefined && record.endsWith('-answer') && !access('conversation', 'excerpt', record)
+        ? {...item, result: 'The owner’s answer is private.'} : item;
+    });
+    const mode = deviceMode !== undefined && access('devices', 'status', 'hub')
+      ? {mode: deviceMode.mode, revision: deviceMode.revision} : null;
+    return {instructions: INSTRUCTIONS, context, transcript: visible, tools, mode};
+  }
+  async #prepareHistoryCompaction(task: Task, provider: ModelProvider, active: Active, protect: (release: () => void) => void): Promise<void> {
     const pin = task.supervisor;
     if (pin === undefined || !this.#canUseTaskProvider(task)) return;
     const attempt = this.store.taskHistoryCompaction(task.id);
     if (attempt?.stopCode !== undefined) throw new ProviderFault(attempt.stopCode);
     if (attempt !== undefined) return;
+    if (this.store.queue.steers(task.id).length > 0) return;
     const eligible = this.#hostedHistory(task), messages = [...eligible.values()];
-    const latestAttempt = this.store.latestHistoryCompactionAttempt(task.conversationId);
-    if ((latestAttempt?.status === 'admitted' || latestAttempt?.status === 'uncertain') &&
-      this.#historySourcesAllowed(latestAttempt.sources, eligible)) return;
     const scope = this.#supervisorScope(task, 'supervisor', undefined, eligible);
-    if (messages.length === 0 || !scope.fields('conversation', 'request', scope.requestId)) return;
-    const base: TurnInput = {instructions: INSTRUCTIONS, context: this.#supervisorContext(task.profile), transcript: scope.transcript,
-      tools: this.#toolsFor(task), mode: null};
+    const auxiliary = this.#supervisorPromptFields(task.profile);
+    const access: FieldAccess = (source, field, record) =>
+      (source === 'knowledge' || source === 'preferences' ? auxiliary : scope.fields)(source, field, record);
+    if (messages.length === 0 || !access('conversation', 'request', scope.requestId) ||
+      [...scope.ownerInputs].some(owner => !access('conversation', 'request', owner)) ||
+      scope.transcript.some(item => item.role === 'assistant') && !this.#replayable(task.id, access, scope.effects)) return;
+    const base = this.#hostedBase(task, scope.transcript, this.#supervisorContext(task.profile, access), this.#toolsFor(task), access, this.#core().mode);
+    if (hostedInputUnits(provider, base) > hostedInputCapacity(provider)) return;
     const fitted = this.#fitHostedHistory(task, provider, base, messages);
     if (fitted.omitted === 0) return;
     const prior = this.#usableCompaction(task.conversationId, messages);
@@ -1816,9 +1835,12 @@ export class AssistantEngine {
     let admitted = false;
     await this.outbox.transaction(() => {
       this.#fence(active);
-      if (this.store.hasHistoryCompaction(record.id, task.id) || !this.spend.fitsTogether([{
+      if (this.store.hasHistoryCompaction(record.id, task.id)) return;
+      const release = this.spend.holdForOptional({
         model: provider.model, inputUnits: provider.inputUnits?.(base) ?? inputBound(base), outputUnits: LIMITS.outputUnits, ...pricing
-      }, planned.spend]) || this.spend.reserve({id: record.id, purpose: 'conversation', owner: task.conversationId, ...planned.spend}) !== undefined) return;
+      }, {id: record.id, purpose: 'conversation', owner: task.conversationId, ...planned.spend});
+      if (release === undefined) return;
+      protect(release);
       this.store.saveHistoryCompaction(record);
       admitted = true;
     });
@@ -1835,7 +1857,8 @@ export class AssistantEngine {
       const current = this.#task(task.id);
       const permitted = this.#hostedHistory(current);
       const scope = this.#supervisorScope(current, 'supervisor', undefined, permitted);
-      if (!scope.fields('conversation', 'request', scope.requestId) || !this.#historySourcesAllowed(sources, permitted)) {
+      if (this.store.queue.steers(task.id).length > 0 || !scope.fields('conversation', 'request', scope.requestId) ||
+        [...scope.ownerInputs].some(owner => !scope.fields('conversation', 'request', owner)) || !this.#historySourcesAllowed(sources, permitted)) {
         record.status = 'failed';
       } else {
         const interrupted = new Promise<never>((_resolve, reject) => {
@@ -1913,6 +1936,11 @@ export class AssistantEngine {
     if (update !== undefined && (update.jobId !== job.jobId || codingUpdateMessageId(job, update.kind) !== message.id)) return false;
     return this.#codingJobAllowed(job, access);
   }
+  #savedDisclosureAllowed(taskId: string, access: FieldAccess): boolean {
+    if (this.store.task(taskId)?.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
+    return this.store.calls(taskId).every(call => this.#recordedFieldsAllowed(call, access, !canRevokeFields(this.options.share)) &&
+      (call.historySources?.every(({id}) => access('conversation', 'text', id)) ?? true));
+  }
   #replayable(taskId: string, access: FieldAccess, effects?: ReadonlySet<string>): boolean {
     if (this.store.task(taskId)?.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
     return this.#callDisclosuresAllowed(taskId, access, call => effects?.has(call.id) !== false, effects === undefined && !canRevokeFields(this.options.share));
@@ -1924,11 +1952,14 @@ export class AssistantEngine {
   #callAllowed(call: Call, access: FieldAccess, acceptsOldRecords: boolean,
     history?: ReadonlyMap<string, HostedHistoryMessage>): boolean {
     const historyRevision = (id: string) => history === undefined ? this.store.historySourceRevision(id) : history.get(id)?.revision;
-    return call.incompleteDisclosures !== true &&
-      (call.disclosures === undefined ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => this.#disclosureAllowed(field, access))) &&
+    return this.#recordedFieldsAllowed(call, access, acceptsOldRecords) &&
       (call.historySources?.every(({id, revision}) => access('conversation', 'excerpt', id) && historyRevision(id) === revision) ?? true) &&
       (call.inputVersions?.every(({field, version}) => field.source === 'conversation' && field.record !== undefined && history !== undefined
         ? String(historyRevision(field.record)) === version : this.#disclosureVersion(field) === version) ?? true);
+  }
+  #recordedFieldsAllowed(call: Call, access: FieldAccess, acceptsOldRecords: boolean): boolean {
+    return call.incompleteDisclosures !== true &&
+      (call.disclosures === undefined ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => this.#disclosureAllowed(field, access)));
   }
   #disclosureAllowed({source, field, record}: DisclosedField, access: FieldAccess): boolean {
     if (!access(source, field, record)) return false;
@@ -2016,7 +2047,11 @@ export class AssistantEngine {
     const id = `${state.taskId}-step-${String(state.step)}`;
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
     const paid = provider.name !== 'synthetic';
-    if (paid && this.store.call(id) === undefined) await this.#prepareHistoryCompaction(task, provider, active);
+    let releaseSpend: (() => void) | undefined;
+    if (paid && this.store.call(id) === undefined) {
+      try {await this.#prepareHistoryCompaction(task, provider, active, release => {releaseSpend = release;});}
+      catch (error) {releaseSpend?.(); throw error;}
+    }
     const ledger: DisclosureLedger = {fields: []}, modelLedger: DisclosureLedger = {fields: []};
     const promptFields = this.#fields(task.profile, 'prompt', provider.name);
     const fields = recordDisclosures(promptFields, ledger);
@@ -2062,6 +2097,7 @@ export class AssistantEngine {
           ...(paid ? {historySources, inputVersions} : {}),
           ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})}));
     }, undefined, current => {
+      releaseSpend?.();
       this.#drain(current);
       tools = this.#toolsFor(current);
       if (paid) {
@@ -2084,16 +2120,10 @@ export class AssistantEngine {
         if (includesReplay && !this.#replayable(current.id, scopedAccess, scope.effects)) {
           throw new Fault('forbidden', 'Earlier task data can no longer be replayed to this supervisor.');
         }
-        const transcript = scope.transcript.map(item => {
-          if (item.role !== 'tool') return item;
-          const record = conversationMessageId(current.id, item);
-          if (record !== undefined && record.endsWith('-answer')) {
-            return {...item, result: access('conversation', 'excerpt', record) ? item.result : 'The owner’s answer is private.'};
-          }
-          return item;
-        });
-        const mode = copy.mode !== undefined && access('devices', 'status', 'hub') ? {mode: copy.mode.mode, revision: copy.mode.revision} : null;
-        const base = {instructions: INSTRUCTIONS, context, transcript, tools, mode};
+        const base = this.#hostedBase(current, scope.transcript, context, tools, access, copy.mode);
+        if (hostedInputUnits(provider, base) > hostedInputCapacity(provider)) {
+          throw new Fault('capacity', 'The current turn exceeds the model’s working input limit. The model request was not sent.');
+        }
         const fitted = this.#fitHostedHistory(current, provider, base, [...eligible.values()]);
         historySources = fitted.sources;
         inputVersions = ledger.fields.flatMap(field => {
@@ -2117,7 +2147,7 @@ export class AssistantEngine {
         request = {instructions: INSTRUCTIONS, context: this.#context(current, undefined, {prompt: fields, model: modelAccess}), transcript, tools,
           mode: copy.mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
       }
-      request = {...request, transcript: request.transcript.map(item => {
+      if (!paid) request = {...request, transcript: request.transcript.map(item => {
         if (item.role !== 'owner' || !('submittedAtMs' in item)) return item;
         const {submittedAtMs: _, ...message} = item;
         return message;
@@ -2126,7 +2156,7 @@ export class AssistantEngine {
       const inputUnits = provider.inputUnits?.(request) ?? inputBound(request);
       return {units: inputUnits + LIMITS.outputUnits, unit: paid ? 'tokens' : 'synthetic units',
         ...(paid ? {spend: {model: provider.model, inputUnits, outputUnits: LIMITS.outputUnits, ...(current.supervisor?.pricing === undefined ? {} : {pricing: current.supervisor.pricing})}} : {})};
-    });
+    }).finally(() => {releaseSpend?.();});
     const reply = parseReply(text), call = reply.calls[0];
     // A steer that reached the task before this call returned supersedes a final answer: the model reads it first.
     const steered = this.store.call(id)?.steered === true;

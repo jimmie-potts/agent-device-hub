@@ -2886,6 +2886,7 @@ for (const name of ['anthropic', 'openai'] as const) {
     const old = 'Set the weekend reminder for Saturday at seven. ORIGINAL_SCHEDULE.';
     const revised = 'Set the weekend reminder for Sunday at eight. REVISED_SCHEDULE.';
     const unresolved = 'Confirm who will supply the timer batteries.';
+    const originReply = 'I saved that plan. SAVED_PRIVATE_ORIGIN_REPLY.';
     const usage = {input_tokens: 20, output_tokens: 10};
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
       const body = JSON.parse(init.body) as {system?: {text: string}[]; instructions?: string; tools: unknown[]};
@@ -2897,7 +2898,10 @@ for (const name of ['anthropic', 'openai'] as const) {
         compactions.push(init.body);
         const decision = init.body.includes('REVISED_SCHEDULE') ? revised : init.body.includes('ORIGINAL_SCHEDULE') ? old : 'Other daily details were discussed.';
         text = JSON.stringify({decisions: [decision], openQuestions: init.body.includes(unresolved) ? [unresolved] : [], references: [], corrections: []});
-      } else ordinary.push(init.body);
+      } else {
+        if (ordinary.length === 0) text = originReply;
+        ordinary.push(init.body);
+      }
       return Promise.resolve(Response.json(name === 'anthropic'
         ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage}
         : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}], usage}));
@@ -2956,12 +2960,54 @@ for (const name of ['anthropic', 'openai'] as const) {
     revoked = undefined;
     w.store().messages.correct(`${origin}-prompt`, {kind: 'literal', text: revised, language: 'en'});
     await ask('What is the corrected weekend plan?');
-    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE/);
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE|SAVED_PRIVATE_ORIGIN_REPLY/);
+    assert.ok((await page(w)).messages.some(message => message.text === originReply), 'correcting an input preserves the saved reply in private history');
     assert.match(ordinary.at(-1) ?? '', /REVISED_SCHEDULE/, 'a correction is the new source for history or compaction');
     assert.equal(w.store().savedMessage(origin, `${origin}-prompt`)?.text, revised, 'compaction keeps local records independent of the summary');
     w.store().messages.remove(`${origin}-prompt`, Date.now());
     await ask('Give me the current notes.');
-    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE|REVISED_SCHEDULE/, 'removal invalidates derived history');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE|REVISED_SCHEDULE|SAVED_PRIVATE_ORIGIN_REPLY/, 'removal invalidates derived history');
+    assert.ok((await page(w)).messages.some(message => message.text === originReply), 'removing an input preserves the saved reply in private history');
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} refuses oversized required owner input and native continuation before spend or transport`, async context => {
+    const bodies: string[] = [];
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      bodies.push(init.body);
+      return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: [{type: 'tool_use', id: 'tool_read', name: 'read_lifx', input: {device: 'desk'}}], stop_reason: 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: [{type: 'function_call', id: 'fc_read', call_id: 'tool_read',
+          name: 'read_lifx', arguments: '{"device":"desk"}'}], usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const adapter = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const provider: ModelProvider & {inputWindow: number} = {name, model: adapter.model, inputWindow: 9_000,
+      contextInputUnits: input => adapter.contextInputUnits(input), turn: (input, signal) => {
+        // Give the native continuation exactly the required first request's budget.
+        provider.inputWindow = adapter.contextInputUnits(input);
+        return adapter.turn(input, signal);
+      }};
+    const w = await world(context, {provider, tools: ['read_lifx'], devices: () => [light('desk', 'Desk Lamp')]});
+    await control(w.core, w.module(), 'enable');
+    const spendRows = () => w.host().moduleDatabase()?.prepare('SELECT id FROM assistant_spend').all().length;
+    const original = 'Retain the whole owner message. '.repeat(350).trimEnd();
+    assert.equal((await input(w.core, w.module(), original)).status, 'accepted');
+    await until(() => status(w) === 'failed');
+    assert.equal(task(w)?.code, 'capacity');
+    assert.deepEqual(bodies, []);
+    assert.equal(spendRows(), 0);
+    assert.ok((await page(w)).messages.some(message => message.text === original));
+
+    assert.equal((await input(w.core, w.module(), '', false, randomUUID(), {action: 'new-conversation', text: undefined})).status, 'accepted');
+    provider.inputWindow = 100_000;
+    const before = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), 'What is the brightness of Desk Lamp?')).status, 'accepted');
+    await until(() => task(w)?.taskId !== before && status(w) === 'failed');
+    assert.equal(task(w)?.code, 'capacity');
+    assert.equal(bodies.length, 1);
+    assert.equal(spendRows(), 1, 'only the sent first call consumes a reservation');
   });
 }
 
@@ -2999,6 +3045,9 @@ for (const failure of ['uncertain', 'provider-capacity'] as const) {
       await ask('Check the plan after restart.');
       assert.equal(compacted, 1, 'an ambiguous prefix is not automatically charged again');
       assert.equal(ordinary, 9);
+      provider.inputWindow = 5_500;
+      for (let index = 0; index < 8 && compacted === 1; index += 1) await ask(`Distinct future exchange ${String(index)}. ${'A fresh note. '.repeat(80)}`);
+      assert.equal(compacted, 2, 'a distinct bounded prefix can compact after an earlier uncertain call');
     }
   });
 }

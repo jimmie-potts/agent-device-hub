@@ -358,10 +358,6 @@ export class AssistantStore {
     return parsed<HistoryCompaction>(this.database.prepare(`SELECT record FROM assistant_history_compactions WHERE conversation_id=?
       AND json_extract(record,'$.status')='succeeded' ORDER BY rowid DESC LIMIT 1`).get(conversationId) as RecordRow | undefined);
   }
-  latestHistoryCompactionAttempt(conversationId: string): HistoryCompaction | undefined {
-    return parsed<HistoryCompaction>(this.database.prepare(`SELECT record FROM assistant_history_compactions WHERE conversation_id=?
-      ORDER BY rowid DESC LIMIT 1`).get(conversationId) as RecordRow | undefined);
-  }
   taskHistoryCompaction(taskId: string): HistoryCompaction | undefined {
     return parsed<HistoryCompaction>(this.database.prepare('SELECT record FROM assistant_history_compactions WHERE task_id=?').get(taskId) as RecordRow | undefined);
   }

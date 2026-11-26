@@ -67,6 +67,7 @@ const AFTER = {day: 'A new message can start after midnight, the runtime host\'s
 export class SpendLedger {
   /** The dearest known rate for each price class, across the configured and built-in tables: an unknown model's prices. */
   readonly #dearest: ModelPrices;
+  readonly #holds = new Map<symbol, number>();
   /** `monthMicros` is the local monthly guard in millionths of a dollar: the section's `assistant.monthlyLimit`, else $150 (Hub #2102). */
   constructor(readonly database: DatabaseSync, readonly prices: PriceTable, readonly now: () => number, readonly timeZone: string = hostTimeZone(),
     readonly monthMicros: number = SPEND_LIMITS.monthMicros, readonly responsesEnabled = false) {
@@ -83,7 +84,7 @@ export class SpendLedger {
   }
   #sum(period: 'day' | 'month', key: string, limitMicros: number): SpendPeriod {
     const row = this.database.prepare(SUMS[period]).get(key) as Sum;
-    return {period: key, spentMicros: row.spent ?? 0, limitMicros, unreported: row.unreported, unreportedMicros: row.unreportedMicros ?? 0};
+    return {period: key, spentMicros: (row.spent ?? 0) + [...this.#holds.values()].reduce((total, amount) => total + amount, 0), limitMicros, unreported: row.unreported, unreportedMicros: row.unreportedMicros ?? 0};
   }
   totals(): SpendTotals {
     const day = localDay(this.now(), this.timeZone);
@@ -121,8 +122,13 @@ export class SpendLedger {
   fits(call: Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>, totals: SpendTotals = this.totals()): boolean {
     return this.#refusal(this.#reservation(call), totals) === undefined;
   }
-  fitsTogether(calls: readonly Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>[]): boolean {
-    return this.#refusal(calls.reduce((total, call) => total + this.#reservation(call), 0), this.totals()) === undefined;
+  /** Protect the planned required request while an optional request runs in this process. */
+  holdForOptional(required: Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>, optional: SpendCall): (() => void) | undefined {
+    const amount = this.#reservation(required);
+    if (this.#refusal(amount + this.#reservation(optional), this.totals()) !== undefined || this.reserve(optional) !== undefined) return undefined;
+    const key = Symbol();
+    this.#holds.set(key, amount);
+    return () => {this.#holds.delete(key);};
   }
   #reservation(call: Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>): number {
     return reservationCost(call.pricing === undefined ? this.#prices(call.model, call.inputUnits) : tierOf(call.pricing, call.inputUnits), call.inputUnits, call.outputUnits);

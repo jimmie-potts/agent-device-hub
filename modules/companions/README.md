@@ -1198,21 +1198,27 @@ three letters per token rounded up, other bytes individually, plus 8,192
 tokens for provider framing. With an unlisted model, the fit uses one
 estimated token per byte and the local budget. The 32 KiB individual
 owner-message admission limit, adapter transport bounds, turn reservations
-and spend limits apply independently.
+and spend limits apply independently. When the current input and its required
+continuation alone exceed the working allowance, Companions keeps the saved
+input and refuses the request before reserving spend for it.
 
 When eligible older exchanges no longer fit, Companions keeps a recent
 verbatim tail and asks the pinned supervisor for a bounded continuity
 summary. That text-only call has no tools and requests at most 2,048 output
 tokens. Each task can start at most one compaction, with a 45-second
 deadline and a reservation capped at 10% of remaining daily and monthly
-spend. Summaries carry earlier decisions, open requests or questions,
+spend. While that call runs, Companions holds enough local spend for the
+planned ordinary request's required input. Later additions are checked when
+the ordinary request is admitted. Summaries carry earlier decisions, open requests or questions,
 device references and corrections. The saved history retains full messages
 and details that the summary omits. Companions verifies the covered source
 versions and current grants before sending or reusing summary text. An edit,
-removal or revocation can invalidate the checkpoint. If cost, the deadline,
+removal or revocation can invalidate the checkpoint. Saved replies and
+questions remain readable under the owner's private grants. If cost, the deadline,
 provider availability or an unusable answer prevents compaction, Companions
 can continue with an eligible verbatim tail. An ambiguous attempt keeps
-its receipt and spend reservation. The summary and earlier messages confer
+its receipt and spend reservation. Its work is not repeated, and a different
+older prefix can still be compacted as history grows. The summary and earlier messages confer
 no permission to act.
 
 The Anthropic adapter sends the system prompt as two blocks. The first holds
