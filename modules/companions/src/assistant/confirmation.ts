@@ -14,6 +14,7 @@ export type Confirmation = ConfirmationTarget & {
   requestId: string; taskId: string; questionId: string; acceptedAtMs: number; expiresAtMs: number; traceparent: string;
   sent?: true; result?: string; follows?: string;
   dispatchState?: 'reserved' | 'sending' | 'accepted';
+  grouped?: true;
 };
 
 export function confirmationTarget(proposal: Proposal, question: string): ConfirmationTarget | undefined {
@@ -50,7 +51,7 @@ export function confirmationText(watch: Confirmation, result = watch.result): st
   if (watch.dispatchState === undefined) return result ?? pending(watch);
   const status = result ?? (watch.dispatchState === 'reserved' ? 'No power command was sent.'
     : watch.dispatchState === 'sending' && watch.sent !== true ? 'The power request outcome is unknown.' : pending(watch));
-  return `${watch.label}: ${status}`;
+  return watch.grouped === true ? `${watch.label}: ${status}` : status;
 }
 
 function matchesReading(readback: ReadbackIdentity, watch: Confirmation, sentAtMs: number): boolean {

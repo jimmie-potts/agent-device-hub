@@ -41,7 +41,7 @@ export class SyntheticProvider implements ModelProvider {
   turn(input: TurnInput): Promise<TurnReply> {
     const text = JSON.stringify(input.transcript);
     const ordinal = input.transcript.length;
-    const wemoArgs = (device: string, on: boolean) => ({selection: 'references', targets: [device], on});
+    const wemoArgs = (device: string, on: boolean) => ({selection: 'references', targets: [device], contextTargets: [], on});
     const allows = (name: string): boolean => input.tools.some(tool => tool.name === name);
     const owner = input.transcript.find(item => item.role === 'owner');
     const tools = input.transcript.filter(item => item.role === 'tool');

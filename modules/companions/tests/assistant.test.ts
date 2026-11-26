@@ -51,8 +51,12 @@ function counted(script?: (input: TurnInput, turn: number, signal: AbortSignal) 
 }
 const reply = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const call = (name: string, input: Record<string, unknown> = {}, id = `call-${name}`): TurnReply => ({text: null, calls: [{id, name, input}], stop: 'tool', units: 10});
-const wemoPowerArgs = (targets: readonly string[], on: boolean) => ({selection: targets.length === 0 ? 'group' : 'references', targets, on});
-const wemoPower = (targets: readonly string[], on: boolean) => call('set_wemo_power', wemoPowerArgs(targets, on));
+const wemoPowerArgs = (targets: readonly string[], on: boolean, contextTargets: readonly string[] = []) =>
+  ({selection: targets.length === 0 ? 'group' : 'references', targets, contextTargets, on});
+const wemoPower = (targets: readonly string[], on: boolean, contextTargets?: readonly string[]) =>
+  call('set_wemo_power', wemoPowerArgs(targets, on, contextTargets));
+const wemoGroup = (request: TurnInput, on: boolean) => request.transcript.some(item => item.role === 'tool' && item.name === 'find_wemo_power_targets')
+  ? wemoPower([], on) : call('find_wemo_power_targets');
 const hub = (revision: number, mode: ModeState['mode'] = 'work'): ModeState => ({id: 'hub', revision, mode, selectedAtMs: 0});
 /** A session as the module's synced copy reads it: its session/3.0 record, which is its view. */
 const session = (label: string, patch: Partial<SessionFacts> = {}): SessionView => buildSession({id: 'session-1', revision: 1, generation: 1,
@@ -412,9 +416,7 @@ void test('a seek binds the light, position and direction in an ordinary request
 void test('an explicit Wemo group binds every target once', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
   const requests: AssistantDispatch[] = [];
-  const provider = counted(request => request.transcript.at(-1)?.role === 'owner' &&
-    request.transcript.some(item => item.role === 'owner' && item.text === 'Turn off all Wemo plugs')
-    ? wemoPower([], false) : reply('No group operation requested.'));
+  const provider = counted(request => wemoGroup(request, false));
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
@@ -427,8 +429,8 @@ void test('an explicit Wemo group binds every target once', async context => {
 void test('a lost Wemo group reply preserves each dispatch receipt across restart', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
   const requests: AssistantDispatch[] = [];
-  const provider = counted(request => request.transcript.some(item => item.role === 'tool')
-    ? reply('Both plugs have switched off.') : wemoPower([], false));
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool' && item.name === 'set_wemo_power')
+    ? reply('Both plugs have switched off.') : wemoGroup(request, false));
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs, dispatch: data => {
     assert.equal(w.store().confirmation(data.requestId)?.binding.target, data.target, 'receipt exists before dispatch');
     requests.push(data);
@@ -453,7 +455,7 @@ void test('a lost Wemo group reply preserves each dispatch receipt across restar
 void test('restart follows Wemo group operations without repeating a write in flight', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
   const requests: AssistantDispatch[] = [];
-  const provider = counted(() => wemoPower([], false));
+  const provider = counted(request => wemoGroup(request, false));
   const inFlight = deferred<RequestResult>();
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs, dispatch: data => {
     requests.push(data);
@@ -1105,6 +1107,79 @@ void test('Wemo target discovery admits a relative description without an owner 
   await input(w.core, w.module(), 'Can you cut the power by the armchair?');
   await until(() => commands.length === 1 || status(w) === 'waiting' || status(w) === 'succeeded');
   assert.deepEqual(commands.map(command => command.target), ['table-plug']);
+});
+
+void test('a Wemo group cannot silently add an undisclosed plug to a named request', async context => {
+  const plugs = [
+    {...light('table-plug', 'Reading nook'), kind: 'wemo' as const},
+    {...light('shelf-plug', 'Kitchen shelf'), kind: 'wemo' as const},
+  ];
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower([], false) : reply('No group action taken.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: () => assert.fail('an unresolved group cannot dispatch')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Cut power to Reading nook.');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: invalid-request')));
+});
+
+void test('an owner’s explicit Wemo IDs must be targets or acknowledged context', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const commands: AssistantDispatch[] = [];
+  let compare = false;
+  const provider = counted(request => request.transcript.at(-1)?.role !== 'owner' ? reply('No unresolved action was sent.')
+    : wemoPower(['id:table-plug'], false, compare ? ['id:shelf-plug'] : []));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Switch off id:table-plug and id:shelf-plug.');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(commands.length, 0);
+  compare = true;
+  await input(w.core, w.module(), 'Switch off id:table-plug. Leave id:shelf-plug alone.');
+  await until(() => commands.length === 1 || status(w) === 'succeeded');
+  assert.deepEqual(commands.map(command => command.target), ['table-plug']);
+});
+
+void test('synthetic Wemo follow-up can refer to a plug first named in an earlier assistant reply', async context => {
+  const plug = {...light('table-plug', 'Reading nook'), kind: 'wemo' as const};
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((request, turn) => {
+    if (turn === 1) return call('find_wemo_power_targets');
+    if (turn === 2) return reply('The reading nook device is Reading nook (table-plug).');
+    if (turn === 3) return reply('I can also answer questions.');
+    assert.match(JSON.stringify(request.context), /Reading nook/);
+    return wemoPower(['id:table-plug'], false);
+  });
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Which device is by the armchair?');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'What else can you help with?');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'Cut power to that one, please.');
+  await until(() => commands.length === 1 || status(w) === 'waiting' || status(w) === 'succeeded');
+  assert.deepEqual(commands.map(command => command.target), ['table-plug']);
+});
+
+void test('a revoked Wemo clarification ID stays out of later synthetic history', async context => {
+  const targets = ['revoked-plug', 'visible-plug'];
+  const plugs = targets.map(id => ({...light(id, 'Reading plug'), kind: 'wemo' as const}));
+  let revoked = false;
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['Reading plug'], true) : reply('No action requested.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    share: query => !revoked || query.record !== 'revoked-plug',
+    dispatch: () => assert.fail('ambiguous or unrelated request cannot dispatch')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on Reading plug.');
+  await until(() => status(w) === 'waiting');
+  assert.match(JSON.stringify((await page(w)).currentTask?.question), /revoked-plug/);
+  await control(w.core, w.module(), 'cancel', task(w)?.taskId);
+  revoked = true;
+  await input(w.core, w.module(), 'What can you help with?');
+  await until(() => status(w) === 'succeeded');
+  assert.doesNotMatch(JSON.stringify(provider.inputs.at(-1)), /revoked-plug/);
 });
 
 void test('Wemo asks once for a duplicate label and accepts an exact ID answer', async context => {

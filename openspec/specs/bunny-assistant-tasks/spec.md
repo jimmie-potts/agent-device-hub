@@ -1302,6 +1302,12 @@ The selected Conversation supervisor SHALL interpret the current authenticated o
 - **THEN** the supervisor can resolve the request using the permitted target lookup and prior Conversation facts
 - **AND** the Hub checks the chosen ID against the disclosed records and their current guards
 
+#### Scenario: A request mentions two exact IDs
+
+- **WHEN** a power request explicitly contains two registered ID references
+- **THEN** the proposal accounts for each ID as a target or as context the owner intends to leave alone
+- **AND** an unaccounted ID prevents any dispatch from that proposal
+
 #### Scenario: Ambiguous or superseded request
 
 - **WHEN** the request leaves an intended target or setting unresolved

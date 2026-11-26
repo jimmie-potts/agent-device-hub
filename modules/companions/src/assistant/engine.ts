@@ -1583,6 +1583,10 @@ export class AssistantEngine {
     const request = latest?.text ?? task.prompt;
     const requestId = latest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, latest) ?? fail('invalid-state');
     const devices = new Set<string>(typeof boundDevice === 'string' ? [boundDevice] : boundDevice);
+    if (purpose === 'supervisor' && task.question?.kind === 'clarification' &&
+      transcript.some(item => item.role === 'assistant' && item.calls.some(call => call.name === SET_WEMO_POWER && call.id === task.question?.call))) {
+      for (const id of task.clarificationDevices ?? []) devices.add(id);
+    }
     // Results of an admitted model control remain scoped to that turn's guarded targets.
     const control = task.control;
     if (control?.modelCallId !== undefined && this.store.call(control.requestId)?.action?.control?.modelCallId === control.modelCallId &&
@@ -1702,6 +1706,7 @@ export class AssistantEngine {
       const origin = this.store.task(message.taskId);
       if (origin === undefined || origin.profile !== task.profile || origin.conversationId !== task.conversationId ||
         origin.status !== 'succeeded' || origin.supervisor === undefined || origin.supervisor.provider === 'synthetic') continue;
+      if (origin.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) continue;
       const calls = this.store.calls(origin.id);
       if (!calls.some(call => call.kind === 'model' && call.status === 'succeeded')) continue;
       const unchangedLegacyInput = (call: Call) => call.inputVersions !== undefined || call.disclosures?.every(field =>
@@ -2258,9 +2263,9 @@ export class AssistantEngine {
     const currentTask = this.#task(state.taskId);
     const clarificationAccess = paid ? this.#supervisorScope(currentTask).fields : modelFields;
     const discover = this.#fields(task.profile, 'discovery', 'private-conversation'), read = this.#fields(task.profile, 'read', 'private-conversation');
-    const canNameDevice = (id: string): boolean => {
+    const canNameDevice = (id: string, access = clarificationAccess): boolean => {
       const allowed = discover('devices', 'index', id) && read('devices', 'index', id) && read('devices', 'label', id)
-        && clarificationAccess('devices', 'index', id) && clarificationAccess('devices', 'label', id);
+        && access('devices', 'index', id) && access('devices', 'label', id);
       if (allowed) clarificationDevices.add(id);
       return allowed;
     };
@@ -2286,7 +2291,8 @@ export class AssistantEngine {
         next = 'tool';
       } else if (bound.kind === 'clarify') {
         const questionId = `${state.taskId}-q${String(currentTask.questions + 1)}`;
-        const text = deviceClarification('plug', bound.targets, () => true);
+        const access = paid ? this.#supervisorScope(currentTask, 'supervisor', bound.targets).fields : modelFields;
+        const text = deviceClarification('plug', bound.targets, target => canNameDevice(target, access));
         question = {id: questionId, kind: 'clarification', text, answer: null, call: call.id, proposal: null};
       } else {
         direct = bound.control;
@@ -2451,20 +2457,22 @@ export class AssistantEngine {
     const fields = this.#modelFields(task.profile);
     const permitted = (source: ShareQuery['source'], field: ShareQuery['field'], id: string) => hosted
       ? recordedSupervisorField(this.options.share, task.profile, 'supervisor', source, field, id) : fields(source, field, id);
-    const savedOwner = (id: string, field: 'request' | 'excerpt'): ControlSource | undefined => {
+    const savedSource = (id: string, field: 'request' | 'excerpt', ownerOnly = true): ControlSource | undefined => {
       const message = this.store.messages.get(id);
-      if (message?.speakerId !== 'owner' || message.conversationId !== task.conversationId ||
+      if (message === undefined || ownerOnly && message.speakerId !== 'owner' || message.conversationId !== task.conversationId ||
         this.store.messages.removal(id) !== undefined || !read('conversation', 'text', task.conversationId) || !read('conversation', 'text', id) ||
         !permitted('conversation', hosted ? field : 'text', task.conversationId) || !permitted('conversation', hosted ? field : 'text', id)) return undefined;
+      if (message.speakerId !== 'owner' && (message.taskId === null ||
+        !this.#replayable(message.taskId, fields) || !this.#savedDisclosureAllowed(message.taskId, read))) return undefined;
       return message.meaning.kind === 'literal' ? {id, revision: message.revision, text: message.meaning.text} : undefined;
     };
     const inputs = task.transcript.filter(item => item.role === 'owner');
     const newest = inputs.at(-1);
     const requestId = newest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, newest) ?? fail('invalid-state');
-    const saved = savedOwner(requestId, 'request');
+    const saved = savedSource(requestId, 'request');
     const request = saved?.text === (newest?.text ?? task.prompt) && saved !== undefined ? saved : {id: requestId, revision: 0, text: ''};
     const question = this.#controlClarification(task);
-    const answer = question?.answer == null ? undefined : savedOwner(`${question.id}-answer`, 'excerpt');
+    const answer = question?.answer == null ? undefined : savedSource(`${question.id}-answer`, 'excerpt');
     const history = hosted ? eligibleHistory ?? this.#hostedHistory(task) : undefined;
     const references = (this.options.devices?.(ASSISTANT_WEMO_OWNER) ?? []).map(device => wemoControlReference(device,
       discover('devices', 'index', device.id) && (['index', 'label', 'status'] as const).every(field =>
@@ -2472,13 +2480,13 @@ export class AssistantEngine {
     const related = new Set(this.#disclosedWemoTargets(task, hosted ? this.#supervisorScope(task).effects : undefined));
     for (const text of [request.text, answer?.text ?? '']) for (const id of controlReferenceIds(references, text)) related.add(id);
     const usedHistory = historySources.filter(source => {
-      const message = hosted ? history?.get(source.id) : savedOwner(source.id, 'excerpt');
+      const message = hosted ? history?.get(source.id) : savedSource(source.id, 'excerpt', false);
       if (message?.revision !== source.revision) return false;
       const ids = controlReferenceIds(references, message.text);
       for (const id of ids) related.add(id);
       return ids.length > 0;
     });
-    const exactTargets = exactControlIds(answer?.text ?? request.text, references.map(reference => reference.id));
+    const exactTargets = exactControlIds(`${request.text} ${answer?.text ?? ''}`);
     const core = this.#core();
     const modeRevision = core.synced ? core.mode?.revision ?? null : null;
     return {request, modeRevision, ...(answer === undefined ? {} : {answer}), history: usedHistory, exactTargets,
@@ -2850,7 +2858,9 @@ export class AssistantEngine {
             if (settled !== undefined) void this.#followConfirmation(settled);
           }
           const receipts = this.store.confirmations(task.id).filter(watch => watch.questionId === question.id);
-          return {text: receipts.map(watch => confirmationText(watch)).join('\n'), units: 0};
+          const text = receipts.length === 1 && receipts[0]?.dispatchState === 'accepted' ? receipt
+            : receipts.map(watch => confirmationText(watch)).join('\n');
+          return {text, units: 0};
         }
         const answer = await dispatch(data.family === 'catalog-action' && data.command === 'nanoleaf-show-save'
           ? {...data, admitByMs} : data, parent, signal);
@@ -2864,7 +2874,7 @@ export class AssistantEngine {
         call.action = action;
         for (const {target, command} of group ?? []) {
           this.store.saveConfirmation({...confirmationOf(target, command.requestId, {traceparent: call.traceparent}),
-            dispatchState: 'reserved'});
+            dispatchState: 'reserved', ...(group?.length === 1 ? {} : {grouped: true})});
         }
         if (scopedBrightness !== undefined) call.directBrightness = true;
         const targets = [proposal, ...(direct?.additional ?? [])];

@@ -30,7 +30,7 @@ export function controlReferenceSnapshot(record: ControlReference): string {
   return createHash('sha256').update(JSON.stringify([record.id, record.label, record.binding, record.allowed, record.eligible])).digest('hex');
 }
 
-type Selection = {kind: 'references'; targets: readonly string[]} | {kind: 'group'};
+type Selection = {kind: 'references'; targets: readonly string[]; contextTargets: readonly string[]} | {kind: 'group'};
 export type ModelControlProposal<T> = {requestId: string; selection: Selection; settings: T};
 export type ControlResolution<T> =
   | {kind: 'ready'; targets: readonly string[]; settings: T}
@@ -45,20 +45,20 @@ export const CONTROL_INSTRUCTIONS = 'Use control tools only for an action the la
   'Propose the full intended set together.';
 
 export function parseControlSelection(input: Readonly<Record<string, unknown>>, maximum: number): Selection | undefined {
-  const {selection, targets} = input;
-  if (!Array.isArray(targets) || targets.length > maximum) return undefined;
-  if (selection === 'group' && targets.length === 0) return {kind: 'group'};
+  const {selection, targets, contextTargets} = input;
+  if (!Array.isArray(targets) || targets.length > maximum || !Array.isArray(contextTargets) || contextTargets.length > maximum ||
+    !contextTargets.every((target): target is string => typeof target === 'string' && target.length <= 128)) return undefined;
+  if (selection === 'group' && targets.length === 0 && contextTargets.length === 0) return {kind: 'group'};
   if (selection !== 'references' || targets.length === 0 ||
     !targets.every((target): target is string => typeof target === 'string' && target.trim() !== '' && target.length <= 128)) return undefined;
-  return {kind: 'references', targets};
+  return {kind: 'references', targets, contextTargets};
 }
 
 const mentionsId = (text: string, id: string): boolean =>
   text.split(/[^a-zA-Z0-9-]+/u).includes(id);
 const labelKey = (label: string): string => label.trim().toLowerCase().replace(/[\s-]+/gu, ' ');
-export function exactControlIds(text: string, ids: readonly string[]): string[] {
-  const explicit = [...text.matchAll(/\bid:([a-z0-9-]+)\b/gu)].map(match => match[1]);
-  return ids.filter(id => explicit.includes(id));
+export function exactControlIds(text: string): string[] {
+  return [...new Set([...text.matchAll(/\bid:[a-z0-9-]{1,128}\b/gu)].map(match => match[0].slice(3)))];
 }
 export function controlReferenceIds(records: ModelControlScope['references'], text: string): string[] {
   const labelText = text.replace(/\bid:[a-z0-9-]+\b/gu, ' ');
@@ -74,11 +74,19 @@ export function resolveModelControl<T>(scope: ModelControlScope, proposal: Model
   if (selection.kind === 'group') {
     if (!allowGroup || records.length > maximum) return {kind: 'refused', code: 'invalid-request'};
     if (records.some(record => !record.allowed)) return {kind: 'refused', code: 'forbidden'};
-    if (scope.exactTargets.length > 0 && scope.exactTargets.length < records.length) return {kind: 'clarify', targets: []};
+    const named = controlReferenceIds(records, scope.request.text);
+    if (named.length > 0 && named.length < records.length || records.some(record => !record.eligible) ||
+      scope.exactTargets.some(id => !records.some(record => record.id === id))) {
+      return {kind: 'refused', code: 'invalid-request'};
+    }
     return {kind: 'ready', targets: records.map(record => record.id), settings};
   }
   const resolved: string[] = [];
   const ambiguous = new Set<string>();
+  const context = new Set(selection.contextTargets.map(value => literalDeviceId(value) ?? value));
+  if (context.size !== selection.contextTargets.length || [...context].some(id => !scope.exactTargets.includes(id))) {
+    return {kind: 'refused', code: 'invalid-request'};
+  }
   for (const target of selection.targets) {
     const exact = literalDeviceId(target) ?? records.find(record => record.id === target)?.id;
     const lookup = exact === undefined ? records.filter(record => labelKey(record.label) === labelKey(target)) : records.filter(record => record.id === exact);
@@ -90,18 +98,20 @@ export function resolveModelControl<T>(scope: ModelControlScope, proposal: Model
     }
     if (!candidate.allowed) return {kind: 'refused', code: 'forbidden'};
     const duplicate = records.filter(record => normalizedControlText(record.label) === normalizedControlText(candidate.label));
-    const explicit = scope.exactTargets.includes(candidate.id);
     const addressedById = [scope.answer?.text ?? '', scope.request.text].some(text => mentionsId(text, candidate.id));
     if (duplicate.length > 1 && !addressedById && duplicate.filter(record => record.eligible).length !== 1) {
       for (const record of duplicate) if (record.allowed) ambiguous.add(record.id);
       continue;
     }
-    if (!candidate.eligible || scope.exactTargets.length > 0 && !explicit) return {kind: 'clarify', targets: []};
-    if (resolved.includes(candidate.id)) return {kind: 'refused', code: 'invalid-request'};
+    if (!candidate.eligible) return {kind: 'clarify', targets: []};
+    if (context.has(candidate.id) || resolved.includes(candidate.id)) return {kind: 'refused', code: 'invalid-request'};
     resolved.push(candidate.id);
   }
   if (ambiguous.size > 0) return {kind: 'clarify', targets: [...ambiguous]};
   // A private duplicate can still make a label ambiguous.
   if (resolved.length !== selection.targets.length) return {kind: 'clarify', targets: []};
+  if (scope.exactTargets.some(id => !resolved.includes(id) && !context.has(id))) {
+    return {kind: 'refused', code: 'invalid-request'};
+  }
   return {kind: 'ready', targets: resolved, settings};
 }

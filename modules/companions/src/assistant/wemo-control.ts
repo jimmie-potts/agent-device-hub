@@ -12,7 +12,7 @@ export function wemoControlReference(device: DeviceRecord, allowed: boolean): Co
 
 export function resolveWemoControl(scope: ModelControlScope, input: Readonly<Record<string, unknown>>) {
   const selection = parseControlSelection(input, MAX_PLUGS);
-  if (selection === undefined || typeof input.on !== 'boolean' || Object.keys(input).length !== 3) {
+  if (selection === undefined || typeof input.on !== 'boolean' || Object.keys(input).length !== 4) {
     return {kind: 'refused', code: 'invalid-request'} as const;
   }
   return resolveModelControl(scope, {requestId: scope.request.id, selection, settings: input.on}, true, MAX_PLUGS);
