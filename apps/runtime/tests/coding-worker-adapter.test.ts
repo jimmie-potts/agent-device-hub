@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {access, link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile} from 'node:fs/promises';
+import {access, chmod, link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -522,7 +522,8 @@ void test('Codex refuses extra, malformed, shared or aliased TUI marker files be
     await writeFile(config, text, {mode: 0o600});
     await refuses();
   }
-  await writeFile(config, marker, {mode: 0o644});
+  await writeFile(config, marker, {mode: 0o600});
+  await chmod(config, 0o644);
   await refuses();
   await writeFile(original, marker, {mode: 0o600});
   await symlink(original, config);
