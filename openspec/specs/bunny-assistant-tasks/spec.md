@@ -1307,12 +1307,14 @@ The selected Conversation supervisor SHALL interpret the current authenticated o
 - **WHEN** a power request explicitly contains two registered ID references
 - **THEN** the proposal accounts for each ID as a target or as context the owner intends to leave alone
 - **AND** an unaccounted ID prevents any dispatch from that proposal
+- **AND** the receipt states that the Hub sent no command to each context-only ID
 
 #### Scenario: Ambiguous or superseded request
 
 - **WHEN** the request leaves an intended target or setting unresolved
 - **THEN** the companion asks one focused question before sending any power command
 - **AND** an exact eligible ID selects that device independently of other devices' labels
+- **AND** a concrete target selection in the answer constrains the proposal, including group selections
 - **AND** a steer supersedes any part of the previous request that has yet to send
 
 #### Scenario: Questions and contextual text

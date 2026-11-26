@@ -33,7 +33,7 @@ export function controlReferenceSnapshot(record: ControlReference): string {
 type Selection = {kind: 'references'; targets: readonly string[]; contextTargets: readonly string[]} | {kind: 'group'};
 export type ModelControlProposal<T> = {requestId: string; selection: Selection; settings: T};
 export type ControlResolution<T> =
-  | {kind: 'ready'; targets: readonly string[]; settings: T}
+  | {kind: 'ready'; targets: readonly string[]; contextTargets: readonly string[]; settings: T}
   | {kind: 'clarify'; targets: readonly string[]}
   | {kind: 'refused'; code: ErrorCode};
 
@@ -57,12 +57,18 @@ export function parseControlSelection(input: Readonly<Record<string, unknown>>, 
 const mentionsId = (text: string, id: string): boolean =>
   text.split(/[^a-zA-Z0-9-]+/u).includes(id);
 const labelKey = (label: string): string => label.trim().toLowerCase().replace(/[\s-]+/gu, ' ');
+const EXPLICIT_ID = /\bid:[a-z0-9-]{1,128}(?=$|[^a-z0-9-])/gu;
 export function exactControlIds(text: string): string[] {
-  return [...new Set([...text.matchAll(/\bid:[a-z0-9-]{1,128}\b/gu)].map(match => match[0].slice(3)))];
+  return [...new Set([...text.matchAll(EXPLICIT_ID)].map(match => match[0].slice(3)))];
 }
 export function controlReferenceIds(records: ModelControlScope['references'], text: string): string[] {
-  const labelText = text.replace(/\bid:[a-z0-9-]+\b/gu, ' ');
+  const labelText = text.replace(EXPLICIT_ID, ' ');
   return records.filter(record => mentionsId(text, record.id) || containsControlValue(labelText, record.label)).map(record => record.id);
+}
+
+function uniquelyAddressed(records: ModelControlScope['references'], text: string, named: readonly string[]): string[] {
+  return records.filter(record => named.includes(record.id) && (mentionsId(text, record.id) ||
+    records.filter(other => labelKey(other.label) === labelKey(record.label)).length === 1)).map(record => record.id);
 }
 
 /** Names identify candidates only. The selected supervisor interprets the action and its settings. */
@@ -71,15 +77,21 @@ export function resolveModelControl<T>(scope: ModelControlScope, proposal: Model
   const records = scope.references;
   if (records.length === 0) return {kind: 'refused', code: 'unavailable'};
   const {selection, settings} = proposal;
+  const answerText = scope.answer?.text ?? '';
+  if (exactControlIds(answerText).some(id => !records.some(record => record.id === id))) return {kind: 'refused', code: 'not-found'};
+  const answerNames = controlReferenceIds(records, answerText);
+  const answerTargets = uniquelyAddressed(records, answerText, answerNames);
+  const requestNames = controlReferenceIds(records, scope.request.text);
+  const currentTargets = answerTargets.length > 0 ? answerTargets : uniquelyAddressed(records, scope.request.text, requestNames);
   if (selection.kind === 'group') {
     if (!allowGroup || records.length > maximum) return {kind: 'refused', code: 'invalid-request'};
     if (records.some(record => !record.allowed)) return {kind: 'refused', code: 'forbidden'};
-    const named = controlReferenceIds(records, scope.request.text);
-    if (named.length > 0 && named.length < records.length || records.some(record => !record.eligible) ||
+    const named = answerNames.length > 0 ? answerNames : requestNames;
+    if (named.length > 0 && currentTargets.length !== records.length || records.some(record => !record.eligible) ||
       scope.exactTargets.some(id => !records.some(record => record.id === id))) {
       return {kind: 'refused', code: 'invalid-request'};
     }
-    return {kind: 'ready', targets: records.map(record => record.id), settings};
+    return {kind: 'ready', targets: records.map(record => record.id), contextTargets: [], settings};
   }
   const resolved: string[] = [];
   const ambiguous = new Set<string>();
@@ -104,14 +116,15 @@ export function resolveModelControl<T>(scope: ModelControlScope, proposal: Model
       continue;
     }
     if (!candidate.eligible) return {kind: 'clarify', targets: []};
-    if (context.has(candidate.id) || resolved.includes(candidate.id)) return {kind: 'refused', code: 'invalid-request'};
+    if (answerTargets.length > 0 && !answerTargets.includes(candidate.id) || context.has(candidate.id) || resolved.includes(candidate.id)) return {kind: 'refused', code: 'invalid-request'};
     resolved.push(candidate.id);
   }
   if (ambiguous.size > 0) return {kind: 'clarify', targets: [...ambiguous]};
   // A private duplicate can still make a label ambiguous.
   if (resolved.length !== selection.targets.length) return {kind: 'clarify', targets: []};
-  if (scope.exactTargets.some(id => !resolved.includes(id) && !context.has(id))) {
+  if (scope.exactTargets.some(id => !resolved.includes(id) && !context.has(id)) ||
+    (currentTargets.length > 0 || scope.exactTargets.length > 0) && !resolved.some(id => currentTargets.includes(id))) {
     return {kind: 'refused', code: 'invalid-request'};
   }
-  return {kind: 'ready', targets: resolved, settings};
+  return {kind: 'ready', targets: resolved, contextTargets: [...context], settings};
 }

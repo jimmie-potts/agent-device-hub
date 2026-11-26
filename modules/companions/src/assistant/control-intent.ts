@@ -11,6 +11,7 @@ export type BoundControl = {
   readonly call: string;
   readonly draftRevision?: number;
   readonly modelCallId?: string;
+  readonly contextTargets?: readonly string[];
 };
 
 export const normalizedControlText = (value: string): string => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();

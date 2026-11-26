@@ -604,6 +604,12 @@ export class AssistantEngine {
       } else this.store.saveConfirmation({...watch, follows: watch.follows ?? messageId});
       if (!reply.includes(update)) updates.push(update);
     }
+    const operations = new Set(watches.filter(watch => watch.dispatchState !== undefined).map(watch => watch.questionId));
+    const skipped = new Set([...operations].flatMap(id => this.store.call(id)?.action?.control?.contextTargets ?? []));
+    for (const target of skipped) {
+      const text = `${target}: No power command was sent.`;
+      if (!reply.includes(text)) updates.push(text);
+    }
     return [reply, ...updates].filter(Boolean).join('\n\n');
   }
 
@@ -2474,9 +2480,11 @@ export class AssistantEngine {
     const newest = inputs.at(-1);
     const requestId = newest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, newest) ?? fail('invalid-state');
     const saved = savedSource(requestId, 'request');
-    const request = saved?.text === (newest?.text ?? task.prompt) && saved !== undefined ? saved : {id: requestId, revision: 0, text: ''};
     const question = this.#controlClarification(task);
-    const answer = question?.answer == null ? undefined : savedSource(`${question.id}-answer`, 'excerpt');
+    const savedAnswer = question?.answer == null ? undefined : savedSource(`${question.id}-answer`, 'excerpt');
+    const answer = savedAnswer?.text === question?.answer ? savedAnswer : undefined;
+    const request = saved !== undefined && saved.text === (newest?.text ?? task.prompt) &&
+      (question?.answer == null || answer !== undefined) ? saved : {id: requestId, revision: 0, text: ''};
     const history = hosted ? eligibleHistory ?? this.#hostedHistory(task) : undefined;
     const references = (this.options.devices?.(ASSISTANT_WEMO_OWNER) ?? []).map(device => wemoControlReference(device,
       discover('devices', 'index', device.id) && (['index', 'label', 'status'] as const).every(field =>
@@ -2517,7 +2525,8 @@ export class AssistantEngine {
     const first = selected[0];
     const text = additional.length === 0 && first !== undefined ? deviceProposalText(proposal, deviceLabel(first))
       : `Turn ${result.settings ? 'on' : 'off'} the selected Wemo plugs?`;
-    return {kind: 'bound', control: {requestId: `${task.id}-step-${String(step)}`, ownerMessageIds, proposal, additional, modelCallId, text, call: call.id}};
+    return {kind: 'bound', control: {requestId: `${task.id}-step-${String(step)}`, ownerMessageIds, proposal, additional, modelCallId, text, call: call.id,
+      ...(result.contextTargets.length === 0 ? {} : {contextTargets: result.contextTargets})}};
   }
   #sameControlSources(saved: ModelControlProof, current: ModelControlScope): boolean {
     return saved.request.id === current.request.id && saved.request.revision === current.request.revision &&
