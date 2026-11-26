@@ -72,11 +72,11 @@ void test('resource eligibility comes from exact trusted step policy and preserv
   assert.equal(select('device-proximity','fixture-display').worker?.destination,'pc');
   assert.equal(select('device-route','fixture-display').worker?.destination,'mac');
   assert.equal(select('device-route','unknown-target').worker,undefined);
-  assert.equal(selectCodingWorker(workers,{...request,destination:'cloud'}).worker?.destination,'cloud-fixture');
+  assert.equal(selectCodingWorker(workers,{...request,destination:'cloud'}).worker,undefined);
   assert.equal(selectCodingWorker(workers,{...request,now:now+CODING_DECLARATION_TTL_MS+1}).worker,undefined);
   assert.equal(selectCodingWorker(workers.map(worker=>({...worker,declaration:{...worker.declaration,testSlots:null}})),
     {...request,requirements:{testSlots:1}}).worker,undefined);
-  assert.equal(selectCodingWorker(workers.map(worker=>({...worker,running:1000})),request).worker?.destination,'cloud-fixture');
+  assert.equal(selectCodingWorker(workers.map(worker=>({...worker,running:1000})),request).worker?.destination,'mac');
 });
 
 void test('only an owner execution clause binds a known operation or asks to clarify its missing route', async () => {

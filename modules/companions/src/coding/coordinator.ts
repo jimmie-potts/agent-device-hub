@@ -1,3 +1,4 @@
+import type {CloudScope} from './cloud-qualification.js';
 import type {OpenNativeClientInput} from '../assistant/history-contract.js';
 import type {ContinueCodingControl} from '@jimmie-potts/event-contracts/v2/assistant';
 import {chooseCodingHarness, codingHarness, selectCodingWorker, type CodingCandidate, type CodingChoice, type CodingDestinationChoice, type CodingRequirements, type CodingResource} from './routing.js';
@@ -47,6 +48,7 @@ export type CodingSeams = {
   jobBriefVisible?: (job: CodingJob, companion: CodingCompanion) => boolean;
   allowMessage?: (job: CodingJob, companion: CodingCompanion, destination?: CodingDestination) => boolean;
   allowDestination?: (brief: CodingBrief, destination: CodingDestination) => boolean;
+  allowCloud?: (scope: CloudScope, now: number) => boolean;
   allowResource?: (brief: CodingBrief, resource: CodingResource, destination: CodingDestination) => boolean;
   awaits?: (taskId: string) => boolean;
   sent?: (taskId: string, operationId: string, parent: TraceContext) => void | Promise<void>;
@@ -170,7 +172,8 @@ export class CodingCoordinator {
       ...(worker.selectionId === undefined ? {} : {selectionId: worker.selectionId}), ...(worker.declaration === undefined ? {} : {declaration: worker.declaration}),
       ...(worker.harnesses == null ? {} : {harnesses: worker.harnesses}), legacyDefault: worker.harnesses == null,
       running: [...this.#active.values()].filter(active => active.worker === worker).length}));
-    return selectCodingWorker(workers, {repository: data.repository, choice, destination, now: this.context.clock.now(), ...(requirements === undefined ? {} : {requirements}),
+    return selectCodingWorker(workers, {operationId: data.requestId,
+      ...(this.#seams.allowCloud === undefined ? {} : {cloudAllowed: this.#seams.allowCloud}), repository: data.repository, choice, destination, now: this.context.clock.now(), ...(requirements === undefined ? {} : {requirements}),
       allowed: dest => this.#allowed(data, dest), resourceAllowed: (resource, dest) => this.#seams.allowResource?.(data, resource, dest) === true});
   }
   jobForAttempt(operationId: string): CodingJob | undefined {return this.#store.job(operationId);}
@@ -455,7 +458,10 @@ export class CodingCoordinator {
     if (this.#workers.get(worker.destination) !== worker) return errorBody('unavailable', {detail: DISCONNECTED_BEFORE_START});
     if (!this.#allowed(data, worker.destination)) return errorBody('forbidden', {detail: 'Coding brief sharing permission was revoked before start.'});
     const binding = attempt?.binding;
-    if (binding?.revision === undefined || attempt === undefined) return undefined;
+    if (binding?.revision === undefined || attempt === undefined) {
+      return worker.destination === 'mac' || worker.destination === 'pc' ? undefined :
+        errorBody('unavailable', {detail: 'Cloud workspace authority requires an approved worker revision.'});
+    }
     const approved = {...binding.requirements, revision: binding.revision};
     const checked = this.#route(data, attempt.harness ?? attempt.choice, binding.actual, approved, [worker]);
     if (checked.worker === undefined || worker.selectionId !== binding.selectionId) return errorBody('unavailable', {detail: checked.reason});
@@ -685,6 +691,18 @@ export class CodingCoordinator {
       this.#changed();
     }};
   }
+  #messageRefusal(job: CodingJob, active: Active): ErrorCode | undefined {
+    const {companion, operationId, worker, harness} = active;
+    const {destination, endpointId, selectionId} = worker;
+    const allowed = this.#seams.allowMessage?.(job, companion, destination);
+    if (destination === 'mac' || destination === 'pc') return allowed === false ? 'forbidden' : undefined;
+    if (allowed !== true) return 'forbidden';
+    const binding = this.#store.attempt(operationId)?.binding;
+    if (binding?.actual !== destination || binding.revision === undefined || selectionId === undefined ||
+      binding.endpointId !== endpointId || binding.selectionId !== selectionId || !codingHarness(harness)) return 'unavailable';
+    return this.#seams.allowCloud?.({operationId, destination, endpointId, selectionId, repository: job.repository,
+      revision: binding.revision, harness}, this.context.clock.now()) === true ? undefined : 'unavailable';
+  }
   prepareMessage(input: {jobId: string; operationId: string; requestId: string; text: string}, parent: TraceContext):
     {code: ErrorCode} | {committed: () => Promise<void>} {
     const {jobId, operationId, requestId, text} = input;
@@ -698,7 +716,8 @@ export class CodingCoordinator {
     const steering = this.#steering(active);
     if (steering === 'unsupported') return {code: 'unsupported-capability'};
     if (steering !== 'live' || active === undefined || active.sessionId === undefined) return {code: 'unavailable'};
-    if (this.#seams.allowMessage?.(job, active.companion, active.worker.destination) === false) return {code: 'forbidden'};
+    const refusal = this.#messageRefusal(job, active);
+    if (refusal !== undefined) return {code: refusal};
     const sessionId = active.sessionId, endpointId = active.endpointId;
     const fingerprint = createHash('sha256').update(text).digest('hex');
     const admitted = this.#store.rememberMessage({requestId, jobId, operationId, endpointId, sessionId, fingerprint, recordedAtMs: this.context.clock.now()});
@@ -709,7 +728,7 @@ export class CodingCoordinator {
       let status: 'accepted' | 'refused' | 'uncertain' = 'refused';
       let code: ErrorCode | undefined = 'unavailable';
       if (this.#active.get(operationId) === active && this.#steering(active) === 'live' &&
-          active.sessionId === sessionId && !this.#store.stopRequested(operationId) && this.#seams.allowMessage?.(job, active.companion, active.worker.destination) !== false) {
+          active.sessionId === sessionId && !this.#store.stopRequested(operationId) && this.#messageRefusal(job, active) === undefined) {
         try {
           const answer = await this.context.sdk.request(`bunny.cmd.coding-work.${endpointId}`, {
             type: 'org.bunny.coding.work.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-work/2.4',

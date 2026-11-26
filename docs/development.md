@@ -3727,3 +3727,10 @@ guard through hosted selection, then resume an interrupted Responses task
 with its opaque items. They verify the title projection and the shared
 spend ledger with reported and uncertain usage. The disposable browser
 journey uses fixture supervisors to send one task to each selected provider.
+
+Cloud coding qualification (#2172) uses a disposable provider double and the
+existing coding coordinator fixture. After the root build, run
+`node scripts/native-test.mjs test:companions:built`. Existing CI discovers
+these cases in the Companions suite. They exercise admission through the common
+selector, expiry, uncertain workspace effects and verified teardown. The
+fixtures have no provider credentials and incur zero infrastructure cost.

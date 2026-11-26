@@ -1,3 +1,4 @@
+import type {CloudScope} from './cloud-qualification.js';
 import type {CodingHarnessReadiness} from '@jimmie-potts/event-contracts/v2/coding';
 
 export type CodingHarness = 'claude-code' | 'codex';
@@ -55,6 +56,7 @@ export type CodingRequirements = {refusal?: 'unknown-resource' | 'ambiguous-reso
 export type CodingCandidate = {destination: Destination; endpointId: string; selectionId?: string; receivedAt: number; running: number;
   declaration?: Declaration; harnesses?: readonly CodingHarnessReadiness[]; legacyDefault?: boolean};
 type Request = {destination: CodingDestinationChoice; choice: CodingChoice; repository: string; requirements?: CodingRequirements; now: number;
+  operationId?: string; cloudAllowed?: (scope: CloudScope, now: number) => boolean;
   allowed: (destination: Destination) => boolean; resourceAllowed?: (resource: CodingResource, destination: Destination) => boolean};
 type Selection = {forbidden?: true; worker?: CodingCandidate; harness?: CodingHarness; revision?: string; reason: string};
 type Eligible = Selection & {worker: CodingCandidate; score: number[]};
@@ -73,6 +75,8 @@ function evaluateWorker(worker: CodingCandidate, request: Request): Eligible | s
   const {destination, declaration} = worker;
   const requirements = request.requirements ?? {};
   if (!request.allowed(destination)) return 'sharing permission is unavailable';
+  const cloud = destination !== 'mac' && destination !== 'pc';
+  if (cloud && requirements.resource !== undefined) return 'cloud cannot perform a local device or installed operation';
   if (requirements.resource !== undefined && request.resourceAllowed?.(requirements.resource, destination) !== true) return 'required resource authority is unavailable';
   const revision = declaration?.repositories.find(repository => repository.name === request.repository)?.revision;
   if (declaration === undefined) {
@@ -87,8 +91,20 @@ function evaluateWorker(worker: CodingCandidate, request: Request): Eligible | s
     const needed = requirements.testSlots ?? (requirements.standardTests === true ? 1 : undefined);
     if (needed !== undefined && Math.min(profileSlots, declaration.testSlots ?? 0) < needed) return 'the required test slots are unavailable';
   }
-  const harnesses = worker.harnesses?.filter(health => declaration === undefined ||
+  let harnesses = worker.harnesses?.filter(health => declaration === undefined ||
     (health.checkedAtMs <= request.now + 5000 && request.now - health.checkedAtMs <= CODING_DECLARATION_TTL_MS));
+  if (cloud) {
+    const {operationId, cloudAllowed} = request;
+    const {endpointId, selectionId} = worker;
+    if (operationId === undefined || cloudAllowed === undefined || revision === undefined || selectionId === undefined) {
+      return 'cloud qualification is unavailable';
+    }
+    harnesses = harnesses?.filter(({harness}) => codingHarness(harness) && cloudAllowed({operationId, destination, endpointId, selectionId,
+      repository: request.repository, revision, harness}, request.now));
+    if (harnesses?.some(({harness}) => request.choice === 'auto' || harness === request.choice) !== true) {
+      return 'the requested harness has no current cloud workspace authority';
+    }
+  }
   const legacy = declaration === undefined && worker.legacyDefault === true && request.choice === 'auto';
   const route = legacy ? {harness: undefined, reason: 'The default Claude Code worker was selected.'} :
     chooseCodingHarness(request.choice, harnesses ?? [], request.now);
