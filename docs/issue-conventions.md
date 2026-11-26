@@ -5,7 +5,7 @@ increment, and **Bug** for a failure with reproduction and expected behavior.
 The [templates](../.github/ISSUE_TEMPLATE) share these meanings across Hub,
 Nanoleaf and Pixoo. Keep work in its owning repository.
 
-## File the smallest useful issue
+## Define a complete, verifiable outcome
 
 Outcome and observable acceptance are required. Add implementation, preservation
 and deferral details when they affect the work. Omit unused sections. Use
@@ -15,7 +15,11 @@ prompt or fingerprint; one planned-start sentence in prose is enough. Apply the
 [scope defaults](sdlc.md#scope-defaults) without inventing irrelevant
 requirements. Hub's [new-story opening](sdlc.md#new-story-opening)
 still applies to new feature, maintenance, investigation and child stories;
-existing bodies are not reformatted at pickup.
+existing bodies are not reformatted at pickup. Use "Implementation approach and
+shared foundations" for new detailed sections. Existing "Smallest useful
+implementation" sections remain valid; assess their content against the current
+scope defaults. Choose the delivery target explicitly, including any owner for
+remaining installation or physical acceptance.
 
 The templates use Markdown to preserve authored headings. Their frontmatter is YAML chooser metadata, not issue
 content. GitHub cannot enforce required fields in a Markdown template: replace
@@ -23,8 +27,8 @@ prompts, remove instructional comments and inspect outcome and acceptance before
 filing. Bug drafts also need actual/expected behavior, setup, reproduction or its
 known evidence gap, and a regression check. No live test issue is necessary.
 
-An epic states its outcome, real setup, smallest useful release, required and
-optional children, exclusions, unresolved decisions, reassessment trigger and
+An epic states its outcome, real setup, complete release scope, shared foundations,
+required and optional children, exclusions, unresolved decisions, reassessment trigger and
 its own end-to-end acceptance. Keep source, installed/client, human and physical
 evidence separate. Required children closed as completed are necessary only for
 their stated scope; they do not prove the parent outcome. A required child closed

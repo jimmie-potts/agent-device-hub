@@ -12,7 +12,7 @@ One operator can open the existing Hub status page from one chosen desktop
 keyboard shortcut. Use the configured Hub address on that desktop; exclude
 remote desktops and device commands. This is a local sample, not delivered work.
 
-## Smallest useful implementation
+## Implementation approach and shared foundations
 
 Bind the chosen shortcut to the existing browser-opening action. Read the
 configured Hub address and show a missing-address message when it is absent.

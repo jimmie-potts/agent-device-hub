@@ -34,7 +34,8 @@ services or automation only when the story needs them. These defaults never
 remove an already accepted capability.
 
 At pickup or a material scope change, check the requested outcome, actual setup,
-risks and smallest useful change. Keep the assessment in the existing issue/PR;
+risks, shared foundations and complete delivery boundary. Keep the assessment in
+the existing issue/PR;
 a separate template, skill lookup or dossier is not required. Read-only work
 reports the assessment without writing. Shared interface work names its owner
 and integration order; independent work continues in separate worktrees under
@@ -97,9 +98,16 @@ the answer goes in "Behavior and protections to preserve", with a `###`
 subheading at most, because a new `##` heading ends that section for the section parser.
 A story that crosses no boundary may say so in one line.
 
-Prefer existing components and explicit manual steps where practical. Avoid
-speculative platform support, abstraction layers, automatic rollback systems and
-broad outage matrices. Always protect supported behavior: one authoritative
+Prioritize good coding practices, reusable components and shared foundations.
+Choose a maintainable implementation that fully delivers the agreed outcome.
+Reuse and improve existing abstractions where they fit. When relevant consumers
+need the same behavior, implement it in the appropriate shared layer and include
+their adoption and integration in acceptance. Compare total delivery and
+maintenance effort, including repeated patches and coordination. Small PRs may
+stage a coherent design; they do not determine its architecture or defer
+essential integration. Avoid speculative abstractions without a concrete need.
+Keep explicit manual steps where they meet the accepted outcome. Always protect
+supported behavior: one authoritative
 state owner and one writer per device, correct targets, bounded queued work, no
 unsafe replay, accurate freshness and completion, manual control, and user data
 integrity.
@@ -142,7 +150,7 @@ installed trial ([#22](https://github.com/jimmie-potts/agent-device-hub/issues/2
 
 - Setup: one operator, one designated controller runner and the bulbs selected
   by explicit IP.
-- Smallest implementation: consume the shared state owner's feed through #18's
+- Implementation and reuse: consume the shared state owner's feed through #18's
   per-bulb queues. No second lifecycle reducer, cross-process lease service or
   effect engine.
 - Preserve: a heartbeat or unchanged snapshot never resumes painting over a
