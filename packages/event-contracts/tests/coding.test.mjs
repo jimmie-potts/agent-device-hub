@@ -255,3 +255,23 @@ test('a saved native handoff is attempt-bound and never carries private launch m
   invalid(at('coding-progress', '2.6', {...progress, clients: ['terminal']}));
   invalid(at('coding-progress', '2.6', {...progress, profile: '/private/profile'}));
 });
+
+test('enrolled workers declare bounded routing facts and a start carries its exact revision', async () => {
+  const coding = await import('../dist/v2/coding.js');
+  assert.equal(typeof coding.codingDestinationForSource, 'function');
+  assert.equal(coding.codingDestinationForSource('bunny/parts/coding-worker'), 'mac');
+  assert.equal(coding.codingDestinationForSource('bunny/parts/coding-worker-pc'), 'pc');
+  assert.equal(coding.codingDestinationForSource('bunny/parts/coding-worker-cloud-test'), 'cloud-test');
+  assert.equal(coding.codingDestinationForSource('bunny/parts/coding-worker-cloud-test/other'), undefined);
+  const revision = 'a'.repeat(40);
+  const declaration = {os: 'windows', toolchains: ['node24'], repositories: [{name: 'agent-device-hub', revision}], pressure: 'unknown', testSlots: null};
+  const enable = {...withData('coding-endpoint', {requestId: 'enroll', action: 'enable', capacity: 'uncapped', worker: declaration}),
+    source: 'bunny/parts/coding-worker-pc', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.5'};
+  valid(enable);
+  invalid({...enable, data: {...enable.data, worker: {...declaration, destination: 'mac'}}});
+  invalid({...enable, data: {...enable.data, worker: {...declaration, repositories: [...declaration.repositories, ...declaration.repositories]}}});
+  const start = {...family('coding-work'), dataschema: 'https://bunny.invalid/events/coding-work/2.6'};
+  valid({...start, data: {...start.data, revision}});
+  invalid({...start, data: {...start.data, revision: 'main'}});
+  invalid({...start, data: {action: 'cancel', operationId: 'op', requestId: 'stop', revision}});
+});
