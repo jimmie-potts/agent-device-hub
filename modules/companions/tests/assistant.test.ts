@@ -1,5 +1,5 @@
 import {CodingStore} from '../src/coding/store.js';
-import {DEVICE_HISTORY_VERSION} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {assistantRoutes, catalogFamily, DEVICE_HISTORY_VERSION, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -36,7 +36,7 @@ import {readDevices} from '../src/assistant/devices.js';
 import {confirmationEvidence, type Confirmation} from '../src/assistant/confirmation.js';
 import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
 import {authorizesControl} from '../src/assistant/control-intent.js';
-import {catalogTools} from '../src/assistant/catalog-tools.js';
+import {catalogTool, catalogTools, modelCatalogCommand} from '../src/assistant/catalog-tools.js';
 import {deviceToolOwner, FIXTURE_TEXT, summarizeSessions, TOOLS} from '../src/assistant/tools.js';
 import {DEVICE_TOOLS} from '../src/assistant/tool-scope.js';
 
@@ -71,12 +71,12 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
   const timers = new Map<number, {due: number; callback: () => void}>(); let timerId = 0;
   const time = {clock: {now: () => now}, scheduler: {after: (delay: number, callback: () => void) => {const id = ++timerId; timers.set(id, {due: now + delay, callback}); return () => {timers.delete(id);};}}};
   const dir = await mkdtemp(join(tmpdir(), 'assistant-owner-')), bus = new InProcessBus({now: time.clock.now, ...(maxQueued === undefined ? {} : {maxQueued})}), core = bus.connect('bunny/core');
-  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  const coreSync = await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   const make = () => {const module = createCompanionsModule(options); return {module, host: new ModuleHarness({...module, start: context => module.start(adapt(context))}, {bus, stateDir: dir, spans, section: {}, ...time})};};
   let {module, host} = make();
   await host.start();
   context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
-  return {core, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async (stopped?: () => void) => {
+  return {core, coreSync, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async (stopped?: () => void) => {
     await host.stop(); stopped?.(); ({module, host} = make()); await host.start();
   }};
 }
@@ -4782,5 +4782,287 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     assert.ok((await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
     deniedDraft = true;
     assert.ok(!(await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
+  });
+}
+
+type CatalogPhrase = {
+  family: CatalogFamily;
+  say: string;
+  owner: string;
+  selector: string;
+  target: string;
+  settings: Record<string, unknown>;
+  expected?: Record<string, unknown>;
+  refuse: {say: string; selector?: string; settings?: Record<string, unknown>; owner?: string; code: string};
+};
+
+void test('natural catalog corpus covers every migrated command', () => {
+  assert.deepEqual(catalogPhrases().map(row => row.family).concat('nanoleaf-show-save').sort(),
+    Object.keys(assistantRoutes).filter(catalogFamily).filter(modelCatalogCommand).sort());
+});
+
+function catalogPhrases(): CatalogPhrase[] {
+  const core = 'bunny/core', nanoleaf = 'bunny/modules/nanoleaf', pixoo = 'bunny/modules/pixoo';
+  const wall = 'studio-wall', screen = 'new-pixoo', noticeId = 'a'.repeat(64);
+  const playlistId = '11111111-1111-4111-8111-111111111111', renditionId = 'b'.repeat(64);
+  const assetId = '22222222-2222-4222-8222-222222222222';
+  const wrongWall = {say: 'Make that change on the spare wall panel instead.', selector: 'spare-wall', code: 'not-found'};
+  const wrongScreen = {say: 'Make that change on the spare display instead.', selector: 'spare-screen', code: 'not-found'};
+  const onWall = (family: CatalogFamily, say: string, settings: CatalogPhrase['settings'], refuse: CatalogPhrase['refuse'] = wrongWall): CatalogPhrase =>
+    ({family, say, settings, refuse, owner: nanoleaf, selector: 'Studio Wall', target: wall});
+  const onScreen = (family: CatalogFamily, say: string, settings: CatalogPhrase['settings'], refuse: CatalogPhrase['refuse'] = wrongScreen,
+    expected?: CatalogPhrase['expected']): CatalogPhrase =>
+    ({family, say, settings, refuse, owner: pixoo, selector: 'Kitchen Display', target: screen, ...(expected === undefined ? {} : {expected})});
+  const record = (family: CatalogFamily, say: string, selector: string, settings: CatalogPhrase['settings'], target = selector,
+    owner = core, refuse: CatalogPhrase['refuse'] = {say: 'Apply that to the other entry instead.', selector: 'unknown-record', code: 'not-found'}): CatalogPhrase =>
+    ({family, say, settings, refuse, owner, selector, target});
+  return [
+    onWall('device-mode-set', 'Switch Studio Wall to free mode.', {mode: 'free'}),
+    onWall('scene-activate', 'Put scene-' + noticeId + ' on Studio Wall.', {sceneId: 'scene-' + noticeId},
+      {say: 'Use sunset on Studio Wall even though it is missing.', settings: {sceneId: 'sunset'}, code: 'unsupported-capability'}),
+    onWall('moment-play', 'Give Studio Wall five seconds of celebration.', {mood: 'celebrate', durationMs: 5000},
+      {say: 'Give Studio Wall two hours of celebration.', settings: {mood: 'celebrate', durationMs: 7_200_000}, code: 'invalid-request'}),
+    onWall('nanoleaf-animation-play', 'Play Ocean on Studio Wall.', {animation: {preset: 'ocean'}}),
+    onWall('nanoleaf-wall-edit', 'Rotate Studio Wall a quarter turn.', {edit: {kind: 'settings', settings: {rotation: 90}}}),
+    onWall('nanoleaf-machine-edit', 'Use project style for Studio Wall machine status.', {edit: {kind: 'settings', settings: {style: 'project'}}}),
+    onWall('nanoleaf-favorite-edit', 'Rename the Studio Wall favorite Evening to Dusk.', {edit: {kind: 'rename', name: 'Evening', newName: 'Dusk'}}),
+    onWall('nanoleaf-notice-acknowledge', 'Acknowledge notice ' + noticeId + ' for synthetic-task on Studio Wall.', {task: 'synthetic-task', noticeId}),
+    onScreen('media-start', 'Start the Evening Loop playlist on Kitchen Display.', {playlistId: 'Evening Loop'}, wrongScreen, {playlistId}),
+    onScreen('media-control', 'Could you pause the media on Kitchen Display?', {action: 'pause'}),
+    onScreen('pixoo-media-show', 'Play the Blue Kite rendition once on Kitchen Display.', {renditionId: 'Blue Kite', playback: {mode: 'plays', totalPlays: 1}},
+      wrongScreen, {renditionId, playback: {mode: 'plays', totalPlays: 1}}),
+    onScreen('pixoo-monitor-set', 'Show Claude sessions on Kitchen Display every three seconds.', {filter: {provider: 'claude'}, cadenceMs: 3000}),
+    onScreen('pixoo-now-playing-set', 'Hide Now Playing on Kitchen Display.', {media: 'off'}),
+    onScreen('pixoo-moments-set', 'Let moments cover status on Kitchen Display.', {overStatus: true}),
+    onScreen('pixoo-playlist-change', 'Rename Evening Loop to Last Light on Kitchen Display.', {change: {operation: 'rename', playlistId: 'Evening Loop', name: 'Last Light'}},
+      {say: 'Rename revision six of Evening Loop to Last Light on Kitchen Display.', settings: {change: {operation: 'rename', playlistId: 'Evening Loop', revision: 6, name: 'Last Light'}}, code: 'revision-conflict'},
+      {change: {operation: 'rename', playlistId, revision: 7, name: 'Last Light'}}),
+    onScreen('pixoo-asset-change', 'Render the Blue Kite original again for Kitchen Display.', {change: {operation: 'render', assetId: 'Blue Kite'}},
+      wrongScreen, {change: {operation: 'render', assetId}}),
+    onScreen('pixoo-notice-dismiss', 'Dismiss fixture-notice for session ' + noticeId + ' on Kitchen Display.', {session: noticeId, noticeId: 'fixture-notice'}),
+    record('wemo-hold-release', 'Release the hold on Bench Plug.', 'Bench Plug', {}, 'bench-plug', 'bunny/modules/wemo',
+      {say: 'Release the hold from an older operation on Bench Plug.', settings: {heldRequestId: 'old-operation'}, code: 'revision-conflict'}),
+    record('mode-override-set', 'Keep Studio Wall in free mode regardless of Hub mode.', 'Studio Wall', {mode: 'free'}, wall),
+    record('notice-clear', 'Clear all notices for the Writing session.', 'Writing', {noticeId: null}, noticeId),
+    record('session-label-set', 'Call the Writing session Revised chapter.', 'Writing', {label: 'Revised chapter'}, noticeId),
+    record('inbox-handle', 'Dismiss Inbox item fixture-inbox.', 'fixture-inbox', {action: 'dismiss'}),
+    record('home-layout-set', 'Clear my custom desktop and phone Home ordering.', 'home', {layouts: {desktop: [], phone: []}}),
+    record('lighting-layout-set', 'Clear my saved room lighting groups and assignments.', 'lighting', {layout: {rooms: [], assignments: [], groups: [], home: null}}),
+    record('playback-layout-set', 'Remove the custom placements for Music cards.', 'playback', {assignments: []}),
+    record('playback-control', 'Give the music a break, please.', 'auto', {action: 'pause'}, 'desk-speaker', 'bunny/modules/playback',
+      {say: 'Pause music on the spare speaker.', selector: 'spare-speaker', code: 'unavailable'}),
+    record('volcano-session-gap', 'Set Volcano’s session gap to half an hour.', 'Volcano', {gapMinutes: 30}, 'volcano', 'bunny/modules/volcano'),
+    record('art-catalog-edit', 'Favorite the saved artwork ' + playlistId + '.', 'art', {action: 'favorite', artworkId: playlistId, favorite: true}, 'art', 'bunny/modules/art',
+      {say: 'Favorite it in the other art catalog.', selector: 'other-catalog', code: 'forbidden'}),
+    record('art-show', 'Show retained-kite on the Browser.', 'hub', {artworkId: 'retained-kite', targets: ['browser']}, 'hub', core,
+      {say: 'Show missing-kite on the Browser.', settings: {artworkId: 'missing-kite', targets: ['browser']}, code: 'not-found'}),
+    record('music-lighting-control', 'Jump to one and a half seconds in the wall light show.', 'wall', {action: 'seek-show', positionMs: 1500}, 'wall', core,
+      {say: 'Jump to two seconds before the wall light show starts.', settings: {action: 'seek-show', positionMs: -2000}, code: 'invalid-request'}),
+    record('nanoleaf-reactive-preset-save', 'Save the ambient blue recipe as Evening Glow.', 'reactive-presets',
+      {name: 'Evening Glow', recipe: {rendererVersion: 1, effect: 'ambient', palette: ['#1122ff']}}, 'reactive-presets', nanoleaf,
+      {say: 'Save Evening Glow against revision six.', settings: {name: 'Evening Glow', expectedRevision: 6, recipe: {rendererVersion: 1, effect: 'ambient', palette: ['#1122ff']}}, code: 'revision-conflict'}),
+  ];
+}
+
+async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof world>>) {
+  await w.coreSync.close();
+  const register = (owner: Participant, families: Record<string, ReturnType<typeof state>[]>) => owner.serveSync(Object.keys(families),
+    request => ({revision: 7, states: request.data.families.flatMap(family => families[family] ?? [])}));
+  function state(family: string, subject: string, data: {id: string; revision: number} & Record<string, unknown>, type = `org.bunny.${family}.updated`) {
+    return {type, subject, dataschema: `https://bunny.invalid/events/${family}/2.0`, data};
+  }
+  function connect(owner: string) {
+    const participant = w.bus.connect(`bunny/modules/${owner}`);
+    context.after(() => participant.close());
+    return participant;
+  }
+  const device = (data: DeviceRecord) => ({...state('device', data.id, data), dataschema: DEVICE_READBACK_SCHEMA});
+  const wall = light('studio-wall', 'Studio Wall'), screen = light('new-pixoo', 'Kitchen Display');
+  const hash = 'a'.repeat(64), renditionId = 'b'.repeat(64);
+  const playlistId = '11111111-1111-4111-8111-111111111111', assetId = '22222222-2222-4222-8222-222222222222';
+  await Promise.all([
+    register(connect('lifx'), {device: []}),
+    register(connect('tidbyt'), {device: []}),
+    register(connect('wemo'), {device: [device({...light('bench-plug', 'Bench Plug'), kind: 'wemo', availability: 'unavailable',
+      held: {requestId: 'held-operation', heldAtMs: 1000}})]}),
+    register(connect('nanoleaf'), {
+      device: [device({...wall, kind: 'nanoleaf', capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']},
+        scenes: {supported: true, sceneIds: ['scene-' + hash]},
+        moments: {supported: true, moods: ['celebrate'], maxDurationMs: 10000, coversStatus: false}}}),
+      ...['wall-left', 'wall-right'].map(id => {
+        const shared = light(id, 'Shared Wall');
+        return device({...shared, kind: 'nanoleaf', capabilities: {...shared.capabilities, modes: {supported: true, values: ['free']}}});
+      })],
+      'nanoleaf-shows': [state('nanoleaf-shows', 'shows', {id: 'shows', revision: 7, shows: []})],
+      'nanoleaf-reactive-presets': [state('nanoleaf-reactive-presets', 'reactive-presets',
+        {id: 'reactive-presets', revision: 7, presets: [{presetId: 'preset-evening-glow', name: 'Evening Glow'}]})],
+    }),
+    register(connect('pixoo'), {
+      device: [device({...screen, kind: 'pixoo', capabilities: {...screen.capabilities,
+        media: {supported: true, actions: ['pause'], playlistIds: [playlistId], renditionIds: [renditionId]}}})],
+      'pixoo-playlist': [state('pixoo-playlist', playlistId, {id: playlistId, revision: 7, playlistRevision: 7, name: 'Evening Loop'})],
+      'pixoo-rendition': [state('pixoo-rendition', renditionId, {id: renditionId, revision: 7, name: 'Blue Kite', assetId, compatible: true})],
+    }),
+    register(connect('volcano'), {'volcano-status': [state('volcano-status', 'volcano', {id: 'volcano', revision: 7, label: 'Volcano', configurationRevision: 7})]}),
+    register(connect('playback'), {playback: [state('playback', 'desk-speaker', {id: 'desk-speaker', revision: 7, availability: 'available',
+      playback: {status: 'known', controls: ['pause', 'play'], player: 'playing'}})]}),
+    register(connect('art'), {art: [state('art', 'art', {id: 'art', revision: 7, jobs: [], artworks: []})]}),
+    register(w.core, {
+      mode: [state('mode', 'hub', hub(7))],
+      session: [state('session', hash, {...session('Writing'), id: hash, revision: 7})],
+      'inbox-item': [state('inbox-item', 'fixture-inbox', {id: 'fixture-inbox', revision: 7})],
+      'home-layout': [state('home-layout', 'home', {id: 'home', revision: 7})],
+      'lighting-layout': [state('lighting-layout', 'lighting', {id: 'lighting', revision: 7})],
+      'playback-layout': [state('playback-layout', 'playback', {id: 'playback', revision: 7})],
+      'music-lighting-state': [state('music-lighting-state', 'wall', {id: 'wall', revision: 7, session: {
+        status: 'active', generation: 'active-show', show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0},
+      }}, 'org.bunny.music-lighting.updated')],
+      operation: [],
+    }),
+  ]);
+}
+
+for (const host of ['anthropic', 'openai'] as const) {
+  void test(`${host} natural catalog phrases validate through the Hub command boundary`, async context => {
+    const phrases = catalogPhrases();
+    const delivered: {data: AssistantDispatch; valid: boolean}[] = [];
+    const policy = sharing();
+    let modeDenied = false;
+    let proposal: {name: string; input: Record<string, unknown>; ownerText: string} | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {tools?: {name: string}[]; input?: unknown[]; messages?: unknown[]};
+      const candidate = proposal;
+      proposal = undefined;
+      if (candidate !== undefined) {
+        assert.match(JSON.stringify(body.messages ?? body.input), new RegExp(candidate.ownerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
+        assert.ok(body.tools?.some(tool => tool.name === candidate.name), candidate.name);
+      }
+      const usage = {input_tokens: 20, output_tokens: 10, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: candidate === undefined ? [{type: 'text', text: 'The tool returned its evidence.'}]
+          : [{type: 'tool_use', id: 'catalog_phrase', name: candidate.name, input: candidate.input}],
+        stop_reason: candidate === undefined ? 'end_turn' : 'tool_use', usage}
+        : {status: 'completed', output: candidate === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'The tool returned its evidence.', annotations: []}]}]
+          : [{type: 'function_call', id: 'fc_catalog_phrase', call_id: 'catalog_phrase', name: candidate.name, arguments: JSON.stringify(candidate.input)}], usage}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['set_mode', 'create_light_show_draft', 'edit_light_show_cue', 'save_light_show',
+      ...phrases.map(row => catalogTool(row.family))], core: () => ({mode: hub(7), sessions: [], synced: true}),
+      share: query => policy(query) && !(modeDenied && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'hub'), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
+      artworkId: id, sourceRequestId: 'kite-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
+        outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
+          frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
+      favorite: false, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false},
+    })});
+    await catalogFixture(context, w);
+    const validator = coreValidator();
+    await w.core.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', message => {
+      const validation = validator.validate(message);
+      delivered.push({data: message.data, valid: validation.ok && message.source === 'bunny/modules/companions'});
+      return validation.ok ? {status: 'accepted'} : {error: validation.error};
+    });
+    await w.core.respond<{action: 'dismiss'; expectedRevision: number}>('bunny.cmd.inbox-handle.fixture-inbox', message => {
+      const validation = validator.validate(message);
+      const {subject, data, id} = message;
+      delivered.push({valid: validation.ok && message.source === 'bunny/modules/companions', data: {
+        family: 'catalog-action', command: 'inbox-handle', requestId: id, target: subject,
+        binding: {kind: 'record', owner: 'bunny/core', target: subject, revision: data.expectedRevision}, data: {action: data.action},
+      }});
+      return validation.ok ? {status: 'accepted'} : {error: validation.error};
+    });
+    await control(w.core, w.module(), 'enable');
+    const ask = async (ownerText: string, name: string, args: Record<string, unknown>) => {
+      const prior = task(w)?.taskId, writes = delivered.length;
+      proposal = {ownerText, name, input: args};
+      const accepted = await input(w.core, w.module(), ownerText);
+      assert.equal(accepted.status, 'accepted', `${ownerText} ${JSON.stringify(accepted)}`);
+      await until(() => task(w)?.taskId !== prior && (delivered.length > writes || status(w) === 'succeeded' || status(w) === 'failed' || status(w) === 'waiting'));
+      if (delivered.length > writes) w.advance(1100);
+      await until(() => status(w) === 'succeeded' || status(w) === 'failed' || status(w) === 'waiting');
+      assert.equal(status(w), 'succeeded', `${name}: ${ownerText}`);
+      assert.equal(proposal, undefined, ownerText);
+      return (await page(w, 'bunny', 'recent')).messages.filter(message => message.role === 'tool').at(-1)?.text;
+    };
+    const argumentsFor = (owner: string, target: string, settings: Record<string, unknown>) => ({owner, target, arguments: JSON.stringify(settings)});
+    for (const row of phrases) {
+      const tool = catalogTool(row.family);
+      const previous = delivered.length;
+      const refusal = await ask(row.refuse.say, tool, argumentsFor(row.refuse.owner ?? row.owner, row.refuse.selector ?? row.selector,
+        row.refuse.settings ?? row.settings));
+      assert.equal(delivered.length, previous, row.family);
+      assert.equal(refusal, `refused: ${row.refuse.code}`, row.family);
+      await ask(row.say, tool, argumentsFor(row.owner, row.selector, row.settings));
+      assert.equal(delivered.length, previous + 1, row.family);
+      const write = delivered[previous];
+      assert.ok(write?.valid, row.family);
+      const effect = write.data;
+      assert.ok(effect.family === 'catalog-action', row.family);
+      assert.equal(effect.command, row.family);
+      assert.equal(effect.target, row.target);
+      assert.equal(effect.binding.owner, row.owner);
+      const namedGuards = row.family === 'wemo-hold-release' ? {heldRequestId: 'held-operation'} :
+        row.family === 'nanoleaf-reactive-preset-save' ? {presetId: 'preset-evening-glow', expectedRevision: 7} :
+          row.family === 'music-lighting-control' ? {generation: 'active-show'} :
+            row.family === 'art-show' ? {guards: []} : {};
+      if (row.family === 'moment-play') {
+        assert.partialDeepStrictEqual(effect.data, {...row.settings, priorityClass: 'flourish', coversStatus: false, toleranceMs: 2000});
+        assert.equal(typeof effect.data.startAtMs, 'number');
+        assert.match(String(effect.data.momentId), /^[\da-f-]{36}$/u);
+      } else assert.deepEqual(effect.data, {...(row.expected ?? row.settings), ...namedGuards});
+    }
+
+    const prior = delivered.length;
+    const drafts = new ShowDrafts(w.host().moduleDatabase() ?? assert.fail('draft database'));
+    await ask('Create an ocean draft without a name.', 'create_light_show_draft', {name: '', starter: 'ocean'});
+    assert.deepEqual(drafts.list(0, 1, '', () => true), []);
+    await ask('Start a draft named Blue Hour with the ocean timeline.', 'create_light_show_draft', {name: 'Blue Hour', starter: 'ocean'});
+    const draft = drafts.list(0, 1, '', () => true)[0] ?? assert.fail('created Blue Hour draft');
+    await ask('In revision zero of Blue Hour set the first cue to 40 percent.', 'edit_light_show_cue',
+      {draftId: 'Blue Hour', revision: 0, cue: '1', changes: '{"intensity":0.4}'});
+    assert.equal(drafts.read(draft.id)?.revision, draft.revision);
+    await ask('On second thought, dim that first cue to 40 percent.', 'edit_light_show_cue',
+      {draftId: 'Blue Hour', revision: -1, cue: '1', changes: '{"intensity":0.4}'});
+    const current = drafts.read(draft.id) ?? assert.fail('edited Blue Hour draft');
+    assert.equal(current.revision, draft.revision + 1);
+    assert.equal(current.value.timeline.cues[0]?.intensity, 0.4);
+    assert.equal(delivered.length, prior, 'drafting is local');
+
+    assert.equal(await ask('Save the old revision of Blue Hour as First Cut.', 'save_light_show',
+      {draftId: 'Blue Hour', revision: draft.revision, versionName: 'First Cut'}), 'refused: revision-conflict');
+    assert.equal(delivered.length, prior);
+    await ask('Save the current Blue Hour draft as First Cut.', 'save_light_show',
+      {draftId: 'Blue Hour', revision: -1, versionName: 'First Cut'});
+    assert.equal(delivered.length, prior + 1);
+    const saved = delivered[prior];
+    assert.ok(saved?.valid);
+    assert.partialDeepStrictEqual(saved.data, {family: 'catalog-action', command: 'nanoleaf-show-save', target: 'shows',
+      data: {showId: draft.id, timeline: current.value.timeline, versionName: 'First Cut', expectedVersion: 0}});
+
+    modeDenied = true;
+    assert.equal(await ask('Switch the Hub to quiet for a while.', 'set_mode', {mode: 'quiet'}), 'refused: forbidden');
+    assert.equal(delivered.length, prior + 1);
+    modeDenied = false;
+    await ask('Put the Hub into quiet mode.', 'set_mode', {mode: 'quiet'});
+    assert.equal(delivered.length, prior + 2);
+    assert.ok(delivered[prior + 1]?.valid);
+    assert.partialDeepStrictEqual(delivered[prior + 1]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 7}});
+    const ambiguous = 'Put Shared Wall in free mode.';
+    const modeTool = catalogTool('device-mode-set');
+    proposal = {ownerText: ambiguous, name: modeTool, input: argumentsFor('bunny/modules/nanoleaf', 'Shared Wall', {mode: 'free'})};
+    assert.equal((await input(w.core, w.module(), ambiguous)).status, 'accepted');
+    await until(() => status(w) === 'waiting');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which device/);
+    assert.equal(delivered.length, prior + 2, 'an ambiguous device sends no command');
+
+    const answer = 'Use id:wall-right.';
+    proposal = {ownerText: answer, name: modeTool, input: argumentsFor('bunny/modules/nanoleaf', 'id:wall-right', {mode: 'free'})};
+    assert.equal((await input(w.core, w.module(), answer, true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(delivered.length, prior + 3);
+    assert.ok(delivered[prior + 2]?.valid);
+    assert.partialDeepStrictEqual(delivered[prior + 2]?.data, {family: 'catalog-action', command: 'device-mode-set', target: 'wall-right',
+      binding: {kind: 'device', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}}, data: {mode: 'free'}});
   });
 }
