@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {brightnessToolId, literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
+import {literalToolDeviceId, literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -231,7 +231,7 @@ export class ConversationActions {
     const route = catalogRoute(family);
     const owner = family === 'nanoleaf-show-save' ? NANOLEAF : call.input.owner;
     const name = family === 'nanoleaf-show-save' ? 'shows' : call.input.target;
-    const literalId = family === 'brightness-set' ? brightnessToolId(name) : undefined;
+    const literalId = family === 'brightness-set' ? literalToolDeviceId(name) : undefined;
     if (typeof owner !== 'string' || typeof name !== 'string' || name.length === 0 || (literalId ?? name).length > 128) return {code: 'invalid-request'};
     let data: Record<string, unknown>;
     if (family === 'nanoleaf-show-save') {
@@ -504,7 +504,7 @@ export class ConversationActions {
       const matches = await this.deviceSubjectMatches(scopedFacts.subject, parent);
       const selected = matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
-          target !== '' && matchingDevices([selected], target, owner, scopedFacts.brightnessControl ? brightnessToolId(target) : undefined).length !== 1 ||
+          target !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1 ||
           !access('devices', 'label', selected.device.id)) return textResult({devices: []});
       const {owner: source, device} = selected;
       if (scopedFacts.brightnessControl) {
@@ -521,7 +521,7 @@ export class ConversationActions {
     }
     const {rows, unreadable} = await this.#deviceRecords(owners, parent);
     const visible = rows.filter(({device}) => access('devices', 'index', device.id) && access('devices', 'label', device.id));
-    const selected = target === '' ? visible : matchingDevices(visible, target, owner).filter(({device}) => access('devices', 'details', device.id) && access('devices', 'status', device.id));
+    const selected = target === '' ? visible : matchingDevices(visible, target, owner, literalToolDeviceId(target)).filter(({device}) => access('devices', 'details', device.id) && access('devices', 'status', device.id));
     if (target === '') return textResult({devices: selected.map(({owner, device}) => ({owner, id: device.id,
       name: deviceLabel(device), lastReportedAvailability: access('devices', 'status', device.id) ? device.availability : undefined})), unreadable});
     if (selected.length > 1) return textResult({matches: selected.map(({owner, device}) => ({owner, id: device.id})),

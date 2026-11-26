@@ -48,7 +48,7 @@ export const catalogTools = [
     cursor: text('Empty to start, or the most recent next cursor.'),
   }),
   define(READ_DEVICES, 'read', 'Find configured devices and observe their status and permitted commands. A named Wemo plug includes its Hub maximum-on timer status and time remaining. Use empty target to list. Return the exact owner and target to use for a control.', {
-    target: text('Device name or ID, or empty to list. For a brightness command, id:<device-id> matches only that ID.'), owner: text('Use auto when the owner is unknown. Otherwise use the exact owner source, such as bunny/modules/pixoo.'),
+    target: text('Device name or ID, or empty to list. Use id:<device-id> to match only that ID.'), owner: text('Use auto when the owner is unknown. Otherwise use the exact owner source, such as bunny/modules/pixoo.'),
   }),
   define(READ_PLAYBACK, 'read', 'Read presented playback, current controls and observation time.', {}),
   define(READ_VACUUM, 'read', 'Read Roborock vacuum status. The integration offers no cleaning controls.', {}),

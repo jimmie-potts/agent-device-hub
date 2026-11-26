@@ -1,7 +1,7 @@
 import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceAction, type AssistantDeviceOwner} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {Cancel, ModuleContext, SyncedCopy, TraceContext} from '@jimmie-potts/sdk';
-import {brightnessToolId} from './control-intent.js';
+import {literalToolDeviceId} from './control-intent.js';
 import type {ToolCall} from './provider.js';
 import {READ_BYTES, SET_LIFX_POWER, SET_WEMO_POWER} from './tools.js';
 
@@ -93,7 +93,7 @@ const normalized = (name: string): string => name.trim().toLowerCase().replace(/
 type Selection = {device: DeviceRecord} | {matches: readonly DeviceRecord[]} | {code: 'invalid-request' | 'not-found' | 'unavailable'};
 
 export function chooseDevice(devices: readonly DeviceRecord[] | undefined, name: unknown, brightness = false): Selection {
-  const literalId = brightness ? brightnessToolId(name) : undefined;
+  const literalId = brightness ? literalToolDeviceId(name) : undefined;
   if (typeof name !== 'string' || (literalId ?? name).length > 128 || name.trim() === '') return {code: 'invalid-request'};
   if (devices === undefined) return {code: 'unavailable'};
   const exact = devices.find(device => device.id === (literalId ?? name));
