@@ -7,9 +7,10 @@ import {join} from 'node:path';
 import {after, test} from 'node:test';
 import {promisify} from 'node:util';
 import type {AdapterRun, AdapterSteer} from '../src/worker/adapter.js';
-import {codexAdapter, codexArguments, codexEnvironment, isWsl2Host, openCodex, qualifyWslCodex, verifyCodexToolchain, verifyCodexWriterBoundary, type CodexTransport} from '../src/worker/codex-adapter.js';
+import {codexAdapter, codexArguments, codexEnvironment, isWsl2Host, openCodex, qualifyWslCodex, verifyCodexToolchain, verifyCodexWriterBoundary, workerHome, type CodexTransport} from '../src/worker/codex-adapter.js';
 import {codexToolchainVariables, releaseCodexToolchain} from '../src/worker/codex-toolchain.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX} from '../src/worker/claude-writer.js';
+import {WSL_LOCATION_REFUSAL, wslProfileStorage} from '../src/worker/wsl-storage.js';
 import {claudeHarness} from '../src/worker/coding-worker.js';
 
 const profileHome = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-profile-')));
@@ -262,6 +263,19 @@ void test('only WSL2 selects the PC Codex backend, and an unqualified backend op
   const result = await adapter.run({worktree: '/unused', brief, bounds, signal: new AbortController().signal, session: () => Promise.resolve()});
   assert.equal(result.reason, 'refused');
   assert.match(result.summary ?? '', /WSL2 bubblewrap/u);
+});
+
+void test('WSL refuses external worker storage before creating SQLite or log directories', async t => {
+  const profile = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-wsl-storage-')));
+  t.after(() => rm(profile, {recursive: true, force: true}));
+  const sqlite = join(profile, 'sqlite'), log = join(profile, 'log');
+  const inspect = (blocked: string) => (home: string, directories: readonly string[]) =>
+    wslProfileStorage(home, directories, path => Promise.resolve(path !== blocked));
+  await assert.rejects(workerHome(profile, {}, inspect(profile)), {message: WSL_LOCATION_REFUSAL});
+  for (const path of [sqlite, log]) await assert.rejects(access(path), {code: 'ENOENT'});
+  await mkdir(log, {mode: 0o700});
+  await assert.rejects(workerHome(profile, {}, inspect(log)), {message: WSL_LOCATION_REFUSAL});
+  await assert.rejects(access(sqlite), {code: 'ENOENT'});
 });
 
 void test('the Linux worktree profile retains subscription routing and fences WSL host bridges', () => {

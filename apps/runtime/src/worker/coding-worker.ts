@@ -23,7 +23,7 @@ import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, co
 
 import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type AdapterSteer, type CodingAdapter} from './adapter.js';
 import {codexAdapter, codexArguments, codexEnvironment, isWsl2Host, qualifyWslCodex, verifyCodexNativeResume, verifyCodexToolchain, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
-import {WSL_LOCATION_REFUSAL, wslCheckoutIdentity, wslCheckoutPath, wslGit, wslWorktreeParent} from './wsl-storage.js';
+import {WSL_LOCATION_REFUSAL, wslCheckoutIdentity, wslCheckoutPath, wslGit, wslWorktreeParent, WslStorageError} from './wsl-storage.js';
 import {CODEX_TOOLCHAIN_REFUSAL} from './codex-toolchain.js';
 import {NATIVE_UUID, NativeClients, nativeTerminal, type NativeTerminalPlan} from './native-clients.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX, verifyClaudeWriterBoundary} from './claude-writer.js';
@@ -819,7 +819,7 @@ export class CodingWorker {
     let worktree: string, base: string | null = null, setupStarted: number | undefined;
     try {
       const identity = this.#wsl ? await wslCheckoutIdentity(repository.path, this.#git) : undefined;
-      if (identity !== undefined && pinnedRevision === undefined) throw new Error(WSL_LOCATION_REFUSAL);
+      if (identity !== undefined && pinnedRevision === undefined) throw new WslStorageError();
       const checkout = identity?.root ?? repository.path;
       const commonDir = identity?.common ?? (uncapped ? await realpath(await this.#git(repository.path, ['rev-parse', '--path-format=absolute', '--git-common-dir'], {timeoutMs: 10_000})) : repository.path);
       const prepared = await this.#serially(commonDir, async () => {
@@ -840,11 +840,11 @@ export class CodingWorker {
         if (pinnedRevision !== undefined && (!SHA.test(pinnedRevision) || revision !== pinnedRevision)) throw new Error('the requested revision is unavailable');
         const checked = SHA.test(revision) ? revision : null;
         const root = identity === undefined ? join(repository.path, '.local', 'worktrees') : await wslWorktreeParent(identity.root);
-        if (identity !== undefined && !sameCheckout(await wslCheckoutIdentity(identity.root, this.#git), identity)) throw new Error(WSL_LOCATION_REFUSAL);
+        if (identity !== undefined && !sameCheckout(await wslCheckoutIdentity(identity.root, this.#git), identity)) throw new WslStorageError();
         await mkdir(root, {recursive: true, mode: 0o700});
         if (identity !== undefined) {
           await wslWorktreeParent(identity.root);
-          if (!sameCheckout(await wslCheckoutIdentity(identity.root, this.#git), identity)) throw new Error(WSL_LOCATION_REFUSAL);
+          if (!sameCheckout(await wslCheckoutIdentity(identity.root, this.#git), identity)) throw new WslStorageError();
         }
         const fresh = join(root, `bunny-${taskId.slice(0, 8)}-${randomUUID().slice(0, 8)}`);
         if (uncapped && running.cancelled) return undefined;
@@ -859,7 +859,7 @@ export class CodingWorker {
       if (running.cancelled) await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null});
       else await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'worktree',
         result: {...assembleResult(repository.name, base, null, [], '', 'worktree').result,
-          summary: error instanceof Error && error.message === WSL_LOCATION_REFUSAL ? WSL_LOCATION_REFUSAL : 'The worker could not prepare this attempt’s worktree.'}});
+          summary: error instanceof WslStorageError ? WSL_LOCATION_REFUSAL : 'The worker could not prepare this attempt’s worktree.'}});
       return;
     } finally {
       if (heartbeat !== undefined) clearInterval(heartbeat);

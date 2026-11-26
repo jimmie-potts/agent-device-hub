@@ -1,5 +1,5 @@
 import {writerGone} from './writer-proof.js';
-import {WSL_LOCATION_REFUSAL, wslCheckoutIdentity, wslCheckoutPath, wslPath} from './wsl-storage.js';
+import {WSL_LOCATION_REFUSAL, wslCheckoutIdentity, wslCheckoutPath, wslProfileStorage, WslStorageError} from './wsl-storage.js';
 import {execFile, spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {lstat, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile} from 'node:fs/promises';
@@ -138,8 +138,11 @@ async function checkPrivateEntries(directory: string): Promise<void> {
   }
 }
 
-export async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise<string> {
+export async function workerHome(home: string, environment: NodeJS.ProcessEnv,
+  verifyStorage?: (home: string, directories: readonly string[]) => Promise<void>): Promise<string> {
   const path = await checkStateDirectory(home);
+  const directories = Object.values(startupStorage(path));
+  await verifyStorage?.(path, directories);
   const userHomes = await Promise.all([userInfo().homedir, environment.HOME]
     .flatMap(value => value === undefined || value === '' ? [] : [canonical(resolve(value))]));
   const profileRoots = userHomes.map(userHome => join(userHome, '.codex'));
@@ -159,7 +162,7 @@ export async function workerHome(home: string, environment: NodeJS.ProcessEnv): 
     throw new Error('codex worker credentials must be private to this profile');
   }
   await checkPrivateEntries(path);
-  for (const directory of Object.values(startupStorage(path))) {
+  for (const directory of directories) {
     await prepareStateDirectory(directory);
     await checkPrivateEntries(directory);
   }
@@ -244,7 +247,10 @@ async function verifyLinuxBoundary(cwd: string, home: string, runSandbox: (comma
 export async function verifyCodexToolchain(executable: string, cwd: string, profile: string, home: string,
   environment: NodeJS.ProcessEnv, protectedRoot?: string, signal?: AbortSignal, protectedGit?: string,
   host: CodexToolchainHost = 'darwin'): Promise<CodexToolchain> {
-  if (host === 'linux' && ![executable, cwd, home].every(wslPath)) throw new Error(WSL_LOCATION_REFUSAL);
+  if (host === 'linux') {
+    if (!(await Promise.all([executable, cwd].map(wslCheckoutPath))).every(Boolean)) throw new WslStorageError();
+    await wslProfileStorage(home, [...Object.values(startupStorage(home)), join(home, 'toolchain')]);
+  }
   const distribution = await prepareCodexToolchain(home, host, executable);
   if (host === 'linux') {
     const version = (await execute(executable, ['--version'], {cwd: home, env: codexEnvironment(environment, home, distribution),
@@ -273,9 +279,9 @@ export async function qualifyWslCodex(configuration: CodexConfiguration, environ
   const signal = AbortSignal.timeout(15_000);
   let cwd: string | undefined, probeHome: string | undefined, toolchain: CodexToolchain | undefined;
   try {
-    const home = await workerHome(configuration.home, environment);
     const scratch = await realpath(tmpdir());
-    if (!await wslCheckoutPath(scratch) || !await wslCheckoutPath(home) || !await wslCheckoutPath(configuration.executable)) return false;
+    if (!await wslCheckoutPath(scratch) || !await wslCheckoutPath(configuration.executable)) return false;
+    const home = await workerHome(configuration.home, environment, wslProfileStorage);
     cwd = await mkdtemp(join(scratch, 'bunny-wsl-codex-'));
     probeHome = await mkdtemp(join(home, 'signed-out-probe-'));
     await execute('/usr/bin/git', ['-c', 'init.templateDir=', 'init', '--quiet'], {
@@ -473,6 +479,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
 }): CodingAdapter {
   const inherited = options.environment ?? process.env;
   const environment = options.host === 'linux' ? {...inherited, PATH: '/usr/bin:/bin'} : inherited;
+  const checkStorage = options.host === 'linux' ? wslProfileStorage : undefined;
   let linuxQualified = false;
   const transport = options.transport ?? openCodex;
   // All wires in this adapter use the same private profile. Evidence from an older probe cannot clear a newer refusal.
@@ -519,7 +526,8 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           linuxQualified = await qualifyWslCodex(configuration, environment);
           if (!linuxQualified) return UNKNOWN_READINESS;
         }
-        home = await workerHome(configuration.home, environment);
+        if (checkStorage !== undefined && !await wslCheckoutPath(configuration.executable)) return UNKNOWN_READINESS;
+        home = await workerHome(configuration.home, environment, checkStorage);
         version = options.version === undefined ? parseVersion((await execute(configuration.executable, ['--version'], {cwd: home, env: codexEnvironment(environment, home), signal, maxBuffer: 4096})).stdout.replace(/^codex-cli\s+/, '')) : await options.version();
       } catch (error) {
         return {...UNKNOWN_READINESS, installed: object(error) && error.code === 'ENOENT' ? 'no' : 'unknown'};
@@ -529,6 +537,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       let wire: Wire | undefined;
       let unauthorized = false;
       try {
+        await checkStorage?.(home, Object.values(startupStorage(home)));
         const command = prepare(home, home, signal);
         wire = transport({...command, event: (method, data) => {if (observeAccount(method, data)) unauthorized = true;}, closed: () => {}});
         await initialize(wire);
@@ -551,8 +560,9 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         } catch {return {reason: 'refused', summary: WSL_LOCATION_REFUSAL};}
       }
       let home: string;
-      try {home = await workerHome(configuration.home, environment);}
-      catch {return {reason: 'refused', summary: 'Codex needs a separate private worker profile with no user configuration.'};}
+      try {home = await workerHome(configuration.home, environment, checkStorage);}
+      catch (error) {return {reason: 'refused', summary: error instanceof WslStorageError
+        ? WSL_LOCATION_REFUSAL : 'Codex needs a separate private worker profile with no user configuration.'};}
       const cwd = await realpath(input.worktree);
       if (inside(cwd, home) || inside(home, cwd)) return {reason: 'refused', summary: 'The Codex worker profile must be outside the worktree.'};
       const {signal} = input;
@@ -581,6 +591,8 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         if (options.host === 'linux') linuxQualified = false;
         return {reason: 'refused', summary: options.host === 'linux' ? WSL_BOUNDARY_REFUSAL : CODEX_TOOLCHAIN_REFUSAL};
       }
+      try {await checkStorage?.(home, Object.values(startupStorage(home)));}
+      catch {await releaseCodexToolchain(toolchain); return {reason: 'refused', summary: WSL_LOCATION_REFUSAL};}
       if (signal.aborted) {await releaseCodexToolchain(toolchain); return {reason: 'cancelled'};}
       const command = prepare(home, cwd, signal, profile, protection, toolchain);
       const wire = transport({...command, event: (method, value) => {
