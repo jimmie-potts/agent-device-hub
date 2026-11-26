@@ -1249,7 +1249,7 @@ void test('restart keeps a steered Wemo clarification despite an earlier accepte
   w.advance(1001);
   await until(() => status(w) === 'waiting');
   const question = task(w)?.questionId;
-  assert.ok(question);
+  assert.equal(typeof question, 'string');
   assert.equal(w.store().confirmation(original.requestId)?.dispatchState, 'accepted');
   await w.restart();
   assert.equal(status(w), 'waiting');
