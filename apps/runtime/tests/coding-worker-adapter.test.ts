@@ -43,7 +43,7 @@ type Scenario = {
   effectiveConfig?: object; auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; changeAuth?: boolean;
   rootReport?: {writableRoots?: unknown; runtimeWorkspaceRoots?: unknown};
   quotaResponse?: object; quotaReplies?: readonly (object | Promise<unknown> | Error)[]; quotaEvent?: 'initialize' | 'second-account' | 'pending-turn';
-  steerable?: boolean; interrupt?: 'confirmed' | 'wrong-turn' | 'lost' | 'rejected' | 'writer-remains' | 'late-ack' | 'auth-change';
+  steerable?: boolean; interrupt?: 'confirmed' | 'wrong-turn' | 'lost' | 'rejected' | 'writer-remains' | 'late-ack' | 'auth-change' | 'pending-terminal';
   beforeTurnAcknowledged?: () => void;
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
@@ -141,7 +141,12 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
             assert.deepEqual(params, {threadId, turnId});
             if (scenario.interrupt === 'lost') {closed(); return new Promise(() => {});}
             const id = scenario.interrupt === 'wrong-turn' ? 'sibling' : turnId;
-            event('turn/completed', {threadId, turn: {id, status: 'interrupted'}});
+            const terminal = () => {event('turn/completed', {threadId, turn: {id, status: 'interrupted'}});};
+            if (scenario.interrupt === 'pending-terminal') {
+              releaseInterrupt = terminal;
+              return Promise.resolve({});
+            }
+            terminal();
             if (scenario.interrupt === 'wrong-turn') closed();
             if (scenario.interrupt === 'auth-change') event('account/updated', {authMode: 'apikey'});
             if (scenario.interrupt === 'late-ack') return new Promise<object>(resolve => {releaseInterrupt = () => {resolve({});};});
@@ -192,6 +197,23 @@ void test('named Codex stop requires its exact interrupted turn, RPC acknowledge
       assert.equal(result.writerStopped, true);
     }
   }
+});
+
+void test('a steering message cannot reach Codex after the worker requests interruption', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-stop-steer-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const trial = fixture({steerable: true, interrupt: 'pending-terminal'});
+  let stop: (() => void) | undefined, steer: AdapterSteer | undefined, ready: () => void = () => {};
+  const armed = new Promise<void>(resolve => {ready = resolve;});
+  const run = trial.run(cwd, {namedStop: handle => {stop = handle;}, steering: handle => {steer = handle; if (handle !== undefined) ready();}});
+  await armed;
+  const admitted = steer ?? assert.fail('live steering');
+  (stop ?? assert.fail('active turn'))();
+  assert.equal(await admitted('message-1', 'Only add the requested test.'), 'unavailable');
+  assert.equal(steer, undefined);
+  assert.equal(trial.requests.includes('turn/steer'), false);
+  trial.releaseInterrupt();
+  assert.equal((await run).reason, 'cancelled');
 });
 
 void test('a stop before Codex acknowledges the active turn cannot select a turn to interrupt', async t => {

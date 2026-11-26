@@ -523,12 +523,13 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           let interrupt: Promise<boolean> | undefined;
           input.namedStop?.(() => {
             if (interrupt !== undefined || wireClosed || unauthorized || signal.aborted || terminal !== undefined) return;
+            input.steering?.(undefined);
             interrupt = interruptTurn(wire, nativeThread, acceptedTurn, completed, Promise.race([closed, revoked]),
               () => terminal?.status === 'interrupted' && terminal.error == null);
             void interrupt.then(settle);
           });
           input.steering?.(async (messageId, text) => {
-            if (signal.aborted || wireClosed || terminal !== undefined || unauthorized || !quotaAllowed(revision) ||
+            if (interrupt !== undefined || signal.aborted || wireClosed || terminal !== undefined || unauthorized || !quotaAllowed(revision) ||
                 pendingSteer || sentMessages.size >= STEER_LIMIT || sentMessages.has(messageId)) return 'unavailable';
             pendingSteer = true;
             sentMessages.add(messageId);
