@@ -6,7 +6,7 @@ import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant
 import type {InboxItem, ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
-import {catalogFamily, catalogRoute, type CatalogBinding, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {assistantRoutes, catalogFamily, catalogRoute, type CatalogBinding, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {starter} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
@@ -80,8 +80,8 @@ it('only companions can dispatch an allowlisted mode-set, tracked as its own ope
 it('approved Conversation art sends private text to Art once and omits it from the core operation', async context => {
   let handle: CoreHandle | undefined;
   const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
-  const companions = fixture('companions'), art = fixture('art');
-  await run(context, {modules: [core, companions, art]});
+  const companions = fixture('companions'), art = fixture('art'), other = fixture('assistant-other');
+  await run(context, {modules: [core, companions, art, other]});
   const descriptions: unknown[] = [];
   await contextOf(art).sdk.respond<{text: string}>('bunny.cmd.art-request.art', command => {
     descriptions.push(command.data.text);
@@ -92,6 +92,14 @@ it('approved Conversation art sends private text to Art once and omits it from t
     binding: {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'}, data: {format: 'still', description: 'Private synthetic blue flowers'}};
   const send = (payload: AssistantDispatch) => contextOf(companions).sdk.request('bunny.cmd.assistant-dispatch.assistant',
     {...draft(payload), dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.3'}, {requestId, timeoutMs: 2000});
+  const unauthorizedId = 'unauthorized-art-fixture';
+  const unauthorized = await contextOf(other).sdk.request('bunny.cmd.assistant-dispatch.assistant',
+    {...draft({...data, requestId: unauthorizedId}), dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.3'},
+    {requestId: unauthorizedId, timeoutMs: 2000});
+  assert.equal(unauthorized.status === 'rejected' && unauthorized.error.error.code, 'forbidden');
+  assert.equal(handle?.operation(unauthorizedId), undefined);
+  assert.deepEqual(descriptions, []);
+
   assert.equal((await send(data)).status, 'accepted');
   assert.deepEqual(descriptions, ['Private synthetic blue flowers']);
   const operation = handle?.operation(requestId);
@@ -147,6 +155,51 @@ it('every catalog route delivers its exact input and guards to the existing owne
     'nanoleaf-show-save': starter('ocean', 'show-synthetic'),
     'music-lighting-control': {action: 'start-show', showId: 'show-synthetic', version: 1, positionMs: 0, startDelayMs: 250},
   };
+  const deviceOwners = {
+    'power-set': ['nanoleaf', 'pixoo'],
+    'brightness-set': ['nanoleaf', 'pixoo', 'tidbyt'],
+    'device-mode-set': ['lifx', 'nanoleaf', 'pixoo', 'tidbyt'],
+    'lifx-color-set': ['lifx'],
+    'lifx-temperature-set': ['lifx'],
+    'scene-activate': ['nanoleaf'],
+    'moment-play': ['nanoleaf', 'pixoo', 'tidbyt'],
+    'media-start': ['pixoo'],
+    'media-control': ['pixoo'],
+    'pixoo-media-show': ['pixoo'],
+    'pixoo-monitor-set': ['pixoo'],
+    'pixoo-now-playing-set': ['pixoo'],
+    'pixoo-moments-set': ['pixoo'],
+    'nanoleaf-animation-play': ['nanoleaf'],
+    'pixoo-playlist-change': ['pixoo'],
+    'pixoo-asset-change': ['pixoo'],
+    'pixoo-notice-dismiss': ['pixoo'],
+    'nanoleaf-wall-edit': ['nanoleaf'],
+    'nanoleaf-machine-edit': ['nanoleaf'],
+    'nanoleaf-favorite-edit': ['nanoleaf'],
+    'nanoleaf-notice-acknowledge': ['nanoleaf'],
+    'wemo-hold-release': ['wemo'],
+  } satisfies Partial<Record<CatalogFamily, readonly string[]>>;
+  const recordTargets = {
+    'mode-override-set': ['bunny/core', 'fixture-device', 'dispatch'],
+    'notice-clear': ['bunny/core', hash, 'operator'],
+    'session-label-set': ['bunny/core', hash, 'operator'],
+    'inbox-handle': ['bunny/core', 'fixture-inbox', 'inbox'],
+    'home-layout-set': ['bunny/core', 'home', 'operator'],
+    'lighting-layout-set': ['bunny/core', 'lighting', 'operator'],
+    'playback-layout-set': ['bunny/core', 'playback', 'operator'],
+    'playback-control': ['bunny/modules/playback', 'playback', 'dispatch'],
+    'volcano-session-gap': ['bunny/modules/volcano', 'volcano', 'dispatch'],
+    'music-lighting-control': ['bunny/core', 'fixture-lighting', 'operator'],
+  } satisfies Partial<Record<CatalogFamily, readonly [string, string, string]>>;
+  const fixedTargets = {
+    'nanoleaf-reactive-preset-save': ['bunny/modules/nanoleaf', 'reactive-presets'],
+    'art-catalog-edit': ['bunny/modules/art', 'art'],
+    'art-request': ['bunny/modules/art', 'art'],
+    'art-show': ['bunny/core', 'hub'],
+    'nanoleaf-show-save': ['bunny/modules/nanoleaf', 'shows'],
+  } satisfies Partial<Record<CatalogFamily, readonly [string, string]>>;
+  assert.deepEqual([...Object.keys(deviceOwners), ...Object.keys(recordTargets), ...Object.keys(fixedTargets)].sort(),
+    Object.keys(assistantRoutes).sort());
   const common = {expiresat: new Date(timestamp + 10_000).toISOString(), specversion: '1.0', bunnyprofile: '2.0', kind: 'command', datacontenttype: 'application/json',
     traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', time: new Date(timestamp).toISOString()} as const;
   const validator = new MessageValidator();
@@ -155,13 +208,23 @@ it('every catalog route delivers its exact input and guards to the existing owne
   const schemas = {...artSchemas, ...lifxSchemas, ...nanoleafSchemas, ...pixooOwnSchemas, ...wemoSchemas, ...volcanoSchemas};
   for (const [id, schema] of Object.entries(schemas)) validator.register(id, schema);
 
+  const targets: Partial<Record<CatalogFamily, readonly [string, string, string]>> = {
+    ...recordTargets,
+    ...Object.fromEntries(Object.entries(fixedTargets).map(([family, [owner, target]]) => [family, [owner, target, 'dispatch']])),
+  };
+  const ownersByFamily: Partial<Record<CatalogFamily, readonly string[]>> = deviceOwners;
   for (const [family, data] of Object.entries(input).filter((entry): entry is [CatalogFamily, Record<string, unknown>] => catalogFamily(entry[0]))) {
+    const configuredOwners = ownersByFamily[family];
+    const configuredTarget = targets[family];
+    assert.ok(configuredOwners !== undefined || configuredTarget !== undefined, family);
+    const expected = configuredOwners?.map(owner => [`bunny/modules/${owner}`, 'future-configured-device', 'dispatch']) ??
+      (configuredTarget === undefined ? [] : [configuredTarget]);
     const route = catalogRoute(family);
-    const owners = route.binding === 'device' ? route.owners : [route.owner];
-    for (const owner of owners) {
-      const target = route.binding === 'fixed' ? route.target : family === 'home-layout-set' ? 'home'
-        : family === 'lighting-layout-set' ? 'lighting' : family === 'playback-layout-set' ? 'playback'
-          : family === 'notice-clear' || family === 'session-label-set' ? hash : 'device';
+    assert.equal(route.binding, configuredOwners !== undefined ? 'device' : Object.hasOwn(recordTargets, family) ? 'record' : 'fixed');
+    if (route.binding === 'device') assert.deepEqual([...route.owners].sort(), expected.map(([owner]) => owner).sort());
+    for (const tuple of expected) {
+      const [owner, target, lane] = tuple;
+      assert.ok(owner !== undefined && target !== undefined && lane !== undefined);
       const held = family === 'wemo-hold-release';
       const record = deviceRecord(target, 7, owner.split('/').at(-1) ?? 'device', held ? 'unavailable' : 'available');
       if (held) record.held = {requestId: 'held-operation', heldAtMs: timestamp};
@@ -169,7 +232,10 @@ it('every catalog route delivers its exact input and guards to the existing owne
         ? {kind: 'device', owner, target, configurationRevision: record.configurationRevision, generation: record.generation}
         : route.binding === 'record' ? {kind: 'record', owner, target, revision: 7}
           : {kind: 'fixed', owner, target};
-      const operation = ({key, draft: outgoing, requestedBy, requestId = ''}: Action): Promise<ActionAnswer> => {
+      let forwards = 0;
+      const operation = (actualLane: string) => ({key, draft: outgoing, requestedBy, requestId = ''}: Action): Promise<ActionAnswer> => {
+        forwards += 1;
+        assert.equal(actualLane, lane, family);
         assert.equal(key, `bunny.cmd.${family}.${target}`);
         assert.equal(requestedBy, 'bunny/modules/companions');
         const guard = binding.kind === 'device' ? {expectedConfigurationRevision: binding.configurationRevision, expectedGeneration: binding.generation}
@@ -179,8 +245,15 @@ it('every catalog route delivers its exact input and guards to the existing owne
           assert.equal(outgoing.dataschema, 'https://bunny.invalid/events/art-request/2.1');
           assert.deepEqual(outgoing.data, {action: 'start', purpose: 'request', origin: {kind: 'owner'}, targets: ['pixoo'], text: data.description});
         } else assert.deepEqual(outgoing.data, {...data, ...guard, ...save});
-        const result = validator.validate({...common, ...outgoing, id: 'forwarded-fixture', source: 'bunny/core', data: {...outgoing.data, requestId}});
+        const envelope = {...common, ...outgoing, id: 'forwarded-fixture', source: 'bunny/core', data: {...outgoing.data, requestId}};
+        const result = validator.validate(envelope);
         assert.ok(result.ok, `${family} for ${owner}: ${!result.ok ? result.error.detail : ''}`);
+        const setting = family === 'art-request' ? 'text' : Object.keys(data)[0];
+        assert.ok(setting !== undefined);
+        const supplied = Object.entries(outgoing.data).find(([field]) => field === setting)?.[1];
+        const wrongType = typeof supplied === 'number' ? false : 1000;
+        const invalid = validator.validate({...envelope, data: {...envelope.data, [setting]: wrongType}});
+        assert.equal(invalid.ok, false, `${family} owner schema accepted the wrong type for ${setting}`);
         return Promise.resolve({status: 'accepted', requestId});
       };
       const device = (): Message<DeviceRecord> => {
@@ -193,11 +266,51 @@ it('every catalog route delivers its exact input and guards to the existing owne
           data: {...record, capabilities}};
       };
       const requestId = 'catalog-fixture';
-      const answer = await dispatchCatalogAction({dispatch: operation, operation: () => undefined, clock: {now: () => timestamp}},
-        {...common, ...draft({requestId, family: 'catalog-action', command: family, target, binding, data,
-          ...(family === 'nanoleaf-show-save' ? {admitByMs: timestamp + 1000} : {})}),
-        id: requestId, source: 'bunny/modules/companions'}, device, operation, operation);
-      assert.deepEqual(answer, {status: 'accepted', requestId}, `${family} for ${owner}`);
+      const command = {requestId, family: 'catalog-action', command: family, target, binding, data,
+        ...(family === 'nanoleaf-show-save' ? {admitByMs: timestamp + 1000} : {})} satisfies AssistantDispatch;
+      const submit = (payload: typeof command, lookup: (id: string) => Message<DeviceRecord> | undefined = id => id === target ? device() : undefined) => dispatchCatalogAction(
+        {dispatch: operation('dispatch'), operation: () => undefined, clock: {now: () => timestamp}},
+        {...common, ...draft(payload), id: requestId, source: 'bunny/modules/companions'}, lookup, operation('operator'), operation('inbox'));
+      const reject = async (payload: typeof command, code: string, lookup?: (id: string) => Message<DeviceRecord> | undefined) => {
+        const previous = forwards;
+        const result = await submit(payload, lookup);
+        assert.equal('error' in result && result.error.code, code, `${family} for ${owner}`);
+        assert.equal(forwards, previous, 'refusal sent no command');
+      };
+      assert.deepEqual(await submit(command), {status: 'accepted', requestId}, `${family} for ${owner}`);
+      assert.equal(forwards, 1);
+      await reject({...command, binding: {...binding, owner: 'bunny/modules/other'}}, 'invalid-request');
+      await reject({...command, target: 'different-target'}, 'invalid-request');
+      await reject({...command, data: {...data, expectedGeneration: record.generation}}, 'invalid-request');
+      if (binding.kind === 'device') {
+        await reject({...command, target: 'different-target', binding: {...binding, target: 'different-target'}}, 'unavailable');
+        await reject(command, 'forbidden', () => ({...device(), source: 'bunny/modules/other'}));
+        await reject(command, 'revision-conflict', () => {
+          const current = device();
+          return {...current, data: {...current.data, configurationRevision: binding.configurationRevision + 1}};
+        });
+        await reject(command, 'revision-conflict', () => {
+          const current = device();
+          return {...current, data: {...current.data, generation: {...binding.generation, sequence: binding.generation.sequence + 1}}};
+        });
+        if (family === 'wemo-hold-release') {
+          await reject({...command, data: {heldRequestId: 'another-request'}}, 'revision-conflict');
+        } else {
+          await reject(command, 'unavailable', () => {
+            const current = device();
+            return {...current, data: {...current.data, availability: 'unavailable'}};
+          });
+        }
+      }
+      if (binding.kind === 'fixed') {
+        await reject({...command, target: 'different-target', binding: {...binding, target: 'different-target'}}, 'invalid-request');
+      }
+      if (family === 'nanoleaf-show-save') {
+        await reject({...command, admitByMs: timestamp}, 'expired');
+        await reject({...command, admitByMs: timestamp + 60_000}, 'invalid-request');
+      } else {
+        await reject({...command, admitByMs: timestamp + 1000}, 'invalid-request');
+      }
     }
   }
 });
