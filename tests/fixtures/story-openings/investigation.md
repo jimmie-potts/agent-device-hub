@@ -13,7 +13,7 @@ requesting desk presets. The supported event source and final button choice are
 unresolved. This local investigation sample promises a decision aid, not a
 working shortcut, an installed listener or device behavior.
 
-## Smallest useful implementation
+## Implementation approach and shared foundations
 
 Read available event-interface documentation and compare bounded local fixture
 traces for press, hold and release. Document normal mouse-control behavior,

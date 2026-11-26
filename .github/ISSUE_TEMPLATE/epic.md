@@ -24,9 +24,11 @@ Use a short opening; its headline and five example bullets are optional. Keep un
 
 <!-- Required: the benefit, selected setup and who will observe it. -->
 
-## Smallest useful implementation
+## Implementation approach and shared foundations
 
-<!-- Required: smallest useful release, exclusions and unresolved decisions. -->
+<!-- Required: complete release outcome, shared foundations and their owners,
+necessary integration and consumer adoption, exclusions and unresolved decisions.
+Split reviewable changes within a coherent design; follow docs/sdlc.md "Scope defaults". -->
 
 ### Required children
 
