@@ -1218,9 +1218,11 @@ removal or revocation can invalidate the checkpoint. Saved replies and
 questions remain readable under the owner's private grants. Private display
 and speech check current grants for the original fields inherited through
 earlier replies and tool results. Companions saves deduplicated field
-requirements alongside hosted replies and reconstructs them from older saved
-ledgers when needed. The proof records disclosure requirements without
-caching an authorization result or requiring the full ancestry on each read. If cost, the deadline,
+requirements alongside finalized hosted replies and eligible tool results.
+Older released ledgers provide direct disclosure requirements when needed.
+The proof records disclosure requirements without caching an authorization
+result. A derived reply without its required saved proof is withheld, and
+the original stays in private storage. If cost, the deadline,
 provider availability or an unusable answer prevents compaction, Companions
 can continue with an eligible verbatim tail. An ambiguous attempt keeps
 its receipt and spend reservation. Its work is not repeated, and a different

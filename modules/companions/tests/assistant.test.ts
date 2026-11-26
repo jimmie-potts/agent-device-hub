@@ -20,6 +20,7 @@ import {AnthropicTitleProvider} from '../src/assistant/titles.js';
 import {OPENAI_MODEL, OPENAI_URL, OpenAIProvider, OpenAITitleProvider} from '../src/assistant/openai.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
+import {saveFinalDisclosureProofs} from '../src/assistant/disclosure-proof.js';
 import {inputBound} from '../src/assistant/spend.js';
 import {assistantStateDraft, DECLINED, REFUSED, UNSPOKEN} from '../src/assistant/engine.js';
 import {sectionOf} from '../src/assistant/context.js';
@@ -3109,7 +3110,32 @@ for (const name of ['anthropic', 'openai'] as const) {
   }
 }
 
-void test('a 1001-turn legacy Conversation keeps the latest reply readable and speakable, with current origin grants', async context => {
+void test('latest Conversation paging skips denied rows and stops after the visible lookahead', async context => {
+  const checked: string[] = [];
+  const policy = sharing();
+  const w = await world(context, {share: query => {
+    if (query.destination === 'private-conversation' && query.field === 'text' && query.record?.startsWith('page-fixture-') === true) {
+      checked.push(query.record);
+      if (query.record === 'page-fixture-34' || query.record === 'page-fixture-32') return false;
+    }
+    return policy(query);
+  }});
+  const store = w.store();
+  const saved = store.newTask('bunny', 'Seeded private Conversation.');
+  saved.status = 'succeeded';
+  store.save(saved);
+  for (let index = 1; index <= 36; index += 1) {
+    const id = `page-fixture-${String(index)}`;
+    store.message(saved, id, 'owner', id, Date.now());
+  }
+  const first = await page(w, 'bunny', 'recent');
+  assert.deepEqual(first.messages.map(message => message.id),
+    Array.from({length: 18}, (_, index) => index + 19).filter(index => index !== 32 && index !== 34)
+      .map(index => `page-fixture-${String(index)}`));
+  assert.deepEqual(checked, Array.from({length: 19}, (_, index) => `page-fixture-${String(36 - index)}`));
+});
+
+void test('a 1001-turn Conversation keeps the latest reply readable and speakable, with current origin grants', async context => {
   const offers: SpokenReply[] = [];
   const baseline = sharing();
   let denied: 'private-conversation' | 'conversation-speech' | undefined;
@@ -3137,7 +3163,9 @@ void test('a 1001-turn legacy Conversation keeps the latest reply readable and s
         result: '{}', units: 1, reservedMs: 0, elapsedMs: 0, reservedUnits: 1, traceparent: '',
         disclosures: [{source: 'conversation', field: 'request', record: promptId},
           ...(index === 0 ? [{source: 'devices', field: 'status', record: 'proof-desk'} as const] : [])],
-        historySources: history});
+        ...(index === 0 ? {} : {historySources: history})});
+      // The origin uses the released direct ledger. Later tasks use normal finalization.
+      if (index > 0) saveFinalDisclosureProofs(store, saved);
       history.push({id: promptId, revision: 1}, {id: resultId, revision: 1});
     }
     store.database.exec('COMMIT');
@@ -3166,6 +3194,45 @@ void test('a 1001-turn legacy Conversation keeps the latest reply readable and s
   denied = undefined;
   assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
   assert.equal((await speak()).status, 'accepted');
+});
+
+void test('missing proof withholds an unpublished derived reply while released direct history remains usable', async context => {
+  const requests: TurnInput[] = [];
+  const provider: ModelProvider = {name: 'openai', model: OPENAI_MODEL, turn: request => {
+    requests.push(request);
+    return Promise.resolve(reply('Fresh synthetic reply.'));
+  }};
+  const w = await world(context, {provider});
+  await control(w.core, w.module(), 'enable');
+  const store = w.store(), now = Date.now();
+  const origin = store.newTask('bunny', 'Old saved owner message.', {provider: 'openai', model: OPENAI_MODEL, variant: ''});
+  const append = (saved: typeof origin, text: string, historySources?: {id: string; revision: number}[]) => {
+    saved.status = 'succeeded';
+    saved.modelCalls = 1;
+    store.save(saved);
+    const id = `${saved.id}-result`;
+    store.message(saved, `${saved.id}-prompt`, 'owner', saved.prompt, now);
+    store.message(saved, id, 'assistant', text, now);
+    store.saveCall({version: 1, id: `${saved.id}-step-0`, taskId: saved.id, runId: 'fixture', ordinal: 0, kind: 'model', status: 'succeeded',
+      result: '{}', units: 1, reservedMs: 0, elapsedMs: 0, reservedUnits: 1, traceparent: '',
+      disclosures: [{source: 'conversation', field: 'request', record: `${saved.id}-prompt`}],
+      ...(historySources === undefined ? {} : {historySources})});
+    return id;
+  };
+  const oldId = append(origin, 'RELEASED_DIRECT_REPLY');
+  const missing = store.newTask('bunny', 'A saved follow-up.', origin.supervisor);
+  const missingId = append(missing, 'UNPROVEN_DERIVED_REPLY', [{id: oldId, revision: 1}]);
+  await w.restart();
+  const saved = (await page(w, 'bunny', 'recent')).messages;
+  assert.ok(saved.some(message => message.id === oldId));
+  assert.ok(!saved.some(message => message.id === missingId));
+  assert.equal(w.store().savedMessage(missing.id, missingId)?.text, 'UNPROVEN_DERIVED_REPLY');
+  assert.equal((await control(w.core, w.module(), 'speak', missing.id, randomUUID(), {messageId: missingId})).status, 'rejected');
+
+  assert.equal((await input(w.core, w.module(), 'Check our prior exchange.')).status, 'accepted');
+  await until(() => task(w)?.taskId !== missing.id && status(w) === 'succeeded');
+  assert.match(JSON.stringify(requests.at(-1)), /RELEASED_DIRECT_REPLY/);
+  assert.doesNotMatch(JSON.stringify(requests.at(-1)), /UNPROVEN_DERIVED_REPLY/);
 });
 
 for (const failure of ['uncertain', 'provider-capacity'] as const) {

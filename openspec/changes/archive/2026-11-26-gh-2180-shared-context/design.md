@@ -65,11 +65,12 @@ outside the policy change.
   transport authentication stay outside model input.
 
 Hosted replies retain the union of their original disclosure requirements in
-a private proof. Older ledgers can supply that proof when first read. The
-proof keeps source identity and field requirements without storing any
-authorization result, and language-model replay still checks current source
-revisions and grants. Private display and speech check their own current
-grants against the same proof.
+a private proof saved with the finalized reply and each eligible tool result.
+Earlier released ledgers can supply the requirements for direct disclosures.
+A derived reply missing its proof stays in private storage and is withheld
+from display, speech and model replay. Language-model replay still checks
+source revisions and current grants. Private display and speech check their
+own current grants against the same proof.
 
 ## Risks / trade-offs
 

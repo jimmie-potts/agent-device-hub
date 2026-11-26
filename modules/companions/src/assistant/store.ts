@@ -475,6 +475,9 @@ export class AssistantStore {
   }
   calls(taskId: string): Call[] {return this.database.prepare('SELECT record FROM assistant_calls WHERE task_id=?').all(taskId).map(row => JSON.parse(row.record as string) as Call);}
   saveCall(call: Call): void {this.database.prepare('INSERT INTO assistant_calls VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(call.id, call.taskId, JSON.stringify(call));}
+  hasDisclosureProof(taskId: string, through: number): boolean {
+    return this.database.prepare('SELECT 1 FROM assistant_disclosure_proofs WHERE task_id=? AND through_call=?').get(taskId, through) !== undefined;
+  }
   disclosureProof(taskId: string, through: number): SavedDisclosureProof | undefined {
     const row = this.database.prepare('SELECT proof FROM assistant_disclosure_proofs WHERE task_id=? AND through_call=?')
       .get(taskId, through) as {proof: Uint8Array} | undefined;
@@ -550,9 +553,20 @@ export class AssistantStore {
     size: number, visibility?: MessageVisibility): MessageRow[] {
     const filter = `WHERE conversation_id=? AND ${condition}`;
     if (visibility === undefined) return this.database.prepare(`${messagesWithAttachments} ${filter} ORDER BY seq ${order} LIMIT ?`).all(conversationId, position, size) as MessageRow[];
-    const candidates = this.database.prepare(`SELECT id,role,task_id AS taskId,follows FROM assistant_messages ${filter} ORDER BY seq ${order}`)
-      .all(conversationId, position) as MessageSource[];
-    const ids = candidates.filter(message => visibility.shows(message)).slice(0, size).map(message => message.id);
+    // Finish each SELECT before evaluating visibility, which may save disclosure proof.
+    const select = this.database.prepare(`SELECT seq,id,role,task_id AS taskId,follows FROM assistant_messages ${filter} ORDER BY seq ${order} LIMIT ?`);
+    const ids: string[] = [];
+    let cursor = position;
+    while (ids.length < size) {
+      const candidates = select.all(conversationId, cursor, size) as (MessageSource & {seq: number})[];
+      for (const candidate of candidates) {
+        cursor = candidate.seq;
+        if (visibility.shows(candidate)) ids.push(candidate.id);
+        if (ids.length === size) break;
+      }
+      if (candidates.length < size) break;
+    }
+    if (ids.length === 0) return [];
     return this.database.prepare(`${messagesWithAttachments} WHERE msg.id IN (${ids.map(() => '?').join(',')}) ORDER BY seq ${order}`).all(...ids) as MessageRow[];
   }
   #visibleMessage(row: MessageRow, visibility?: MessageVisibility): ConversationMessage {

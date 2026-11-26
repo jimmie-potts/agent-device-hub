@@ -18,7 +18,7 @@ import {actionDescription, closingReply, type ActionEvidence} from './closing-re
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, RESPONSES_GRAPH_VERSION, terminal, unresolved, type Appended, type Call, type MessageSource, type Question, type Stage, type StagedInput, type Task, type HostedHistoryMessage, type ContextSourceVersion, type HistoryCompaction} from './store.js';
-import {savedDisclosureProof} from './disclosure-proof.js';
+import {hasSavedDisclosureProof, savedDisclosureProof, saveFinalDisclosureProofs} from './disclosure-proof.js';
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
@@ -1349,7 +1349,7 @@ export class AssistantEngine {
         else {task.status = task.question.answer === null ? 'waiting' : 'paused'; task.code = null;}
       } else {task.status = 'paused'; task.code = null;}
       if (result !== undefined && task.supervisor !== undefined && task.supervisor.provider !== 'synthetic') {
-        savedDisclosureProof(this.store, task);
+        saveFinalDisclosureProofs(this.store, task);
       }
       if (active !== undefined) this.#settle(task, active);
       if (startup) this.#finishRecoveredRun(task);
@@ -1686,10 +1686,12 @@ export class AssistantEngine {
           !(item.name === READ_DEVICES || item.name === READ_DEVICE_HISTORY || deviceToolOwner(item.name) !== undefined) ||
           source.action !== undefined || source.result !== message.text || source.disclosures?.some(field => field.source === 'devices') !== true ||
           source.disclosures.some(field => field.source !== 'devices' || field.field === 'details')) continue;
-        if (calls.filter(call => call.ordinal <= source.ordinal).every(call => this.#callAllowed(call, access, false, messages) && unchangedLegacyInput(call))) {
+        if (hasSavedDisclosureProof(this.store, origin.id, calls, source.ordinal) &&
+          calls.filter(call => call.ordinal <= source.ordinal).every(call => this.#callAllowed(call, access, false, messages) && unchangedLegacyInput(call))) {
           messages.set(message.id, message);
         }
-      } else if (calls.every(call => this.#callAllowed(call, access, false, messages) && unchangedLegacyInput(call))) messages.set(message.id, message);
+      } else if (hasSavedDisclosureProof(this.store, origin.id, calls) &&
+        calls.every(call => this.#callAllowed(call, access, false, messages) && unchangedLegacyInput(call))) messages.set(message.id, message);
     }
     return messages;
   }

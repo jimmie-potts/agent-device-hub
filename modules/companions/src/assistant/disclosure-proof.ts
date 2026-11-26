@@ -1,5 +1,5 @@
 import type {DisclosedField} from './sharing.js';
-import type {AssistantStore, SavedDisclosureProof, Task} from './store.js';
+import type {AssistantStore, Call, SavedDisclosureProof, Task} from './store.js';
 
 const FINAL = -1;
 const INCOMPLETE: SavedDisclosureProof = {fields: [], sources: [], legacy: false, complete: false, model: false};
@@ -7,13 +7,13 @@ function proofTask({id, conversationId, profile, status, supervisor, contextThro
   return {id, conversationId, profile, status, supervisor, contextThrough, clarificationDevices};
 }
 type Boundary = {task: ReturnType<typeof proofTask>; through: number};
-type PartialProof = SavedDisclosureProof | {missing: Boundary};
 
 function keyOf({source, field, record}: DisclosedField): string {
   return record === undefined ? `${source}:${field}` : `${source}:${field}:${record}`;
 }
 
-function assemble(store: AssistantStore, {task, through}: Boundary, prior: (boundary: Boundary) => SavedDisclosureProof | undefined): PartialProof {
+function assemble(store: AssistantStore, {task, through}: Boundary, ledger: readonly Call[],
+  prior: (boundary: Boundary) => SavedDisclosureProof): SavedDisclosureProof {
   const fields = new Map<string, DisclosedField>();
   const add = (field: DisclosedField) => {fields.set(keyOf(field), field);};
   const sources = new Set<string>();
@@ -22,7 +22,7 @@ function assemble(store: AssistantStore, {task, through}: Boundary, prior: (boun
     add({source: 'devices', field: 'index', record: id});
     add({source: 'devices', field: 'label', record: id});
   }
-  const calls = store.calls(task.id).filter(call => through === FINAL || call.ordinal <= through);
+  const calls = ledger.filter(call => through === FINAL || call.ordinal <= through);
   let model = false;
   for (const call of calls) {
     if (call.incompleteDisclosures === true) return INCOMPLETE;
@@ -52,7 +52,6 @@ function assemble(store: AssistantStore, {task, through}: Boundary, prior: (boun
       } else if (id !== `${origin.id}-result`) return INCOMPLETE;
       const boundary = {task: proofTask(origin), through: cutoff};
       const inherited = prior(boundary);
-      if (inherited === undefined) return {missing: boundary};
       if (!inherited.complete || !inherited.model) return INCOMPLETE;
       legacy ||= inherited.legacy;
       for (const field of inherited.fields) add(field);
@@ -62,44 +61,45 @@ function assemble(store: AssistantStore, {task, through}: Boundary, prior: (boun
   return {fields: [...fields.values()], sources: [...sources], legacy, complete: true, model};
 }
 
-function materialize(store: AssistantStore, root: Boundary): SavedDisclosureProof {
-  const stack = [root];
-  const key = ({task, through}: Boundary) => `${task.id}/${String(through)}`;
-  const pending = new Set([key(root)]);
-  const prior = ({task, through}: Boundary) => store.disclosureProof(task.id, through);
-  while (stack.length > 0) {
-    const boundary = stack.at(-1);
-    if (boundary === undefined) break;
-    const proof = assemble(store, boundary, prior);
-    if ('missing' in proof) {
-      if (pending.has(key(proof.missing))) return INCOMPLETE;
-      pending.add(key(proof.missing));
-      stack.push(proof.missing);
-      continue;
-    }
-    if (!proof.complete) return INCOMPLETE;
-    if (boundary.task.status === 'succeeded' && boundary.task.supervisor !== undefined && boundary.task.supervisor.provider !== 'synthetic') {
-      store.saveDisclosureProof(boundary.task.id, boundary.through, proof);
-    }
-    if (boundary === root) return proof;
-    pending.delete(key(boundary));
-    stack.pop();
-  }
-  return INCOMPLETE;
+function priorProof(store: AssistantStore, boundary: Boundary): SavedDisclosureProof {
+  const {task, through} = boundary;
+  const saved = store.disclosureProof(task.id, through);
+  if (saved !== undefined) return saved;
+  const ledger = store.calls(task.id);
+  // Records from before hosted rolling history carry direct disclosures only.
+  // A dependent reply from the current format must already have a saved proof.
+  if (ledger.some(call => (through === FINAL || call.ordinal <= through) && (call.historySources?.length ?? 0) > 0)) return INCOMPLETE;
+  const proof = assemble(store, boundary, ledger, () => INCOMPLETE);
+  if (proof.complete) store.saveDisclosureProof(task.id, through, proof);
+  return proof;
 }
 
-/** Materializes older ledgers on demand. The work stack holds boundaries, not all the transcript ledgers. */
+export function saveFinalDisclosureProofs(store: AssistantStore, task: Task): void {
+  const subject = proofTask(task);
+  const ledger = store.calls(task.id);
+  const boundaries = [FINAL, ...ledger.filter(call => call.kind === 'tool' && call.status === 'succeeded' && call.action === undefined &&
+    call.disclosures?.some(field => field.source === 'devices') === true &&
+    call.disclosures.every(field => field.source === 'devices' && field.field !== 'details')).map(call => call.ordinal)];
+  for (const through of boundaries) {
+    const proof = assemble(store, {task: subject, through}, ledger, boundary => priorProof(store, boundary));
+    if (proof.complete) store.saveDisclosureProof(task.id, through, proof);
+  }
+}
+
+export function hasSavedDisclosureProof(store: AssistantStore, taskId: string, ledger: readonly Call[], through = FINAL): boolean {
+  if (!ledger.some(call => (through === FINAL || call.ordinal <= through) && (call.historySources?.length ?? 0) > 0)) return true;
+  return store.hasDisclosureProof(taskId, through);
+}
+
+/** Reuse finalized proof or check a current/legacy task's own ledger and its saved origins. */
 export function savedDisclosureProof(store: AssistantStore, task: Task): SavedDisclosureProof {
   const saved = store.disclosureProof(task.id, FINAL);
   if (saved !== undefined) return saved;
-  const {database} = store;
-  database.exec('SAVEPOINT assistant_disclosure_proof');
-  try {
-    const proof = materialize(store, {task: proofTask(task), through: FINAL});
-    database.exec('RELEASE assistant_disclosure_proof');
-    return proof;
-  } catch (error) {
-    if (database.isTransaction) database.exec('ROLLBACK TO assistant_disclosure_proof; RELEASE assistant_disclosure_proof');
-    throw error;
+  const ledger = store.calls(task.id);
+  if (task.status === 'succeeded' && !hasSavedDisclosureProof(store, task.id, ledger)) return INCOMPLETE;
+  const proof = assemble(store, {task: proofTask(task), through: FINAL}, ledger, boundary => priorProof(store, boundary));
+  if (proof.complete && task.status === 'succeeded' && task.supervisor !== undefined && task.supervisor.provider !== 'synthetic') {
+    store.saveDisclosureProof(task.id, FINAL, proof);
   }
+  return proof;
 }
