@@ -3241,10 +3241,70 @@ void test('Responses resolves an exact brightness instruction before sending one
   await ask('What is the currently reported brightness of fixture-display?');
   assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
   assert.equal(requests.length, 3);
+  devices.push({...unsupported, id: 'unsupported-alias', label: target});
+  active = {...active, id: target, bypassLookup: true};
+  await ask('Set fixture-display brightness to 37%', 'reachy');
+  assert.equal(lookup.at(-1), '{"devices":[]}');
+  assert.equal(requests.length, 3);
   active = {...active, id: 'shared-a', bypassLookup: true};
   await ask('Set Shared Display brightness to 37%');
   const question = (await page(w)).currentTask?.question;
   assert.equal(question?.kind, 'clarification');
   assert.doesNotMatch(JSON.stringify(question), /shared-a|shared-b/u);
   assert.equal(requests.length, 3);
+});
+
+void test('a scoped brightness lookup supports the typed LIFX tool and refuses a cross-owner alias', async context => {
+  const lifx = 'bunny/modules/lifx', pixoo = 'bunny/modules/pixoo';
+  const exact = light('fixture-lifx', 'Fixture LIFX');
+  const requests: AssistantDispatch[] = [], evidence: string[] = [];
+  let alias = false, pixooReads = 0, aliasAtRead = Number.POSITIVE_INFINITY;
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
+    const results = body.input.filter(item => item.type === 'function_call_output');
+    assert.deepEqual(body.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'set_lifx_brightness']);
+    const write = results.length === 1;
+    if (write) evidence.push(results[0]?.output ?? '');
+    const output = results.length <= 1 ? [{type: 'function_call', id: write ? 'fc_set' : 'fc_read', call_id: write ? 'set' : 'read',
+      name: write ? 'set_lifx_brightness' : 'read_devices',
+      arguments: JSON.stringify(write ? {device: exact.id, percent: 37} : {target: '', owner: 'auto'})}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic result.', annotations: []}]}];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
+  }});
+  const w = await world(context, {provider, tools: ['read_devices', 'set_lifx_brightness'],
+    devices: owner => owner === lifx ? [exact] : [],
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const register = async (source: string, rows: () => DeviceRecord[]) => {
+    const participant = w.bus.connect(source);
+    context.after(() => participant.close());
+    await participant.serveSync(['device'], () => ({revision: 1, states: rows().map(data => ({
+      type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+    }))}));
+  };
+  await register(lifx, () => [exact]);
+  await register(pixoo, () => {
+    pixooReads += 1;
+    return alias || pixooReads >= aliasAtRead ? [{...light('private-alias', exact.id), kind: 'pixoo'}] : [];
+  });
+  await control(w.core, w.module(), 'enable');
+  const prompt = 'Set fixture-lifx brightness to 37%';
+  assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+  await until(() => requests.length === 1);
+  w.advance(1200);
+  await until(() => status(w) === 'succeeded');
+  assert.match(evidence[0] ?? '', /"controls":\["set_lifx_brightness"\]/u);
+  assert.deepEqual(requests[0]?.data, {percent: 37, expectedConfigurationRevision: exact.configurationRevision, expectedGeneration: exact.generation});
+  aliasAtRead = pixooReads + 3;
+  const beforeLateAlias = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+  await until(() => task(w)?.taskId !== beforeLateAlias && status(w) === 'succeeded');
+  assert.match(evidence.at(-1) ?? '', /"controls":\["set_lifx_brightness"\]/u);
+  assert.equal(requests.length, 1, 'a new alias before dispatch must remain blocked');
+  alias = true;
+  const prior = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+  await until(() => task(w)?.taskId !== prior && status(w) === 'waiting');
+  assert.equal(evidence.at(-1), '{"devices":[]}');
+  assert.doesNotMatch(JSON.stringify((await page(w)).currentTask?.question), /private-alias/u);
+  assert.equal(requests.length, 1);
 });

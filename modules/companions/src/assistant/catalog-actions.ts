@@ -14,6 +14,7 @@ import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {Outcome, usableArtComposition, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
 import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS, type DeviceReadDisplay} from './devices.js';
 import {ShowDrafts} from './show-drafts.js';
+import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
 import {catalogTool, CREATE_SHOW, EDIT_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
   READ_PLAYBACK, READ_SHOWS, READ_VACUUM, READ_VOLCANO} from './catalog-tools.js';
@@ -78,6 +79,11 @@ export class ConversationActions {
     const views = await Promise.all(owners.map(async owner => ({owner, devices: await this.#snapshot<DeviceRecord>(owner, 'device', parent)})));
     return {rows: views.flatMap(({owner, devices}) => devices?.map(device => ({owner, device})) ?? []),
       unreadable: views.filter(view => view.devices === undefined).map(view => view.owner)};
+  }
+
+  async deviceSubjectMatches(subject: string, parent: TraceContext): Promise<Match[]> {
+    const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
+    return rows.filter(({device}) => [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject));
   }
 
   async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {
@@ -487,8 +493,7 @@ export class ConversationActions {
     if (owners.length === 0) return 'refused: unsupported-capability';
     if (scopedFacts !== undefined) {
       if (scopedFacts.subject === undefined) return textResult({devices: []});
-      const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
-      const matches = rows.filter(({device}) => [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === scopedFacts.subject));
+      const matches = await this.deviceSubjectMatches(scopedFacts.subject, parent);
       const selected = matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
           target !== '' && matchingDevices([selected], target, owner).length !== 1 ||
@@ -497,10 +502,10 @@ export class ConversationActions {
       if (scopedFacts.brightnessControl) {
         if (!access('devices', 'status', device.id)) return textResult({devices: []});
         const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');
-        const supported = route.binding === 'device' && route.owners.some(owner => owner === source) &&
-          permitsDevice(route, device) && this.enabled.includes(tool);
+        const controls = this.enabled.filter(name => name === SET_LIFX_BRIGHTNESS && source === LIFX && device.capabilities.brightness.supported ||
+          name === tool && route.binding === 'device' && route.owners.some(owner => owner === source) && permitsDevice(route, device));
         return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
-          lastReportedAvailability: device.availability, controls: supported ? [tool] : []}]});
+          lastReportedAvailability: device.availability, controls}]});
       }
       return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
         ...(access('devices', 'status', device.id) ? {lastReportedAvailability: device.availability, observation: device.observed,

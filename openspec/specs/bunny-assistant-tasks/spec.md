@@ -1008,7 +1008,7 @@ For an explicit request by the authorized owner in private Conversation, each co
 
 #### Scenario: A brightness instruction needs a device lookup first
 
-- **WHEN** the owner sets an exact device to a specific brightness and the supervisor looks up the device first
+- **WHEN** the owner sets a specific brightness by exact device ID and the supervisor looks up the device first
 - **THEN** the supervisor receives only the matched permitted device and its supported brightness control
 - **AND** Conversation applies the original target and amount through the usual guarded dispatch once, without a separate approval
 - **AND** ambiguous, unsupported or denied selections send no command

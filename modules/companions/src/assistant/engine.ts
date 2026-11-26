@@ -1784,12 +1784,20 @@ export class AssistantEngine {
     let artworkRequestId: string | undefined;
     let direct: BoundControl | undefined;
     const command = call === undefined ? undefined : catalogCommand(call.name);
+    const currentTask = this.#task(state.taskId);
+    const brightnessTarget = openai && next === 'approve' && (command === 'brightness-set' || call?.name === SET_LIFX_BRIGHTNESS) &&
+      this.#controlClarification(currentTask)?.answer == null ? this.#openAIScope(currentTask).brightnessTarget : undefined;
+    const brightnessMatches = brightnessTarget === undefined ? [] : await this.#catalog().deviceSubjectMatches(brightnessTarget, active.span.context);
     const savedControl = task.control?.requestId === `${task.id}-step-${String(state.step + 1)}` ? task.control : undefined;
     const group = next === 'approve' && call?.name === SET_WEMO_POWER && typeof call.input.device === 'string'
       && normalizedControlText(call.input.device) === ALL_WEMO_PLUGS;
     if (savedControl !== undefined) {
       direct = savedControl;
       next = 'act';
+    } else if (call !== undefined && brightnessMatches.length > 1) {
+      const id = `${state.taskId}-q${String(currentTask.questions + 1)}`;
+      question = {id, kind: 'clarification', text: deviceClarification('device', brightnessMatches.map(({device}) => device.id), canNameDevice),
+        answer: null, call: call.id, proposal: null};
     } else if (group && call !== undefined) {
       const devices = this.options.devices?.(ASSISTANT_WEMO_OWNER);
       const proposals = devices?.map(device => deviceProposal(call, device));
@@ -2090,9 +2098,16 @@ export class AssistantEngine {
       return refuse('superseded', 'The owner sent new input before dispatch. The earlier control request was not sent.');
     }
     if (!this.#toolsFor(task).some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
+    let scopedBrightness: {subject: string; owner: string; access: FieldAccess} | undefined;
     if (openai && proposal.family !== 'coding-dispatch') {
       const boundDevice = direct === undefined ? undefined : proposal.target;
-      const access = this.#openAIScope(task, 'supervisor', boundDevice).fields;
+      const scope = this.#openAIScope(task, 'supervisor', boundDevice);
+      if (scope.brightnessTarget !== undefined && direct?.ownerMessageIds.length === 1 &&
+        (proposal.family === 'brightness-set' || proposal.family === 'catalog-action' && proposal.command === 'brightness-set')) {
+        scopedBrightness = {subject: scope.brightnessTarget, access: scope.fields,
+          owner: proposal.family === 'brightness-set' ? ASSISTANT_LIGHT_OWNER : proposal.binding.owner};
+      }
+      const access = scope.fields;
       if ([proposal, ...(direct?.additional ?? [])].some(item => !access('devices', 'label', item.target) || !access('devices', 'status', item.target))) {
         return refuse('refused', 'The requested device is outside the allowed scope.');
       }
@@ -2129,6 +2144,17 @@ export class AssistantEngine {
           acceptedAtMs, expiresAtMs: acceptedAtMs + CONFIRMATION_LIFETIME_MS, traceparent: parent.traceparent};
       };
       result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
+        if (scopedBrightness !== undefined) {
+          const {subject, owner, access} = scopedBrightness;
+          const matches = await this.#catalog().deviceSubjectMatches(subject, parent);
+          const match = matches.length === 1 ? matches[0] : undefined;
+          this.#fence(active);
+          if (match?.owner !== owner || match.device.id !== proposal.target ||
+            !access('devices', 'label', proposal.target) || !access('devices', 'status', proposal.target) ||
+            this.store.queue.steers(task.id).length > 0) {
+            return {text: 'refused: the requested brightness target is no longer clear and permitted.', units: 0};
+          }
+        }
         const admitByMs = this.context.clock.now() + SHOW_SAVE_WINDOW_MS;
         if (proposal.family === 'catalog-action') {
           const refused = this.#catalog().beforeDispatch(proposal, id, admitByMs, direct?.draftRevision);
