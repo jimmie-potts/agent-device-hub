@@ -1006,6 +1006,28 @@ For an explicit request by the authorized owner in private Conversation, each co
 - **WHEN** the owner asks to pause media on a uniquely named display, clear notices for an exact session or change a named monitor setting
 - **THEN** the matching typed command dispatches once without an approval or a protocol-formatted request
 
+#### Scenario: A brightness instruction needs a device lookup first
+
+- **WHEN** the owner sets a specific brightness by exact device ID and the supervisor looks up the device first
+- **THEN** the supervisor receives only the matched permitted device and its supported brightness control
+- **AND** Conversation applies the original target and amount through the usual guarded dispatch once, without a separate approval
+- **AND** ambiguous, unsupported or denied selections send no command
+
+#### Scenario: A literal brightness ID collides with another device's label
+
+- **WHEN** the owner names `id:<device-id>` in the brightness instruction or in an answer to its clarification
+- **THEN** Conversation resolves the literal ID against the matching devices, ignoring display labels for that selection
+- **AND** before dispatch, Conversation checks the current access to the original request and any exact clarification
+- **AND** an unresolved or no longer permitted ID sends no command
+
+#### Scenario: A direct brightness command has a saved acceptance
+
+- **WHEN** the tracked dispatcher accepts the direct brightness command and Conversation saves its receipt
+- **THEN** Conversation completes locally from the receipt and distinguishes acceptance from correlated confirmation
+- **AND** reconciliation after restart sends no new command and makes no supervisor replay for that request
+- **AND** if current read or sharing authority no longer permits the receipt details, Conversation shows a neutral completion
+- **AND** Read aloud requires current access to the receipt at both the private Conversation and speech destinations
+
 #### Scenario: A display alias matches multiple eligible targets
 
 - **WHEN** the owner asks to show saved art on a shared display alias and another destination, even if the model proposes an exact display ID
