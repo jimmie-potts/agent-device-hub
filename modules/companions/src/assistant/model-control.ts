@@ -37,7 +37,8 @@ const mentionsId = (text: string, id: string): boolean =>
   text.split(/[^a-zA-Z0-9-]+/u).includes(id);
 const labelKey = (label: string): string => label.trim().toLowerCase().replace(/[\s-]+/gu, ' ');
 function referenced(records: ModelControlScope['references'], text: string) {
-  return records.filter(record => mentionsId(text, record.id) || containsControlValue(text, record.label));
+  const labelText = text.replace(/\bid:[a-z0-9-]+\b/gu, ' ');
+  return records.filter(record => mentionsId(text, record.id) || containsControlValue(labelText, record.label));
 }
 
 /** Names identify candidates only. The selected supervisor interprets the action and its settings. */

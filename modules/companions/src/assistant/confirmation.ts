@@ -13,6 +13,7 @@ type ConfirmationTarget = {binding: DeviceBinding; label: string} & ({percent: n
 export type Confirmation = ConfirmationTarget & {
   requestId: string; taskId: string; questionId: string; acceptedAtMs: number; expiresAtMs: number; traceparent: string;
   sent?: true; result?: string; follows?: string;
+  dispatchState?: 'reserved' | 'sending' | 'accepted';
 };
 
 export function confirmationTarget(proposal: Proposal, question: string): ConfirmationTarget | undefined {
@@ -43,6 +44,13 @@ export function pending(watch: Confirmation): string {
   const setting = 'on' in watch ? 'Power' : 'Brightness';
   const sent = watch.sent === true ? `${setting} command sent.` : `${setting} request accepted.`;
   return `${sent} I’ll update this reply when confirmation for ${watch.label} is available.`;
+}
+
+export function confirmationText(watch: Confirmation, result = watch.result): string {
+  if (watch.dispatchState === undefined) return result ?? pending(watch);
+  const status = result ?? (watch.dispatchState === 'reserved' ? 'No power command was sent.'
+    : watch.dispatchState === 'sending' && watch.sent !== true ? 'The power request outcome is unknown.' : pending(watch));
+  return `${watch.label}: ${status}`;
 }
 
 function matchesReading(readback: ReadbackIdentity, watch: Confirmation, sentAtMs: number): boolean {
@@ -149,5 +157,6 @@ export async function followConfirmation(context: ModuleContext, watch: Confirma
       retryMs = operation !== undefined && device !== undefined ? 1000 : Math.min(60_000, retryMs * 2);
     }
   }
-  if (!signal.aborted) await save({result: unavailable(watch)});
+  if (!signal.aborted) await save({result: watch.dispatchState === 'sending' && watch.sent !== true
+    ? 'The power request outcome remains unknown.' : unavailable(watch)});
 }

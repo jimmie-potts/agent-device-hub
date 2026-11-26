@@ -424,6 +424,74 @@ void test('an explicit Wemo group binds every target once', async context => {
   assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
 });
 
+void test('a lost Wemo group reply preserves each dispatch receipt across restart', async context => {
+  const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool')
+    ? reply('Both plugs have switched off.') : wemoPower([], false));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs, dispatch: data => {
+    assert.equal(w.store().confirmation(data.requestId)?.binding.target, data.target, 'receipt exists before dispatch');
+    requests.push(data);
+    return Promise.resolve(data.target === 'desk-plug'
+      ? {status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')}
+      : accepted(data.requestId));
+  }});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn off all Wemo plugs');
+  await until(() => status(w) === 'succeeded');
+  const ids = requests.map(request => request.requestId);
+  assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
+  assert.equal(new Set(ids).size, 2);
+  await w.restart();
+  assert.deepEqual(requests.map(request => request.requestId), ids);
+  const messages = w.store().page('bunny', 0).messages.filter(message => message.role === 'assistant');
+  assert.ok(messages.some(message => /desk-plug.*outcome is unknown/s.test(message.text) &&
+    /shelf-plug.*Power request accepted/s.test(message.text)));
+  assert.ok(messages.every(message => !message.text.includes('Both plugs have switched off.')));
+});
+
+void test('restart follows Wemo group operations without repeating a write in flight', async context => {
+  const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(() => wemoPower([], false));
+  const inFlight = deferred<RequestResult>();
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs, dispatch: data => {
+    requests.push(data);
+    return data.target === 'shelf-plug' ? inFlight.promise : Promise.resolve(accepted(data.requestId));
+  }});
+  let available = false;
+  await w.core.serveSync(['operation'], () => {
+    const first = requests[0];
+    if (!available || first === undefined) return {revision: 0, states: []};
+    const id = operationEntityId(first.requestId);
+    const atMs = Date.now();
+    const operation: OperationRecord = {id, revision: 1, requestId: first.requestId, target: first.target,
+      kind: 'device', family: 'power-set', command: 'org.bunny.power.set.requested', requestedBy: 'bunny/modules/companions',
+      status: 'expired', sentAtMs: atMs, updatedAtMs: atMs, deadlineAtMs: atMs};
+    return {revision: 1, states: [{type: 'org.bunny.operation.updated', subject: id,
+      dataschema: 'https://bunny.invalid/events/operation/2.0', data: operation}]};
+  });
+  const wemo = w.bus.connect('bunny/modules/wemo');
+  context.after(() => wemo.close());
+  await wemo.serveSync(['device'], () => ({revision: 0, states: []}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn off all Wemo plugs');
+  await until(() => requests.length === 2);
+  const [first, second] = requests;
+  assert.ok(first && second);
+  assert.equal(w.store().confirmation(first.requestId)?.dispatchState, 'accepted');
+  assert.equal(w.store().confirmation(second.requestId)?.dispatchState, 'sending');
+  await w.restart(() => {available = true;});
+  await until(() => w.store().confirmation(first.requestId) === undefined);
+  const messages = w.store().page('bunny', 0).messages;
+  assert.ok(messages.some(message => message.id === first.requestId + '-confirmation' &&
+    message.text === 'desk-plug: The power request expired.'));
+  assert.ok(messages.some(message => message.text.includes('shelf-plug: The power request outcome is unknown.')));
+  assert.equal(w.store().confirmation(second.requestId)?.dispatchState, 'sending');
+  assert.equal(status(w), 'uncertain');
+  assert.deepEqual(requests, [first, second]);
+});
+
 void test('Conversation discovers an allowed device and answers a held-out power interval from bounded evidence', async context => {
   const owner = 'bunny/modules/wemo', target = 'fixture-plug';
   const read = {source: owner, target, period: '', fromAtMs: 1000, toAtMs: 1100};
@@ -732,12 +800,12 @@ for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true
       ? {brightnessReadbacks: [{...binding, requestedPercent: 35, reading: {status: 'known', percent: 32, observedAtMs: atMs + 1}}]}
       : {powerReadbacks: [{...binding, requestedOn: true, reading: {status: 'known', on: false, observedAtMs: atMs + 1}}]})};
   });
-  if (resume) {
+  if (resume && kind === 'pixoo') {
     assert.equal(status(w), 'paused');
     assert.equal(task(w)?.taskId, originalTask);
     await control(w.core, w.module(), 'resume', originalTask);
-    await until(() => status(w) === 'succeeded');
   }
+  await until(() => status(w) === 'succeeded');
   await until(() => w.store().confirmation(requestId) === undefined);
   const duplicate = await pixoo.publish('bunny.state.device.' + display.id, {kind: 'state', ...draft()});
   await pixoo.publishMessage('bunny.state.device.' + display.id, duplicate);
@@ -745,10 +813,14 @@ for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true
   const messages = w.store().page('bunny', 0).messages;
   const original = messages.find(message => message.id === originalTask + '-result');
   assert.ok(original);
-  assert.ok(original.text.includes('The command was sent.'), 'the normal final reply remains visible');
-  assert.equal(messages.filter(message => message.follows === originalTask + '-result').length, resume ? 0 : 1);
-  assert.match(resume ? original.text : messages.find(message => message.follows !== undefined)?.text ?? '',
-    kind === 'pixoo' ? /Studio Display reports 32% brightness/ : /Studio Display reports power off/);
+  if (kind === 'pixoo') {
+    assert.ok(original.text.includes('The command was sent.'), 'the normal final reply remains visible');
+    assert.equal(messages.filter(message => message.follows === originalTask + '-result').length, resume ? 0 : 1);
+    assert.match(resume ? original.text : messages.find(message => message.follows !== undefined)?.text ?? '', /Studio Display reports 32% brightness/);
+  } else {
+    const evidence = messages.filter(message => message.id === originalTask + '-result' || message.follows === originalTask + '-result');
+    assert.match(evidence.map(message => message.text).join('\n'), /studio-display reports power off/);
+  }
   if (!resume) assert.ok(original.text.includes(kind === 'pixoo' ? 'Brightness command sent.' : 'Power command sent.'));
   assert.equal(requests.length, 1);
   assert.equal(provider.calls(), resume ? before + 1 : before);
@@ -946,8 +1018,7 @@ void test('maximum-on read distinguishes every core status and only counts down 
 void test('typed Wemo proposals dispatch a named pair and then only its referred plug', async context => {
   const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
   const provider = counted((_request, turn) => {
-    if (turn % 2 === 0) return reply('The tracked dispatcher returned its receipts.');
-    return wemoPower(turn === 1 ? ['id:table-plug', 'id:shelf-plug'] : ['id:shelf-plug'], turn === 1);
+    return turn === 1 ? wemoPower(['id:table-plug', 'id:shelf-plug'], true) : wemoPower(['id:shelf-plug'], false);
   });
   const commands: AssistantDispatch[] = [];
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: owner => owner === WEMO_OWNER ? plugs : [],
@@ -2348,9 +2419,9 @@ void test('saving a show binds the explicitly requested draft revision and immut
     }} as const;
   const owners = [['show-synthetic']];
   const request = 'Save draft Dawn test (show-synthetic) revision 1 as First version';
-  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, false, 1), true);
-  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, false, 2), false);
-  assert.equal(authorizesControl(proposal, request.replace('First version', 'Other version'), '', owners, '', [], false, false, 1), false);
+  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, 1), true);
+  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, 2), false);
+  assert.equal(authorizesControl(proposal, request.replace('First version', 'Other version'), '', owners, '', [], false, 1), false);
 });
 
 void test('a failed compound turn reports the saved artwork and exact rejected display action', async context => {

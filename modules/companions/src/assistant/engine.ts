@@ -15,7 +15,7 @@ import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type Mo
 import {codingUpdateMessageId, type CodingJob, type CodingJobRead, type CodingUpdateKind} from '../coding/store.js';
 import type {CodingBrief, CodingBriefRefusal, CodingCoordinator, HandOffAnswer} from '../coding/coordinator.js';
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
-import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
+import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, confirmationText, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, RESPONSES_GRAPH_VERSION, terminal, unresolved, type Appended, type Call, type MessageSource, type Question, type Stage, type StagedInput, type Task, type HostedHistoryMessage, type ContextSourceVersion, type HistoryCompaction} from './store.js';
 import {hasSavedDisclosureProof, savedDisclosureProof, saveFinalDisclosureProofs} from './disclosure-proof.js';
@@ -432,7 +432,8 @@ export class AssistantEngine {
     try {
       for (const task of this.store.unfinished()) {
         try {
-          if (this.#brightnessReceipt(task) === undefined && (!this.available() || !this.#canUseTaskProvider(task))) await this.#recoverUnavailable(task.id);
+          const wemoReceipt = this.store.confirmations(task.id).some(watch => watch.dispatchState !== undefined);
+          if (!wemoReceipt && this.#brightnessReceipt(task) === undefined && (!this.available() || !this.#canUseTaskProvider(task))) await this.#recoverUnavailable(task.id);
           else await this.#reconcile(task.id, true);
         } catch (error) {
           this.#unrecovered.add(task.conversationId);
@@ -533,7 +534,12 @@ export class AssistantEngine {
     }).then(() => {
       // A finished task asks the title model to check the conversation's title (Hub #2075), once its result is saved. The
       // queued message that started after it starts no check of its own.
-      if (finished !== undefined) this.#checkTitle(finished, {kind: 'task', result: finished.status as 'succeeded' | 'failed' | 'cancelled'});
+      if (finished !== undefined) {
+        for (const watch of this.store.confirmations(finished.id)) {
+          if (watch.dispatchState !== undefined) void this.#followConfirmation(watch);
+        }
+        this.#checkTitle(finished, {kind: 'task', result: finished.status as 'succeeded' | 'failed' | 'cancelled'});
+      }
       if (next !== undefined && !this.#closed && !this.context.signal.aborted) this.#launch(next);
     });
   }
@@ -584,12 +590,13 @@ export class AssistantEngine {
     return Math.max(0, Math.min(calls, time, units));
   }
   /** Records which result was visible when the reply committed, in the same transaction. */
-  #confirmationReply(taskId: string, messageId: string, reply: string, requestId?: string): string {
-    const watches = this.store.confirmations(taskId).filter(watch => requestId === undefined || watch.requestId === requestId);
+  #confirmationReply(taskId: string, messageId: string, reply: string, selected?: (watch: Confirmation) => boolean): string {
+    const all = this.store.confirmations(taskId);
+    const watches = selected === undefined ? all : all.filter(selected);
     const updates: string[] = [];
     for (const watch of watches) {
-      const update = watch.result ?? pending(watch);
-      if (watch.result !== undefined) {
+      const update = confirmationText(watch);
+      if (watch.result !== undefined || watch.dispatchState === 'reserved') {
         for (const earlier of [pending(watch), pending({...watch, sent: true})]) {
           if (earlier !== update) reply = reply.replace(earlier, update);
         }
@@ -601,7 +608,7 @@ export class AssistantEngine {
   }
 
   #followConfirmation(watch: Confirmation): Promise<void> {
-    if (this.#closed) return Promise.resolve();
+    if (this.#closed || watch.result !== undefined || watch.dispatchState === 'reserved') return Promise.resolve();
     const existing = this.#confirmationWatches.get(watch.requestId);
     if (existing !== undefined) return existing;
     const signal = this.#confirmationsStopped.signal;
@@ -618,7 +625,7 @@ export class AssistantEngine {
           const receipt = this.store.call(current.requestId);
           if (this.store.savedMessage(task.id, current.follows) !== undefined &&
               (receipt?.directBrightness !== true || this.#canReadBrightnessReceipt(task, receipt))) {
-            this.store.message(task, `${current.requestId}-confirmation`, 'assistant', evidence.result, this.context.clock.now(), current.follows);
+            this.store.message(task, `${current.requestId}-confirmation`, 'assistant', confirmationText(current, evidence.result), this.context.clock.now(), current.follows);
             this.store.touch(task.conversationId);
             this.#publish(add, {traceparent: current.traceparent});
           }
@@ -839,9 +846,13 @@ export class AssistantEngine {
         this.#returnSteers(task);
         // Stop ends the task and holds the conversation's queue until the owner resumes it (Hub #2030, owner decision 5).
         if (this.store.queue.count(task.conversationId) > 0) this.store.queue.setHold(task.conversationId, {reason: 'stop', code: null, detail: null});
-        for (const watch of this.store.confirmations(task.id)) {
-          if (watch.follows === undefined) this.store.dropConfirmation(watch.requestId);
+        const watches = this.store.confirmations(task.id);
+        for (const watch of watches) {
+          if (watch.dispatchState === undefined && watch.follows === undefined) this.store.dropConfirmation(watch.requestId);
         }
+        const messageId = `${task.id}-closing-${String(task.generation)}`;
+        const receipt = this.#confirmationReply(task.id, messageId, '', watch => watch.dispatchState !== undefined);
+        if (receipt !== '') this.store.message(task, messageId, 'assistant', receipt, this.context.clock.now());
         return undefined;
       }
       if (!['paused', 'uncertain', 'waiting'].includes(task.status) || (task.question !== null && task.question.answer === null)) fail('invalid-state');
@@ -851,7 +862,12 @@ export class AssistantEngine {
       const active = [...this.#active.values()].find(run => run.taskId === command.data.taskId);
       if (command.data.action === 'cancel' && !('error' in reply) && active !== undefined) active.controller.abort();
       // A cancelled task has finished, so the title model checks the conversation's title (Hub #2075).
-      if (cancelled !== undefined && !('error' in reply)) this.#checkTitle(cancelled, {kind: 'task', result: 'cancelled'});
+      if (cancelled !== undefined && !('error' in reply)) {
+        for (const watch of this.store.confirmations(cancelled.id)) {
+          if (watch.dispatchState !== undefined) void this.#followConfirmation(watch);
+        }
+        this.#checkTitle(cancelled, {kind: 'task', result: 'cancelled'});
+      }
       if (command.data.action === 'cancel' && !('error' in reply) && delegated && command.data.taskId !== undefined) {try {this.options.onCancelled?.(command.data.taskId);} catch { /* the worker's own report settles it */ }}
       if (spoken !== undefined && !('error' in reply) && command.data.taskId !== undefined) this.#speak(command.data.taskId, spoken.id, spoken.text, command, `${spoken.id}:${command.data.requestId}`);
       return reply;
@@ -1328,6 +1344,7 @@ export class AssistantEngine {
       if (terminal(task.status)) return;
       if (startup) this.#restoreCodingReceipts(task);
       const brightness = this.#brightnessReceipt(task);
+      const wemoReceipt = startup && this.store.confirmations(task.id).some(watch => watch.dispatchState !== undefined);
       if (unresolved(this.store.calls(taskId))) {task.status = 'uncertain'; task.code = 'uncertain-result';}
       else if (brightness !== undefined) {
         task.status = 'succeeded'; task.code = null;
@@ -1338,14 +1355,14 @@ export class AssistantEngine {
           this.store.dropConfirmation(brightness.id);
           result = BRIGHTNESS_DETAILS_UNAVAILABLE;
         } else {
-          const confirmation = this.#confirmationReply(task.id, messageId, '', brightness.id);
+          const confirmation = this.#confirmationReply(task.id, messageId, '', watch => watch.requestId === brightness.id);
           result = confirmation === '' ? 'The brightness request was accepted. Its effect is unconfirmed.' : confirmation;
         }
         this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
-      } else if (snapshot?.next.length === 0 && typeof values?.result === 'string') {
+      } else if (wemoReceipt || snapshot?.next.length === 0 && typeof values?.result === 'string') {
         task.status = 'succeeded'; task.code = null;
         const messageId = `${task.id}-result`;
-        result = this.#confirmationReply(task.id, messageId, values.result);
+        result = this.#confirmationReply(task.id, messageId, wemoReceipt ? '' : values?.result ?? '');
         this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
       } else if (snapshot?.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0) === true) {
         // The turn that decided to ask saved the question before the interrupt; an interrupt without one is not evidence of a saved question.
@@ -2272,7 +2289,7 @@ export class AssistantEngine {
         next = 'tool';
       } else if (bound.kind === 'clarify') {
         const questionId = `${state.taskId}-q${String(currentTask.questions + 1)}`;
-        const text = deviceClarification('plug', bound.targets, target => {clarificationDevices.add(target); return true;});
+        const text = deviceClarification('plug', bound.targets, () => true);
         question = {id: questionId, kind: 'clarification', text, answer: null, call: call.id, proposal: null};
       } else {
         direct = bound.control;
@@ -2433,7 +2450,8 @@ export class AssistantEngine {
     const inputs = task.transcript.filter(item => item.role === 'owner');
     const newest = inputs.at(-1);
     const requestId = newest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, newest) ?? fail('invalid-state');
-    const request = savedOwner(requestId, 'request') ?? {id: requestId, revision: 0, text: ''};
+    const saved = savedOwner(requestId, 'request');
+    const request = saved?.text === (newest?.text ?? task.prompt) && saved !== undefined ? saved : {id: requestId, revision: 0, text: ''};
     const question = this.#controlClarification(task);
     const answer = question?.answer == null ? undefined : savedOwner(`${question.id}-answer`, 'excerpt');
     const previous = inputs.at(-2);
@@ -2520,7 +2538,7 @@ export class AssistantEngine {
     if (targets === undefined && proposal.family === 'catalog-action') {
       targets = [[proposal.target]];
     }
-    if (!authorizesControl(proposal, instruction, answer, targets ?? [], preceding, knownTargets, knownArtwork, false, draftRevision, artRecipientsBound)) return undefined;
+    if (!authorizesControl(proposal, instruction, answer, targets ?? [], preceding, knownTargets, knownArtwork, draftRevision, artRecipientsBound)) return undefined;
     return {requestId: `${task.id}-step-${String(ordinal)}`, ownerMessageIds, proposal, text, call: call.id, ...(draftRevision === undefined ? {} : {draftRevision})};
   }
   /** Why a command call was refused instead of proposed. */
@@ -2680,6 +2698,17 @@ export class AssistantEngine {
         return refuse('refused', 'The requested device is outside the allowed scope.');
       }
     }
+    const group = direct?.additional === undefined ? undefined
+      : [proposal, ...direct.additional].flatMap((item, index) => {
+        if (item.family !== 'power-set' || !('owner' in item)) return [];
+        const target = confirmationTarget(item, '');
+        const requestId = direct.additional?.length === 0 ? id : `${id}-group-${String(index)}`;
+        return target === undefined ? [] : [{target, item, command: {requestId, ...item}}];
+      });
+    if (group !== undefined && (group.length !== 1 + (direct?.additional?.length ?? 0) || group.length > 2 ||
+        new Set(group.map(({command}) => command.target)).size !== group.length)) {
+      return refuse('refused', 'The Wemo target set is invalid. No power command was sent.');
+    }
     const settle = (answer: RequestResult, accepted: string): {text: string; units: number} => {
       // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
       if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');
@@ -2745,23 +2774,48 @@ export class AssistantEngine {
           const refused = this.#catalog().beforeDispatch(proposal, id, admitByMs, direct?.draftRevision);
           if (refused !== undefined) return {text: `refused: ${refused}`, units: 0};
         }
-        if (direct?.additional !== undefined) {
-          const commands = [proposal, ...direct.additional];
-          const receipts: string[] = [];
-          const confirmations: Confirmation[] = [];
-          for (const [index, item] of commands.entries()) {
-            if (item.family !== 'power-set' || !('owner' in item)) return {text: 'refused: invalid-state', units: 0};
+        if (group !== undefined) {
+          for (const {command, item} of group) {
+            const {requestId} = command;
+            const watch = await this.outbox.transaction(() => {
+              this.#fence(active);
+              const current = this.store.confirmation(requestId);
+              if (current?.dispatchState !== 'reserved') return undefined;
+              if (this.store.queue.steers(task.id).length > 0) {
+                this.store.saveConfirmation({...current, result: 'New owner input arrived. No power command was sent.'});
+                return undefined;
+              }
+              const sending = {...current, dispatchState: 'sending' as const};
+              this.store.saveConfirmation(sending);
+              return sending;
+            });
+            if (watch === undefined) continue;
             this.#fence(active);
-            const requestId = `${id}-group-${String(index)}`;
-            const code = direct.modelCallId === undefined ? undefined : this.#wemoTargetRefusal(this.#task(task.id), direct, item);
-            if (code !== undefined) {receipts.push(`${item.target}: refused: ${code}`); continue;}
-            const answer = await dispatch({requestId, ...item}, parent, signal);
-            const evidence = settle(answer, `accepted: ${item.target} as operation ${requestId}`);
-            receipts.push(evidence.text);
-            const target = confirmationTarget(item, '');
-            if (answer.status === 'accepted' && target !== undefined) confirmations.push(confirmationOf(target, requestId, parent));
+            let reply: RequestResult | {status: 'uncertain'} | undefined;
+            const before = direct?.modelCallId === undefined ? undefined : this.#wemoTargetRefusal(this.#task(task.id), direct, item);
+            if (this.store.queue.steers(task.id).length === 0 && before === undefined) {
+              try {reply = await dispatch(command, parent, signal);}
+              catch {reply = {status: 'uncertain'};}
+            }
+            const settled = await this.outbox.transaction(() => {
+              const current = this.store.confirmation(requestId);
+              if (current === undefined || current.follows !== undefined || current.result !== undefined) return current;
+              if (this.store.queue.steers(task.id).length > 0 && reply === undefined) {
+                current.result = 'New owner input arrived. No power command was sent.';
+              } else if (before !== undefined) current.result = `The power request was refused: ${before}.`;
+              else if (reply === undefined) current.result = 'No power command was sent.';
+              else if (reply.status === 'accepted') current.dispatchState = 'accepted';
+              else if (reply.status === 'rejected' && reply.error.error.code !== 'uncertain-result') {
+                current.result = reply.error.error.code === 'expired' ? 'The power request expired.'
+                  : `The power request was refused (${reply.error.error.code}).`;
+              }
+              this.store.saveConfirmation(current);
+              return current;
+            });
+            if (settled !== undefined) void this.#followConfirmation(settled);
           }
-          return {text: receipts.join('\n'), units: 0, confirmations};
+          const receipts = this.store.confirmations(task.id).filter(watch => watch.questionId === question.id);
+          return {text: receipts.map(watch => confirmationText(watch)).join('\n'), units: 0};
         }
         const answer = await dispatch(data.family === 'catalog-action' && data.command === 'nanoleaf-show-save'
           ? {...data, admitByMs} : data, parent, signal);
@@ -2773,6 +2827,10 @@ export class AssistantEngine {
         return {...settled, confirmations: [confirmationOf(target, id, parent)]};
       }, (current, call) => {
         call.action = action;
+        for (const {target, command} of group ?? []) {
+          this.store.saveConfirmation({...confirmationOf(target, command.requestId, {traceparent: call.traceparent}),
+            dispatchState: 'reserved'});
+        }
         if (scopedBrightness !== undefined) call.directBrightness = true;
         const targets = [proposal, ...(direct?.additional ?? [])];
         call.disclosures = hosted && artRequest ? [] : [...(hosted ? [] : [{source: 'operations', field: 'details', record: id} satisfies DisclosedField]), ...targets.flatMap<DisclosedField>(item => [
@@ -2822,7 +2880,8 @@ export class AssistantEngine {
       }
 
     }
-    const accepted = result.startsWith('accepted');
+    const accepted = group === undefined ? result.startsWith('accepted') :
+      group.some(({command}) => this.store.confirmation(command.requestId)?.dispatchState === 'accepted');
     const confirmation = this.store.confirmation(id);
     if (confirmation !== undefined) {
       const remaining = Math.min(IN_TURN_CONFIRMATION_MS, LIMITS.toolMs - (this.context.clock.now() - startedAtMs));
@@ -2861,6 +2920,8 @@ export class AssistantEngine {
     // and stays out of the check; the check runs beside the task and never delays it.
     if (handedOff) this.#checkTitle(task, {kind: 'hand-off'});
     else if (accepted && proposal.family !== 'coding-dispatch') this.#checkTitle(task, {kind: 'tool', tool: name});
+    if (group !== undefined) return this.store.queue.steers(task.id).length > 0
+      ? {step: state.step + 1, next: 'turn', result: ''} : {step: state.step + 1, next: 'end', result: ''};
     if (this.#taskProvider(task).name !== 'synthetic' && job !== undefined && this.store.queue.steers(task.id).length === 0) {
       return {step: state.step + 1, next: 'end', result: 'The coding job will post updates in this conversation.'};
     }

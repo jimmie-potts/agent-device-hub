@@ -413,7 +413,7 @@ export function namedControlTargets(proposal: BoundControl['proposal'], instruct
 
 /** The current owner supplies the action and setting. A clarification can resolve a detail in that request. */
 export function authorizesControl(proposal: BoundControl['proposal'], instruction: string, answer: string,
-  targets: readonly (readonly string[])[], precedingOwnerText: string, knownTargets: readonly (readonly string[])[] = [], knownArtwork = false, _explicitGroup = false, draftRevision?: number, artRecipientsBound = false): boolean {
+  targets: readonly (readonly string[])[], precedingOwnerText: string, knownTargets: readonly (readonly string[])[] = [], knownArtwork = false, draftRevision?: number, artRecipientsBound = false): boolean {
   if (exactCatalogRequest(proposal, instruction)) return true;
   const seek = proposal.family === 'catalog-action' && proposal.command === 'music-lighting-control' &&
     proposal.data.action === 'seek-show' && lightShowSeekRequest(instruction) !== undefined;

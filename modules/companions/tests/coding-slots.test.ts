@@ -1597,7 +1597,7 @@ void test('local clarification choices do not become prior supervisor disclosure
   const store = new AssistantStore(w.database());
   const id = w.task('bunny')?.taskId ?? assert.fail('saved task');
   await settle(() => store.task(id)?.question?.kind === 'clarification');
-  assert.deepEqual(store.task(id)?.clarificationDevices, ids);
+  for (const device of ids) assert.ok(store.task(id)?.question?.text.includes(device));
   assert.equal((await w.send('bunny', 'Instead, delegate a synthetic coding fixture.', true)).status, 'accepted');
   await settle(() => store.task(id)?.question?.kind === 'approval');
   await w.approved('bunny');
