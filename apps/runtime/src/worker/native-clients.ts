@@ -3,7 +3,7 @@ import {lstat} from 'node:fs/promises';
 import {createConnection, createServer, type Server, type Socket} from 'node:net';
 import {dirname, isAbsolute} from 'node:path';
 import {promisify} from 'node:util';
-import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import type {Reply} from '@jimmie-potts/sdk';
 import type {CodingNativeClient, CodingNativeClientKind} from '@jimmie-potts/event-contracts/v2/coding';
 import {checkStateDirectory, prepareStateDirectory} from '../state.js';
@@ -19,7 +19,7 @@ type PreparedLaunch = {intentId: string; client: CodingNativeClientKind; plan: N
 type Target = {
   session: string;
   clients: readonly CodingNativeClientKind[];
-  build: (client: CodingNativeClientKind) => Promise<NativeTerminalPlan | undefined>;
+  build: (client: CodingNativeClientKind) => Promise<NativeTerminalPlan | ErrorBody | undefined>;
   changed: (state: State) => Promise<void>;
   state: State;
   opening: boolean;
@@ -111,6 +111,7 @@ export class NativeClients {
     try {
       const plan = await target.build(client);
       if (plan === undefined || !fresh() || this.#targets.get(operationId) !== target || socket?.destroyed === true) return errorBody('unavailable');
+      if ('error' in plan) return plan;
       target.prepared = {intentId, client, plan, fresh, socket};
       return {status: 'accepted'};
     } finally {target.opening = false;}

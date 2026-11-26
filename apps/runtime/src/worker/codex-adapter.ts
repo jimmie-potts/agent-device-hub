@@ -11,6 +11,8 @@ import type {CodingLimit, CodingLimitWindow} from '@jimmie-potts/event-contracts
 import {checkStateDirectory, prepareStateDirectory} from '../state.js';
 import {CODEX_RESULT_SCHEMA, nativeSessionId, reportedModel, type AdapterEvidence, type AdapterHealth, type AdapterRun, type CodingAdapter} from './adapter.js';
 import {harnessEnvironment, parseVersion, UNKNOWN_READINESS, type HarnessReadiness} from './claude-stream.js';
+import {CODEX_TOOLCHAIN_REFUSAL, codexToolchainVariables, prepareCodexToolchain, prepareLinkedGitView, releaseCodexToolchain,
+  type CodexToolchain} from './codex-toolchain.js';
 
 const execute = promisify(execFile);
 // Validate independently of the provider's structured-output promise.
@@ -98,10 +100,12 @@ const limitOf = (windows: CodingLimitWindow[]): CodingLimit => {
 };
 
 /** The child sees only the worker's stable profile, even when its parent uses a different Codex home. */
-export function codexEnvironment(environment: NodeJS.ProcessEnv, home: string): Record<string, string> {
+export function codexEnvironment(environment: NodeJS.ProcessEnv, home: string, toolchain?: CodexToolchain): Record<string, string> {
   const allowed = harnessEnvironment(environment);
   delete allowed.CLAUDE_CODE_OAUTH_TOKEN;
-  return {...allowed, HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'};
+  return {...allowed, ...(toolchain === undefined ? {} : {...codexToolchainVariables(toolchain.bin),
+    PATH: [toolchain.gitView?.bin, toolchain.bin, allowed.PATH ?? '/usr/bin:/bin'].filter(path => path !== undefined).join(':')}),
+    HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'};
 }
 
 const inside = (parent: string, child: string): boolean => {
@@ -158,11 +162,17 @@ export async function workerHome(home: string, environment: NodeJS.ProcessEnv): 
 
 const startupStorage = (home: string) => ({sqlite: join(home, 'sqlite'), logs: join(home, 'log')});
 const configArg = (key: string, value: string | boolean): string[] => ['-c', `${key}=${JSON.stringify(value)}`];
-export function codexArguments(cwd: string, profile: string, home: string, protectedRoot?: string): string[] {
-  const filesystem = {':minimal': 'read', [cwd]: 'write', [join(cwd, '.git')]: 'read',
+export function codexArguments(cwd: string, profile: string, home: string, protectedRoot?: string, toolchain?: CodexToolchain): string[] {
+  const gitReads = toolchain?.gitView === undefined ? [] : [toolchain.gitView.bin, ...toolchain.gitView.readable];
+  const toolReads = toolchain === undefined ? {} : Object.fromEntries([toolchain.bin, ...toolchain.readable, ...gitReads].map(path => [path, 'read']));
+  const commonDeny = Object.fromEntries([toolchain?.gitView?.common, toolchain?.protectedGit]
+    .flatMap(path => path === undefined ? [] : [[path, 'deny']]));
+  const filesystem = {':minimal': 'read', ...commonDeny, ...toolReads, [cwd]: 'write', [join(cwd, '.git')]: 'read',
     [join(cwd, '.codex')]: 'read', [join(home, 'auth.json')]: 'deny', ...(protectedRoot === undefined ? {} : {[protectedRoot]: 'deny'})};
   const rules = Object.entries(filesystem).map(([path, access]) => `${JSON.stringify(path)}=${JSON.stringify(access)}`).join(',');
   const {sqlite, logs} = startupStorage(home);
+  const toolVariables = toolchain === undefined ? {} : codexToolchainVariables(toolchain.bin);
+  const shellKeys = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_*', 'TERM', 'TZ', ...Object.keys(toolVariables)];
   return [...configArg('sqlite_home', sqlite), ...configArg('log_dir', logs),
     ...configArg('forced_login_method', 'chatgpt'), ...configArg('cli_auth_credentials_store', 'file'), ...configArg('model_provider', 'openai'),
     ...configArg('chatgpt_base_url', CHATGPT_BACKEND),
@@ -175,16 +185,35 @@ export function codexArguments(cwd: string, profile: string, home: string, prote
     ...configArg('features.apps', false), ...configArg('features.plugins', false), ...configArg('features.shell_snapshot', false),
     '-c', 'mcp_servers={}', '-c', 'plugins={}', '-c', 'notify=[]',
     ...configArg('shell_environment_policy.inherit', 'core'),
-    '-c', 'shell_environment_policy.include_only=["PATH","HOME","USER","LOGNAME","SHELL","LANG","LC_*","TERM","TZ"]',
+    '-c', `shell_environment_policy.include_only=${JSON.stringify(shellKeys)}`,
+    ...Object.entries(toolVariables).flatMap(([name, value]) => configArg(`shell_environment_policy.set.${name}`, value)),
     '-c', `projects={${JSON.stringify(cwd)}={trust_level="untrusted"}}`,
     ...configArg('default_permissions', profile),
     '-c', `permissions.${profile}.filesystem={${rules}}`,
     ...configArg(`permissions.${profile}.network.enabled`, false)];
 }
 
+/** Prove that the same CLI sandbox can execute the selected tools before it receives a brief or releases a terminal plan. */
+export async function verifyCodexToolchain(executable: string, cwd: string, profile: string, home: string,
+  environment: NodeJS.ProcessEnv, protectedRoot?: string, signal?: AbortSignal, protectedGit?: string): Promise<CodexToolchain> {
+  const distribution = await prepareCodexToolchain(home);
+  const gitView = await prepareLinkedGitView(cwd, home, signal);
+  const toolchain = {...distribution, ...(gitView === undefined ? {} : {gitView}), ...(protectedGit === undefined ? {} : {protectedGit})};
+  try {
+    const git = gitView === undefined ? 'git --no-optional-locks -c core.fsmonitor=false' : 'git';
+    const probe = `node --version && npm --version && ${git} status --porcelain >/dev/null`;
+    await execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
+      '--', '/bin/sh', '-c', probe], {cwd: home, env: codexEnvironment(environment, home, toolchain), signal, timeout: 5000, maxBuffer: 8192});
+    return toolchain;
+  } catch (error) {
+    await releaseCodexToolchain(toolchain);
+    throw error;
+  }
+}
+
 /** Exercise the same native profile without a model call before relying on it for a successor. */
 export async function verifyCodexWriterBoundary(executable: string, cwd: string, home: string, protectedRoot: string, profile: string,
-  environment: Record<string, string>): Promise<boolean> {
+  environment: Record<string, string>, toolchain?: CodexToolchain): Promise<boolean> {
   if (process.platform !== 'darwin' || inside(cwd, protectedRoot) || inside(home, protectedRoot) || inside(protectedRoot, cwd) || inside(protectedRoot, home)) return false;
   let sourceProbe: string | undefined, targetProbe: string | undefined;
   try {
@@ -194,7 +223,7 @@ export async function verifyCodexWriterBoundary(executable: string, cwd: string,
     await writeFile(target, 'protected', {mode: 0o600});
     await symlink(target, alias);
     const script = 'umask 077; /usr/bin/touch "$1/ok" || exit 1; if /usr/bin/touch "$2/out" || /usr/bin/touch "$3" || /bin/ln "$4" "$1/hardlink" || /bin/mv "$2" "$2-moved"; then exit 1; fi';
-    await execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot),
+    await execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
       '--', '/bin/sh', '-c', script, 'bunny-boundary', sourceProbe, targetProbe, alias, target],
       {cwd: home, env: environment, timeout: 5000, maxBuffer: 4096});
     return true;
@@ -311,12 +340,12 @@ export const openCodex: CodexTransport = ({executable, args, cwd, env, signal, e
 
 /** No turn is submitted. The exact saved thread must accept the successor and the same provider boundary. */
 export async function verifyCodexNativeResume(executable: string, cwd: string, original: string, home: string, profile: string,
-  threadId: string, env: Record<string, string>): Promise<boolean> {
+  threadId: string, env: Record<string, string>, toolchain: CodexToolchain): Promise<boolean> {
   const signal = AbortSignal.timeout(5000);
   let wire: Wire | undefined;
   let checked: boolean;
   try {
-    wire = openCodex({executable, args: ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, original)],
+    wire = openCodex({executable, args: ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, original, toolchain)],
       cwd: home, env, signal, event: () => {}, closed: () => {}});
     await initialize(wire);
     if (!await isolatedSettings(wire, cwd, home) ||
@@ -359,7 +388,7 @@ async function isolatedSettings(wire: Wire, cwd: string, home: string): Promise<
 }
 
 export function codexAdapter(configuration: CodexConfiguration, options: {
-  environment?: NodeJS.ProcessEnv; transport?: CodexTransport; version?: () => Promise<string | null>;
+  environment?: NodeJS.ProcessEnv; transport?: CodexTransport; version?: () => Promise<string | null>; toolchain?: typeof verifyCodexToolchain;
 }): CodingAdapter {
   const environment = options.environment ?? process.env;
   const transport = options.transport ?? openCodex;
@@ -391,10 +420,10 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
     } catch {return undefined;}
     finally {if (timer !== undefined) clearTimeout(timer);}
   };
-  const prepare = (home: string, cwd: string, signal: AbortSignal, protectedRoot?: string) => {
-    const profile = `bunny-worker-${randomUUID()}`;
-    const args = ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, protectedRoot)];
-    return {command: {executable: configuration.executable, cwd: home, env: codexEnvironment(environment, home), signal, args}, profile};
+  const prepare = (home: string, cwd: string, signal: AbortSignal, profile = `bunny-worker-${randomUUID()}`,
+    protectedRoot?: string, toolchain?: CodexToolchain) => {
+    const args = ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, protectedRoot, toolchain)];
+    return {executable: configuration.executable, cwd: home, env: codexEnvironment(environment, home, toolchain), signal, args};
   };
   return {
     id: 'codex', capabilities: {steering: 'live', resume: 'unsupported', review: true},
@@ -412,7 +441,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       let wire: Wire | undefined;
       let unauthorized = false;
       try {
-        const {command} = prepare(home, home, signal);
+        const command = prepare(home, home, signal);
         wire = transport({...command, event: (method, data) => {if (observeAccount(method, data)) unauthorized = true;}, closed: () => {}});
         await initialize(wire);
         if (!await isolatedSettings(wire, home, home) || unauthorized) return health;
@@ -449,7 +478,13 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const invalidate = () => {unauthorized = true; revoke(); settle();};
       const protectedRoot = input.continuationRoot === undefined ? undefined : await realpath(input.continuationRoot).catch(() => undefined);
       const separated = protectedRoot !== undefined && !inside(home, protectedRoot) && !inside(protectedRoot, home);
-      const {command, profile} = prepare(home, cwd, signal, separated ? protectedRoot : undefined);
+      const protection = separated ? protectedRoot : undefined;
+      const profile = `bunny-worker-${randomUUID()}`;
+      let toolchain: CodexToolchain;
+      try {toolchain = await (options.toolchain ?? verifyCodexToolchain)(configuration.executable, cwd, profile, home, environment, protection, signal);}
+      catch {return signal.aborted ? {reason: 'cancelled'} : {reason: 'refused', summary: CODEX_TOOLCHAIN_REFUSAL};}
+      if (signal.aborted) {await releaseCodexToolchain(toolchain); return {reason: 'cancelled'};}
+      const command = prepare(home, cwd, signal, profile, protection, toolchain);
       const wire = transport({...command, event: (method, value) => {
         const data = record(value);
         if (observeAccount(method, data)) {invalidate(); return;}
@@ -575,7 +610,8 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const stopped = await wire.writerStopped?.();
       if (stopped === true) {
         const confined = dispatched && evidence.uncertain !== true && separated && protectedRoot !== undefined &&
-          options.transport === undefined && await verifyCodexWriterBoundary(configuration.executable, cwd, home, protectedRoot, profile, command.env);
+          options.transport === undefined && await verifyCodexWriterBoundary(configuration.executable, cwd, home, protectedRoot, profile, command.env, toolchain);
+        await releaseCodexToolchain(toolchain);
         return {...evidence, writerStopped: true, ...(confined && protectedRoot !== undefined ? {writerFence: {root: protectedRoot, home}} : {})};
       }
       if (dispatched && evidence.reason === 'cancelled') return {...evidence, reason: 'lost', uncertain: true};

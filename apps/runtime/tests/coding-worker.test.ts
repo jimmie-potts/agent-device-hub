@@ -758,8 +758,13 @@ for (const committed of [false, true]) {
   });
 }
 
-for (const {alias, conflictingRoute} of [{alias: false, conflictingRoute: false}, {alias: true, conflictingRoute: false}, {alias: false, conflictingRoute: true}]) void test(
-  `a saved Codex launch verifies the Mac checkout and subscription route (alias: ${String(alias)}, conflicting route: ${String(conflictingRoute)})`,
+for (const {alias, conflictingRoute, missingToolchain} of [
+  {alias: false, conflictingRoute: false, missingToolchain: false},
+  {alias: true, conflictingRoute: false, missingToolchain: false},
+  {alias: false, conflictingRoute: true, missingToolchain: false},
+  {alias: false, conflictingRoute: false, missingToolchain: true},
+]) void test(
+  `a saved Codex launch verifies the Mac checkout, subscription route and toolchain (alias: ${String(alias)}, conflicting route: ${String(conflictingRoute)}, missing tools: ${String(missingToolchain)})`,
   {skip: process.platform !== 'darwin', timeout: 30_000}, async t => {
     const standalone = '/opt/homebrew/bin/codex';
     if (await realpath(standalone).catch(() => undefined) === undefined) {t.skip('standalone Codex unavailable'); return;}
@@ -777,6 +782,7 @@ for (const {alias, conflictingRoute} of [{alias: false, conflictingRoute: false}
       features: {hooks: false, apps: false, plugins: false, shell_snapshot: false}};
     await writeFile(executable, `#!${process.execPath}
 const args=process.argv.slice(2);
+if(args[0]==='sandbox' && ${String(missingToolchain)} && args.some(arg=>arg.includes('npm --version'))) process.exit(7);
 if(args[0]==='sandbox') process.exit(require('node:child_process').spawnSync(${JSON.stringify(standalone)},args,{stdio:'inherit'}).status ?? 8);
 if(args[0]==='resume') {
   console.log(JSON.stringify({cwd:process.cwd(), threadId:args.at(-1), selectedCwd:args[args.indexOf('--cd')+1], home:process.env.CODEX_HOME,
@@ -840,6 +846,12 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     assert.equal((await replies.next()).value, 'waiting');
     const prepare = command({action: 'prepare-native-client', client: 'terminal', requestId: 'prepare-native', operationId: 'native'});
     const prepared = await Promise.resolve(edge.respond({...prepare, expiresat: new Date(Date.now() + 25000).toISOString()}));
+    if (missingToolchain) {
+      assert.ok('error' in prepared);
+      assert.equal(prepared.error.code, 'unavailable');
+      assert.match(prepared.error.detail ?? '', /Node 24 distribution with npm and Apple Command Line Tools Git/u);
+      return;
+    }
     if (conflictingRoute) {
       assert.deepEqual(prepared, errorBody('unavailable'));
       return;
@@ -853,5 +865,9 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     const {stdout} = await promisify(execFile)(plan.executable, plan.args, {cwd: plan.cwd, env: plan.env, timeout: 5000});
     assert.deepEqual(JSON.parse(stdout), {cwd: plan.cwd, threadId: sessionId, selectedCwd: plan.cwd, home,
       modelRoute: ['openai_base_url="https://chatgpt.com/backend-api/codex"']});
+    assert.equal(plan.env.PATH?.split(':')[0]?.startsWith(join(home, 'toolchain') + '/'), true);
+    assert.equal(plan.env.GIT_OPTIONAL_LOCKS, '0');
+    assert.equal(plan.env.npm_config_offline, 'true');
+    assert.ok(plan.args.some(arg => arg.includes(`${JSON.stringify(join(canonical, '.git'))}="deny"`)));
     assert.equal(edge.progress.some(row => row.operationId === 'sibling' && row.status !== 'started'), false);
   });

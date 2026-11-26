@@ -13,7 +13,7 @@ import {StringDecoder} from 'node:string_decoder';
 import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
-import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingNativeClient, type CodingNativeClientKind, type CodingProgress, type CodingProgressReason,
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
@@ -21,7 +21,8 @@ import {readPrivateFile} from '../state.js';
 import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
 import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type AdapterSteer, type CodingAdapter} from './adapter.js';
-import {codexAdapter, codexArguments, codexEnvironment, verifyCodexNativeResume, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
+import {codexAdapter, codexArguments, codexEnvironment, verifyCodexNativeResume, verifyCodexToolchain, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
+import {CODEX_TOOLCHAIN_REFUSAL} from './codex-toolchain.js';
 import {NATIVE_UUID, NativeClients, nativeTerminal, type NativeTerminalPlan} from './native-clients.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX, verifyClaudeWriterBoundary} from './claude-writer.js';
 
@@ -877,7 +878,7 @@ export class CodingWorker {
     const original = await identity(worktree).catch(() => undefined);
     if (original === undefined || endpoint !== this.#endpoint ||
       (adapter.id === 'codex' && (proof === undefined || !sameCheckout(original, proof.worktree.identity)))) return;
-    const build = async (client: CodingNativeClientKind): Promise<NativeTerminalPlan | undefined> => {
+    const build = async (client: CodingNativeClientKind): Promise<NativeTerminalPlan | ErrorBody | undefined> => {
       const current = await identity(worktree).catch(() => undefined);
       if (current === undefined || !sameCheckout(original, current) || endpoint !== this.#endpoint) return undefined;
       const readiness = await adapter.readiness();
@@ -892,14 +893,21 @@ export class CodingWorker {
         const successor = join(proof.protectedRoot.path, `bunny-native-${randomUUID()}`);
         const target = await copyWorktree(proof.worktree, successor, proof.protectedRoot, home, proof.base, git);
         if (target === undefined) return undefined;
-        const cwd = target.identity.root, profile = `bunny-native-${randomUUID()}`, env = codexEnvironment(process.env, home);
+        const cwd = target.identity.root, profile = `bunny-native-${randomUUID()}`;
+        const toolchain = await verifyCodexToolchain(codex.executable, cwd, profile, home, process.env, original.root, undefined, proof.worktree.identity.common)
+          .catch(() => undefined);
+        if (toolchain === undefined) {
+          await rm(cwd, {recursive: true, force: true}).catch(() => {});
+          return errorBody('unavailable', {detail: CODEX_TOOLCHAIN_REFUSAL});
+        }
+        const env = codexEnvironment(process.env, home, toolchain);
         if (!await verifyClaudeWriterBoundary(cwd, original.root) ||
-          !await verifyCodexWriterBoundary(codex.executable, cwd, home, original.root, profile, env) ||
-          !await verifyCodexNativeResume(codex.executable, cwd, original.root, home, profile, sessionId, env)) {
+          !await verifyCodexWriterBoundary(codex.executable, cwd, home, original.root, profile, env, toolchain) ||
+          !await verifyCodexNativeResume(codex.executable, cwd, original.root, home, profile, sessionId, env, toolchain)) {
           await rm(cwd, {recursive: true, force: true}).catch(() => {});
           return undefined;
         }
-        const args = ['resume', '--no-daemon', '--cd', cwd, ...codexArguments(cwd, profile, home, original.root), sessionId];
+        const args = ['resume', '--no-daemon', '--cd', cwd, ...codexArguments(cwd, profile, home, original.root, toolchain), sessionId];
         return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(original.root, codex.executable, args, [proof.worktree.identity.common])};
       }
       const {claude} = this.configuration;

@@ -352,6 +352,23 @@ Fresh app-server threads and saved terminal launches pin the built-in OpenAI
 provider to the ChatGPT subscription model endpoint at
 `https://chatgpt.com/backend-api/codex`. The worker checks that effective setting
 alongside the ChatGPT backend used for the account.
+For repository checks the worker selects the Node 24 distribution that runs it,
+that distribution's npm, and Git from Apple Command Line Tools. It prepares a
+private directory with links to those three tools and checks that each runs in
+the same worktree sandbox before sending a brief or releasing a saved terminal
+plan. The sandbox reads only the selected tool paths, the npm package and the
+required macOS OpenSSL config for this toolchain. Git uses no user or system
+configuration and skips optional index locks. npm runs offline with its update
+notifier and user and global configuration disabled.
+For a linked worktree, `git status` reads the actual files and index.
+`git diff` shows unstaged edits against the detached HEAD when the index has
+no staged changes. If an outside process stages a change, status still reports
+it and diff refuses. The sandbox denies shared Git metadata except the exact
+read-only index and HEAD files. A private shallow copy supplies the detached
+HEAD's objects. The worker removes this copy after confirming the Codex writer
+has stopped. A later attempt uses a new copy. A saved terminal successor uses
+its own read-only Git directory, with the earlier checkout and its common Git
+directory denied.
 The process can open its local stores during startup. The worker checks the
 effective configuration before reading the account or opening a thread.
 A reported path or route override, enabled telemetry, configured MCP servers
