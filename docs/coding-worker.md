@@ -514,6 +514,47 @@ qualified evidence for that outer fence, so Jobs offers no terminal or Desktop
 launch for PC attempts. Keep the native attempt unopened until that route has its
 own qualification.
 
+### Try the signed-out preflight before enrollment
+
+From the built candidate source on the PC, set `CODEX_EXECUTABLE` to the
+verified standalone Linux binary. This example uses a fresh local repository,
+an empty profile and an example HTTPS origin. It leaves the token path absent.
+
+```sh
+(
+  set -eu
+  umask 077
+  probe="$(mktemp -d "$HOME/bunny-wsl-probe.XXXXXXXX")"
+  trap 'rm -rf -- "$probe"' EXIT
+  mkdir -m 700 "$probe/profile" "$probe/repository"
+  git -C "$probe/repository" init --quiet --initial-branch=main --template=
+  git -C "$probe/repository" -c core.hooksPath=/dev/null \
+    -c user.name='Synthetic fixture' -c user.email='fixture@example.invalid' \
+    commit --quiet --allow-empty -m 'Signed-out preflight fixture'
+  git -C "$probe/repository" update-ref refs/remotes/origin/main HEAD
+  node - "$probe" "$CODEX_EXECUTABLE" <<'NODE'
+const {writeFileSync, realpathSync} = require('node:fs');
+const {join} = require('node:path');
+const [, , root, executable] = process.argv;
+const config = {
+  schema: 'coding-worker/1.3',
+  source: 'bunny/parts/coding-worker-pc',
+  edge: 'https://example.invalid',
+  tokenFile: join(root, 'unused-token'),
+  repositories: [{name: 'fixture', path: join(root, 'repository')}],
+  toolchains: ['node24', 'wsl2'],
+  codex: {executable: realpathSync(executable), home: join(root, 'profile')},
+};
+writeFileSync(join(root, 'worker.json'), JSON.stringify(config), {mode: 0o600, flag: 'wx'});
+NODE
+  env -u CODEX_HOME node apps/runtime/bin/coding-worker.mjs verify-wsl "$probe/worker.json"
+)
+```
+
+Share the success line or fixed refusal and the tool versions. Keep host
+paths and account information private. The signed-out result qualifies the
+local sandbox and toolchain only.
+
 ## Install once
 
 Upgrade the core before the worker. A worker from Hub #1743 on declares with
