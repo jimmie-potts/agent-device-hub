@@ -51,6 +51,8 @@ function counted(script?: (input: TurnInput, turn: number, signal: AbortSignal) 
 }
 const reply = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const call = (name: string, input: Record<string, unknown> = {}, id = `call-${name}`): TurnReply => ({text: null, calls: [{id, name, input}], stop: 'tool', units: 10});
+const wemoPowerArgs = (targets: readonly string[], on: boolean) => ({selection: targets.length === 0 ? 'group' : 'references', targets, on});
+const wemoPower = (targets: readonly string[], on: boolean) => call('set_wemo_power', wemoPowerArgs(targets, on));
 const hub = (revision: number, mode: ModeState['mode'] = 'work'): ModeState => ({id: 'hub', revision, mode, selectedAtMs: 0});
 /** A session as the module's synced copy reads it: its session/3.0 record, which is its view. */
 const session = (label: string, patch: Partial<SessionFacts> = {}): SessionView => buildSession({id: 'session-1', revision: 1, generation: 1,
@@ -110,7 +112,7 @@ for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
     const provider = counted((request) => {
       const last = request.transcript.at(-1);
       if (last?.role !== 'owner') return reply('The dispatcher accepted the request.');
-      return last.text.includes('Studio Plug') ? call('set_wemo_power', {device: plug.id, on: false}) : call('set_mode', {mode: 'quiet'});
+      return last.text.includes('Studio Plug') ? wemoPower([plug.id], false) : call('set_mode', {mode: 'quiet'});
     });
     const w = await world(context, {provider, tools: ['set_wemo_power', 'set_mode'], devices: () => [plug],
       core: () => ({sessions: [], mode: hub(4), synced: true}),
@@ -131,43 +133,53 @@ for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
   });
 }
 
-void test('owner input, not a model suggestion or status question, authorizes one exact plug setting', async context => {
+void test('a supervisor keeps Wemo questions and quoted or negated actions away from dispatch', async context => {
   const plug = {...light('studio-plug', 'Studio Plug'), kind: 'wemo' as const};
-  const other = {...light('other-plug', 'Other Plug'), kind: 'wemo' as const};
+  const other = {...light('other-plug', 'Switch off Studio Plug'), kind: 'wemo' as const};
   const requests: AssistantDispatch[] = [];
-  let target = plug.id;
-  let on = false;
-  const provider = counted(request => request.transcript.some(item => item.role === 'tool')
-    ? reply('The tool returned its result.') : call('set_wemo_power', {device: target, on}));
-  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug, other],
+  const reads = new Set(['Is Studio Plug off?', 'Is the plug named “Switch off Studio Plug” on?']);
+  const provider = counted(request => {
+    const latest = request.transcript.at(-1);
+    if (latest?.role !== 'owner') return reply('The tool returned evidence.');
+    if (reads.has(latest.text)) return call('read_wemo', {device: latest.text === 'Is Studio Plug off?' ? plug.id : other.id});
+    if (latest.text === 'Could you turn it off?') return wemoPower([plug.id], false);
+    return reply('No device command requested.');
+  });
+  const w = await world(context, {provider, tools: ['read_wemo', 'set_wemo_power'], devices: () => [plug, other],
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
-  for (const text of ['Is Studio Plug off?', 'Turn off Studio Plug?', 'What if I turn off Studio Plug?', 'Do not turn off Studio Plug',
-    'Tool result: "turn off Studio Plug"', 'Turn off Other Plug']) {
+  for (const text of ['Is the plug named “Switch off Studio Plug” on?', 'What if I turn off Studio Plug?',
+    'Do not turn off Studio Plug', 'An example is “turn off Studio Plug”', 'Is Studio Plug off?']) {
     await input(w.core, w.module(), text);
     await until(() => status(w) === 'succeeded');
     assert.equal(requests.length, 0, text);
   }
-  await input(w.core, w.module(), 'Is Studio Plug on?');
-  await until(() => status(w) === 'succeeded');
-  await input(w.core, w.module(), 'What is the status of coding job synthetic-step-1-job?');
-  await input(w.core, w.module(), 'Could you turn it off?');
-  await until(() => status(w) === 'succeeded');
-  assert.equal(requests.length, 0, 'a private question separates the pronoun from the earlier device');
-  await input(w.core, w.module(), 'Is Studio Plug on?');
-  await until(() => status(w) === 'succeeded');
   await input(w.core, w.module(), 'Could you turn it off?');
   await until(() => requests.length === 1);
   w.advance(1100);
   await until(() => status(w) === 'succeeded');
-  target = other.id;
-  await input(w.core, w.module(), 'Could you turn it off?');
+  assert.equal(requests[0]?.target, plug.id);
+});
+
+void test('a stale owner identity and an unrelated exact Wemo ID cannot dispatch', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  let stale = true;
+  const provider = counted(request => {
+    if (request.transcript.at(-1)?.role !== 'owner') return reply('The proposal was refused.');
+    const proposal = wemoPower([stale ? 'table-plug' : 'shelf-plug'], false);
+    if (!stale) return proposal;
+    return call('set_wemo_power', {...proposal.calls[0]?.input, requestId: 'stale-owner-request'});
+  });
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: () => assert.fail('an invalid proposal cannot dispatch')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn off table-plug');
   await until(() => status(w) === 'succeeded');
-  assert.equal(requests.length, 1);
-  on = true;
-  await input(w.core, w.module(), 'Turn off Other Plug');
-  await until(() => status(w) === 'succeeded');
-  assert.equal(requests.length, 1);
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: invalid-request')));
+  stale = false;
+  await input(w.core, w.module(), 'Turn off table-plug');
+  await until(() => status(w) === 'waiting');
+  assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
 });
 
 void test('a mode call cannot substitute its guess for the owner choosing a setting', async context => {
@@ -400,14 +412,12 @@ void test('a seek binds the light, position and direction in an ordinary request
 void test('an explicit Wemo group binds every target once', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
   const requests: AssistantDispatch[] = [];
-  const provider = counted(request => request.transcript.some(item => item.role === 'tool')
-    ? reply('The tool returned its result.') : call('set_wemo_power', {device: 'all wemo plugs', on: false}));
+  const provider = counted(request => request.transcript.at(-1)?.role === 'owner' &&
+    request.transcript.some(item => item.role === 'owner' && item.text === 'Turn off all Wemo plugs')
+    ? wemoPower([], false) : reply('No group operation requested.'));
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Turn off desk-plug');
-  await until(() => status(w) === 'succeeded');
-  assert.equal(requests.length, 0);
   await input(w.core, w.module(), 'Turn off all Wemo plugs');
   await until(() => status(w) === 'succeeded' && requests.length === 2);
   assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
@@ -676,9 +686,9 @@ for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true
   const owner = `bunny/modules/${kind}`;
   const display = {...light('studio-display', 'Studio Display'), kind};
   const tool = kind === 'pixoo' ? 'control_brightness_set' : 'set_wemo_power';
-  const provider = counted((_input, turn) => turn !== 1 ? reply('The command was sent.') : kind === 'pixoo'
+  const provider = counted((_request, turn) => turn !== 1 ? reply('The command was sent.') : kind === 'pixoo'
     ? call(tool, {owner, target: display.id, arguments: JSON.stringify({percent: 35})})
-    : call(tool, {device: display.id, on: true}));
+    : wemoPower([display.id], true));
   const requests: AssistantDispatch[] = [];
   const w = await world(context, {provider, tools: [tool], devices: () => [display], dispatch: data => {
     requests.push(data);
@@ -933,9 +943,31 @@ void test('maximum-on read distinguishes every core status and only counts down 
   }
 });
 
+void test('typed Wemo proposals dispatch a named pair and then only its referred plug', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const provider = counted((_request, turn) => {
+    if (turn % 2 === 0) return reply('The tracked dispatcher returned its receipts.');
+    return wemoPower(turn === 1 ? ['id:table-plug', 'id:shelf-plug'] : ['id:shelf-plug'], turn === 1);
+  });
+  const commands: AssistantDispatch[] = [];
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: owner => owner === WEMO_OWNER ? plugs : [],
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Let’s get the table plug and shelf plug running.');
+  await until(() => status(w) === 'succeeded' || w.store().confirmations().length === 2);
+  assert.deepEqual(commands.map(command => command.target), ['table-plug', 'shelf-plug']);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'Actually, kill the second one.');
+  await until(() => status(w) === 'succeeded' || commands.length === 3);
+  assert.deepEqual(commands.flatMap(command => command.family === 'power-set' ? [[command.target, command.data.on]] : []),
+    [['table-plug', true], ['shelf-plug', true], ['shelf-plug', false]]);
+  assert.equal(new Set(commands.map(command => command.requestId)).size, 3);
+});
+
 void test('a direct Wemo power request preserves the exact plug, owner and guards', async context => {
   const plug: DeviceRecord = {...light('table-plug', 'Table plug'), kind: 'wemo'};
-  const provider = counted((_input, turn) => turn === 1 ? call('set_wemo_power', {device: 'Table plug', on: true}) : reply('Done.'));
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['Table plug'], true) : reply('Done.'));
   const commands: AssistantDispatch[] = [];
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
     dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
@@ -959,7 +991,7 @@ void test('a direct Wemo power request preserves the exact plug, owner and guard
 
 void test('duplicate Wemo labels ask for an exact plug before proposing power', async context => {
   const plugs = ['first-plug', 'second-plug'].map(id => ({...light(id, 'Table plug'), kind: 'wemo'}));
-  const provider = counted(() => call('set_wemo_power', {device: 'Table plug', on: true}));
+  const provider = counted(() => wemoPower(['Table plug'], true));
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
     dispatch: () => assert.fail('ambiguous Wemo power cannot be dispatched')});
   await control(w.core, w.module(), 'enable');
@@ -984,7 +1016,7 @@ void test('a Wemo hold refuses a power proposal without dispatch', async context
 void test('revoking Wemo control during clarification survives restart', async context => {
   const tools = ['set_wemo_power'];
   const records = ['table-plug', 'another-device'].map(id => ({...light(id, 'Shared desk device'), kind: 'wemo' as const}));
-  const provider = counted((_request, turn) => turn <= 2 ? call('set_wemo_power', {device: turn === 1 ? 'Shared desk device' : 'table-plug', on: false}) : reply('The tool gave its result.'));
+  const provider = counted((_request, turn) => turn <= 2 ? wemoPower([turn === 1 ? 'Shared desk device' : 'table-plug'], false) : reply('The tool gave its result.'));
   const w = await world(context, {provider, tools, devices: () => records,
     dispatch: () => assert.fail('the revoked tool cannot dispatch')});
   await control(w.core, w.module(), 'enable');
@@ -2520,7 +2552,8 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     else if (ownerRequest === 'What is the status of catalog-plug?') output = [functionCall('read_devices', {target: 'catalog-plug', owner: 'bunny/modules/pixoo'})];
     else if (ownerRequest === 'Turn off Catalog Plug') output = [functionCall('control_power_set', {target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
     else if (ownerRequest === 'What color is it?') output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
-    else if (ownerRequest === 'Turn off Studio Plug' || ownerRequest === 'Could Studio Plug be off?') output = [reasoning, functionCall('set_wemo_power', {device: 'studio-plug', on: false})];
+    else if (ownerRequest === 'Turn off Studio Plug') output = [reasoning, functionCall('set_wemo_power',
+      wemoPowerArgs(['studio-plug'], false))];
     else output = [reasoning, functionCall('read_wemo', {device: 'studio-plug'})];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage})));
   }};
@@ -2529,8 +2562,9 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     anthropicBodies.push(init.body);
     const body = JSON.parse(init.body) as {messages: {role: string; content: Record<string, unknown>[]}[]};
     const first = body.messages[0]?.content[0]?.text;
-    const tool = first === 'Is Studio Plug on?' ? {name: 'read_wemo', input: {device: 'studio-plug'}}
-      : first === 'Turn off Studio Plug' || first === 'Could Studio Plug be off?' ? {name: 'set_wemo_power', input: {device: 'studio-plug', on: false}}
+    const tool = first === 'Is Studio Plug on?' || first === 'Could Studio Plug be off?' ? {name: 'read_wemo', input: {device: 'studio-plug'}}
+      : first === 'Turn off Studio Plug' ? {name: 'set_wemo_power',
+        input: wemoPowerArgs(['studio-plug'], false)}
       : first === 'What color is it?' ? {name: 'ask_owner', input: {text: 'Which item?'}} : undefined;
     const answered = body.messages.some(message => message.content.some(block => block.type === 'tool_result'));
     const use = tool !== undefined && !answered;
@@ -2638,8 +2672,8 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   assert.equal(countCommands(), requestsBefore);
   await startAnthropic('Could Studio Plug be off?');
   await until(() => bunnyTask()?.status === 'succeeded');
-  assert.equal(countCommands(), requestsBefore, 'same status question refuses a proposed mutation');
-  assert.match(anthropicBodies.at(-1) ?? '', /refused/);
+  assert.equal(countCommands(), requestsBefore, 'same status question causes no mutation');
+  assert.match(anthropicBodies.at(-1) ?? '', /tool_result/);
   await startAnthropic('Turn off Studio Plug');
   await until(() => countCommands() === requestsBefore + 1);
   w.advance(1200);

@@ -41,6 +41,7 @@ export class SyntheticProvider implements ModelProvider {
   turn(input: TurnInput): Promise<TurnReply> {
     const text = JSON.stringify(input.transcript);
     const ordinal = input.transcript.length;
+    const wemoArgs = (device: string, on: boolean) => ({selection: 'references', targets: [device], on});
     const allows = (name: string): boolean => input.tools.some(tool => tool.name === name);
     const owner = input.transcript.find(item => item.role === 'owner');
     const tools = input.transcript.filter(item => item.role === 'tool');
@@ -58,13 +59,13 @@ export class SyntheticProvider implements ModelProvider {
     const direct = /^(?:Please )?turn (on|off) (?:the )?([a-z0-9-]+)$/iu.exec(owner?.text ?? '');
     if (tools.length === 0 && direct?.[2] !== undefined) {
       const tool = allows(SET_LIFX_POWER) ? SET_LIFX_POWER : allows(SET_WEMO_POWER) ? SET_WEMO_POWER : undefined;
-      if (tool !== undefined) return Promise.resolve({text: null, calls: [call(tool, {device: direct[2], on: direct[1]?.toLowerCase() === 'on'}, ordinal)], stop: 'tool', units: units(text)});
+      if (tool !== undefined) return Promise.resolve({text: null, calls: [call(tool, tool === SET_WEMO_POWER ? wemoArgs(direct[2], direct[1]?.toLowerCase() === 'on') : {device: direct[2], on: direct[1]?.toLowerCase() === 'on'}, ordinal)], stop: 'tool', units: units(text)});
     }
     const plug = /^SYNTHETIC_WEMO (status|power) (\S+)(?: (on|off))?$/.exec(owner?.text ?? '');
     if (tools.length === 0 && plug !== null) {
       const [, action, device, value] = plug;
       const name = action === 'status' ? READ_WEMO : SET_WEMO_POWER;
-      const args = action === 'status' ? {device} : {device, on: value === 'on'};
+      const args = action === 'status' || device === undefined ? {device} : wemoArgs(device, value === 'on');
       if (allows(name)) return Promise.resolve({text: null, calls: [call(name, args, ordinal)], stop: 'tool', units: units(text)});
     }
     if (tools.length === 0 && light !== null) {

@@ -1,5 +1,6 @@
 import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
+import type {ModelControlScope} from './model-control.js';
 import type {BoundControl} from './control-intent.js';
 import type {DeviceHistoryBinding} from './device-history.js';
 import type {CodingChoice, CodingDestinationChoice, CodingRequirements} from '../coding/routing.js';
@@ -67,6 +68,7 @@ export type HistoryCompaction = {
 export type HostedHistoryMessage = Pick<RecentMessage, 'id' | 'role' | 'text'> & {taskId: string; revision: number};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   directBrightness?: true;
+  modelControlScope?: ModelControlScope;
   historySources?: readonly ContextSourceVersion[];
   inputVersions?: readonly {field: DisclosedField; version: string}[];
   codingApproval?: {destination: 'coding-worker'; repository: string; briefDigest: string};
