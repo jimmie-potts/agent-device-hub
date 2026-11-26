@@ -12,6 +12,12 @@ const ids: Readonly<Record<CatalogSelectorKind, RegExp>> = {
   scene: /^scene-[a-f0-9]{64}$/u,
 };
 
+export function catalogSelectorId(kind: CatalogSelectorKind, value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const id = literalDeviceId(value) ?? value;
+  return ids[kind].test(id) ? id : undefined;
+}
+
 const tokens = (text: string): string[] => text.split(/[^A-Za-z0-9_.-]+/u).map(word => word.replace(/[.]$/u, ''));
 
 /** The model supplies a selector. Explicit current IDs take precedence over names and over earlier facts. */
@@ -31,5 +37,9 @@ export function catalogSelectorSelected(kind: CatalogSelectorKind, selector: str
   if (explicit.length > 0) return opaque && explicit.length === 1 && explicit[0] === id;
   const identifies = opaque ? (text: string) => tokens(text).includes(id)
     : (text: string) => containsControlValue(text, selector);
-  return [answer, scope.request.text, ...earlier].some(identifies);
+  if ([answer, scope.request.text].some(identifies)) return true;
+  // Earlier asset references fill an anaphoric slot. They never replace a new named original.
+  if (kind === 'asset' && ![answer, scope.request.text].some(text =>
+    /\b(?:it|(?:that|this|the same|the previous) (?:one|asset|original|image))\b/iu.test(text))) return false;
+  return earlier.some(identifies);
 }

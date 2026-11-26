@@ -33,10 +33,12 @@ export async function readPixooContent(library: Library, profile: Readonly<Media
   if (signal?.aborted === true) return refuse((signal.reason as {name?: unknown} | undefined)?.name === 'TimeoutError' ? 'unavailable' : 'cancelled');
   try {
     if (ref === 'asset-id-by-name') {
-      const parsed = z.object({name: nameSchema}).strict().safeParse(query);
+      const currentText = z.string().max(65_537).optional();
+      const parsed = z.union([z.object({name: nameSchema, currentText}).strict(), z.object({id: idSchema, currentText}).strict()]).safeParse(query);
       if (!parsed.success) return refuse('invalid-request');
-      const ids = await library.findAssetIdsByName(parsed.data.name, signal);
-      return ids.length === 1 ? json({id: ids[0]}) : refuse(ids.length === 0 ? 'not-found' : 'invalid-state');
+      const found = await library.resolveAssetIdentity(parsed.data, parsed.data.currentText, signal);
+      if (found.kind === 'match') return json({id: found.id});
+      return refuse(found.kind === 'ambiguous' ? 'invalid-state' : found.kind === 'different' ? 'invalid-request' : 'not-found');
     }
     if (ref === 'catalog-media' || ref === 'catalog-playlists') {
       const parsed = pageQuery.safeParse(query);

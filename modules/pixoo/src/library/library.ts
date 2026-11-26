@@ -138,10 +138,30 @@ export class Library {
   listAssets():Promise<Asset[]> {
     return this.run(()=>this.db.prepare('SELECT * FROM assets ORDER BY created_at,id').all().map(row=>this.asset(row)));
   }
-  findAssetIdsByName(name:string,signal?:AbortSignal):Promise<string[]> {
-    const selector=validate(nameSchema,name);
-    return this.run(()=>this.db.prepare('SELECT id FROM assets WHERE name = ? COLLATE NOCASE LIMIT 2').all(selector)
-      .map(row=>String(row.id)),signal);
+  resolveAssetIdentity(selector: {name: string} | {id: string}, currentText?: string, signal?: AbortSignal): Promise<
+    {kind: 'match'; id: string} | {kind: 'absent' | 'ambiguous' | 'different'}> {
+    return this.run(() => {
+      const candidates = 'id' in selector
+        ? this.db.prepare('SELECT id FROM assets WHERE id = ?').all(validate(idSchema, selector.id))
+        : this.db.prepare('SELECT id FROM assets WHERE name = ? COLLATE NOCASE LIMIT 2').all(validate(nameSchema, selector.name));
+      const selected = candidates[0]?.id;
+      if (candidates.length > 1) return {kind: 'ambiguous'};
+      if (typeof selected !== 'string') return {kind: 'absent'};
+      if (currentText !== undefined) {
+        const normalized = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+        const words = ` ${normalized(currentText)} `;
+        let named: string | undefined;
+        for (const {id, name} of this.db.prepare('SELECT id, name FROM assets').iterate()) {
+          if (typeof id !== 'string' || typeof name !== 'string') continue;
+          const noun = normalized(name);
+          if (noun === '' || !words.includes(` ${noun} `)) continue;
+          if (named !== undefined) return {kind: 'ambiguous'};
+          named = id;
+        }
+        if (named !== undefined && named !== selected) return {kind: 'different'};
+      }
+      return {kind: 'match', id: selected};
+    }, signal);
   }
   private async validateHosted(id:string,profile?:Readonly<MediaProfile>,signal?:AbortSignal):Promise<void> {
     const rendition=this.manifest(id);

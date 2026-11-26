@@ -19,7 +19,9 @@ export function hostedCatalogIdentity(host: ArtCatalogHost, scheduler: ModuleSch
     const name = scene ? 'nanoleaf' : 'pixoo';
     const contentRef = scene ? sceneReference : assetReference;
     const query: Readonly<Record<string, string>> = scene
-      ? {device: input.deviceId, name: input.name} : {name: input.name};
+      ? {device: input.deviceId, name: input.name}
+      : {...(input.id === undefined ? {name: input.name} : {id: input.id}),
+        ...(input.currentText === undefined ? {} : {currentText: input.currentText})};
     const owner = host.modules().find(module => module.name === name && module.admitted);
     const content = owner?.manifest.content;
     if (content === undefined) return errorBody('unavailable');

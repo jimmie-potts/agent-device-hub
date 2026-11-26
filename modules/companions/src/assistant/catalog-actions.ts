@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {literalToolDeviceId, literalDeviceId, normalizedControlText} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
-import type {CatalogSelectorKind} from './catalog-grounding.js';
+import {catalogSelectorId, type CatalogSelectorKind} from './catalog-grounding.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {ART_SHOW_EFFECTS_FAMILY, acceptsArtRendition, artDestination, artShowSurfaces, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
@@ -44,9 +44,11 @@ type CatalogTarget = {id: string; label: string};
 type CatalogTargetSource = 'artwork' | 'devices' | 'operations' | 'playback' | 'sessions' | 'shows' | 'status';
 export type CatalogAdmission = {
   readonly selector: (kind: CatalogSelectorKind, selector: string, contextIds?: readonly string[]) => boolean;
-  readonly target: (id: string, source: CatalogTargetSource, alternatives: readonly CatalogTarget[], implicit?: boolean) => ErrorCode | undefined;
+  readonly target: (id: string, source: CatalogTargetSource, alternatives: readonly CatalogTarget[], implicit?: boolean, nested?: readonly string[]) => ErrorCode | undefined;
   readonly visible: (source: CatalogTargetSource, id: string) => boolean;
   readonly current: () => boolean;
+  readonly covers: (ids: readonly string[]) => boolean;
+  readonly ownerText: () => {text: string; explicitIds: readonly string[]};
 };
 
 export function deviceClarification(noun: string, ids: readonly string[], canName: CanNameDevice): string {
@@ -63,14 +65,33 @@ type Refusal = {code: ErrorCode};
 type Match = {owner: string; device: DeviceRecord};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
 
+/** Only registered identity-bearing fields can account for a nested explicit ID. */
+function nestedSelectors(family: CatalogFamily, data: Record<string, unknown>): string[] {
+  let selectors: readonly unknown[] = [];
+  if (family === 'scene-activate') selectors = [catalogSelectorId('scene', data.sceneId)];
+  else if (family === 'media-start') selectors = [catalogSelectorId('playlist', data.playlistId)];
+  else if (family === 'pixoo-media-show') selectors = [catalogSelectorId('rendition', data.renditionId)];
+  else if (family === 'art-show' || family === 'art-catalog-edit') selectors = [catalogSelectorId('artwork', data.artworkId)];
+  else if (family === 'music-lighting-control' && data.action === 'start-show') selectors = [catalogSelectorId('draft', data.showId)];
+  else if (family === 'nanoleaf-reactive-preset-save') selectors = [data.presetId];
+  else if (family === 'pixoo-asset-change' && object(data.change) && data.change.operation !== 'import') selectors = [catalogSelectorId('asset', data.change.assetId)];
+  else if (family === 'pixoo-playlist-change' && object(data.change) && data.change.operation !== 'create') selectors = [catalogSelectorId('playlist', data.change.playlistId)];
+  else if (family === 'notice-clear') selectors = [data.noticeId];
+  else if (family === 'pixoo-notice-dismiss') selectors = [data.session, data.noticeId];
+  else if (family === 'nanoleaf-notice-acknowledge') selectors = [data.task, data.noticeId];
+  else if (family === 'wemo-hold-release') selectors = [data.heldRequestId];
+  return selectors.flatMap(value => typeof value === 'string' && /^[A-Za-z0-9._-]{1,128}$/u.test(literalDeviceId(value) ?? value)
+    ? [literalDeviceId(value) ?? value] : []);
+}
+
 function admittedRecord<T extends {id: string}>(records: readonly T[] | undefined, selector: string,
-  label: (record: T) => string | undefined, source: CatalogTargetSource, admission?: CatalogAdmission, implicit = false): T | Refusal {
+  label: (record: T) => string | undefined, source: CatalogTargetSource, admission?: CatalogAdmission, implicit = false, nested: readonly string[] = []): T | Refusal {
   if (admission?.current() === false) return {code: 'forbidden'};
   const visible = records?.filter(record => admission?.visible(source, record.id) ?? true);
   const selected = implicit && selector === 'auto' && visible?.length === 1 && visible[0] !== undefined ? visible[0] : namedRecord(visible, selector, label);
   if ('code' in selected) return selected;
   const alternatives = visible?.map(record => ({id: record.id, label: label(record) ?? record.id})) ?? [];
-  const refused = admission?.target(selected.id, source, alternatives, implicit);
+  const refused = admission?.target(selected.id, source, alternatives, implicit, nested);
   return refused === undefined ? selected : {code: refused};
 }
 
@@ -101,7 +122,8 @@ function matchingDevices(rows: readonly Match[], target: string, owner: string, 
 }
 
 /** A bounded read through the Art owner's public SDK content manifest for an exact retained ID outside recent state. */
-export type CatalogIdentityQuery = {kind: 'scene'; deviceId: string; name: string} | {kind: 'asset'; name: string};
+export type CatalogIdentityQuery = {kind: 'scene'; deviceId: string; name: string} |
+  ({kind: 'asset'; currentText?: string} & ({name: string; id?: never} | {id: string; name?: never}));
 export type CatalogIdentityRead = (query: CatalogIdentityQuery, timeoutMs: number) => Promise<{id: string} | ErrorBody>;
 
 export type RetainedArtworkRead = (artworkId: string, timeoutMs: number) => Promise<CatalogArtwork | ErrorBody | undefined>;
@@ -281,20 +303,26 @@ export class ConversationActions {
       const owners = owner === 'auto' ? route.owners : route.owners.filter(source => source === owner);
       if (owners.length === 0) return {code: 'unsupported-capability'};
       const {rows, unreadable} = await this.#deviceRecords(route.owners, parent);
-      const found = matchingDevices(rows.filter(row => owners.some(eligible => eligible === row.owner)), name, owner, literalId);
+      const visible = rows.filter(row => admission?.visible('devices', row.device.id) !== false);
+      const eligible = visible.filter(row => owners.some(owner => owner === row.owner));
+      const found = matchingDevices(eligible, name, owner, literalId);
       const selected = found[0];
-      if (found.length > 1) return {question: deviceClarification('device', found.map(({device}) => device.id), canNameDevice)};
-      if (selected === undefined) return {code: unreadable.length > 0 ? 'unavailable' : 'not-found'};
+      const nested = nestedSelectors(family, data);
+      if (found.length > 1) {
+        if (admission !== undefined && !admission.covers([...found.map(({device}) => device.id), ...nested])) return {code: 'not-found'};
+        return {question: deviceClarification('device', found.map(({device}) => device.id), canNameDevice)};
+      }
+      if (selected === undefined) return {code: admission === undefined && unreadable.length > 0 ? 'unavailable' : 'not-found'};
       const {device} = selected;
       targets = [[device.id, deviceLabel(device)]];
-      knownTargets = rows.filter(row => permitsDevice(route, row.device)).map(row => [row.device.id, deviceLabel(row.device)]);
-      if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
-      const alternatives = rows.filter(row => permitsDevice(route, row.device)).map(row => ({id: row.device.id, label: deviceLabel(row.device)}));
-      const guard = () => admission?.target(device.id, 'devices', alternatives);
+      knownTargets = visible.filter(row => permitsDevice(route, row.device)).map(row => [row.device.id, deviceLabel(row.device)]);
+      const alternatives = eligible.map(row => ({id: row.device.id, label: deviceLabel(row.device)}));
+      const guard = () => admission?.target(device.id, 'devices', alternatives, false, nested);
       const refused = guard();
       if (refused !== undefined) return refused === 'invalid-state'
         ? {question: deviceClarification('device', alternatives.map(item => item.id), canNameDevice)}
         : {code: refused};
+      if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
       if (selected.owner === 'bunny/modules/pixoo') {
         const resolved = await this.#pixooCatalog(family, data, device, parent, guard, admission);
         if (!('data' in resolved)) return resolved;
@@ -302,7 +330,7 @@ export class ConversationActions {
       }
       const {modes, scenes, moments, media} = device.capabilities;
       if (family === 'scene-activate' && typeof data.sceneId === 'string') {
-        if (admission !== undefined && !admission.selector('scene', data.sceneId)) return {code: 'invalid-request'};
+        if (admission !== undefined && !admission.selector('scene', data.sceneId, [device.id])) return {code: 'invalid-request'};
         data = {...data, sceneId: literalDeviceId(data.sceneId) ?? data.sceneId};
       }
       if (family === 'scene-activate' && scenes.supported && typeof data.sceneId === 'string' &&
@@ -358,6 +386,8 @@ export class ConversationActions {
     } else {
       if (owner !== route.owner || name !== route.target) return {code: 'forbidden'};
       binding = {kind: 'fixed', target: route.target, owner};
+      if (family !== 'art-show' && family !== 'nanoleaf-show-save' &&
+        admission !== undefined && !admission.covers(nestedSelectors(family, data))) return {code: 'not-found'};
       if (family === 'nanoleaf-reactive-preset-save') {
         if (admission?.visible('status', route.target) === false) return {code: 'forbidden'};
         const library = (await this.#snapshot<{revision: number; presets: readonly {presetId: string; name: string}[]}>(
@@ -427,7 +457,7 @@ export class ConversationActions {
       const change = data.change;
       if (family === 'pixoo-playlist-change' && (!object(change) || change.operation === 'create')) return {data};
       const selector = family === 'media-start' ? data.playlistId : object(change) ? change.playlistId : undefined;
-      if (admission !== undefined && (typeof selector !== 'string' || !admission.selector('playlist', selector))) return {code: 'invalid-request'};
+      if (admission !== undefined && (typeof selector !== 'string' || !admission.selector('playlist', selector, [device.id]))) return {code: 'invalid-request'};
       if (family === 'media-start' && media.supported && media.playlistIds.some(id => id === selector)) return {data};
       const playlists = await this.#snapshot<{id: string; name: string; playlistRevision: number}>('bunny/modules/pixoo', 'pixoo-playlist', parent);
       if (guard() !== undefined) return {code: 'forbidden'};
@@ -439,7 +469,7 @@ export class ConversationActions {
       return {data: {...data, change: {...change, playlistId: selected.id, revision: selected.playlistRevision}}};
     }
     if (family === 'pixoo-media-show' && admission !== undefined &&
-      (typeof data.renditionId !== 'string' || !admission.selector('rendition', data.renditionId))) return {code: 'invalid-request'};
+      (typeof data.renditionId !== 'string' || !admission.selector('rendition', data.renditionId, [device.id]))) return {code: 'invalid-request'};
     if (family === 'pixoo-media-show' && media.supported && !media.renditionIds.some(id => id === data.renditionId)) {
       const renditions = await this.#snapshot<{id: string; name: string; compatible: boolean}>('bunny/modules/pixoo', 'pixoo-rendition', parent);
       if (guard() !== undefined) return {code: 'forbidden'};
@@ -449,11 +479,14 @@ export class ConversationActions {
     if (family === 'pixoo-asset-change' && object(data.change) && data.change.operation !== 'import') {
       const {assetId} = data.change;
       if (typeof assetId !== 'string' || assetId.length === 0 || assetId.length > 128) return {code: 'invalid-request'};
-      if (admission !== undefined && !admission.selector('asset', assetId)) return {code: 'invalid-request'};
+      if (admission !== undefined && !admission.selector('asset', assetId, [device.id])) return {code: 'invalid-request'};
       const exact = literalDeviceId(assetId) ?? assetId;
-      if (/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(exact)) return {data: {...data, change: {...data.change, assetId: exact}}};
-      if (this.readIdentity === undefined) return {question: 'Which exact saved asset ID should I use?'};
-      const match = await this.readIdentity({kind: 'asset', name: assetId}, 1200);
+      const isId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(exact);
+      if (this.readIdentity === undefined) return {question: 'Which saved asset should I use?'};
+      const source = admission?.ownerText();
+      const current = source === undefined || source.explicitIds.includes(exact) ? {} : {currentText: source.text};
+      const lookup: CatalogIdentityQuery = isId ? {kind: 'asset', id: exact, ...current} : {kind: 'asset', name: assetId, ...current};
+      const match = await this.readIdentity(lookup, 1200);
       if (guard() !== undefined) return {code: 'forbidden'};
       if ('error' in match) return match.error.code === 'invalid-state'
         ? {question: 'More than one saved asset has that name. Which asset ID should I use?'}
@@ -471,14 +504,15 @@ export class ConversationActions {
     const row = family === 'mode-override-set'
       ? namedRecord(records, 'hub', () => undefined)
       : admittedRecord(records, recordId, item => recordFamily === 'session' ? item.label?.value ?? item.title?.value : undefined,
-        recordFamily === 'session' ? 'sessions' : 'status', admission, immutableTarget);
+        recordFamily === 'session' ? 'sessions' : 'status', admission, immutableTarget, nestedSelectors(family, data));
     if ('code' in row) return row;
     if (family !== 'mode-override-set') target = row.id;
     if (family === 'mode-override-set') {
       const {rows} = await this.#deviceRecords([LIFX, NANOLEAF, 'bunny/modules/pixoo', 'bunny/modules/tidbyt'], parent);
-      const selected = matchingDevices(rows, target, 'auto', literalDeviceId(target));
+      const visible = rows.filter(({device}) => admission?.visible('devices', device.id) !== false);
+      const selected = matchingDevices(visible, target, 'auto', literalDeviceId(target));
       if (selected.length !== 1 || selected[0] === undefined) return {code: selected.length === 0 ? 'not-found' : 'invalid-state'};
-      const refused = admission?.target(selected[0].device.id, 'devices', rows.map(({device}) => ({id: device.id, label: deviceLabel(device)})));
+      const refused = admission?.target(selected[0].device.id, 'devices', visible.map(({device}) => ({id: device.id, label: deviceLabel(device)})));
       if (refused !== undefined) return {code: refused};
       const modes = selected[0].device.capabilities.modes;
       if (!modes.supported || data.mode !== null && !modes.values.some(value => value === data.mode)) return {code: 'unsupported-capability'};
@@ -505,7 +539,7 @@ export class ConversationActions {
 
   async #lighting(name: string, data: Record<string, unknown>, parent: TraceContext, admission?: CatalogAdmission): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
     const lighting = await this.#snapshot<LightingState>(CORE, 'music-lighting-state', parent);
-    const current = admittedRecord(lighting, name, () => undefined, 'devices', admission);
+    const current = admittedRecord(lighting, name, () => undefined, 'devices', admission, false, nestedSelectors('music-lighting-control', data));
     if ('code' in current) return current;
     const {action, showId, version} = data;
     if (action === 'start-show') {

@@ -2611,6 +2611,13 @@ export class AssistantEngine {
     };
     return {
       current: () => current() !== undefined,
+      covers: ids => current()?.scope.exactTargets.every(id => id !== '' && ids.includes(id)) === true,
+      ownerText: () => {
+        const active = current();
+        if (active === undefined) return {text: '', explicitIds: []};
+        const {scope} = active;
+        return {text: [scope.request.text, scope.answer?.text ?? ''].join(' '), explicitIds: scope.exactTargets};
+      },
       selector: (kind, selector, contextIds) => {
         const active = current();
         if (active === undefined) return false;
@@ -2618,17 +2625,15 @@ export class AssistantEngine {
           this.#catalogReferenceTexts(active.task, active.scope, modelCallId, true).slice(2), contextIds);
       },
       visible,
-      target: (id, source, alternatives, implicit = false) => {
+      target: (id, source, alternatives, implicit = false, nested = []) => {
         const active = current();
         if (active === undefined || !visible(source, id)) return 'forbidden';
         const {task, scope} = active;
         const texts = this.#catalogReferenceTexts(task, scope, modelCallId, true);
         const references = alternatives.map(target => ({...target, binding: '', allowed: visible(source, target.id), eligible: false}));
         const addressed = new Set([scope.request.text, scope.answer?.text ?? ''].flatMap(text => controlReferenceIds(references, text)));
-        const exact = scope.exactTargets.filter(value => references.some(reference => reference.id === value));
-        const otherRoutingId = scope.exactTargets.some(value => !exact.includes(value) &&
-          !/^(?:scene-|show-)[a-z0-9-]+$|^[a-f0-9]{64}$|^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(value));
-        if (otherRoutingId) return 'not-found';
+        const exact = scope.exactTargets.filter(value => !nested.includes(value) || references.some(reference => reference.id === value));
+        if (exact.some(value => !references.some(reference => reference.id === value))) return 'not-found';
         if (implicit && alternatives.length === 1 && exact.length === 0 && addressed.size === 0) return undefined;
         const eligible = new Set(texts.flatMap(text => controlReferenceIds(references, text)));
         const selected = resolveModelControl({...scope, exactTargets: exact,
