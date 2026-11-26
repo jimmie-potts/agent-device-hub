@@ -1,3 +1,5 @@
+import type {CodingDestination} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingDestinationChoice} from './routing.js';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {CodingCompanion, CodingNativeClient, CodingProgress, CodingResult, CodingRunEntry} from '@jimmie-potts/event-contracts/v2/coding';
 import type {CodingChoice, CodingHarness} from './routing.js';
@@ -27,6 +29,8 @@ export type JobNativeClient = {
 };
 
 export type CodingJobEntry = {
+  requestedHarness?: CodingChoice;
+  requestedDestination?: CodingDestinationChoice; actualDestination?: CodingDestination; selectionReason?: string;
   jobId: string;
   operationId: string;
   taskId: string;
@@ -58,6 +62,8 @@ export type CodingAttemptResult = Pick<CodingResult, 'outcome' | 'base' | 'head'
 export type NativeObservation = Pick<CodingNativeClient, 'clients' | 'state' | 'observedAtMs'>;
 export type AttemptContext = Pick<CodingJobEntry, 'worktreeRef' | 'branch' | 'model'> & {nativeObservation?: NativeObservation};
 export type CodingAttemptEntry = {
+  requestedHarness?: CodingChoice;
+  requestedDestination?: CodingDestinationChoice; actualDestination?: CodingDestination;
   operationId: string;
   harness: CodingHarness | null;
   sessionId: string | null;
@@ -70,6 +76,7 @@ export type CodingJobDetail = {
   version: 1;
   jobId: string;
   choice: CodingChoice;
+  requestedDestination?: CodingDestinationChoice;
   activeOperationId: string | null;
   attempts: CodingAttemptEntry[];
   continuationReason?: string;

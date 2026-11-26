@@ -3,12 +3,12 @@ import {test, type TestContext} from 'node:test';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingDispatch, type CodingHarnessReadiness, type CodingProgress, type CodingReadiness, type CodingResult, type CodingState, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingDestination, type CodingDispatch, type CodingHarnessReadiness, type CodingProgress, type CodingReadiness, type CodingResult, type CodingState, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, Outbox, type Command, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import {CodingCoordinator, GRACE_MS, SETUP_MS, START_MS, describeResult, type HandOffAnswer} from '../src/coding/coordinator.js';
+import {CodingCoordinator, GRACE_MS, SETUP_MS, START_MS, describeResult, type HandOffAnswer, type CodingSeams} from '../src/coding/coordinator.js';
 import {initializeRevision} from '../src/revision.js';
 import {slotBusy} from '../src/frontend/coding-status.js';
 const parent = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
@@ -19,7 +19,7 @@ async function until(check: () => boolean): Promise<void> {
 const result = (): CodingResult => ({outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'b'.repeat(40), changedFiles: ['scripts/readout.mjs'],
   checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: [], summary: 'Added the generator and its test.', sessionId: 'session-1', usage: {turns: 9, costUsd: 0.3, durationMs: 120000}});
 async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleContext = context => context,
-  mayShare: (taskId: string, repository: string) => boolean = () => true) {
+  mayShare: (taskId: string, repository: string) => boolean = () => true, seams: CodingSeams = {}) {
   let now = Date.now();
   const timers = new Set<{at: number; run(): void}>();
   const clock = {now: () => now}, scheduler = {after: (ms: number, run: () => void) => {const timer = {at: now + ms, run}; timers.add(timer); return () => {timers.delete(timer);};}};
@@ -34,7 +34,8 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
   let coreReply: 'forward' | 'refuse' | 'held' | 'held-forward' | 'lost-answer' = 'forward', release = (): void => {};
   const dispatched: string[] = [];
   await core.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
-    const selectionId = published.at(-1)?.data.selectionId;
+    const state = published.at(-1)?.data;
+    const selectionId = state?.workers?.find(item => item.endpointId === command.data.endpointId)?.selectionId ?? state?.selectionId;
     dispatched.push(command.data.requestId);
     if (coreReply === 'refuse') return errorBody('unavailable');
     // A held dispatch is answered only when the test releases it, by refusal, after the module that sent it stopped.
@@ -60,7 +61,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     const outbox = new Outbox({sdk: context.sdk, database: context.database(), clock, validator, log: context.log, trace: context.trace});
     // A task's companion is in its synthetic ID here; the module reads it from the engine's saved task.
     engine = new CodingCoordinator(context, outbox, (taskId, text, given, _evidence, startup) => {deliveries.push({taskId, text, parent: given, startup}); return Promise.resolve();},
-      {briefRefusal: ({taskId, repository}) => mayShare(taskId, repository) ? undefined : 'grant-denied', companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
+      {...seams, briefRefusal: ({taskId, repository}) => mayShare(taskId, repository) ? undefined : 'grant-denied', companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
         legacyOperationVisible: ({taskId, operationId}) => operationId === `${taskId}-step-1`,
         // A task waits on its hand-off until the test ends it, as a cancel the coordinator never heard of would.
         awaits: taskId => {if (unreadable.has(taskId)) throw new Error('synthetic store read failure'); return !finished.has(taskId);}, sent: taskId => {sent.push(taskId);}});
@@ -69,7 +70,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
   let host = make(); await host.start();
   t.after(async () => {await host.stop(); await Promise.all([core.close(), worker.close(), gateway.close(), module.close()]); await rm(dir, {recursive: true, force: true});});
   let n = 0;
-  return {owner: () => engine ?? assert.fail('started'), work, deliveries, outcomes, dispatched, finished, unreadable, sent, busy: (companion: CodingCompanion) => slotBusy(engine?.inspect(), companion), refuseWork: () => {workReply = 'capacity';}, core: (mode: typeof coreReply) => {coreReply = mode;}, release: () => {release();},
+  return {bus, clock, owner: () => engine ?? assert.fail('started'), work, deliveries, outcomes, dispatched, finished, unreadable, sent, busy: (companion: CodingCompanion) => slotBusy(engine?.inspect(), companion), refuseWork: () => {workReply = 'capacity';}, core: (mode: typeof coreReply) => {coreReply = mode;}, release: () => {release();},
     // An approved hand-off from a companion's task, bound to the endpoint revision the proposal saw.
     handOff: (taskId: string, expectedRevision = engine?.endpoint().revision ?? 0): Promise<HandOffAnswer> => (engine ?? assert.fail('started')).handOff({requestId: `${taskId}-step-1`, taskId,
       companion: /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny', repository: 'agent-device-hub', brief: 'Add a test.', expectedRevision}, parent),
@@ -682,4 +683,53 @@ void test('the coding-run receiver refuses a held explicit dispatch from a previ
     const start = w.work[0]?.data;
     assert.ok(start?.action === 'start' && start.harness === 'codex' && start.operationId === 'task-fresh-codex-step-1');
   } finally {w.release();}
+});
+
+void test('Mac and PC keep their own coding attempt, permission, stop and result after a peer disconnects', async t => {
+  let pcAllowed = true;
+  const w = await world(t, undefined, undefined, {allowDestination: (_brief, target) => target === 'mac' || target === 'pc' && pcAllowed});
+  const revision = 'd'.repeat(40);
+  const declare = async (destination: CodingDestination, pressure: 'high' | 'normal') => {
+    const source = destination === 'mac' ? CODING_WORKER_SOURCE : `${CODING_WORKER_SOURCE}-${destination}`;
+    const edge = w.bus.connect(source), endpoint = `fixture-${destination}`;
+    const harness: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', signedIn: 'yes', plan: 'plus', version: '1',
+      limits: null, limitsObservedAtMs: null, checkedAtMs: w.clock.now(), capabilities: {steering: 'live', resume: 'saved-session', review: true}};
+    const answer = await edge.request(`bunny.cmd.coding-endpoint.${endpoint}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpoint,
+      dataschema: 'https://bunny.invalid/events/coding-endpoint/2.5', data: {requestId: `register-${destination}`, action: 'enable', capacity: 'uncapped',
+        harnesses: [harness], worker: {os: destination === 'pc' ? 'windows' : 'macos', toolchains: ['node24'],
+          repositories: [{name: 'agent-device-hub', revision}], pressure, testSlots: destination === 'mac' ? 4 : 8}}}, {timeoutMs: 5000});
+    assert.equal(answer.status, 'accepted');
+    return edge;
+  };
+  const mac = await declare('mac', 'high'), pc = await declare('pc', 'normal');
+  const admit = (id: string, destination: 'pc' | 'mac' | 'auto', windows = false) => w.owner().handOff({taskId: id, companion: 'bunny',
+    conversationId: 'synthetic-room', requestId: id, repository: 'agent-device-hub', brief: 'Run the fixture check.', expectedRevision: w.owner().endpoint().revision,
+    choice: 'codex', destination, requirements: {revision, ...(windows ? {os: 'windows' as const} : {})}}, parent);
+  const report = (edge: typeof pc, endpoint: string, operationId: string, status: 'started' | 'completed') =>
+    edge.publish(`bunny.event.coding-progress.${endpoint}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpoint,
+      dataschema: 'https://bunny.invalid/events/coding-progress/2.3', data: status === 'started' ? {operationId, status, harness: 'codex',
+        sessionId: `session-${operationId}`, setup: 'ready'} : {operationId, status, harness: 'codex', result: result()}}, {parent});
+  const first = await admit('first', 'auto', true), second = await admit('second', 'mac');
+  assert.equal(first.status, 'queued'); assert.equal(second.status, 'queued');
+  await until(() => w.work.filter(c => c.data.action === 'start').length === 2);
+  assert.deepEqual(w.work.map(c => [c.data.operationId, c.subject, c.data.action === 'start' && c.data.revision]).sort(),
+    [['first','fixture-pc',revision],['second','fixture-mac',revision]]);
+  await admit('first', 'auto', true);
+  await report(pc, 'fixture-pc', 'first', 'started'); await report(mac, 'fixture-mac', 'second', 'started');
+  await until(() => w.owner().jobs().jobs.every(job => job.status === 'started'));
+  assert.equal(w.owner().jobDetail('first-job')?.attempts[0]?.actualDestination, 'pc');
+  assert.equal(w.owner().jobDetail('first-job')?.requestedDestination, 'auto');
+  pcAllowed = false;
+  const denied = await admit('third', 'pc'); assert.equal(denied.status, 'rejected');
+  assert.match(denied.status === 'rejected' ? denied.error.error.detail ?? '' : '', /permission.*mac/iu);
+  await w.lost('fixture-pc'); await until(() => w.owner().jobDetail('first-job')?.attempts[0]?.status === 'uncertain');
+  const steer = w.owner().prepareMessage({jobId:'second-job',operationId:'second',requestId:'message-second',text:'Continue the synthetic check.'},parent);
+  assert.ok('committed' in steer); await steer.committed();
+  assert.equal(w.work.at(-1)?.subject,'fixture-mac');
+  await report(mac, 'fixture-mac', 'second', 'completed');
+  await until(() => w.owner().jobDetail('second-job')?.attempts[0]?.status === 'completed');
+  await w.restart();
+  assert.equal(w.owner().jobDetail('first-job')?.attempts[0]?.actualDestination,'pc');
+  assert.equal(w.owner().jobDetail('second-job')?.attempts[0]?.actualDestination,'mac');
+  assert.equal(w.work.filter(c => c.data.action === 'start').length,2);
 });
