@@ -1737,7 +1737,7 @@ void test('a refusal is offered to speech, a result over the spoken bound stays 
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
 });
 
-void test('Responses never substitutes an older owner excerpt for the latest private job question', async context => {
+void test('Responses keeps permitted history while omitting revoked and private job questions', async context => {
   const bodies: string[] = [];
   const allow = sharing();
   let denied: string | undefined;
@@ -1764,14 +1764,14 @@ void test('Responses never substitutes an older owner excerpt for the latest pri
   const deniedTask = await ask('Synthetic newly revoked owner statement.');
   denied = deniedTask + '-prompt';
   await ask('Repeat my last message.');
-  assert.doesNotMatch(bodies.at(-1) ?? '', /newly revoked|earlier owner statement|private to Reachy/u);
+  assert.doesNotMatch(bodies.at(-1) ?? '', /newly revoked|private to Reachy/u);
   denied = undefined;
   await ask(earlier);
   const sent = bodies.length;
   await ask('What is the status of coding job synthetic-step-1-job?');
   assert.equal(bodies.length, sent);
   await ask('Repeat my last message.');
-  assert.doesNotMatch(bodies.at(-1) ?? '', /earlier owner statement|private to Reachy|step-1-job|Private owner question/u);
+  assert.doesNotMatch(bodies.at(-1) ?? '', /private to Reachy|step-1-job|Private owner question/u);
 });
 
 void test('resuming a local job status request commits its reply before a later paid queue refusal', async context => {
@@ -2750,7 +2750,8 @@ void test('hosted turns use the same bounded conversation context for each compa
       }
       assert.match(captured[provider].at(-1) ?? '', /Owner-approved fixture preference/);
       assert.match(captured[provider].at(-2) ?? '', /Compare Desk Lamp and Hall Lamp/);
-      assert.doesNotMatch(captured[provider].at(-1) ?? '', /Desk Lamp|Hall Lamp|PRIVATE_PREFERENCE/);
+      assert.match(captured[provider].at(-1) ?? '', /Compare Desk Lamp and Hall Lamp/);
+      assert.doesNotMatch(captured[provider].at(-1) ?? '', /PRIVATE_PREFERENCE|PRIVATE_DEVICE/);
       assert.match(outputs[provider].at(-1) ?? '', /Hall Lamp \(hall\)/);
       assert.doesNotMatch(outputs[provider].at(-1) ?? '', /Desk Lamp|PRIVATE_DEVICE/);
       await until(() => titlePrompts[provider].length > priorTitles);
@@ -2851,20 +2852,21 @@ for (const name of ['anthropic', 'openai'] as const) {
       await until(() => task(w)?.taskId !== prior && status(w) === 'succeeded');
       return task(w)?.taskId ?? assert.fail('task');
     };
-    await ask(previousPrompt);
-    await ask(followUp);
-    assert.match(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'related assistant answer reaches the new task');
     const origin = await ask(previousPrompt);
+    await ask(followUp);
+    assert.match(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'the earlier permitted answer reaches the new task');
     revoked = `${origin}-prompt`;
     await ask(followUp);
     assert.doesNotMatch(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'the prior answer cannot bypass its original request grant');
     await ask(advicePrompt);
-    await ask('What did you recommend?');
-    assert.match(seen.at(-1)?.instructions ?? '', /Try setting a recurring alarm/, 'an open question can refer to the last answer without repeating its words');
+    await ask('Could you remind me what you recommended?');
+    assert.match(seen.at(-1)?.instructions ?? '', /Try setting a recurring alarm/, 'a follow-up keeps the earlier answer without matching its wording');
+    await ask('Who is Ada?');
+    assert.match(seen.at(-1)?.instructions ?? '', /Try setting a recurring alarm/, 'the permitted timeline is the same after a topic change');
     await ask(desk);
     await ask(hall);
-    assert.doesNotMatch(seen.at(-1)?.instructions ?? '', /DESK_PRIVATE_SENTINEL|brightness of Desk Lamp/,
-      'the explicit Hall Lamp request cannot recover earlier Desk Lamp facts');
+    assert.match(seen.at(-1)?.instructions ?? '', /DESK_PRIVATE_SENTINEL/,
+      'permitted prior device facts are preserved as history after a device change');
 
     assert.equal((await input(w.core, w.module(), heldPrompt)).status, 'accepted');
     await until(() => seen.at(-1)?.owner[0] === heldPrompt);
@@ -2875,6 +2877,129 @@ for (const name of ['anthropic', 'openai'] as const) {
     await until(() => status(w) === 'succeeded');
     assert.deepEqual(seen.at(-1)?.owner, steers, 'all unread steer messages arrive in order in the next model request');
     assert.doesNotMatch(JSON.stringify(seen.at(-1)), /PRIVATE_SUPERSEDED_FIXTURE|first synthetic subject/);
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} rolls chronological history, compacts a reusable prefix, and invalidates edited or denied sources`, async context => {
+    const ordinary: string[] = [], compactions: string[] = [];
+    const old = 'Set the weekend reminder for Saturday at seven. ORIGINAL_SCHEDULE.';
+    const revised = 'Set the weekend reminder for Sunday at eight. REVISED_SCHEDULE.';
+    const unresolved = 'Confirm who will supply the timer batteries.';
+    const usage = {input_tokens: 20, output_tokens: 10};
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {system?: {text: string}[]; instructions?: string; tools: unknown[]};
+      const instructions = body.system?.map(block => block.text).join('\n') ?? body.instructions ?? '';
+      const compaction = instructions.startsWith('Summarize the supplied older conversation exchanges');
+      let text = 'Synthetic reply acknowledging the owner’s update.';
+      if (compaction) {
+        assert.deepEqual(body.tools ?? [], []);
+        compactions.push(init.body);
+        const decision = init.body.includes('REVISED_SCHEDULE') ? revised : init.body.includes('ORIGINAL_SCHEDULE') ? old : 'Other daily details were discussed.';
+        text = JSON.stringify({decisions: [decision], openQuestions: init.body.includes(unresolved) ? [unresolved] : [], references: [], corrections: []});
+      } else ordinary.push(init.body);
+      return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage}
+        : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}], usage}));
+    };
+    const adapter = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const provider: ModelProvider & {inputWindow: number} = {name, model: adapter.model, inputWindow: 115_000,
+      contextInputUnits: input => adapter.contextInputUnits(input), turn: (input, signal) => adapter.turn(input, signal)};
+    const baseline = sharing();
+    let revoked: string | undefined;
+    const w = await world(context, {provider, share: query => baseline(query) && !(query.destination === 'external-model' &&
+      query.field === 'excerpt' && query.record === revoked)});
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string) => {
+      const before = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+      await until(() => task(w)?.taskId !== before && status(w) === 'succeeded');
+      return task(w)?.taskId ?? assert.fail('task');
+    };
+    const origin = await ask(old + ' ' + unresolved);
+    const filler = (index: number) => `Synthetic exchange ${String(index)}. ${'The household note describes a separate daily plan. '.repeat(20)}`;
+    for (let index = 0; index < 26; index += 1) await ask(filler(index));
+    const before = ordinary.at(-1) ?? '';
+    assert.match(before, /ORIGINAL_SCHEDULE/);
+    assert.ok((before.match(/\[message /g)?.length ?? 0) > 48, 'history crosses the former message ceiling');
+    assert.ok(before.indexOf('Synthetic exchange 0') < before.indexOf('Synthetic exchange 20'));
+    assert.equal(compactions.length, 0);
+
+    provider.inputWindow = 15_000;
+    await ask('Which day did we decide on for the weekend reminder?');
+    assert.equal(compactions.length, 1);
+    assert.match(compactions[0] ?? '', /ORIGINAL_SCHEDULE/);
+    assert.doesNotMatch(compactions[0] ?? '', /Which day did we decide on/);
+    const after = ordinary.at(-1) ?? '';
+    assert.match(after, /Summary of older exchanges.*ORIGINAL_SCHEDULE.*Recent exchanges.*Synthetic exchange 25/s);
+    assert.match(after, /Confirm who will supply the timer batteries/);
+    assert.ok(after.includes(filler(25).trimEnd()), 'the most recent owner message is verbatim');
+    assert.doesNotMatch(after, /Synthetic exchange 0\./);
+    const savedSummary = w.store().lastHistoryCompaction(task(w)?.conversationId ?? '');
+    assert.equal(savedSummary?.status, 'succeeded');
+    assert.equal(w.store().savedMessage(origin, `${origin}-prompt`)?.text, old + ' ' + unresolved);
+    await w.restart();
+    provider.inputWindow = 60_000;
+    await ask('And what time was it?');
+    assert.equal(compactions.length, 1, 'the same authorized prefix is reused after restart');
+    assert.match(ordinary.at(-1) ?? '', /Summary of older exchanges.*ORIGINAL_SCHEDULE/s);
+    provider.inputWindow = 18_000;
+    for (let index = 26; index < 55 && compactions.length < 2; index += 1) await ask(filler(index));
+    assert.equal(compactions.length, 2, 'a growing conversation compacts another portion without starting over');
+    assert.match(compactions[1] ?? '', /Summary of earlier exchanges.*ORIGINAL_SCHEDULE/s);
+    assert.ok(!(compactions[1] ?? '').includes(`${origin}-prompt`), 'incremental compaction uses the validated summary, not its original raw prefix');
+
+    revoked = `${origin}-prompt`;
+    await ask('Check the weekend plan again.');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE/, 'a denied source invalidates the persisted summary');
+    revoked = undefined;
+    w.store().messages.correct(`${origin}-prompt`, {kind: 'literal', text: revised, language: 'en'});
+    await ask('What is the corrected weekend plan?');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE/);
+    assert.match(ordinary.at(-1) ?? '', /REVISED_SCHEDULE/, 'a correction is the new source for history or compaction');
+    assert.equal(w.store().savedMessage(origin, `${origin}-prompt`)?.text, revised, 'compaction keeps local records independent of the summary');
+    w.store().messages.remove(`${origin}-prompt`, Date.now());
+    await ask('Give me the current notes.');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE|REVISED_SCHEDULE/, 'removal invalidates derived history');
+  });
+}
+
+for (const failure of ['uncertain', 'provider-capacity'] as const) {
+  void test(`optional compaction preserves provider spend and unknown-retry boundaries on ${failure}`, async context => {
+    let compacted = 0, ordinary = 0;
+    const provider: ModelProvider & {inputWindow: number} = {name: 'openai', model: OPENAI_MODEL, inputWindow: 30_000,
+      contextInputUnits: input => Buffer.byteLength(JSON.stringify(input)),
+      turn: input => {
+        if (input.instructions.startsWith('Summarize the supplied older conversation exchanges')) {
+          compacted += 1;
+          return Promise.reject(failure === 'uncertain' ? new ProviderFault('unavailable', true)
+            : new ProviderFault('capacity', false, undefined, 'The provider spend limit was reached.'));
+        }
+        ordinary += 1;
+        return Promise.resolve(reply('Synthetic reply.'));
+      }};
+    const w = await world(context, {provider});
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string, terminal: 'succeeded' | 'failed' = 'succeeded') => {
+      const before = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+      await until(() => task(w)?.taskId !== before && status(w) === terminal);
+    };
+    for (let index = 0; index < 7; index += 1) await ask(`Synthetic observation ${String(index)}. ${'A bounded report. '.repeat(52)}`);
+    provider.inputWindow = 4_500;
+    await ask('Check the plan again.', failure === 'uncertain' ? 'succeeded' : 'failed');
+    assert.equal(compacted, 1);
+    if (failure === 'provider-capacity') {
+      assert.equal(task(w)?.code, 'capacity');
+      assert.equal(ordinary, 7, 'a hard provider refusal stops the ordinary send');
+    } else {
+      assert.equal(ordinary, 8, 'an uncertain optional call leaves the allowed recent-tail path');
+      await w.restart();
+      await ask('Check the plan after restart.');
+      assert.equal(compacted, 1, 'an ambiguous prefix is not automatically charged again');
+      assert.equal(ordinary, 9);
+    }
   });
 }
 
@@ -3317,7 +3442,7 @@ void test('an unpinned legacy task and queue remain readable without resuming on
   assert.equal(w.store().task(task(w)?.taskId ?? '')?.supervisor?.provider, 'synthetic');
 });
 
-void test('Messages uses the owner-bound aggregate and excludes prior topics and retained evidence', async context => {
+void test('Messages uses the owner-bound aggregate and excludes private evidence fields', async context => {
   const day = Date.parse('2026-11-02T00:00:00Z');
   const source = 'bunny/modules/lifx';
   const inputFields = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
@@ -3352,7 +3477,7 @@ void test('Messages uses the owner-bound aggregate and excludes prior topics and
   assert.deepEqual(JSON.parse(result), {interval: {fromAtMs: day - 86_400_000, toAtMs: day}, complete: true, durations: {on: 100, off: 0, unknown: 86_399_900}});
   assert.equal(reads, 1);
   assert.match(JSON.stringify(turns.at(-1)?.transcript), /refused: forbidden/u);
-  assert.doesNotMatch(JSON.stringify(turns), /PRIVATE_|"seq"|"boundary"|"links"/u);
+  assert.doesNotMatch(JSON.stringify(turns), /PRIVATE_ROW|"seq"|"boundary"|"links"/u);
   assert.ok(turns.every(turn => turn.tools.length === 1 && turn.tools[0]?.name === 'read_device_history'));
 });
 
@@ -3380,7 +3505,7 @@ void test('Claude keeps the history scope when registry labels change after mode
   assert.equal(turns.length, 1);
 });
 
-void test('Claude keeps a named history question private when the history tool is disabled', async context => {
+void test('Messages offers no history read when the history tool is disabled', async context => {
   const turns: TurnInput[] = [];
   const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: request => {
     turns.push(request);
@@ -3395,7 +3520,8 @@ void test('Claude keeps a named history question private when the history tool i
   await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
   assert.equal(turns[0]?.tools.some(tool => tool.name === 'read_devices'), true);
   assert.deepEqual(turns[1]?.tools, []);
-  assert.doesNotMatch(JSON.stringify(turns[1]), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
+  assert.match(JSON.stringify(turns[1]), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
+  assert.doesNotMatch(JSON.stringify(turns[1]?.transcript), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
 });
 
 for (const invalidation of ['device registry remap', 'local owner-message revocation', 'local device status revocation'] as const) {

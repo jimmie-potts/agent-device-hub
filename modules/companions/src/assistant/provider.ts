@@ -1,3 +1,4 @@
+import {estimateHostedInputTokens, HOSTED_CONTEXT_INPUT_TOKENS} from './context-budget.js';
 import type {PriceSchedule} from './spend.js';
 // The tool-capable turn contract every provider answers (Hub #46, #507, #2029). A provider sees the fixed instructions,
 // the task's own transcript, the permitted tool definitions, the current Hub mode and the prompt context, which the
@@ -29,6 +30,8 @@ export type TurnInput = {
   readonly context: PromptContext;
   readonly transcript: readonly TranscriptItem[];
   readonly tools: readonly ToolDefinition[];
+  /** A bounded task may request a smaller reply than the adapter default. */
+  readonly maxOutputTokens?: number;
   /** The Hub mode the module's synced copy holds, or null when it has none. */
   readonly mode: {readonly mode: string; readonly revision: number} | null;
 };
@@ -45,9 +48,25 @@ export type ModelProvider = {
   readonly model: string;
   readonly variant?: string;
   readonly available?: boolean;
+  /** Hosted model input allowance in estimated tokens after reserving the requested output. */
+  readonly inputWindow?: number;
+  contextInputUnits?(input: TurnInput): number;
   inputUnits?(input: TurnInput): number;
   turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply>;
 };
+export function outputTokenCap(input: TurnInput, maximum: number): number {
+  const requested = input.maxOutputTokens ?? maximum;
+  return Math.min(maximum, Math.max(1, Math.floor(requested)));
+}
+
+export function hostedInputCapacity(provider: ModelProvider): number {
+  return Math.min(provider.inputWindow ?? HOSTED_CONTEXT_INPUT_TOKENS, HOSTED_CONTEXT_INPUT_TOKENS);
+}
+
+export function hostedInputUnits(provider: ModelProvider, input: TurnInput): number {
+  return provider.contextInputUnits?.(input) ?? estimateHostedInputTokens(JSON.stringify(input));
+}
+
 /**
  * A provider's typed failure, mapped once at its boundary to a registry code; its message is fixed text. `uncertain`
  * marks a lost answer: the request may have reached the provider, so its usage is unknown and the call stays uncertain.

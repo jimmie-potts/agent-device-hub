@@ -55,8 +55,16 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
    * before this field has no recent conversation.
    */
   contextThrough?: number};
+export type ContextSourceVersion = {id: string; revision: number};
+export type HistoryCompaction = {
+  id: string; taskId: string; conversationId: string; provider: SupervisorIdentity; sources: readonly ContextSourceVersion[];
+  status: 'admitted' | 'succeeded' | 'failed' | 'uncertain'; text: string | null; stopCode?: ErrorCode;
+};
+export type HostedHistoryMessage = Pick<RecentMessage, 'id' | 'role' | 'text'> & {taskId: string; revision: number};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   directBrightness?: true;
+  historySources?: readonly ContextSourceVersion[];
+  inputVersions?: readonly {field: DisclosedField; version: string}[];
   codingApproval?: {destination: 'coding-worker'; repository: string; briefDigest: string};
   status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true;
   result: string | null; units: number | null; reservedUnits: number;
@@ -138,7 +146,10 @@ export class AssistantStore {
       CREATE TABLE IF NOT EXISTS assistant_confirmations (request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, record TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_confirmations_task ON assistant_confirmations(task_id);
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
-      CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
+      CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);
+      CREATE TABLE IF NOT EXISTS assistant_history_compactions (
+        id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, conversation_id TEXT NOT NULL, record TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS assistant_history_compactions_conversation ON assistant_history_compactions(conversation_id);`);
     if (!database.prepare("SELECT 1 FROM pragma_table_info('assistant_messages') WHERE name='follows'").get()) {
       database.exec('ALTER TABLE assistant_messages ADD COLUMN follows TEXT');
     }
@@ -323,6 +334,43 @@ export class AssistantStore {
         ...(saved.attachment === undefined ? {} : {attachment: {kind: saved.attachment.kind, requestId: saved.attachment.requestId, description: saved.attachment.description}})};
     });
     return {messages, total};
+  }
+  /** Earlier owner and final assistant messages in their stored sequence, with no message-count ceiling. */
+  hostedHistory(profile: AssistantProfile, conversationId: string, through: number): Iterable<HostedHistoryMessage> {
+    if (this.messages.conversation(conversationId)?.profile !== profile) return [];
+    return this.database.prepare(`SELECT id,role,text,task_id AS taskId,COALESCE(json_extract(record,'$.revision'),0) AS revision
+      FROM assistant_messages WHERE conversation_id=? AND seq<=?
+      AND ((role='tool' AND record IS NULL) OR (record IS NOT NULL
+        AND (role='owner' OR (role='assistant' AND id=task_id || '-result'))
+        AND json_extract(record,'$.provenance.imported')=0 AND json_extract(record,'$.meaning.kind')='literal'
+        AND (json_extract(record,'$.speakerId')=? OR EXISTS (SELECT 1 FROM json_each(record,'$.recipientIds') WHERE value=?)
+          OR json_type(record,'$.recipientIds')='null')))
+      AND NOT EXISTS (SELECT 1 FROM companion_removals WHERE id=assistant_messages.id) ORDER BY seq`)
+      .iterate(conversationId, through, profile, profile) as Iterable<HostedHistoryMessage>;
+  }
+  historySourceRevision(id: string): number | undefined {
+    const row = this.database.prepare(`SELECT COALESCE(json_extract(record,'$.revision'),0) AS revision
+      FROM assistant_messages WHERE id=? AND NOT EXISTS (SELECT 1 FROM companion_removals WHERE id=assistant_messages.id)`)
+      .get(id) as {revision: number} | undefined;
+    return row?.revision;
+  }
+  lastHistoryCompaction(conversationId: string): HistoryCompaction | undefined {
+    return parsed<HistoryCompaction>(this.database.prepare(`SELECT record FROM assistant_history_compactions WHERE conversation_id=?
+      AND json_extract(record,'$.status')='succeeded' ORDER BY rowid DESC LIMIT 1`).get(conversationId) as RecordRow | undefined);
+  }
+  latestHistoryCompactionAttempt(conversationId: string): HistoryCompaction | undefined {
+    return parsed<HistoryCompaction>(this.database.prepare(`SELECT record FROM assistant_history_compactions WHERE conversation_id=?
+      ORDER BY rowid DESC LIMIT 1`).get(conversationId) as RecordRow | undefined);
+  }
+  taskHistoryCompaction(taskId: string): HistoryCompaction | undefined {
+    return parsed<HistoryCompaction>(this.database.prepare('SELECT record FROM assistant_history_compactions WHERE task_id=?').get(taskId) as RecordRow | undefined);
+  }
+  hasHistoryCompaction(id: string, taskId: string): boolean {
+    return this.database.prepare('SELECT 1 FROM assistant_history_compactions WHERE id=? OR task_id=?').get(id, taskId) !== undefined;
+  }
+  saveHistoryCompaction(value: HistoryCompaction): void {
+    this.database.prepare(`INSERT INTO assistant_history_compactions VALUES (?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET record=excluded.record`).run(value.id, value.taskId, value.conversationId, JSON.stringify(value));
   }
   /** Whether the owner turned on knowledge notes for the companion's context (Hub #2029); off until the owner does. */
   knowledgeEnabled(profile: AssistantProfile): boolean {

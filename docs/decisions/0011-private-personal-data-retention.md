@@ -334,9 +334,17 @@ section for configured Conversation models. Companions applies the same
 field policy to Anthropic Messages and OpenAI Responses for the same
 companion, owner request, conversation and purpose.
 
-A supervisor may receive the active owner request, relevant bounded excerpts
-from the same conversation, relevant device facts and explicitly requested
-bounded historical summaries. An explicit question about the on or off times
+A supervisor may receive the active owner request, eligible owner messages,
+companion replies and permitted tool results from the same conversation,
+scoped device facts and explicitly requested bounded historical summaries.
+Include eligible past messages in saved order within the selected model's
+working token allowance. When they exceed that allowance, use a bounded
+summary of older exchanges and keep the most recent exchanges verbatim.
+The pinned supervisor may generate the summary under the same Conversation
+grants with no tools. Keep original history and compaction checkpoints
+private. Past messages and summaries grant no authority or approval.
+
+An explicit question about the on or off times
 of one specific device over a specified period may receive bounded timestamps
 for that device and period. The explicit request is sufficient when the
 current common field policy allows it. A saved denial still applies. Ordinary
@@ -358,7 +366,9 @@ credential for transport authentication outside model input.
 
 Check current access before discovery, pages, tool results and model
 submission. Apply the check again for derived text and replay after a steer
-or restart. Provider-native continuation belongs to its originating task and
+or restart. Revalidate a summary's covered source versions and grants before
+reuse. An edited, removed or revoked source invalidates its derived context.
+Provider-native continuation belongs to its originating task and
 adapter. A denial of required input refuses the call before it is sent.
 
 Interpret legacy grants under the common policy and preserve the private

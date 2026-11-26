@@ -17,13 +17,15 @@ import type {CodingBrief, CodingBriefRefusal, CodingCoordinator, HandOffAnswer} 
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
-import {AssistantStore, GRAPH_VERSION, LIMITS, RESPONSES_GRAPH_VERSION, terminal, unresolved, type Appended, type Call, type MessageSource, type Question, type Stage, type StagedInput, type Task} from './store.js';
+import {AssistantStore, GRAPH_VERSION, LIMITS, RESPONSES_GRAPH_VERSION, terminal, unresolved, type Appended, type Call, type MessageSource, type Question, type Stage, type StagedInput, type Task, type HostedHistoryMessage, type ContextSourceVersion, type HistoryCompaction} from './store.js';
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
-import {ProviderFault, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
+import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
 import {ALL_WEMO_PLUGS, authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, literalDeviceSubject, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
+import {fitConversationHistory, type HostedWindow} from './conversation-window.js';
+import {buildConversationCompactionInput, COMPACTION_OUTPUT_TOKENS, readConversationCompactionReply} from './conversation-compaction.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
@@ -128,7 +130,7 @@ const BRIGHTNESS_NOT_SENT = 'The brightness request is no longer available. No c
 const stoppedBeforeBrightness = (text: string | null): boolean =>
   text === BRIGHTNESS_REQUEST_UNAVAILABLE || text === BRIGHTNESS_ANSWER_UNAVAILABLE;
 
-type Answer = {text: string; units: number | null; usage?: TokenUsage | null; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[];
+type Answer = {text: string; units: number | null; usage?: TokenUsage | null; historySources?: Call['historySources']; inputVersions?: Call['inputVersions']; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[];
   disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true};
 /** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
 type Budget = {units: number; unit: string; spend?: {model: string; inputUnits: number; outputUnits: number; pricing?: NonNullable<SupervisorIdentity['pricing']>}};
@@ -228,12 +230,6 @@ function deviceGroup(subject: string | undefined): AssistantDeviceOwner | undefi
   if (/^(?:all (?:wemo )?plugs|wemo plugs)$/u.test(subject ?? '')) return ASSISTANT_WEMO_OWNER;
   if (/^(?:all (?:lifx )?lights|lifx lights)$/u.test(subject ?? '')) return ASSISTANT_LIGHT_OWNER;
   return undefined;
-}
-
-const CONTEXT_WORDS = new Set(['about', 'again', 'answer', 'could', 'does', 'give', 'have', 'please', 'should', 'tell',
-  'that', 'the', 'their', 'them', 'then', 'there', 'these', 'they', 'this', 'those', 'want', 'were', 'what', 'when', 'where', 'which', 'with', 'would', 'you', 'your']);
-function subjectWords(text: string): string[] {
-  return normalizedControlText(text).split(' ').filter(word => word.length >= 4 && !CONTEXT_WORDS.has(word));
 }
 
 const waitingText = (delegated: string): string => `${WAITING_PREFIX}${delegated.slice('Delegated'.length)}`.slice(0, 1024);
@@ -1480,7 +1476,7 @@ export class AssistantEngine {
     const share = this.options.share;
     const read = this.#fields(task.profile, 'read', 'private-conversation');
     const discovery = this.#fields(task.profile, 'discovery', 'private-conversation');
-    const model = pin.provider === 'synthetic' ? this.#modelFields(task.profile, pin.provider) : this.#supervisorScope(task).fields;
+    const model = pin.provider === 'synthetic' ? this.#modelFields(task.profile, pin.provider) : this.#supervisorScope(task, 'supervisor', undefined, this.#hostedHistory(task)).fields;
     const prompt = this.#supervisorPromptFields(task.profile);
     // Earlier call disclosures were selected for the pinned supervisor when those calls were made.
     const inputs: FieldAccess = (source, field, record) => {
@@ -1538,7 +1534,8 @@ export class AssistantEngine {
         deviceToolOwner(tool.name) !== undefined || family === 'art-request' || family !== undefined && catalogRoute(family).binding === 'device';
     });
   }
-  #supervisorScope(task: Task, purpose: 'supervisor' | 'title' = 'supervisor', boundDevice?: string) {
+  #supervisorScope(task: Task, purpose: 'supervisor' | 'title' = 'supervisor', boundDevice?: string,
+    hostedHistory: ReadonlyMap<string, HostedHistoryMessage> = new Map()) {
     const latest = task.transcript.filter(item => item.role === 'owner').at(-1);
     const marker = task.ownerInputStart;
     const batchStart = marker === undefined ? -1 : task.transcript.findIndex(item => item.role === 'owner' && 'effect' in item && item.effect === marker);
@@ -1559,7 +1556,7 @@ export class AssistantEngine {
     const history = purpose === 'supervisor' ? this.#historyBinding(task, configured) : undefined;
     if (history?.history !== undefined) devices.add(history.history.query.target);
 
-    const canReadMessage = (id: string) => this.store.messages.get(id)?.conversationId === task.conversationId &&
+    const canReadMessage = (id: string) => (hostedHistory.has(id) || this.store.messages.get(id)?.conversationId === task.conversationId) &&
       this.store.messages.removal(id) === undefined && local('conversation', 'text', task.conversationId) && local('conversation', 'text', id);
     const access = supervisorFields(this.options.share, {companion: task.profile, requestId, ownerInputs, conversationId: task.conversationId, messages, devices, purpose,
       ...(history?.history === undefined ? {} : {requestedHistory: new Set([history.history.query.target])}),
@@ -1576,8 +1573,6 @@ export class AssistantEngine {
     const words = normalizedControlText(request);
     const refers = /\b(?:it|that|those|both|former|latter|first one|second one|earlier|previous|same|again|last request|last message)\b/u.test(words) ||
       /^(?:and |(?:what|how) about )/u.test(words);
-    const requestTopics = new Set(subjectWords(request));
-    const overlaps = (message: RecentMessage) => subjectWords(message.text).some(word => requestTopics.has(word));
     const brightnessTarget = purpose === 'supervisor' ? brightnessSubject(request) : undefined;
     const subject = brightnessTarget ?? (purpose === 'supervisor' ? deviceRequestSubject(request) : undefined);
     const group = brightnessTarget === undefined ? deviceGroup(subject) : undefined;
@@ -1613,18 +1608,9 @@ export class AssistantEngine {
     const selected = [...explicit, ...referred];
     for (const {device} of selected) devices.add(device.id);
     if (purpose === 'supervisor' && /\bmode\b/u.test(words)) devices.add('hub');
-    // Only current selection can authorize an earlier answer's derived device facts.
-    const earlierAnswer = purpose === 'supervisor' && history === undefined && previousOwner !== undefined
-      ? this.#priorAnswer(task, previousOwner, allowsExcerpt, devices) : undefined;
-    // A short open question with no independent subject can rely on the nearest
-    // permitted reply even when the owner's words differ from the reply's.
-    const openQuestion = selected.length === 0 && subject === undefined && requestTopics.size <= 1 &&
-      (request.trimEnd().endsWith('?') || /^(?:how|what|when|where|which|who|why)\b/u.test(words));
-    const subjectFits = (message: RecentMessage) => explicit.length === 0 || mentioned(message.text).every(({device}) => devices.has(device.id));
-    const recent = history !== undefined ? [] : purpose === 'title' ? visibleEarlier
-      : visibleEarlier.filter(message => subjectFits(message) && (refers || overlaps(message) ||
-        earlierAnswer !== undefined && (openQuestion || overlaps(earlierAnswer))));
-    if (recent.length > 0 && earlierAnswer !== undefined && (refers || openQuestion || recent.some(overlaps) || overlaps(earlierAnswer))) recent.push(earlierAnswer);
+    // Earlier owner text can resolve a reference in the current command. The
+    // chronological model background is selected independently.
+    const recent = purpose === 'title' || refers ? visibleEarlier : [];
     const selectedDevice = (owner: AssistantDeviceOwner, id: string) => selected.some(entry => entry.owner === owner && entry.device.id === id);
     const catalogSubject = group !== undefined || exact.length > 1 ? undefined
       : subject !== undefined && (!refers || references.length === 0) ? subject
@@ -1634,6 +1620,7 @@ export class AssistantEngine {
       .filter(id => !devices.has(id)));
     if (catalogSubject !== undefined) for (const id of priorCatalogIds) devices.add(id);
     const resolvedCatalogDevice = (id: string) => devices.add(id);
+    for (const id of hostedHistory.keys()) messages.set(id, {conversationId: task.conversationId});
     for (const message of recent) messages.set(message.id, {conversationId: task.conversationId});
     for (const item of transcript) {
       const id = item.role === 'tool' ? conversationMessageId(task.id, item) : undefined;
@@ -1651,41 +1638,63 @@ export class AssistantEngine {
     return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, priorCatalogIds, resolvedCatalogDevice,
       brightnessTarget: brightnessTarget === undefined ? undefined : catalogSubject ?? brightnessTarget, selectedDevice, history};
   }
-  #priorAnswer(task: Task, owner: RecentMessage, allowsExcerpt: (id: string) => boolean, selectedDevices: ReadonlySet<string>): RecentMessage | undefined {
-    const source = this.store.messageSource(owner.id);
-    const origin = source === undefined ? undefined : this.store.task(source.taskId);
-    if (origin === undefined || origin.id === task.id || origin.profile !== task.profile || origin.conversationId !== task.conversationId ||
-      origin.status !== 'succeeded' || origin.supervisor === undefined || origin.supervisor.provider === 'synthetic') return undefined;
-    const id = `${origin.id}-result`;
-    const answer = this.store.savedMessage(origin.id, id);
-    if (answer?.role !== 'assistant' || !allowsExcerpt(id)) return undefined;
+  #hostedHistory(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>): Map<string, HostedHistoryMessage> {
+    const messages = new Map<string, HostedHistoryMessage>();
+    if (task.contextThrough === undefined) return messages;
     const read = this.#fields(task.profile, 'read', 'private-conversation');
-    const discover = this.#fields(task.profile, 'discovery', 'private-conversation');
+    const discovery = this.#fields(task.profile, 'discovery', 'private-conversation');
     const prompt = this.#supervisorPromptFields(task.profile);
-    const permitsAnswer = (answerTask: Task, remaining: number): boolean => {
-      if (remaining === 0 || answerTask.profile !== task.profile || answerTask.conversationId !== task.conversationId || answerTask.status !== 'succeeded' ||
-        answerTask.supervisor === undefined || answerTask.supervisor.provider === 'synthetic') return false;
-      const current: FieldAccess = (source, field, record) => {
-        if (source === 'knowledge' || source === 'preferences') return prompt(source, field, record);
-        if (record === undefined) return false;
-        if (source === 'conversation') {
-          const message = this.store.messages.get(record);
-          if (message?.conversationId !== task.conversationId || this.store.messages.removal(record) !== undefined ||
-            !read(source, 'text', record) || !recordedSupervisorField(this.options.share, task.profile, 'supervisor', source, field, task.conversationId)) return false;
-          if (message.speakerId !== 'owner') {
-            const prior = this.store.messageSource(record);
-            const nested = prior === undefined ? undefined : this.store.task(prior.taskId);
-            if (field !== 'excerpt' || nested === undefined || record !== `${nested.id}-result` || !permitsAnswer(nested, remaining - 1)) return false;
-          }
-        }
-        if (source === 'devices' && (!selectedDevices.has(record) || field === 'summary' || field === 'details' ||
-          !read(source, field, record) || field === 'index' && !discover(source, field, record))) return false;
-        return recordedSupervisorField(this.options.share, task.profile, 'supervisor', source, field, record);
-      };
-      return this.store.calls(answerTask.id).some(call => call.kind === 'model' && call.status === 'succeeded') &&
-        this.#callDisclosuresAllowed(answerTask.id, current, () => true, false);
+    const permitted = (source: ShareQuery['source'], field: ShareQuery['field'], id: string) =>
+      recordedSupervisorField(this.options.share, task.profile, 'supervisor', source, field, id);
+    if (!read('conversation', 'text', task.conversationId) || !permitted('conversation', 'excerpt', task.conversationId)) return messages;
+    const access: FieldAccess = (source, field, id) => {
+      if (source === 'knowledge' || source === 'preferences') return prompt(source, field, id);
+      if (id === undefined || !permitted(source, field, id)) return false;
+      if (source === 'conversation') return messages.has(id) && permitted(source, field, task.conversationId);
+      if (source !== 'devices' || field === 'details' || !read(source, field, id)) return false;
+      if (field === 'summary' && (!read(source, 'details', id) || !read(source, 'status', id))) return false;
+      return field !== 'index' || discovery(source, field, id);
     };
-    return permitsAnswer(origin, 4) ? {id, role: 'assistant', text: answer.text} : undefined;
+    for (const message of this.store.hostedHistory(task.profile, task.conversationId, task.contextThrough)) {
+      if (privateJobMessage(message) || !read('conversation', 'text', message.id) || !permitted('conversation', 'excerpt', message.id)) continue;
+      if (message.role === 'owner') {messages.set(message.id, message); continue;}
+      const origin = this.store.task(message.taskId);
+      if (origin === undefined || origin.profile !== task.profile || origin.conversationId !== task.conversationId ||
+        origin.status !== 'succeeded' || origin.supervisor === undefined || origin.supervisor.provider === 'synthetic') continue;
+      const calls = this.store.calls(origin.id);
+      if (!calls.some(call => call.kind === 'model' && call.status === 'succeeded')) continue;
+      const unchangedLegacyInput = (call: Call) => call.inputVersions !== undefined || call.disclosures?.every(field =>
+        field.source !== 'knowledge' && field.source !== 'preferences' &&
+        (field.source !== 'conversation' || field.record !== undefined && messages.get(field.record)?.revision === 1)) === true;
+      if (message.role === 'tool') {
+        const source = calls.find(call => call.id === message.id && call.kind === 'tool' && call.status === 'succeeded');
+        const item = origin.transcript.find(item => item.role === 'tool' && 'effect' in item && item.effect === message.id);
+        if (source === undefined || item?.role !== 'tool' || !read('conversation', 'details', message.id) ||
+          !(item.name === READ_DEVICES || item.name === READ_DEVICE_HISTORY || deviceToolOwner(item.name) !== undefined) ||
+          source.action !== undefined || source.result !== message.text || source.disclosures?.some(field => field.source === 'devices') !== true ||
+          source.disclosures.some(field => field.source !== 'devices' || field.field === 'details')) continue;
+        if (calls.filter(call => call.ordinal <= source.ordinal).every(call => this.#callAllowed(call, access, false, messages) && unchangedLegacyInput(call))) {
+          messages.set(message.id, message);
+        }
+      } else if (calls.every(call => this.#callAllowed(call, access, false, messages) && unchangedLegacyInput(call))) messages.set(message.id, message);
+    }
+    return messages;
+  }
+  #disclosureVersion({source, field, record}: DisclosedField): string | undefined {
+    if (record === undefined) return undefined;
+    if (source === 'conversation') {
+      const message = this.store.messages.get(record);
+      return message === undefined ? undefined : String(message.revision);
+    }
+    if (source === 'knowledge' || source === 'preferences') {
+      const entries = source === 'knowledge' ? this.options.knowledge?.() : this.options.preferences?.();
+      const entry = entries?.find(value => value.title === record);
+      return entry === undefined ? undefined : digest(field === 'label' ? entry.title : entry.text);
+    }
+    return undefined;
+  }
+  #historySourcesAllowed(sources: readonly ContextSourceVersion[], eligible: ReadonlyMap<string, HostedHistoryMessage>): boolean {
+    return sources.every(({id, revision}) => eligible.get(id)?.revision === revision);
   }
   #supervisorPromptFields(profile: AssistantProfile): FieldAccess {
     const allowed = this.#fields(profile, 'prompt', 'external-model');
@@ -1697,29 +1706,167 @@ export class AssistantEngine {
       return source === 'preferences' && (this.options.preferences?.() ?? []).some(entry => entry.title === record);
     };
   }
-  #supervisorContext(profile: AssistantProfile, scope?: {recent: readonly RecentMessage[]; fields: FieldAccess}, capture?: FieldAccess): PromptContext {
+  #supervisorContext(profile: AssistantProfile, capture?: FieldAccess): PromptContext {
     const persona = PROFILES.find(value => value.id === profile) ?? fail('internal');
     const allowed = this.#supervisorPromptFields(profile);
     const included = (source: 'knowledge' | 'preferences', entries: readonly ContextEntry[]) =>
       entries.filter(entry => allowed(source, 'label', entry.title) && allowed(source, 'text', entry.title));
     const knowledge = included('knowledge', this.options.knowledge?.() ?? []);
     const preferences = included('preferences', this.options.preferences?.() ?? []);
-    const recent = scope?.recent.filter(message => scope.fields('conversation', 'excerpt', message.id))
-      .map(message => ({id: message.id, role: message.role, text: message.text.slice(0, 1024)})) ?? [];
     const context = buildContext({profile, persona: {name: persona.name, character: persona.character},
       knowledge: {enabled: knowledge.length > 0, entries: knowledge}, preferences,
-      recent: {conversationId: null, messages: recent, total: recent.length}});
+      recent: {conversationId: null, messages: [], total: 0}});
     if (capture !== undefined) {
       for (const [source, entries] of [['knowledge', knowledge], ['preferences', preferences]] as const) {
         for (const entry of entries.slice(0, sectionOf(context, source).included)) {
           if (!capture(source, 'label', entry.title) || !capture(source, 'text', entry.title)) fail('forbidden');
         }
       }
-      for (const message of recent.slice(recent.length - sectionOf(context, 'recent').included)) {
-        if (!capture('conversation', 'excerpt', message.id)) fail('forbidden');
-      }
+
     }
     return context;
+  }
+  #usableCompaction(conversationId: string, messages: readonly HostedHistoryMessage[]): HistoryCompaction | undefined {
+    const saved = this.store.lastHistoryCompaction(conversationId);
+    return saved?.text != null && saved.sources.every(({id, revision}, index) => {
+      const row = messages[index];
+      return row?.id === id && row.revision === revision;
+    }) ? saved : undefined;
+  }
+  #fitHostedHistory(task: Pick<Task, 'conversationId' | 'reservedUnits' | 'supervisor'>, provider: ModelProvider, input: TurnInput,
+    messages: readonly HostedHistoryMessage[]): HostedWindow {
+    const budget = hostedInputCapacity(provider);
+    const totals = this.spend.totals();
+    const pricing = task.supervisor?.pricing;
+    return fitConversationHistory(input, messages, this.#usableCompaction(task.conversationId, messages), budget, candidate => {
+      if (hostedInputUnits(provider, candidate) > budget) return false;
+      const units = provider.inputUnits?.(candidate) ?? inputBound(candidate);
+      return task.reservedUnits + units + LIMITS.outputUnits <= LIMITS.units &&
+        this.spend.fits({model: provider.model, inputUnits: units, outputUnits: LIMITS.outputUnits,
+          ...(pricing === undefined ? {} : {pricing})}, totals);
+    });
+  }
+  #hostedPreview(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough' | 'reservedUnits' | 'supervisor'>, provider: ModelProvider,
+    transcript: TurnInput['transcript'] = [], tools: TurnInput['tools'] = []): HostedWindow {
+    const context = this.#supervisorContext(task.profile);
+    return this.#fitHostedHistory(task, provider, {instructions: INSTRUCTIONS, context, transcript, tools, mode: null},
+      [...this.#hostedHistory(task).values()]);
+  }
+  async #prepareHistoryCompaction(task: Task, provider: ModelProvider, active: Active): Promise<void> {
+    const pin = task.supervisor;
+    if (pin === undefined || !this.#canUseTaskProvider(task)) return;
+    const attempt = this.store.taskHistoryCompaction(task.id);
+    if (attempt?.stopCode !== undefined) throw new ProviderFault(attempt.stopCode);
+    if (attempt !== undefined) return;
+    const eligible = this.#hostedHistory(task), messages = [...eligible.values()];
+    const latestAttempt = this.store.latestHistoryCompactionAttempt(task.conversationId);
+    if ((latestAttempt?.status === 'admitted' || latestAttempt?.status === 'uncertain') &&
+      this.#historySourcesAllowed(latestAttempt.sources, eligible)) return;
+    const scope = this.#supervisorScope(task, 'supervisor', undefined, eligible);
+    if (messages.length === 0 || !scope.fields('conversation', 'request', scope.requestId)) return;
+    const base: TurnInput = {instructions: INSTRUCTIONS, context: this.#supervisorContext(task.profile), transcript: scope.transcript,
+      tools: this.#toolsFor(task), mode: null};
+    const fitted = this.#fitHostedHistory(task, provider, base, messages);
+    if (fitted.omitted === 0) return;
+    const prior = this.#usableCompaction(task.conversationId, messages);
+    const prefix = prior?.sources.length ?? 0;
+    const capacity = hostedInputCapacity(provider);
+    const baseUnits = hostedInputUnits(provider, base);
+    const historyRoom = Math.max(0, capacity - baseUnits);
+    const target = fitConversationHistory(base, messages, prior, capacity, candidate =>
+      hostedInputUnits(provider, candidate) <= baseUnits + Math.floor(historyRoom * 0.6)).omitted;
+    // Leave the newest complete exchange verbatim even when both calls are small.
+    const newestTask = messages.at(-1)?.taskId;
+    const oldestOfNewest = messages.findIndex(message => message.taskId === newestTask);
+    const cutoff = Math.min(oldestOfNewest, prefix + Math.max(target, fitted.omitted));
+    if (cutoff <= prefix) return;
+    const totals = this.spend.totals();
+    const compactionSpend = {day: {...totals.day, limitMicros: totals.day.spentMicros + Math.floor((totals.day.limitMicros - totals.day.spentMicros) / 10)},
+      month: {...totals.month, limitMicros: totals.month.spentMicros + Math.floor((totals.month.limitMicros - totals.month.spentMicros) / 10)}, version: totals.version};
+    const pricing = pin.pricing === undefined ? {} : {pricing: pin.pricing};
+    const budgetTokens = Math.min(COMPACTION_OUTPUT_TOKENS, Math.floor(historyRoom / 4));
+    const previous = prior?.text == null ? [] : [{id: prior.id, role: 'assistant' as const, text: prior.text}];
+    const build = (end: number) => {
+      const input = buildConversationCompactionInput({profile: task.profile, conversationId: task.conversationId,
+        messages: [...previous, ...messages.slice(prefix, end)], budgetTokens, inputTokens: capacity,
+        measureInput: value => hostedInputUnits(provider, value)});
+      if (input === null) return undefined;
+      const units = provider.inputUnits?.(input) ?? inputBound(input);
+      const spend = {model: provider.model, inputUnits: units, outputUnits: COMPACTION_OUTPUT_TOKENS, ...pricing};
+      return this.spend.fits(spend, compactionSpend) ? {input, spend} : undefined;
+    };
+    const boundaries = [prefix, ...messages.slice(prefix, cutoff).flatMap((message, index) => {
+      const after = prefix + index + 1;
+      return messages[after]?.taskId === message.taskId ? [] : [after];
+    })];
+    let lower = 0, upper = boundaries.length - 1;
+    while (lower < upper) {
+      const middle = Math.ceil((lower + upper) / 2);
+      if (build(boundaries[middle] ?? prefix) === undefined) upper = middle - 1;
+      else lower = middle;
+    }
+    // An old exchange can itself be wider than the compactor's input window.
+    const boundary = boundaries[lower] === prefix && build(prefix + 1) !== undefined ? prefix + 1 : boundaries[lower] ?? prefix;
+    if (boundary <= prefix) return;
+    const planned = build(boundary);
+    if (planned === undefined) return;
+    const sources = messages.slice(0, boundary).map(({id, revision}) => ({id, revision}));
+    const record: HistoryCompaction = {id: digest([task.conversationId, prior?.id ?? null, sources]), taskId: task.id,
+      conversationId: task.conversationId, provider: pin, sources, status: 'admitted', text: null};
+    let admitted = false;
+    await this.outbox.transaction(() => {
+      this.#fence(active);
+      if (this.store.hasHistoryCompaction(record.id, task.id) || !this.spend.fitsTogether([{
+        model: provider.model, inputUnits: provider.inputUnits?.(base) ?? inputBound(base), outputUnits: LIMITS.outputUnits, ...pricing
+      }, planned.spend]) || this.spend.reserve({id: record.id, purpose: 'conversation', owner: task.conversationId, ...planned.spend}) !== undefined) return;
+      this.store.saveHistoryCompaction(record);
+      admitted = true;
+    });
+    if (!admitted) return;
+    const parent = startSpan(this.context.trace, 'bunny.assistant.model', {parent: active.span.context,
+      attributes: {'bunny.assistant.task_id': task.id, 'bunny.assistant.run_id': active.runId, 'bunny.assistant.effect_id': record.id}});
+    const controller = new AbortController();
+    const stop = () => {controller.abort();};
+    active.controller.signal.addEventListener('abort', stop, {once: true});
+    const cancel = this.context.scheduler.after(45_000, stop);
+    let usage: TokenUsage | null = null, sent = false, stopTurn: ProviderFault | undefined;
+    try {
+      this.#fence(active);
+      const current = this.#task(task.id);
+      const permitted = this.#hostedHistory(current);
+      const scope = this.#supervisorScope(current, 'supervisor', undefined, permitted);
+      if (!scope.fields('conversation', 'request', scope.requestId) || !this.#historySourcesAllowed(sources, permitted)) {
+        record.status = 'failed';
+      } else {
+        const interrupted = new Promise<never>((_resolve, reject) => {
+          controller.signal.addEventListener('abort', () => {reject(new ProviderFault('cancelled', true));}, {once: true});
+        });
+        sent = true;
+        const reply = await Promise.race([provider.turn(planned.input, controller.signal), interrupted]);
+        usage = reply.usage ?? null;
+        record.text = readConversationCompactionReply(reply, budgetTokens);
+        record.status = record.text === null ? 'failed' : 'succeeded';
+      }
+    } catch (error) {
+      record.status = sent && (!(error instanceof ProviderFault) || error.uncertain) ? 'uncertain' : 'failed';
+      if (error instanceof ProviderFault && !error.uncertain && error.sizeLimit === undefined &&
+        (error.code === 'capacity' || error.code === 'forbidden' || error.code === 'unauthenticated')) {
+        stopTurn = error; record.stopCode = error.code;
+      }
+    } finally {
+      cancel();
+      active.controller.signal.removeEventListener('abort', stop);
+      parent.end(record.status === 'succeeded' ? 'unset' : 'error');
+    }
+    if (this.#closed || !this.context.database().isOpen) return;
+    await this.outbox.transaction(() => {
+      if (record.status === 'succeeded' && !this.#historySourcesAllowed(sources, this.#hostedHistory(this.#task(task.id)))) {
+        record.status = 'failed'; record.text = null;
+      }
+      this.store.saveHistoryCompaction(record);
+      this.spend.settle(record.id, sent ? usage : {input: 0, output: 0, cacheRead: 0, cacheWrite: 0});
+    });
+    if (stopTurn !== undefined) throw stopTurn;
   }
   #taskFields(task: Task): FieldAccess {
     return this.#taskProvider(task).name === 'synthetic' ? this.#modelFields(task.profile, 'synthetic') : this.#supervisorScope(task).fields;
@@ -1772,8 +1919,16 @@ export class AssistantEngine {
   }
   #callDisclosuresAllowed(taskId: string, access: FieldAccess, relevant: (call: Call) => boolean,
     acceptsOldRecords = !canRevokeFields(this.options.share)): boolean {
-    return this.store.calls(taskId).every(call => !relevant(call) || call.incompleteDisclosures !== true && (call.disclosures === undefined
-      ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => this.#disclosureAllowed(field, access))));
+    return this.store.calls(taskId).every(call => !relevant(call) || this.#callAllowed(call, access, acceptsOldRecords));
+  }
+  #callAllowed(call: Call, access: FieldAccess, acceptsOldRecords: boolean,
+    history?: ReadonlyMap<string, HostedHistoryMessage>): boolean {
+    const historyRevision = (id: string) => history === undefined ? this.store.historySourceRevision(id) : history.get(id)?.revision;
+    return call.incompleteDisclosures !== true &&
+      (call.disclosures === undefined ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => this.#disclosureAllowed(field, access))) &&
+      (call.historySources?.every(({id, revision}) => access('conversation', 'excerpt', id) && historyRevision(id) === revision) ?? true) &&
+      (call.inputVersions?.every(({field, version}) => field.source === 'conversation' && field.record !== undefined && history !== undefined
+        ? String(historyRevision(field.record)) === version : this.#disclosureVersion(field) === version) ?? true);
   }
   #disclosureAllowed({source, field, record}: DisclosedField, access: FieldAccess): boolean {
     if (!access(source, field, record)) return false;
@@ -1840,10 +1995,16 @@ export class AssistantEngine {
     const unfinished = conversationId === undefined ? undefined : this.store.unfinishedIn(conversationId);
     if (unfinished !== undefined) {
       const context = unfinished.supervisor?.provider === 'anthropic' || unfinished.supervisor?.provider === 'openai'
-        ? this.#supervisorContext(profile, this.#supervisorScope(unfinished)) : this.#context(unfinished, recipient);
+        ? this.#hostedPreview(unfinished, this.#taskProvider(unfinished), this.#supervisorScope(unfinished).transcript, this.#toolsFor(unfinished)).input.context
+        : this.#context(unfinished, recipient);
       return {context: {...context, conversationId: unfinished.conversationId}, basis: {kind: 'task', taskId: unfinished.id}};
     }
-    if (this.provider(profile).name !== 'synthetic') return {context: {...this.#supervisorContext(profile), conversationId: conversationId ?? null}, basis: {kind: 'next-message'}};
+    const provider = this.provider(profile);
+    if (provider.name !== 'synthetic') {
+      const context = conversationId === undefined ? this.#supervisorContext(profile)
+        : this.#hostedPreview({profile, conversationId, contextThrough: this.store.lastSequence(conversationId), reservedUnits: 0}, provider).input.context;
+      return {context: {...context, conversationId: conversationId ?? null}, basis: {kind: 'next-message'}};
+    }
     const context = conversationId === undefined ? {...this.#context({profile, conversationId: '', contextThrough: 0}, recipient), conversationId: null}
       : this.#context({profile, conversationId, contextThrough: this.store.lastSequence(conversationId)}, recipient);
     return {context, basis: {kind: 'next-message'}};
@@ -1855,6 +2016,7 @@ export class AssistantEngine {
     const id = `${state.taskId}-step-${String(state.step)}`;
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
     const paid = provider.name !== 'synthetic';
+    if (paid && this.store.call(id) === undefined) await this.#prepareHistoryCompaction(task, provider, active);
     const ledger: DisclosureLedger = {fields: []}, modelLedger: DisclosureLedger = {fields: []};
     const promptFields = this.#fields(task.profile, 'prompt', provider.name);
     const fields = recordDisclosures(promptFields, ledger);
@@ -1864,20 +2026,31 @@ export class AssistantEngine {
     let request: TurnInput | undefined;
     let includesReplay = false;
     let history: DeviceHistoryBinding | undefined;
+    let historySources: readonly ContextSourceVersion[] = [];
+    let inputVersions: NonNullable<Call['inputVersions']> = [];
     // The task's unread steers are taken into its transcript in the call's own admission (Hub #2031), after the last
     // call's tool results, and the request is built from that transcript: a limit that refuses the call leaves them
     // unread, and a replayed node whose call was admitted takes none again.
     const text = await this.#call(state.taskId, state.step, 'model', async (signal, parent) => {
-      const current = this.#task(task.id), scope = paid ? this.#supervisorScope(current) : undefined;
+      let current = this.#task(task.id);
+      let eligible = paid ? this.#hostedHistory(current) : new Map<string, HostedHistoryMessage>();
+      let scope = paid ? this.#supervisorScope(current, 'supervisor', undefined, eligible) : undefined;
       if (includesReplay && scope !== undefined && scope.catalogSubject !== undefined && scope.priorCatalogIds.size > 0) {
-        const currentDevices = await this.#catalog().deviceSubjectMatches(scope.catalogSubject, parent);
-        if (currentDevices.length !== 1 || currentDevices[0] === undefined || !scope.priorCatalogIds.has(currentDevices[0].device.id) ||
-          scope.priorCatalogIds.size !== 1) throw new ProviderFault('forbidden');
+        const subject = scope.catalogSubject;
+        const currentDevices = await this.#catalog().deviceSubjectMatches(subject, parent);
+        this.#fence(active);
+        current = this.#task(task.id);
+        eligible = this.#hostedHistory(current);
+        scope = this.#supervisorScope(current, 'supervisor', undefined, eligible);
+        if (scope.catalogSubject !== subject || currentDevices.length !== 1 || currentDevices[0] === undefined ||
+          !scope.priorCatalogIds.has(currentDevices[0].device.id) || scope.priorCatalogIds.size !== 1) throw new ProviderFault('forbidden');
       }
       const auxiliary = this.#supervisorPromptFields(current.profile);
       const allow: FieldAccess = (source, field, record) => scope === undefined ? promptFields(source, field, record)
         : (source === 'knowledge' || source === 'preferences' ? auxiliary : scope.fields)(source, field, record);
       if (paid && this.store.queue.steers(task.id).length > 0 || history?.history !== undefined && (scope?.history?.history === undefined || !sameHistoryQuery(history.history.query, scope.history.history.query)) ||
+        !this.#historySourcesAllowed(historySources, eligible) ||
+        inputVersions.some(({field, version}) => this.#disclosureVersion(field) !== version) ||
         ledger.fields.some(field => !this.#disclosureAllowed(field, allow)) ||
         modelLedger.fields.some(field => !modelFields(field.source, field.field, field.record)) ||
         includesReplay && !this.#replayable(task.id, scope === undefined ? modelFields : allow, scope?.effects) ||
@@ -1886,12 +2059,14 @@ export class AssistantEngine {
       }
       return provider.turn(request ?? fail('internal'), signal)
         .then((reply): Answer => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null, disclosures: ledger.fields,
+          ...(paid ? {historySources, inputVersions} : {}),
           ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})}));
     }, undefined, current => {
       this.#drain(current);
       tools = this.#toolsFor(current);
       if (paid) {
-        const scope = this.#supervisorScope(current);
+        const eligible = this.#hostedHistory(current);
+        const scope = this.#supervisorScope(current, 'supervisor', undefined, eligible);
         const auxiliary = this.#supervisorPromptFields(current.profile);
         const scopedAccess: FieldAccess = (source, field, record) =>
           (source === 'knowledge' || source === 'preferences' ? auxiliary : scope.fields)(source, field, record);
@@ -1899,7 +2074,7 @@ export class AssistantEngine {
         if (!access('conversation', 'request', scope.requestId) || [...scope.ownerInputs].some(owner => !access('conversation', 'request', owner))) {
           throw new Fault('forbidden', 'This request is private under the configured model sharing policy.');
         }
-        const context = this.#supervisorContext(current.profile, scope, access);
+        const context = this.#supervisorContext(current.profile, access);
         const pinned = current.historyScope ?? current.claudeHistory;
         if (scope.history !== undefined && pinned?.requestId !== scope.requestId) current.historyScope = scope.history;
         history = scope.history;
@@ -1918,7 +2093,14 @@ export class AssistantEngine {
           return item;
         });
         const mode = copy.mode !== undefined && access('devices', 'status', 'hub') ? {mode: copy.mode.mode, revision: copy.mode.revision} : null;
-        request = {instructions: INSTRUCTIONS, context, transcript, tools, mode};
+        const base = {instructions: INSTRUCTIONS, context, transcript, tools, mode};
+        const fitted = this.#fitHostedHistory(current, provider, base, [...eligible.values()]);
+        historySources = fitted.sources;
+        inputVersions = ledger.fields.flatMap(field => {
+          const version = this.#disclosureVersion(field);
+          return version === undefined ? [] : [{field, version}];
+        });
+        request = fitted.input;
       } else {
         const replayFields: FieldAccess = (source, field, record) => modelAccess(source, field, record) && fields(source, field, record);
         const visible = (item: TurnInput['transcript'][number], prompt: FieldAccess, model: FieldAccess) => {
@@ -2372,7 +2554,8 @@ export class AssistantEngine {
       };
       result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
         if (hosted && artRequest) {
-          const scope = this.#supervisorScope(this.#task(task.id));
+          const current = this.#task(task.id);
+          const scope = this.#supervisorScope(current, 'supervisor', undefined, this.#hostedHistory(current));
           const prompt = this.#supervisorPromptFields(task.profile);
           const input: FieldAccess = (source, field, record) =>
             (source === 'knowledge' || source === 'preferences' ? prompt : scope.fields)(source, field, record);
@@ -2674,6 +2857,8 @@ export class AssistantEngine {
         // Whether a steer reached the task before this model call's answer was saved (Hub #2031); one after it is late.
         if (kind === 'model' && this.store.queue.steers(taskId).length > 0) call.steered = true;
         if (reply.disclosures !== undefined) call.disclosures = reply.disclosures;
+        if (reply.historySources !== undefined) call.historySources = reply.historySources;
+        if (reply.inputVersions !== undefined) call.inputVersions = reply.inputVersions;
         if (reply.incompleteDisclosures === true) call.incompleteDisclosures = true;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
         for (const confirmation of reply.confirmations ?? []) this.store.saveConfirmation(confirmation);
@@ -2724,6 +2909,8 @@ export class AssistantEngine {
             if (evidence && saved !== undefined) {
               saved.result = reply.text; saved.units = reply.units; saved.status = 'succeeded';
               if (reply.disclosures !== undefined) saved.disclosures = reply.disclosures;
+              if (reply.historySources !== undefined) saved.historySources = reply.historySources;
+              if (reply.inputVersions !== undefined) saved.inputVersions = reply.inputVersions;
               if (reply.incompleteDisclosures === true) saved.incompleteDisclosures = true;
               this.store.saveCall(saved);
             }

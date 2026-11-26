@@ -118,10 +118,25 @@ export class SpendLedger {
     const configured = own(this.prices, model);
     return configured === undefined ? own(BUILT_IN_PRICES, model) ?? {base: this.#dearest} : {base: configured};
   }
-  reserve(call: SpendCall): string | undefined {
-    const reserved = reservationCost(call.pricing === undefined ? this.#prices(call.model, call.inputUnits) : tierOf(call.pricing, call.inputUnits), call.inputUnits, call.outputUnits), {day, month} = this.totals();
+  fits(call: Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>, totals: SpendTotals = this.totals()): boolean {
+    return this.#refusal(this.#reservation(call), totals) === undefined;
+  }
+  fitsTogether(calls: readonly Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>[]): boolean {
+    return this.#refusal(calls.reduce((total, call) => total + this.#reservation(call), 0), this.totals()) === undefined;
+  }
+  #reservation(call: Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>): number {
+    return reservationCost(call.pricing === undefined ? this.#prices(call.model, call.inputUnits) : tierOf(call.pricing, call.inputUnits), call.inputUnits, call.outputUnits);
+  }
+  #refusal(reserved: number, {day, month}: SpendTotals): string | undefined {
     if (day.spentMicros + reserved > day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} would be passed: ${dollars(day.spentMicros)} is counted today and this model call could cost up to ${dollars(reserved)}. The next model call was not sent.`;
     if (month.spentMicros + reserved > month.limitMicros) return `The local estimate of this month's spend would pass its ${dollars(month.limitMicros)} guard: an estimated ${dollars(month.spentMicros)} is counted this month and this model call could cost up to ${dollars(reserved)}. The next model call was not sent.`;
+    return undefined;
+  }
+  reserve(call: SpendCall): string | undefined {
+    const reserved = this.#reservation(call), totals = this.totals();
+    const refusal = this.#refusal(reserved, totals);
+    if (refusal !== undefined) return refusal;
+    const {day, month} = totals;
     this.database.prepare('INSERT INTO assistant_spend(id,purpose,owner,model,day,month,at_ms,reserved_micros,pricing) VALUES (?,?,?,?,?,?,?,?,?)')
       .run(call.id, call.purpose, call.owner, call.model, day.period, month.period, this.now(), reserved, call.pricing === undefined ? null : JSON.stringify(call.pricing));
     return undefined;

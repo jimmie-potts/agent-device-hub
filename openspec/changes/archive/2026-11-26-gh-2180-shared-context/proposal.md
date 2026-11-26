@@ -2,13 +2,16 @@
 
 Conversation currently applies provider-specific sharing rules. The owner chose
 one model sharing policy so the same request can use either configured
-supervisor with the same permitted inputs. [Hub #2180](https://github.com/jimmie-potts/agent-device-hub/issues/2180)
+supervisor with the same permitted inputs. The active conversation is the
+default working context for both supervisors. [Hub #2180](https://github.com/jimmie-potts/agent-device-hub/issues/2180)
 
 ## What changes
 
-- Select bounded same-conversation context, relevant device facts and requested
-  device history in Companions. Apply the same policy before either hosted
-  supervisor can see them.
+- Use eligible messages from the active conversation in saved order for both
+  hosted supervisors. Fit them to the selected model’s token allowance and
+  compact older exchanges into a bounded continuity summary when needed.
+- Apply the common policy to device facts and requested device history before
+  either hosted supervisor can see them.
 - Normalize legacy model grants without overwriting private configuration.
   Keep disputed or denied fields private and make conflicts visible locally.
 - Check current grants at discovery, paging and provider submission, including

@@ -37,7 +37,7 @@ function ModelContext({context, profile, persona, revision, live, locked, enable
   const name = persona?.name ?? profile;
   return <section aria-label="Model context">
     <h3>Model context</h3>
-    <p>Preview the sections for {name}. Hosted models use the same sharing policy and select relevant excerpts when they have a current request.</p>
+    <p>Preview the sections for {name}. Hosted models receive permitted history from the current conversation. Older exchanges can be summarized to fit the model’s input allowance.</p>
     <label style={{display: 'flex', alignItems: 'center', gap: '0.6rem', minBlockSize: '2.75rem'}}>
       <input type="checkbox" style={{flex: 'none', inlineSize: '1.1rem', blockSize: '1.1rem', margin: 0}} checked={enabled} disabled={locked}
         onChange={event => {send({action: 'set-context-knowledge', persona: profile, enabled: event.target.checked});}}/>

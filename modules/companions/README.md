@@ -907,9 +907,10 @@ cover these paths.
 ### External-model sharing
 
 Conversation checks sharing before discovery, paging, model-bound tool
-results and submission. Relevant earlier replies are eligible only while their
-original disclosures can still be checked. A turn sends unread owner steers in
-the order they were admitted. Current grants apply to a previously assembled
+results and submission. Earlier model replies and retained tool results are
+eligible only while their underlying disclosures can still be checked.
+A turn sends unread owner steers in the order they were admitted. Current
+grants apply to a previously assembled
 request and to replay. A required field denied at submission prevents
 transport. Private Conversation reads, speech and an approved coding brief
 keep their existing grants.
@@ -1150,10 +1151,10 @@ list coding agent sessions only. Native worker reporting is not part of this.
 ### Recent context and New conversation
 
 The context builder assembles the companion's candidate context as named
-sections in a fixed order (`src/assistant/context.ts`, Hub #2029). Each
-section has its own budget in UTF-8 bytes of its rendered text. A section over
-its budget keeps what fits and says, in its own text, how many items it left
-out; nothing is cut silently and no section refuses the call.
+sections in a fixed order (`src/assistant/context.ts`, Hub #2029). Stable
+sections have individual UTF-8 byte limits and report omitted entries.
+Hosted conversation history uses the model's working token allowance.
+The synthetic provider uses a fixed recent-message section.
 
 | Order | Section | Budget | What it can contain |
 | --- | --- | --- | --- |
@@ -1161,10 +1162,9 @@ out; nothing is cut silently and no section refuses the call.
 | 2 | Knowledge notes | 32 KiB | The owner's active knowledge notes, by title and text. Off for each companion until the owner turns it on there; off sends nothing. Entries past the budget are left out, last first. |
 | 3 | Active preferences | 32 KiB | The owner's active explicit preferences, by title and text, or a line saying there are none. Entries past the budget are left out, last first. |
 | 4 | Long-term memory | 16 KiB | Nothing yet. A slot for each companion's later memory work. |
-| 5 | Recent conversation | 48 KiB and 48 messages | The task's own conversation's earlier owner messages, companion replies and tool results: device reads, catalog reads, coding hand-off receipts (sent, or waiting for the companion's worker slot), worker reports, refusals, declines and closing replies, and the companion's "Waiting to delegate" and "Delegated to" lines with the approved repository and brief. Each line names the saved message ID, the speaker or tool name, and an artwork attachment's request ID and description. Older messages are left out first. |
+| 5 | Conversation history | Selected model token allowance for hosted calls. 48 KiB and 48 messages for synthetic calls. | Eligible earlier owner messages, companion replies and tool results from the task's conversation. Saved messages name the source message and speaker. The synthetic section can show an artwork attachment's request ID and description and leaves older messages out first. |
 
-The recent conversation holds what was saved before the task started, so it
-stays the same for all of the task's calls and the cached prefix holds. A
+The history window starts with what was saved before the task started. A
 message saved later, such as an earlier reply's late confirmation, waits for
 the next task. It never holds another conversation, another companion's
 messages, a Reachy and MicroDuck exchange, a removed message, a message the
@@ -1181,6 +1181,39 @@ and to ask the owner when a reference could mean more than one thing. A
 follow-up such as "dim it" therefore still goes through the proposal's current
 device guards and the owner's approval. `read_saved_art` names each artwork's
 source request, so an attachment's request ID leads to its artwork ID.
+
+#### Hosted working context
+
+The supervisor receives eligible earlier owner messages, companion replies
+and permitted tool-result projections in their saved order. The model
+interprets prior references in light of the current request. Device tools
+still apply current scope, sharing and approval checks. Raw tool internals
+and previous timestamp-detail disclosures stay outside automatic history.
+
+Companions measures the complete serialized request, including instructions,
+tools, current input and native continuation. It reserves output space in
+the selected model's context window and applies a local working-input ceiling
+of 128,000 estimated tokens. The estimate charges short ASCII words at
+three letters per token rounded up, other bytes individually, plus 8,192
+tokens for provider framing. With an unlisted model, the fit uses one
+estimated token per byte and the local budget. The 32 KiB individual
+owner-message admission limit, adapter transport bounds, turn reservations
+and spend limits apply independently.
+
+When eligible older exchanges no longer fit, Companions keeps a recent
+verbatim tail and asks the pinned supervisor for a bounded continuity
+summary. That text-only call has no tools and requests at most 2,048 output
+tokens. Each task can start at most one compaction, with a 45-second
+deadline and a reservation capped at 10% of remaining daily and monthly
+spend. Summaries carry earlier decisions, open requests or questions,
+device references and corrections. The saved history retains full messages
+and details that the summary omits. Companions verifies the covered source
+versions and current grants before sending or reusing summary text. An edit,
+removal or revocation can invalidate the checkpoint. If cost, the deadline,
+provider availability or an unusable answer prevents compaction, Companions
+can continue with an eligible verbatim tail. An ambiguous attempt keeps
+its receipt and spend reservation. The summary and earlier messages confer
+no permission to act.
 
 The Anthropic adapter sends the system prompt as two blocks. The first holds
 the fixed instructions and rules, the personality, the knowledge notes, the

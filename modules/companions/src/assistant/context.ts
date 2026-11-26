@@ -156,6 +156,14 @@ export function buildContext(source: ContextSource): PromptContext {
   return {profile: source.profile, conversationId: source.recent.conversationId, sections: [personality, knowledge, preferences, memory, recent]};
 }
 
+/** The hosted window is fitted against the whole wire request before it is installed here. */
+export function withHostedHistory(context: PromptContext, history: {text: string; included: number; trimmed: number; budgetBytes: number}): PromptContext {
+  const text = history.text === '' ? null : history.text;
+  const recent: ContextSection = {...section('recent', text === null ? 'empty' : 'included', history.included, history.trimmed, text),
+    budgetBytes: history.budgetBytes};
+  return {...context, sections: context.sections.map(value => value.name === 'recent' ? recent : value)};
+}
+
 /** A section by name. The builder always assembles every section, so it is always there. */
 export function sectionOf(context: PromptContext, name: SectionName): ContextSection {
   const found = context.sections.find(value => value.name === name);
