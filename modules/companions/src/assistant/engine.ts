@@ -2625,6 +2625,25 @@ export class AssistantEngine {
           this.#catalogReferenceTexts(active.task, active.scope, modelCallId, true).slice(2), contextIds);
       },
       visible,
+      attachedArtwork: (requestId, artworkIds, displays) => {
+        const active = current();
+        if (active === undefined) return false;
+        const {task, scope} = active, through = task.contextThrough;
+        if (through === undefined) return false;
+        const displayIds = displays.filter(id => !artworkIds.includes(id));
+        if (scope.exactTargets.some(id => !displayIds.includes(id)) ||
+          artworkIds.some(id => catalogSelectorSelected('artwork', id, scope, [], displayIds))) return false;
+        const call = this.store.call(modelCallId);
+        const disclosed = call?.disclosures?.filter(field => field.source === 'artwork' && field.field === 'attachment');
+        if (disclosed?.length !== 1 || disclosed[0]?.record !== requestId) return false;
+        const read = this.#fields(task.profile, 'read', 'private-conversation');
+        const model = this.#fields(task.profile, 'prompt', this.#taskProvider(task).name);
+        if (!read('conversation', 'text', task.conversationId) || !read('artwork', 'attachment', requestId) ||
+          !model('artwork', 'attachment', requestId)) return false;
+        return this.store.recentContext(task.profile, task.conversationId, through, message =>
+          read('conversation', 'text', message.id) && model('conversation', 'text', message.id))
+          .messages.some(message => message.attachment?.requestId === requestId);
+      },
       target: (id, source, alternatives, implicit = false, nested = []) => {
         const active = current();
         if (active === undefined || !visible(source, id)) return 'forbidden';

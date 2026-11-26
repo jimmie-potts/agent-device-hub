@@ -46,6 +46,7 @@ export type CatalogAdmission = {
   readonly selector: (kind: CatalogSelectorKind, selector: string, contextIds?: readonly string[]) => boolean;
   readonly target: (id: string, source: CatalogTargetSource, alternatives: readonly CatalogTarget[], implicit?: boolean, nested?: readonly string[]) => ErrorCode | undefined;
   readonly visible: (source: CatalogTargetSource, id: string) => boolean;
+  readonly attachedArtwork?: (sourceRequestId: string, artworkIds: readonly string[], displays: readonly string[]) => boolean;
   readonly current: () => boolean;
   readonly covers: (ids: readonly string[]) => boolean;
   readonly ownerText: () => {text: string; explicitIds: readonly string[]};
@@ -407,8 +408,8 @@ export class ConversationActions {
     let showText: string | undefined;
     const contextDisplays = family === 'art-show' && Array.isArray(data.targets) ? data.targets.flatMap(target =>
       typeof target === 'string' ? [literalDeviceId(target) ?? target] : []) : [];
-    if ((family === 'art-show' || family === 'art-catalog-edit') && admission !== undefined &&
-      (typeof data.artworkId !== 'string' || !admission.selector('artwork', data.artworkId, contextDisplays) || !admission.visible('artwork', data.artworkId))) {
+    if (family === 'art-catalog-edit' && admission !== undefined &&
+      (typeof data.artworkId !== 'string' || !admission.selector('artwork', data.artworkId) || !admission.visible('artwork', data.artworkId))) {
       return {code: 'not-found'};
     }
     if (family === 'art-show') {
@@ -420,15 +421,29 @@ export class ConversationActions {
       const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
       if (admission?.visible('artwork', artworkId) === false) return {code: 'not-found'};
       if (art === undefined) return {code: 'unavailable'};
-      const recent = art.artworks.find(item => item.artworkId === data.artworkId);
-      const job = art.jobs.find(item => item.artworkId === data.artworkId);
-      const retained = recent === undefined || job === undefined ? await this.retainedArtwork?.(data.artworkId, 1200) : undefined;
+      const recent = art.artworks.find(item => item.artworkId === artworkId);
+      const job = art.jobs.find(item => item.artworkId === artworkId);
+      const artworkIds = art.artworks.map(item => item.artworkId);
+      const displayIds = contextDisplays.filter(id => !artworkIds.includes(id));
+      const explicit = admission === undefined || admission.selector('artwork', artworkId, displayIds);
+      const attachment = !explicit && recent !== undefined && job?.status === 'finished' && job.outcome === Outcome.succeeded &&
+        admission.attachedArtwork?.(job.requestId, artworkIds, displayIds) === true ? job.requestId : undefined;
+      if (!explicit && attachment === undefined) {
+        // A single visible item can explain the incompatibility. A show still needs an identified artwork.
+        if (recent !== undefined && contextDisplays.length === 1 && normalize(contextDisplays[0] ?? '') === 'browser' &&
+          usableArtComposition(recent, 'ui') === undefined && art.artworks.filter(item => admission.visible('artwork', item.artworkId)).length === 1) {
+          return {question: 'This artwork has no browser rendition. Which available destination would you like? Give the artwork ID as well.'};
+        }
+        return {code: 'not-found'};
+      }
+      const retained = recent === undefined || job === undefined ? await this.retainedArtwork?.(artworkId, 1200) : undefined;
       if (admission?.visible('artwork', artworkId) === false) return {code: 'not-found'};
       if (retained !== undefined && 'error' in retained) return {code: retained.error.code};
       const artwork = recent ?? retained;
       if (artwork === undefined) return {code: 'not-found'};
       const selected = await this.#artSelection(data.targets, parent, canNameDevice, artwork);
-      if (admission?.visible('artwork', artworkId) === false) return {code: 'not-found'};
+      if (admission?.visible('artwork', artworkId) === false ||
+        attachment !== undefined && admission?.attachedArtwork?.(attachment, artworkIds, displayIds) !== true) return {code: 'not-found'};
       if (!('targets' in selected)) return selected;
       const sourceRequestId = job?.requestId ?? retained?.sourceRequestId;
       const attached = sourceRequestId === undefined ? undefined : this.context.database().prepare(
