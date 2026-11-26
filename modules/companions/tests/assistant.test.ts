@@ -2806,6 +2806,11 @@ for (const name of ['anthropic', 'openai'] as const) {
     const previousPrompt = 'Give me the synthetic orbital report.';
     const previousAnswer = 'A sapphire sensor tracks the fictional ORBITAL_FIXTURE vehicle.';
     const followUp = 'Explain the sapphire sensor.';
+    const advicePrompt = 'Suggest a way to remember recurring chores.';
+    const advice = 'Try setting a recurring alarm.';
+    const desk = 'What is the brightness of Desk Lamp?';
+    const hall = 'What is the brightness of Hall Lamp?';
+    const deskAnswer = 'Desk Lamp reported a reading. DESK_PRIVATE_SENTINEL.';
     const heldPrompt = 'Wait with this first synthetic subject.';
     const heldModel = deferred<Response>();
     const respond = (text: string) => Promise.resolve(Response.json(name === 'anthropic'
@@ -2813,19 +2818,31 @@ for (const name of ['anthropic', 'openai'] as const) {
       : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}],
         usage: {input_tokens: 20, output_tokens: 10}}));
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
-      const body = JSON.parse(init.body) as {system?: {text: string}[]; instructions?: string; input?: {role: string; content: string}[];
+      const body = JSON.parse(init.body) as {system?: {text: string}[]; instructions?: string; input?: {role: string; content: string; type?: string}[];
         messages?: {role: string; content: {type: string; text?: string}[]}[]};
       const owner = body.messages?.filter(item => item.role === 'user').flatMap(item => item.content.flatMap(block =>
         block.type === 'text' && block.text !== undefined ? [block.text] : [])) ?? body.input?.filter(item => item.role === 'user').map(item => item.content) ?? [];
       seen.push({owner, instructions: body.system?.map(block => block.text).join('\n') ?? body.instructions ?? ''});
       if (owner[0] === heldPrompt) return heldModel.promise;
-      return respond(owner[0] === previousPrompt ? previousAnswer : 'Synthetic reply.');
+      if (owner[0] === desk) {
+        const result = body.messages?.some(item => item.content.some(block => block.type === 'tool_result')) === true ||
+          body.input?.some(item => item.type === 'function_call_output') === true;
+        if (result) return respond(deskAnswer);
+        return Promise.resolve(Response.json(name === 'anthropic'
+          ? {content: [{type: 'tool_use', id: 'read_desk', name: 'read_lifx', input: {device: 'desk'}}],
+            stop_reason: 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+          : {status: 'completed', output: [{type: 'function_call', id: 'fc_read_desk', call_id: 'read_desk',
+            name: 'read_lifx', arguments: '{"device":"desk"}'}], usage: {input_tokens: 20, output_tokens: 10}}));
+      }
+      return respond(owner[0] === previousPrompt ? previousAnswer : owner[0] === advicePrompt ? advice : 'Synthetic reply.');
     };
     const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
       : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
     const baseline = sharing();
     let revoked: string | undefined;
-    const w = await world(context, {provider, share: query => baseline(query) && !(query.destination === 'external-model' &&
+    const w = await world(context, {provider, tools: ['read_lifx'],
+      devices: owner => owner === 'bunny/modules/lifx' ? [light('desk', 'Desk Lamp'), light('hall', 'Hall Lamp')] : [],
+      share: query => baseline(query) && !(query.destination === 'external-model' &&
       query.field === 'request' && query.record === revoked)});
     await control(w.core, w.module(), 'enable');
     const ask = async (text: string) => {
@@ -2841,6 +2858,13 @@ for (const name of ['anthropic', 'openai'] as const) {
     revoked = `${origin}-prompt`;
     await ask(followUp);
     assert.doesNotMatch(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'the prior answer cannot bypass its original request grant');
+    await ask(advicePrompt);
+    await ask('What did you recommend?');
+    assert.match(seen.at(-1)?.instructions ?? '', /Try setting a recurring alarm/, 'an open question can refer to the last answer without repeating its words');
+    await ask(desk);
+    await ask(hall);
+    assert.doesNotMatch(seen.at(-1)?.instructions ?? '', /DESK_PRIVATE_SENTINEL|brightness of Desk Lamp/,
+      'the explicit Hall Lamp request cannot recover earlier Desk Lamp facts');
 
     assert.equal((await input(w.core, w.module(), heldPrompt)).status, 'accepted');
     await until(() => seen.at(-1)?.owner[0] === heldPrompt);
@@ -3182,9 +3206,12 @@ void test('both hosted supervisors disclose requested power timestamps only whil
   }});
   let revokeAfterRead = false, revoked = false, reads = 0;
   let deniedDiscovery: 'private-conversation' | 'external-model' | undefined;
+  const localDetailsDenied = sharing([{caller: 'owner', companion: 'bunny', destination: 'private-conversation',
+    purpose: 'read', source: 'devices', field: 'details', record: target, allow: false}]);
+  let legacyLocalDenial = false;
   const baseline = sharing();
   const w = await world(context, {provider: anthropic, alternateProvider: openai, timeZone: 'UTC', tools: ['read_device_history'],
-    share: query => baseline(query) && !(query.destination === deniedDiscovery && query.source === 'devices' && query.field === 'index') &&
+    share: query => (legacyLocalDenial ? localDetailsDenied : baseline)(query) && !(query.destination === deniedDiscovery && query.source === 'devices' && query.field === 'index') &&
       !(revoked && query.destination === 'external-model' && query.source === 'devices' &&
       query.field === 'details' && query.record === target),
     devices: owner => owner === source ? [light(target, 'Desk Lamp'), light('other', 'Hall Lamp')] : [],
@@ -3222,6 +3249,10 @@ void test('both hosted supervisors disclose requested power timestamps only whil
       assert.equal(await ask(timestamps), 'refused: forbidden');
     }
     deniedDiscovery = undefined;
+    legacyLocalDenial = true;
+    assert.equal(await ask(aggregate), 'refused: forbidden');
+    assert.equal(await ask(timestamps), 'refused: forbidden');
+    legacyLocalDenial = false;
     const resultCount = capture.results.length;
     revokeAfterRead = true;
     await ask(timestamps, 'failed');

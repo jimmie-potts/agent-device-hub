@@ -1574,11 +1574,8 @@ export class AssistantEngine {
     const earlier: RecentMessage[] = previous !== undefined ? previousId !== undefined && allowsExcerpt(previousId)
       ? [{id: previousId, role: 'owner' as const, text: previous.text}] : [] : saved.slice(-4);
     const words = normalizedControlText(request);
-    const namedAnswer = /\b(?:your (?:answer|reply|report|suggestion)|(?:answer|reply|report|suggestion) you gave)\b/u.test(words);
-    const refers = namedAnswer || /\b(?:it|that|those|both|former|latter|first one|second one|earlier|previous|same|again|last request|last message)\b/u.test(words) ||
+    const refers = /\b(?:it|that|those|both|former|latter|first one|second one|earlier|previous|same|again|last request|last message)\b/u.test(words) ||
       /^(?:and |(?:what|how) about )/u.test(words);
-    const lastOwner = earlier.at(-1);
-    const earlierAnswer = purpose === 'supervisor' && lastOwner !== undefined ? this.#priorAnswer(task, lastOwner, allowsExcerpt) : undefined;
     const requestTopics = new Set(subjectWords(request));
     const overlaps = (message: RecentMessage) => subjectWords(message.text).some(word => requestTopics.has(word));
     const brightnessTarget = purpose === 'supervisor' ? brightnessSubject(request) : undefined;
@@ -1608,18 +1605,26 @@ export class AssistantEngine {
       discover('devices', 'index', device.id) && local('devices', 'label', device.id) &&
       recordedSupervisorField(this.options.share, task.profile, 'supervisor', 'devices', 'index', device.id) &&
       recordedSupervisorField(this.options.share, task.profile, 'supervisor', 'devices', 'label', device.id)));
-    const recent = history !== undefined ? [] : purpose === 'title' || refers ? visibleEarlier
-      : visibleEarlier.filter(message => overlaps(message) || explicit.some(({device}) => mentioned(message.text).some(item => item.device.id === device.id)) ||
-        earlierAnswer !== undefined && overlaps(earlierAnswer));
-    if (recent.length > 0 && earlierAnswer !== undefined && (refers || recent.some(overlaps) || overlaps(earlierAnswer))) recent.push(earlierAnswer);
-    const references = refers && explicit.length === 0 && exact.length === 0
-      ? mentioned(recent.filter(message => message.role === 'owner').at(-1)?.text ?? '') : [];
+    const previousOwner = visibleEarlier.at(-1);
+    const references = refers && explicit.length === 0 && exact.length === 0 ? mentioned(previousOwner?.text ?? '') : [];
     const ordinal = /\b(?:first|former)\b/u.test(words) ? 0 : /\b(?:second|latter)\b/u.test(words) ? 1 : undefined;
     const referred = ordinal !== undefined ? references.slice(ordinal, ordinal + 1)
       : references.length === 1 || /\b(?:both|those)\b/u.test(words) ? references : [];
     const selected = [...explicit, ...referred];
     for (const {device} of selected) devices.add(device.id);
     if (purpose === 'supervisor' && /\bmode\b/u.test(words)) devices.add('hub');
+    // Only current selection can authorize an earlier answer's derived device facts.
+    const earlierAnswer = purpose === 'supervisor' && history === undefined && previousOwner !== undefined
+      ? this.#priorAnswer(task, previousOwner, allowsExcerpt, devices) : undefined;
+    // A short open question with no independent subject can rely on the nearest
+    // permitted reply even when the owner's words differ from the reply's.
+    const openQuestion = selected.length === 0 && subject === undefined && requestTopics.size <= 1 &&
+      (request.trimEnd().endsWith('?') || /^(?:how|what|when|where|which|who|why)\b/u.test(words));
+    const subjectFits = (message: RecentMessage) => explicit.length === 0 || mentioned(message.text).every(({device}) => devices.has(device.id));
+    const recent = history !== undefined ? [] : purpose === 'title' ? visibleEarlier
+      : visibleEarlier.filter(message => subjectFits(message) && (refers || overlaps(message) ||
+        earlierAnswer !== undefined && (openQuestion || overlaps(earlierAnswer))));
+    if (recent.length > 0 && earlierAnswer !== undefined && (refers || openQuestion || recent.some(overlaps) || overlaps(earlierAnswer))) recent.push(earlierAnswer);
     const selectedDevice = (owner: AssistantDeviceOwner, id: string) => selected.some(entry => entry.owner === owner && entry.device.id === id);
     const catalogSubject = group !== undefined || exact.length > 1 ? undefined
       : subject !== undefined && (!refers || references.length === 0) ? subject
@@ -1638,7 +1643,7 @@ export class AssistantEngine {
       if (source === 'conversation' && (record === undefined || !canReadMessage(record))) return false;
       if (source === 'devices') {
         if (record === undefined || !local(source, field, record) || field === 'index' && !discover(source, field, record)) return false;
-        if ((field === 'summary' || field === 'details') && !local(source, 'status', record)) return false;
+        if ((field === 'summary' || field === 'details') && (!local(source, 'status', record) || !local(source, 'details', record))) return false;
         if (matchesCatalogSubject(catalogSubject, record)) devices.add(record);
       }
       return access(source, field, record);
@@ -1646,7 +1651,7 @@ export class AssistantEngine {
     return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, priorCatalogIds, resolvedCatalogDevice,
       brightnessTarget: brightnessTarget === undefined ? undefined : catalogSubject ?? brightnessTarget, selectedDevice, history};
   }
-  #priorAnswer(task: Task, owner: RecentMessage, allowsExcerpt: (id: string) => boolean): RecentMessage | undefined {
+  #priorAnswer(task: Task, owner: RecentMessage, allowsExcerpt: (id: string) => boolean, selectedDevices: ReadonlySet<string>): RecentMessage | undefined {
     const source = this.store.messageSource(owner.id);
     const origin = source === undefined ? undefined : this.store.task(source.taskId);
     if (origin === undefined || origin.id === task.id || origin.profile !== task.profile || origin.conversationId !== task.conversationId ||
@@ -1673,7 +1678,7 @@ export class AssistantEngine {
             if (field !== 'excerpt' || nested === undefined || record !== `${nested.id}-result` || !permitsAnswer(nested, remaining - 1)) return false;
           }
         }
-        if (source === 'devices' && (field === 'summary' || field === 'details' ||
+        if (source === 'devices' && (!selectedDevices.has(record) || field === 'summary' || field === 'details' ||
           !read(source, field, record) || field === 'index' && !discover(source, field, record))) return false;
         return recordedSupervisorField(this.options.share, task.profile, 'supervisor', source, field, record);
       };
