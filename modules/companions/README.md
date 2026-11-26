@@ -889,6 +889,15 @@ identify a reference such as “it.” A status question or model suggestion
 cannot authorize a write. Paid artwork and coding delegation still use an
 approval question.
 
+For Wemo power, the selected supervisor interprets the current owner's
+message. It can look up the permitted labels and IDs of the configured
+plugs when a target needs resolution. This lookup is part of
+`set_wemo_power` and supplies no power status. An owner can name a plug,
+ask for all configured Wemo plugs, or refer to one identified in the
+conversation. Duplicate labels need an exact choice. Conversation validates
+the typed proposal and saves a separate operation for each plug before
+dispatch. The exchange shows each receipt even when the outcomes differ.
+
 The task saves the authorizing message IDs, exact target and setting, current
 revision, and request ID before dispatch. The core routes the existing typed
 command through its designated writer. A changed revision or device hold

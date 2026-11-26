@@ -2,13 +2,19 @@
 
 ### Requirement: Model-interpreted Wemo power proposals
 
-The selected Conversation supervisor SHALL interpret the current authenticated owner request using the common context and grants. It SHALL distinguish a question, a request needing clarification and a power action for one or two configured Wemo plugs. The Hub SHALL bind a typed action to the current request, any eligible clarification and the eligible target references. The Hub SHALL validate the whole selection, current access, registered ownership, power capability and target guards before dispatch. It SHALL use the existing tracked generic power dispatch and the designated Wemo writer with its hold and maximum-on policy. An earlier message MAY identify a referenced device. The current owner request supplies authorization.
+The selected Conversation supervisor SHALL interpret the current authenticated owner request using the common context and grants. It SHALL distinguish a question, a request needing clarification and a power action for one or two configured Wemo plugs. The Hub SHALL bind a typed action to the current request, any eligible clarification and the eligible target references. The Hub SHALL validate the whole selection, current access, registered ownership, power capability and target guards before dispatch. It SHALL use the existing tracked generic power dispatch and the designated Wemo writer with its hold and maximum-on policy. Permitted conversation facts and a scoped lookup of configured Wemo IDs and labels MAY identify a referenced device. The current owner request supplies authorization.
 
 #### Scenario: Two plugs followed by one reference
 
 - **WHEN** the owner asks any companion to operate two named Wemo plugs and then asks to operate just one using the previous exchange
 - **THEN** the first request dispatches once for each intended target and the next request dispatches once for the one resolved target
 - **AND** both configured supervisors use the same proposal and validation rules
+
+#### Scenario: A relative description needs a lookup
+
+- **WHEN** the owner describes a plug without using its configured name or ID
+- **THEN** the supervisor can resolve the request using the permitted target lookup and prior Conversation facts
+- **AND** the Hub checks the chosen ID against the disclosed records and their current guards
 
 #### Scenario: Ambiguous or superseded request
 

@@ -6,7 +6,7 @@ import {parseControlSelection, resolveModelControl, type ControlReference, type 
 const MAX_PLUGS = 2;
 
 export function wemoControlReference(device: DeviceRecord, allowed: boolean): ControlReference {
-  return {id: device.id, label: deviceLabel(device), allowed, binding: JSON.stringify([device.configurationRevision,
+  return {id: device.id, label: deviceLabel(device), allowed, eligible: false, binding: JSON.stringify([device.configurationRevision,
     device.generation.epoch, device.generation.sequence, device.capabilities.power.supported])};
 }
 

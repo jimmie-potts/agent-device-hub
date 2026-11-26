@@ -24,7 +24,7 @@ import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
 import {authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, literalDeviceSubject, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
-import {CONTROL_INSTRUCTIONS, type ControlSource, type ModelControlScope} from './model-control.js';
+import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
 import {fitConversationHistory, type HostedWindow} from './conversation-window.js';
@@ -42,7 +42,7 @@ import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} fro
 import {describePowerLimit, followPowerLimits, localInstant} from './power-limits.js';
 import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices, type DeviceReadDisplay} from './devices.js';
 import {bindCodingRequirements, codingOS, codingRequirements, ownerCodingRoute} from './coding-request.js';
-import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_WEMO, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
+import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_WEMO, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, WEMO_TARGETS, summarizeSessions, type CoreCopy} from './tools.js';
 
 export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provider.js';
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
@@ -134,7 +134,7 @@ const stoppedBeforeBrightness = (text: string | null): boolean =>
   text === BRIGHTNESS_REQUEST_UNAVAILABLE || text === BRIGHTNESS_ANSWER_UNAVAILABLE;
 
 type Answer = {text: string; units: number | null; usage?: TokenUsage | null; historySources?: Call['historySources']; inputVersions?: Call['inputVersions']; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[];
-  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true};
+  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true; wemoFacts?: Call['wemoFacts']};
 /** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
 type Budget = {units: number; unit: string; spend?: {model: string; inputUnits: number; outputUnits: number; pricing?: NonNullable<SupervisorIdentity['pricing']>}};
 function fail(code: ErrorCode): never {throw new Fault(code);}
@@ -1564,7 +1564,7 @@ export class AssistantEngine {
     return tools.filter(tool => {
       const family = catalogCommand(tool.name);
       return tool.name === ASK_OWNER || tool.name === SET_MODE || tool.name === DELEGATE_CODING ||
-        tool.name === READ_DEVICES || tool.name === READ_HUB_GUIDE ||
+        tool.name === READ_DEVICES || tool.name === READ_HUB_GUIDE || tool.name === WEMO_TARGETS ||
         deviceToolOwner(tool.name) !== undefined || family === 'art-request' || family !== undefined && catalogRoute(family).binding === 'device';
     });
   }
@@ -1593,6 +1593,7 @@ export class AssistantEngine {
     const discover = this.#fields(task.profile, 'discovery', 'private-conversation');
     const messages = new Map<string, {conversationId: string}>();
     const configured = purpose === 'supervisor' ? this.#historyDevices() : [];
+    if (purpose === 'supervisor') for (const id of this.#disclosedWemoTargets(task, effects)) devices.add(id);
     const history = purpose === 'supervisor' ? this.#historyBinding(task, configured) : undefined;
     if (history?.history !== undefined) devices.add(history.history.query.target);
 
@@ -1710,7 +1711,7 @@ export class AssistantEngine {
         const source = calls.find(call => call.id === message.id && call.kind === 'tool' && call.status === 'succeeded');
         const item = origin.transcript.find(item => item.role === 'tool' && 'effect' in item && item.effect === message.id);
         if (source === undefined || item?.role !== 'tool' || !read('conversation', 'details', message.id) ||
-          !(item.name === READ_DEVICES || item.name === READ_DEVICE_HISTORY || deviceToolOwner(item.name) !== undefined) ||
+          !(item.name === READ_DEVICES || item.name === READ_DEVICE_HISTORY || item.name === WEMO_TARGETS || deviceToolOwner(item.name) !== undefined) ||
           source.action !== undefined || source.result !== message.text || source.disclosures?.some(field => field.source === 'devices') !== true ||
           source.disclosures.some(field => field.source !== 'devices' || field.field === 'details')) continue;
         if (hasSavedDisclosureProof(this.store, origin.id, calls, source.ordinal) &&
@@ -2156,7 +2157,7 @@ export class AssistantEngine {
           ...(paid ? {historySources, inputVersions} : {}),
           ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})}));
     }, (_current, saved) => {
-      if (controlScope !== undefined) saved.modelControlScope = controlScope;
+      if (controlScope !== undefined) saved.modelControlProof = modelControlProof(controlScope);
     }, current => {
       releaseSpend?.();
       this.#drain(current);
@@ -2189,9 +2190,7 @@ export class AssistantEngine {
         const fitted = this.#fitHostedHistory(current, provider, base, [...eligible.values()]);
         historySources = fitted.sources;
         if (tools.some(tool => tool.name === SET_WEMO_POWER)) {
-          const covered = new Set(fitted.sources.map(source => source.id));
-          const earlier = [...eligible.values()].filter(source => source.role === 'owner' && covered.has(source.id)).at(-1);
-          controlScope = this.#modelControlScope(current, earlier?.id);
+          controlScope = this.#modelControlScope(current, fitted.sources, eligible);
         }
         inputVersions = ledger.fields.flatMap(field => {
           const version = this.#disclosureVersion(field);
@@ -2214,11 +2213,9 @@ export class AssistantEngine {
         const mode = proposalCopy.mode;
         const context = this.#context(current, undefined, {prompt: fields, model: modelAccess});
         if (tools.some(tool => tool.name === SET_WEMO_POWER)) {
-          const read = this.#fields(current.profile, 'read', 'private-conversation');
-          const earlier = current.contextThrough === undefined ? undefined : this.store.recentContext(current.profile, current.conversationId,
-            current.contextThrough, message => message.role === 'owner' && read('conversation', 'text', message.id) &&
-              modelAccess('conversation', 'text', message.id)).messages.at(-1);
-          controlScope = this.#modelControlScope(current, earlier?.id);
+          const history = ledger.fields.flatMap(field => field.source !== 'conversation' || field.field !== 'text' || field.record === undefined
+            ? [] : [{id: field.record, revision: this.store.messages.get(field.record)?.revision ?? 0}]);
+          controlScope = this.#modelControlScope(current, history);
         }
         request = {instructions: controlInstructions(tools), context, transcript, tools,
           mode: mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: mode.mode, revision: mode.revision}};
@@ -2433,7 +2430,21 @@ export class AssistantEngine {
     return task.question?.kind === 'clarification' && afterInstruction.some(item =>
       item.role === 'tool' && 'effect' in item && item.effect === `${task.question?.id}-answer`) ? task.question : undefined;
   }
-  #modelControlScope(task: Task, earlierId?: string): ModelControlScope {
+  #disclosedWemoTargets(task: Task, effects?: ReadonlySet<string>): string[] {
+    const configured = this.options.devices?.(ASSISTANT_WEMO_OWNER) ?? [];
+    return task.transcript.flatMap(item => {
+      if (item.role !== 'tool' || item.name !== WEMO_TARGETS && item.name !== READ_WEMO ||
+          !('effect' in item) || typeof item.effect !== 'string' || effects?.has(item.effect) === false) return [];
+      const call = this.store.call(item.effect);
+      if (call?.status !== 'succeeded' || call.result !== item.result) return [];
+      return call.wemoFacts?.flatMap(fact => {
+        const device = configured.find(candidate => candidate.id === fact.id);
+        return device !== undefined && controlReferenceSnapshot(wemoControlReference(device, true)) === fact.revision ? [fact.id] : [];
+      }) ?? [];
+    });
+  }
+  #modelControlScope(task: Task, historySources: readonly ContextSourceVersion[] = [],
+    eligibleHistory?: ReadonlyMap<string, HostedHistoryMessage>): ModelControlScope {
     const read = this.#fields(task.profile, 'read', 'private-conversation');
     const discover = this.#fields(task.profile, 'discovery', 'private-conversation');
     const hosted = this.#taskProvider(task).name !== 'synthetic';
@@ -2454,23 +2465,32 @@ export class AssistantEngine {
     const request = saved?.text === (newest?.text ?? task.prompt) && saved !== undefined ? saved : {id: requestId, revision: 0, text: ''};
     const question = this.#controlClarification(task);
     const answer = question?.answer == null ? undefined : savedOwner(`${question.id}-answer`, 'excerpt');
-    const previous = inputs.at(-2);
-    const previousId = previous === undefined ? earlierId : conversationMessageId(task.id, previous);
-    const earlier = previousId === undefined ? undefined : savedOwner(previousId, 'excerpt');
+    const history = hosted ? eligibleHistory ?? this.#hostedHistory(task) : undefined;
     const references = (this.options.devices?.(ASSISTANT_WEMO_OWNER) ?? []).map(device => wemoControlReference(device,
       discover('devices', 'index', device.id) && (['index', 'label', 'status'] as const).every(field =>
         read('devices', field, device.id) && permitted('devices', field, device.id))));
+    const related = new Set(this.#disclosedWemoTargets(task, hosted ? this.#supervisorScope(task).effects : undefined));
+    for (const text of [request.text, answer?.text ?? '']) for (const id of controlReferenceIds(references, text)) related.add(id);
+    const usedHistory = historySources.filter(source => {
+      const message = hosted ? history?.get(source.id) : savedOwner(source.id, 'excerpt');
+      if (message?.revision !== source.revision) return false;
+      const ids = controlReferenceIds(references, message.text);
+      for (const id of ids) related.add(id);
+      return ids.length > 0;
+    });
+    const exactTargets = exactControlIds(answer?.text ?? request.text, references.map(reference => reference.id));
     const core = this.#core();
     const modeRevision = core.synced ? core.mode?.revision ?? null : null;
-    return {request, modeRevision, ...(answer === undefined ? {} : {answer}), ...(earlier === undefined ? {} : {earlier}), references};
+    return {request, modeRevision, ...(answer === undefined ? {} : {answer}), history: usedHistory, exactTargets,
+      references: references.map(reference => ({...reference, eligible: related.has(reference.id)}))};
   }
   #bindWemoControl(task: Task, call: ToolCall, modelCallId: string, step: number):
     string | {kind: 'clarify'; targets: readonly string[]} | {kind: 'bound'; control: BoundControl} {
-    const saved = this.store.call(modelCallId)?.modelControlScope;
+    const saved = this.store.call(modelCallId)?.modelControlProof;
     if (saved === undefined || saved.request.revision === 0 || this.store.queue.steers(task.id).length > 0) return 'refused: invalid-state';
-    const scope = this.#modelControlScope(task, saved.earlier?.id);
+    const scope = this.#modelControlScope(task, saved.history);
     if (!this.#sameControlSources(saved, scope) || saved.modeRevision !== scope.modeRevision) return 'refused: revision-conflict';
-    if (!isDeepStrictEqual(saved.references, scope.references)) return 'refused: revision-conflict';
+    if (!isDeepStrictEqual(saved.references, modelControlProof(scope).references)) return 'refused: revision-conflict';
     const ownerMessageIds = scope.answer === undefined ? [scope.request.id] : [scope.request.id, scope.answer.id];
     if (this.store.calls(task.id).some(receipt => receipt.action?.control?.ownerMessageIds[0] === scope.request.id &&
       proposalTool(receipt.action.control.proposal) === SET_WEMO_POWER)) return 'refused: this request already has Wemo receipts.';
@@ -2482,23 +2502,26 @@ export class AssistantEngine {
     const selected = result.targets.map(id => devices.find(device => device.id === id) ?? fail('invalid-state'));
     const [proposal, ...additional] = selected.map(device => planWemoPower(device, result.settings));
     if (proposal === undefined) return 'refused: invalid-request';
-    return {kind: 'bound', control: {requestId: `${task.id}-step-${String(step)}`, ownerMessageIds, proposal, additional, modelCallId,
-      text: `Turn ${result.settings ? 'on' : 'off'} the selected Wemo ${selected.length === 1 ? 'plug' : 'plugs'}?`, call: call.id}};
+    const first = selected[0];
+    const text = additional.length === 0 && first !== undefined ? deviceProposalText(proposal, deviceLabel(first))
+      : `Turn ${result.settings ? 'on' : 'off'} the selected Wemo plugs?`;
+    return {kind: 'bound', control: {requestId: `${task.id}-step-${String(step)}`, ownerMessageIds, proposal, additional, modelCallId, text, call: call.id}};
   }
-  #sameControlSources(saved: ModelControlScope, current: ModelControlScope): boolean {
-    return isDeepStrictEqual(saved.request, current.request) && isDeepStrictEqual(saved.answer, current.answer) &&
-      isDeepStrictEqual(saved.earlier, current.earlier);
+  #sameControlSources(saved: ModelControlProof, current: ModelControlScope): boolean {
+    return saved.request.id === current.request.id && saved.request.revision === current.request.revision &&
+      saved.answer?.id === current.answer?.id && saved.answer?.revision === current.answer?.revision &&
+      isDeepStrictEqual(saved.history, current.history);
   }
   #wemoTargetRefusal(task: Task, control: BoundControl, proposal: Proposal): ErrorCode | undefined {
-    const saved = control.modelCallId === undefined ? undefined : this.store.call(control.modelCallId)?.modelControlScope;
+    const saved = control.modelCallId === undefined ? undefined : this.store.call(control.modelCallId)?.modelControlProof;
     if (saved === undefined) return 'invalid-state';
-    const scope = this.#modelControlScope(task, saved.earlier?.id);
+    const scope = this.#modelControlScope(task, saved.history);
     if (!this.#sameControlSources(saved, scope)) return 'forbidden';
     if (saved.modeRevision !== scope.modeRevision) return 'revision-conflict';
     const original = saved.references.find(reference => reference.id === proposal.target);
     const current = scope.references.find(reference => reference.id === proposal.target);
     if (current?.allowed !== true) return 'forbidden';
-    if (!isDeepStrictEqual(original, current)) return 'revision-conflict';
+    if (original?.snapshot !== controlReferenceSnapshot(current)) return 'revision-conflict';
     const device = this.options.devices?.(ASSISTANT_WEMO_OWNER)?.find(device => device.id === proposal.target);
     if (device?.availability !== 'available' || device.held !== undefined) return 'unavailable';
     if (!device.capabilities.power.supported) return 'unsupported-capability';
@@ -2637,6 +2660,12 @@ export class AssistantEngine {
             text = this.#history.summary(call.input, expected === undefined ? undefined : requested, access);
           }
         }
+      } else if (call.name === WEMO_TARGETS) {
+        const records = this.options.devices?.(ASSISTANT_WEMO_OWNER)?.filter(device => {
+          scope?.resolvedCatalogDevice(device.id);
+          return access('devices', 'index', device.id) && access('devices', 'label', device.id);
+        });
+        text = readDevices(records, '', now, ASSISTANT_WEMO_OWNER);
       } else if (owner !== undefined) {
         const name = call.input.device;
         const records = this.options.devices?.(owner)?.filter(device => (scope === undefined || scope.selectedDevice(owner, device.id)) &&
@@ -2654,6 +2683,11 @@ export class AssistantEngine {
         text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now, access) : fail('invalid-state');
       }
       const answer: Answer = {text, units: 0, disclosures: ledger.fields};
+      if (call.name === WEMO_TARGETS || call.name === READ_WEMO) {
+        const disclosed = new Set(ledger.fields.flatMap(field => field.source === 'devices' && field.field === 'label' ? [field.record] : []));
+        answer.wemoFacts = (this.options.devices?.(ASSISTANT_WEMO_OWNER) ?? []).flatMap(device => disclosed.has(device.id) && text.includes(`(${device.id})`)
+          ? [{id: device.id, revision: controlReferenceSnapshot(wemoControlReference(device, true))}] : []);
+      }
       if (ledger.incompleteDisclosures === true) answer.incompleteDisclosures = true;
       return answer;
     });
@@ -2701,8 +2735,9 @@ export class AssistantEngine {
     const group = direct?.additional === undefined ? undefined
       : [proposal, ...direct.additional].flatMap((item, index) => {
         if (item.family !== 'power-set' || !('owner' in item)) return [];
-        const target = confirmationTarget(item, '');
-        const requestId = direct.additional?.length === 0 ? id : `${id}-group-${String(index)}`;
+        const single = direct.additional?.length === 0;
+        const target = confirmationTarget(item, single ? direct.text : '');
+        const requestId = single ? id : `${id}-group-${String(index)}`;
         return target === undefined ? [] : [{target, item, command: {requestId, ...item}}];
       });
     if (group !== undefined && (group.length !== 1 + (direct?.additional?.length ?? 0) || group.length > 2 ||
@@ -3081,6 +3116,7 @@ export class AssistantEngine {
         if (reply.disclosures !== undefined) call.disclosures = reply.disclosures;
         if (reply.historySources !== undefined) call.historySources = reply.historySources;
         if (reply.inputVersions !== undefined) call.inputVersions = reply.inputVersions;
+        if (reply.wemoFacts !== undefined) call.wemoFacts = reply.wemoFacts;
         if (reply.incompleteDisclosures === true) call.incompleteDisclosures = true;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
         for (const confirmation of reply.confirmations ?? []) this.store.saveConfirmation(confirmation);

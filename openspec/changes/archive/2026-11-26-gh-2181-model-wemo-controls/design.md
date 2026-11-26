@@ -6,7 +6,7 @@ The owner selected one sharing policy for both Conversation supervisors. The eng
 
 Use the existing `set_wemo_power` allowlist entry. Its closed tool parameters select either one or two references or the explicit Wemo group, plus a Boolean setting. The Hub attaches the saved owner request and any current clarification to the model response. That identity comes from the private turn record.
 
-The Hub resolves the whole selection before any dispatch. An exact ID resolves an identity independently of labels. Duplicate labels require an explicit ID from the owner or an answer to the active clarification. Prior owner context can supply a reference. The Hub checks ownership, grants, capability, revision, generation and hold through the existing dispatch path. The core retains maximum-on policy.
+The supervisor can request a bounded lookup of eligible Wemo labels and IDs. The model can use those facts or facts from permitted Conversation context to resolve a target. The Hub checks the lookup's saved identity snapshot against the current record. It resolves the whole selection before any dispatch. An exact ID resolves an identity independently of labels. Duplicate labels require an explicit ID from the owner or an answer to the active clarification. Prior owner context can supply a reference. The Hub checks ownership, grants, capability, revision, generation and hold through the existing dispatch path. The core retains maximum-on policy.
 
 Save one operation identity and dispatch state per target before sending. A restart reconciles saved requests from the core tracker and correlated readback. It never issues another command for a saved operation. A lost reply for one plug leaves an independent receipt for the other plug.
 
