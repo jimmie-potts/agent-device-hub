@@ -343,7 +343,13 @@ CODEX_HOME="$worker_codex_home" HOME="$worker_codex_home" /ABSOLUTE/REVIEWED/cod
   -c 'cli_auth_credentials_store="file"' -c 'forced_login_method="chatgpt"' login
 ```
 
-Keep this profile free of `config.toml` and a nested `.codex` directory.
+Keep this profile dedicated to the worker and its supported native terminal.
+Codex 0.163.0 can save a private `config.toml` containing only its Boolean
+`tui.screen_reader_detection_done` marker. Leave that file in place and keep
+any other user settings and nested `.codex` directories out of the profile.
+The worker checks the file before launch and blocks delegated commands from
+accessing it. Make operator changes to the profile only while the worker and
+its native terminal are stopped.
 Use the dedicated ChatGPT login and keep personal credentials in their own profile.
 The worker launches the private stdio app-server from that directory with
 both `HOME` and `CODEX_HOME` set to it. It pins the SQLite files and logs to
