@@ -24,6 +24,9 @@ export interface QualificationProvider {
   teardown(workspaceId: string, operationId: string): Promise<Teardown>;
 }
 
+// A disposable provider instance owns all of its one-shot claims for this process.
+const claims = new WeakMap<QualificationProvider, Set<string>>();
+
 type QualificationState = 'unused' | 'launching' | 'active' | 'cleaning' | 'closed' | 'held';
 
 function sameCandidate(expected: Candidate, actual: Candidate): boolean {
@@ -40,30 +43,50 @@ function validAllowance(limits: Allowance, now: number): boolean {
 export class CloudQualification {
   #state: QualificationState = 'unused';
   #workspace?: Workspace;
-  constructor(readonly provider: QualificationProvider, readonly now: () => number) {}
+  #approved?: CloudGrant;
+  #teardownStarted = false;
+  #teardownConfirmed = false;
+  #charged: number | null = null;
+  readonly #claims: Set<string>;
+  constructor(readonly provider: QualificationProvider, readonly now: () => number) {
+    this.#claims = claims.get(provider) ?? new Set<string>();
+    claims.set(provider, this.#claims);
+  }
 
-  get state(): QualificationState {return this.#state;}
+  get receipt() {
+    const workspace = this.#workspace;
+    const enforcedCharge = workspace?.enforced.chargeMicros;
+    return {state: this.#state, operationId: this.#approved?.operationId ?? null, workspaceId: workspace?.workspaceId ?? null,
+      approvedChargeMicros: this.#approved?.chargeMicros ?? null,
+      enforcedChargeMicros: enforcedCharge !== undefined && Number.isSafeInteger(enforcedCharge) && enforcedCharge >= 0 ? enforcedCharge : null,
+      chargedMicros: this.#charged, teardownConfirmed: this.#teardownConfirmed};
+  }
 
   async launch(candidate: Candidate, grant?: CloudGrant): Promise<boolean> {
     if (this.#state !== 'unused' || grant === undefined || !sameCandidate(grant, candidate) ||
       !validAllowance(grant, this.now()) || !this.provider.accepts({...grant})) return false;
+    if (this.#claims.has(grant.operationId)) return false;
+    this.#claims.add(grant.operationId);
     this.#state = 'launching';
     const approved = {...grant};
+    this.#approved = approved;
     try {
       const workspace = await this.provider.launch({...approved});
-      const limits = workspace.enforced;
-      if (sameCandidate(approved, workspace) && workspace.workspaceId.length > 0 && workspace.endpointId.length > 0 &&
-        workspace.selectionId.length > 0 && validAllowance(limits, this.now()) && limits.computeMs <= approved.computeMs &&
-        limits.storageBytes <= approved.storageBytes && limits.chargeMicros <= approved.chargeMicros &&
-        limits.expiresAtMs <= approved.expiresAtMs) {
+      if (sameCandidate(approved, workspace) && workspace.workspaceId.length > 0) {
+        const limits = workspace.enforced;
         this.#workspace = {...workspace, enforced: {...limits}};
-        this.#state = 'active';
-        return true;
+        if (workspace.endpointId.length > 0 && workspace.selectionId.length > 0 && validAllowance(limits, this.now()) &&
+          limits.computeMs <= approved.computeMs && limits.storageBytes <= approved.storageBytes &&
+          limits.chargeMicros <= approved.chargeMicros && limits.expiresAtMs <= approved.expiresAtMs) {
+          this.#state = 'active';
+          return true;
+        }
       }
     } catch {
       // Launch may already have created a billable workspace.
     }
     this.#state = 'held';
+    if (this.#workspace !== undefined) await this.cleanup();
     return false;
   }
 
@@ -75,15 +98,22 @@ export class CloudQualification {
 
   async cleanup(): Promise<boolean> {
     const workspace = this.#workspace;
-    if (this.#state !== 'active' || workspace === undefined) return false;
+    const approved = this.#approved;
+    if (workspace === undefined || approved === undefined || this.#teardownStarted) return false;
+    this.#teardownStarted = true;
     this.#state = 'cleaning';
     try {
       const proof = await this.provider.teardown(workspace.workspaceId, workspace.operationId);
       if (proof.workspaceId === workspace.workspaceId && proof.operationId === workspace.operationId &&
-        proof.workspaceRemoved === true && proof.writerStopped === true && Number.isSafeInteger(proof.chargeMicros) &&
-        proof.chargeMicros >= 0 && proof.chargeMicros <= workspace.enforced.chargeMicros) {
-        this.#state = 'closed';
-        return true;
+        proof.workspaceRemoved === true && proof.writerStopped === true) {
+        this.#teardownConfirmed = true;
+        if (Number.isSafeInteger(proof.chargeMicros) && proof.chargeMicros >= 0) {
+          this.#charged = proof.chargeMicros;
+          if (proof.chargeMicros <= approved.chargeMicros && proof.chargeMicros <= workspace.enforced.chargeMicros) {
+            this.#state = 'closed';
+            return true;
+          }
+        }
       }
     } catch {
       // Lost cleanup evidence leaves the existing workspace claim held.

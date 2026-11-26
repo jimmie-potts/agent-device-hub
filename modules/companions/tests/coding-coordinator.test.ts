@@ -786,7 +786,7 @@ void test('a declared cloud worker needs scoped workspace authority at admission
       harnesses: [{...codex, harness: 'claude-code'}, codex], worker: {os: 'linux', toolchains: ['node24'],
         repositories: [{name: 'agent-device-hub', revision}], pressure: 'normal', testSlots: 2}}}, {timeoutMs: 5000})).status, 'accepted');
   const selectionId = w.owner().inspect().workers?.find(worker => worker.endpointId === endpointId)?.selectionId;
-  assert.ok(selectionId);
+  assert.ok(selectionId !== undefined && selectionId.length > 0);
   const operation = {destination, repository: 'agent-device-hub', revision, harness: 'codex' as const} as const;
   const admit = (requestId: string, requested: CodingDestination | 'cloud' | 'auto', requirements?: {resource: {kind: 'installation' | 'device-proximity'; id: string}}) =>
     w.owner().handOff({requestId, taskId: requestId, conversationId: 'synthetic-room', companion: 'bunny', repository: operation.repository,
@@ -804,14 +804,6 @@ void test('a declared cloud worker needs scoped workspace authority at admission
     }, w.clock.now);
     assert.equal(await qualification.launch(subject, {...subject, ...allowance}), true);
   };
-  await qualify('exact');
-  sharing = false;
-  assert.equal((await admit('exact', destination)).status, 'rejected');
-  sharing = true;
-  assert.equal((await admit('exact', destination, {resource: {kind: 'installation', id: 'mac-runtime'}})).status, 'rejected');
-  assert.equal((await admit('exact', 'auto', {resource: {kind: 'device-proximity', id: 'fixture-display'}})).status, 'rejected');
-  assert.equal((await admit('different-job', 'cloud')).status, 'rejected');
-  assert.equal(w.work.length, 0);
   await qualify('expires-in-flight');
   w.core('held-forward');
   assert.equal((await admit('expires-in-flight', 'cloud')).status, 'queued');
@@ -824,6 +816,13 @@ void test('a declared cloud worker needs scoped workspace authority at admission
   assert.equal(await qualification?.cleanup(), true);
   w.core('forward');
   await qualify('exact');
+  sharing = false;
+  assert.equal((await admit('exact', destination)).status, 'rejected');
+  sharing = true;
+  assert.equal((await admit('exact', destination, {resource: {kind: 'installation', id: 'mac-runtime'}})).status, 'rejected');
+  assert.equal((await admit('exact', 'auto', {resource: {kind: 'device-proximity', id: 'fixture-display'}})).status, 'rejected');
+  assert.equal((await admit('different-job', 'cloud')).status, 'rejected');
+  assert.equal(w.work.length, 0);
   assert.equal((await admit('exact', 'auto')).status, 'queued');
   await until(() => w.work.length === 1);
   const start = w.work[0]?.data;

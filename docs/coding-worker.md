@@ -619,8 +619,10 @@ authority and the existing verified writer handoff.
 
 The disposable test provider uses zero infrastructure spend and exercises
 provider enforcement evidence for compute, storage, cost and an absolute
-workspace removal deadline. Loss of launch, writer or cleanup evidence keeps
-the qualification held. Live activation requires an owner-selected provider,
+workspace removal deadline. A positively identified workspace that exceeds its
+allowance is torn down without authorizing work. Loss of launch, writer or
+cleanup evidence keeps the qualification held. Disposable qualification instances
+share the one-shot claim for each operation on their provider instance. Live activation requires an owner-selected provider,
 account, authentication and allowance, plus verified provider-side limits,
 durable workspace claims and reconciliation. The supervisor model budget is
 separate from cloud infrastructure allowance.
