@@ -99,7 +99,12 @@ function readFeed(key: string): Seen {
   return {trail, main: main === null ? null : {feed: main.getAttribute('data-feed'), copies: main.getAttribute('data-copies'), syncs: main.getAttribute('data-syncs')}};
 }
 
-async function bounded<T>(work: () => Promise<T>): Promise<{value: T} | {problem: string}> {
+/**
+ * Runs `work`, a read after an expired wait, for at most `READ_MS`: its value, or a one-line problem when it fails or
+ * gives no answer in time, so a stalled page cannot hold the failure. Journeys that describe their own expired waits
+ * read the page through it too (#2129).
+ */
+export async function bounded<T>(work: () => Promise<T>): Promise<{value: T} | {problem: string}> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<{problem: string}>(resolve => { timer = setTimeout(() => { resolve({problem: `no answer within ${String(READ_MS)} ms`}); }, READ_MS); });
   try {
@@ -213,6 +218,15 @@ function readMain(_unused: null): MainState {
 }
 
 /**
+ * The main region's `data-feed`, `data-copies` and `data-syncs` now, in the words the feed waits use, read within
+ * `READ_MS`. A journey describing its own expired wait states the page's connection with it (#2129).
+ */
+export async function mainNow(page: Pick<FeedPage, 'evaluate'>): Promise<string> {
+  const main = await bounded(() => page.evaluate(readMain, null));
+  return 'value' in main ? mainFact(main.value) : `the page could not be read: ${main.problem}`;
+}
+
+/**
  * Waits, with the page's default timeout, for `main#main[data-copies="synced"]`: the page holds a current copy of
  * every owner's records it follows. A page's feed connects before its copies arrive (ADR 0012), so a card that shows
  * records is not ready at `data-feed="connected"` (#2123). If the wait expires, its error says the main region's
@@ -227,9 +241,8 @@ export async function waitForCopies(page: FeedPage, clock: Clock = Date.now): Pr
   } catch (error) {
     let facts: string[];
     try {
-      const [main, requests] = await Promise.all([bounded(() => page.evaluate(readMain, null)), bounded(() => page.requests())]);
-      facts = ['value' in main ? mainFact(main.value) : `the page could not be read: ${main.problem}`,
-        'value' in requests ? requestFacts(requests.value, since, times) : `the page's requests could not be read: ${requests.problem}`];
+      const [main, requests] = await Promise.all([mainNow(page), bounded(() => page.requests())]);
+      facts = [main, 'value' in requests ? requestFacts(requests.value, since, times) : `the page's requests could not be read: ${requests.problem}`];
     } catch (problem) {
       facts = [`the wait's facts could not be gathered: ${firstLine(problem)}`];
     }
