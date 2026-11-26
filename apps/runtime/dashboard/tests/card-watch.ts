@@ -2,7 +2,8 @@
 // journey's later assertions no longer fail on a blank page. The first `feed()` on a page starts this watch: an observer in
 // the page reports each failure as it happens, through a binding, to this process, which keeps it with its page. The
 // world's `close()`, which every journey calls at its end, fails the run on any failure no health check reported and the
-// journey did not expect. The record is taken when the fault happens, so it holds after the page or its browser closes.
+// journey did not expect. A page that never calls `feed()` or `copiesSynced()` is not watched: the harness does not see
+// the browser contexts a journey opens, so it has no one place to start the watch for them. The record is taken when the fault happens, so it holds after the page or its browser closes.
 //
 // A failure is a rise of a boundary's `data-fault-count` (card-boundary.tsx), which counts the failures it recorded, so
 // each failure is reported once: a failed face that mounts again after Retry shows its earlier count first, and a face

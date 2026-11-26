@@ -1333,8 +1333,10 @@ A failed part carries `data-card-failed`, `data-error-type` and
 `data-fault-count`. The journey harness's `feed()` and `copiesSynced()` fail on a
 failed part a journey did not expect, and from a page's first such check the
 harness records each failure as it happens: the world's `close()` fails the run
-on one that no check reported (`tests/card-watch.ts`). A journey that fails parts
-on purpose names them with `expectCardFaults(page, cards)`.
+on one that no check reported (`tests/card-watch.ts`): it writes "a card failed:
+*card* (*type*)" and the process exits 1. A page that never makes such a check is
+not watched, so a part that fails there does not fail the run. A journey that
+fails parts on purpose names them with `expectCardFaults(page, cards)`.
 `tests/card-errors.browser.ts` throws from chosen parts in a test build
 (`tests/card-faults.ts`) and reads the page's records there.
 

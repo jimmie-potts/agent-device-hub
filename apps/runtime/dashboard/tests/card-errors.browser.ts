@@ -6,6 +6,8 @@
 // same way. Neither the failure nor a Retry sends a command. It also shows that the harness fails a run on a card that
 // failed after the journey's last health check. It contacts no device and no installed service.
 import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Page} from 'playwright';
 import {sessionStarted} from '../../dist/tests/fixtures/agents.js';
@@ -22,7 +24,7 @@ if (output !== undefined) await mkdir(output, {recursive: true});
 const shot = async (page: Page, name: string): Promise<void> => { if (output !== undefined) await page.screenshot({path: `${output}/card-errors-${name}.png`, fullPage: true}); };
 const checks: string[] = [];
 const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
-// CARD_ERRORS_PART runs one part: render, effect, component, module, page, directory, rail, backdrop or late.
+// CARD_ERRORS_PART runs one part: render, effect, component, module, page, directory, rail, backdrop, late or exit.
 const part = process.env.CARD_ERRORS_PART;
 const runs = (name: string): boolean => part === undefined || part === name;
 // The rail's conversations and the art backdrop need the companions and art modules: a second world, for those parts only.
@@ -410,6 +412,26 @@ try {
   await late.page.close();
   assert.deepEqual(unreportedCardFaults(), ['inbox (TypeError)'], 'the harness recorded the late failure by its card, after its page closed');
   checks.push('the harness records a card that fails after the last health check, for the world\'s close() to fail the run');
+  }
+
+  // The real end of a run: a tiny journey in a child process, healthy and with a card that fails after its last feed().
+  if (runs('exit')) {
+  const run = (late: boolean) => new Promise<{code: number | null; stderr: string}>((resolve, reject) => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL('card-watch-run.ts', import.meta.url))],
+      {env: {...process.env, CARD_WATCH_LATE: late ? '1' : '0'}, stdio: ['ignore', 'ignore', 'pipe']});
+    let stderr = '';
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
+    // Bounded: a run that has not ended in two minutes is stopped and fails this part.
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`the child journey did not end in 120 s: ${stderr}`)); }, 120_000);
+    child.on('error', reject).on('close', code => { clearTimeout(timer); resolve({code, stderr}); });
+  });
+  const healthy = await run(false);
+  assert.equal(healthy.code, 0, `a healthy run exits 0: ${healthy.stderr}`);
+  assert.equal(healthy.stderr.includes('a card failed'), false);
+  const late = await run(true);
+  assert.equal(late.code, 1, `a card that failed after the last feed() fails the run: ${late.stderr}`);
+  assert.match(late.stderr, /a card failed: inbox \(TypeError\)/);
+  checks.push('a card that fails after the last feed() makes the run exit 1 naming it; a healthy run exits 0');
   }
 
   process.stdout.write(`${JSON.stringify({passed: true, checks})}\n`);
