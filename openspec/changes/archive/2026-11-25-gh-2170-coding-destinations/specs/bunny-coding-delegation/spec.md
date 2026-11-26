@@ -19,7 +19,7 @@ The Hub SHALL select each new coding attempt against its requested destination a
 
 #### Scenario: Preserve attempt provenance
 - **WHEN** an owner opens Conversation or Jobs after restart
-- **THEN** the original request, selected destination, harness and reason remain attached to the attempt where recorded; missing historical fields stay unknown.
+- **THEN** the original request, selected destination, harness and reason remain attached to the attempt where recorded. Actual destination requires a start observation from that worker; missing historical fields stay unknown.
 - **AND** continuation and native handoff require the original writer's release, proven checkout and exact live selection; unsupported cross-host transfer is explained.
 
 #### Scenario: Current Mac rollout

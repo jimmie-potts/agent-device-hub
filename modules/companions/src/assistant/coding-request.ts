@@ -13,11 +13,12 @@ function codingResource(value: unknown): value is CodingResource {
 }
 
 export function codingRequirements(value: unknown, trusted = false): value is CodingRequirements {
-  if (!record(value) || Object.keys(value).some(key => !['revision', 'os', 'toolchains', 'testSlots', 'resource', 'refusal'].includes(key))) return false;
-  const {revision, os, toolchains, testSlots, resource, refusal} = value;
+  if (!record(value) || Object.keys(value).some(key => !['revision', 'os', 'toolchains', 'testSlots', 'standardTests', 'resource', 'refusal'].includes(key))) return false;
+  const {revision, os, toolchains, testSlots, standardTests, resource, refusal} = value;
   return (revision === undefined || typeof revision === 'string' && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(revision)) &&
     (os === undefined || codingOS(os)) &&
     (toolchains === undefined || Array.isArray(toolchains) && toolchains.length <= 16 && toolchains.every(token)) &&
+    (standardTests === undefined || trusted && standardTests === true) &&
     (testSlots === undefined || testSlots === 1 || testSlots === 2) &&
     (resource === undefined || codingResource(resource)) &&
     (refusal === undefined || trusted && (refusal === 'unknown-resource' || refusal === 'ambiguous-resource' || refusal === 'conflicting-platform'));

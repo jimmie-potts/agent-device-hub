@@ -35,7 +35,8 @@ export function observeTestResources(destination, {host, load, docker, processes
   const containersText = docker(['ps', '-a', '--format', '{{.Names}}\t{{.State}}\t{{.Image}}']);
   if (containersText === null) return {pressure, testSlots: null};
   const {names, states, running} = parseContainers(containersText);
-  if (profile.core && names.includes(profile.core)) {
+  if (profile.core) {
+    if (!names.includes(profile.core)) return {pressure, testSlots: null};
     const health = coreHealth(docker(['inspect', '--format', '{{json .State.Health}}', profile.core]));
     if (states[profile.core] !== 'running') return {pressure, testSlots: 0};
     if (health.status === 'unreadable' || health.lastMs === null) return {pressure, testSlots: null};

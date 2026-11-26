@@ -266,6 +266,9 @@ export class CodingStore {
     const row = this.database.prepare('SELECT sent,started FROM companion_coding WHERE operation_id=?').get(operationId);
     return row?.sent === 1 || row?.started === 1;
   }
+  workerStarted(operationId: string): boolean {
+    return this.database.prepare('SELECT started FROM companion_coding WHERE operation_id=?').get(operationId)?.started === 1;
+  }
   markSending(operationId: string): void {
     const record = this.database.prepare("UPDATE companion_coding SET sent=1 WHERE operation_id=? AND status='pending' AND sent=0").run(operationId);
     if (record.changes !== 1) throw new Error('coding-start-already-sent');

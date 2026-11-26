@@ -30,7 +30,7 @@ export type JobNativeClient = {
 
 export type CodingJobEntry = {
   requestedHarness?: CodingChoice;
-  requestedDestination?: CodingDestinationChoice; actualDestination?: CodingDestination; selectionReason?: string;
+  requestedDestination?: CodingDestinationChoice; selectedDestination?: CodingDestination; actualDestination?: CodingDestination; selectionReason?: string;
   jobId: string;
   operationId: string;
   taskId: string;
@@ -63,7 +63,7 @@ export type NativeObservation = Pick<CodingNativeClient, 'clients' | 'state' | '
 export type AttemptContext = Pick<CodingJobEntry, 'worktreeRef' | 'branch' | 'model'> & {nativeObservation?: NativeObservation};
 export type CodingAttemptEntry = {
   requestedHarness?: CodingChoice;
-  requestedDestination?: CodingDestinationChoice; actualDestination?: CodingDestination;
+  requestedDestination?: CodingDestinationChoice; selectedDestination?: CodingDestination; actualDestination?: CodingDestination;
   operationId: string;
   harness: CodingHarness | null;
   sessionId: string | null;

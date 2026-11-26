@@ -43,6 +43,7 @@ function isJob(value: unknown): value is CodingJobEntry {
     (job.harness === undefined || typeof job.harness === 'string') && (job.sessionId === undefined || typeof job.sessionId === 'string') &&
     (job.requestedHarness === undefined || codingChoice(job.requestedHarness)) &&
     (job.requestedDestination === undefined || codingDestinationChoice(job.requestedDestination)) &&
+    (job.selectedDestination === undefined || codingDestinationChoice(job.selectedDestination) && job.selectedDestination !== 'auto' && job.selectedDestination !== 'cloud') &&
     (job.actualDestination === undefined || codingDestinationChoice(job.actualDestination) && job.actualDestination !== 'auto' && job.actualDestination !== 'cloud') &&
     (job.selectionReason === undefined || typeof job.selectionReason === 'string') &&
     (job.nativeClient === undefined || isNativeClient(job.nativeClient));
@@ -152,6 +153,7 @@ function AttemptResults({value}: {value: unknown}): React.JSX.Element | null {
     ['Requested harness', codingChoice(attempt.requestedHarness) ? harnessLabel(attempt.requestedHarness) : undefined],
     ['Actual harness', attempt.harness],
     ['Requested destination', codingDestinationChoice(attempt.requestedDestination) ? destinationLabel(attempt.requestedDestination) : undefined],
+    ['Selected destination', codingDestinationChoice(attempt.selectedDestination) ? destinationLabel(attempt.selectedDestination) : undefined],
     ['Actual destination', codingDestinationChoice(attempt.actualDestination) ? destinationLabel(attempt.actualDestination) : undefined],
     ['Native session', attempt.sessionId], ['Reported model', context?.model],
     ['Branch', context?.branch === null ? 'Detached HEAD' : context?.branch], ['Worktree', context?.worktreeRef],
@@ -211,6 +213,9 @@ function JobAttempts({jobId, operationId, revision, read, continueJob, locked}: 
 type OpenNative = (input: OpenNativeClientInput) => void;
 function NativeClients({job, openNative, locked}: {job: CodingJobEntry; openNative: OpenNative; locked: boolean}): React.JSX.Element | null {
   if (job.harness !== 'claude-code' && job.harness !== 'codex') return null;
+  if (job.selectedDestination !== undefined && job.selectedDestination !== 'mac') {
+    return <p>Native clients are unavailable on {destinationLabel(job.selectedDestination)}.</p>;
+  }
   const client = job.nativeClient;
   const active = job.status === 'queued' || job.status === 'dispatching' || job.status === 'started' || job.status === 'cancelling';
   const writer = active ? 'Coding worker' : client?.state === 'terminal' ? 'Native terminal' :
@@ -278,6 +283,7 @@ export function CodingJobCard({job, stop, message, openNative, continueJob, lock
       <dt>Requested harness</dt><dd>{job.requestedHarness === undefined ? 'Unknown' : harnessLabel(job.requestedHarness)}</dd>
       <dt>Actual harness</dt><dd>{job.harness ?? 'Unknown'}</dd>
       <dt>Requested destination</dt><dd>{job.requestedDestination === undefined ? 'Unknown' : destinationLabel(job.requestedDestination)}</dd>
+      <dt>Selected destination</dt><dd>{job.selectedDestination === undefined ? 'Unknown' : destinationLabel(job.selectedDestination)}</dd>
       <dt>Actual destination</dt><dd>{job.actualDestination === undefined ? 'Unknown' : destinationLabel(job.actualDestination)}</dd>
       {job.selectionReason !== undefined && <><dt>Selection reason</dt><dd>{job.selectionReason}</dd></>}
       <dt>Reported model</dt><dd>{job.model ?? 'Unknown'}</dd>

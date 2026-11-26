@@ -51,7 +51,7 @@ export function codingDestinationChoice(value: unknown): value is CodingDestinat
     typeof value === 'string' && /^cloud-(?=[a-z0-9-]{1,32}$)[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
 }
 export type CodingResource = {kind: 'device-route' | 'device-proximity' | 'installation'; id: string};
-export type CodingRequirements = {refusal?: 'unknown-resource' | 'ambiguous-resource' | 'conflicting-platform'; revision?: string; os?: Declaration['os']; toolchains?: string[]; testSlots?: 1 | 2; resource?: CodingResource};
+export type CodingRequirements = {refusal?: 'unknown-resource' | 'ambiguous-resource' | 'conflicting-platform'; revision?: string; os?: Declaration['os']; toolchains?: string[]; testSlots?: 1 | 2; standardTests?: true; resource?: CodingResource};
 export type CodingCandidate = {destination: Destination; endpointId: string; selectionId?: string; receivedAt: number; running: number;
   declaration?: Declaration; harnesses?: readonly CodingHarnessReadiness[]; legacyDefault?: boolean};
 type Request = {destination: CodingDestinationChoice; choice: CodingChoice; repository: string; requirements?: CodingRequirements; now: number;
@@ -76,7 +76,7 @@ function evaluateWorker(worker: CodingCandidate, request: Request): Eligible | s
   if (requirements.resource !== undefined && request.resourceAllowed?.(requirements.resource, destination) !== true) return 'required resource authority is unavailable';
   const revision = declaration?.repositories.find(repository => repository.name === request.repository)?.revision;
   if (declaration === undefined) {
-    if (destination !== 'mac' || Object.keys(requirements).length > 0) return 'the required worker capabilities are unknown';
+    if (destination !== 'mac' || Object.keys(requirements).some(key => key !== 'standardTests')) return 'the required worker capabilities are unknown';
   } else {
     if (worker.receivedAt > request.now || request.now - worker.receivedAt > CODING_DECLARATION_TTL_MS) return 'worker declaration is stale';
     if (revision === undefined || (requirements.revision !== undefined && requirements.revision !== revision)) return 'the approved repository or revision is unavailable';
@@ -84,7 +84,8 @@ function evaluateWorker(worker: CodingCandidate, request: Request): Eligible | s
     if (requirements.toolchains?.some(tool => !declaration.toolchains.includes(tool)) === true) return 'a required toolchain is unavailable';
     // #1681 measured five standard test slots on the Mac and eight on the PC. This limit applies only to test resources.
     const profileSlots = destination === 'mac' ? 5 : destination === 'pc' ? 8 : Number.MAX_SAFE_INTEGER;
-    if (requirements.testSlots !== undefined && Math.min(profileSlots, declaration.testSlots ?? 0) < requirements.testSlots) return 'the required test slots are unavailable';
+    const needed = requirements.testSlots ?? (requirements.standardTests === true ? 1 : undefined);
+    if (needed !== undefined && Math.min(profileSlots, declaration.testSlots ?? 0) < needed) return 'the required test slots are unavailable';
   }
   const harnesses = worker.harnesses?.filter(health => declaration === undefined ||
     (health.checkedAtMs <= request.now + 5000 && request.now - health.checkedAtMs <= CODING_DECLARATION_TTL_MS));
@@ -102,7 +103,7 @@ function evaluateWorker(worker: CodingCandidate, request: Request): Eligible | s
       (window.resetsAtMs === null || window.resetsAtMs > request.now)) === true;
   return {worker, ...(revision === undefined ? {} : {revision}), ...(route.harness === undefined ? {} : {harness: route.harness}),
     reason: route.reason, score: [pressureRank[declaration?.pressure ?? 'unknown'], worker.running,
-      requirements.testSlots === undefined ? 0 : -(declaration?.testSlots ?? 0), knownQuota ? 0 : 1]};
+      requirements.testSlots === undefined && requirements.standardTests !== true ? 0 : -(declaration?.testSlots ?? 0), knownQuota ? 0 : 1]};
 }
 
 export function selectCodingWorker(workers: readonly CodingCandidate[], request: Request): Selection {

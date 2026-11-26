@@ -28,7 +28,7 @@ const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/gu, ' ').
 /** Match explicit execution clauses in the saved owner message. Receiver policy independently checks the resulting requirement. */
 export function codingRequirementsFromOwner(text: string, grants: readonly CodingResourceGrant[] = []): CodingRequirements | undefined {
   const requirements: CodingRequirements = {};
-  for (const clause of text.split(/(?:[.;\n]|\band then\b|\bthen\b|\band (?=(?:run|execute|perform|check|verify|deploy|install)\b))/iu)) {
+  for (const clause of text.split(/(?:[.;\n]|\band then\b|\bthen\b|\band (?=(?:run|execute|perform|check|verify|deploy|install|write|report|record|summarize|document|explain|describe|implement|design|prepare|develop)\b))/iu)) {
     const statement = words(clause);
     // Discussing or changing the installer or controller is ordinary source work.
     if (/\b(?:explain|describe|document|implement|design|prepare|develop|write|investigate how|check how|test (?:an? |the )?installer)\b/u.test(statement) ||
@@ -42,7 +42,8 @@ export function codingRequirementsFromOwner(text: string, grants: readonly Codin
     }
     if (/\b(?:tests?|test suite|wide test|checks?)\b/u.test(statement) &&
       /\b(?:test (?:job|suite|profile|slots?)|wide test|standard test|windows only (?:check|test)|run (?:the |a |all )?tests?)\b/u.test(statement)) {
-      requirements.testSlots = /\bwide\b/u.test(statement) ? 2 : requirements.testSlots ?? 1;
+      if (/\brun (?:the |a |all )?tests?\b/u.test(statement) && !/\b(?:wide|standard|slots?|profile)\b/u.test(statement)) requirements.standardTests = true;
+      else requirements.testSlots = /\bwide\b/u.test(statement) ? 2 : requirements.testSlots ?? 1;
     }
     if (/\b(?:using|with|under|requires?) node (?:js )?24\b/u.test(statement)) requirements.toolchains = ['node24'];
     const revision = /\b(?:at (?:commit |revision )?|commit |revision )([a-f0-9]{40})\b/u.exec(statement)?.[1];

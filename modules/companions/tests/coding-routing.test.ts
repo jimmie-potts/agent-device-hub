@@ -38,6 +38,11 @@ void test('route a test by destination grant, exact revision, platform, test slo
   assert.equal(selectCodingWorker([mac, pc], request).worker?.destination, 'pc');
   assert.equal(selectCodingWorker([make('mac', 'normal', 5), make('pc', 'high', 8)], request).worker?.destination, 'mac');
   assert.equal(selectCodingWorker([mac, pc], {...request, requirements: {os: 'windows'}}).worker?.destination, 'pc');
+  const legacyMac = {destination: mac.destination, endpointId: mac.endpointId, receivedAt: mac.receivedAt, running: mac.running, harnesses: mac.harnesses};
+  assert.equal(selectCodingWorker([legacyMac], {...request, requirements: {standardTests: true}}).worker?.destination, 'mac');
+  assert.equal(selectCodingWorker([legacyMac], {...request, requirements: {testSlots: 1}}).worker, undefined);
+  assert.equal(selectCodingWorker([legacyMac], {...request, requirements: {os: 'macos'}}).worker, undefined);
+  assert.equal(selectCodingWorker([make('mac', 'normal', 0), pc], {...request, requirements: {standardTests: true}}).worker?.destination, 'pc');
   const conflict = selectCodingWorker([mac, pc], {...request, destination: 'pc', allowed: worker => worker === 'mac'});
   assert.equal(conflict.worker, undefined);
   assert.match(conflict.reason, /permission.*mac/iu);
@@ -83,6 +88,9 @@ void test('only an owner execution clause binds a known operation or asks to cla
   ];
   const pick = (message: string) => codingRequirementsFromOwner(message,grants);
   assert.deepEqual(pick('Run the installed Mac operation for bunny-runtime.'),{resource:{kind:'installation',id:'bunny-runtime'}});
+  assert.deepEqual(pick('Run the installed Mac operation and write the result to a file.'),{resource:{kind:'installation',id:'bunny-runtime'}});
+  assert.deepEqual(pick('Run the fixture-display check through the authorized edge and report the result.'),{resource:{kind:'device-route',id:'fixture-display'}});
+  assert.deepEqual(pick('Run the tests.'), {standardTests: true});
   assert.equal(pick('Implement and test an installer for the Mac.'),undefined);
   assert.equal(pick('Please explain how the Mac install works.'),undefined);
   assert.equal(pick('Check how the Mac installation works.'),undefined);

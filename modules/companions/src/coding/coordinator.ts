@@ -199,7 +199,7 @@ export class CodingCoordinator {
         const {nativeObservation, ...context} = attempt?.context ?? {};
         const nativeView = attempt === undefined ? undefined : this.#nativeView(attempt.operationId, nativeObservation);
         const nativeClient = nativeView !== undefined && original !== undefined && this.#canUseCodingBrief(original, companion) ? nativeView : undefined;
-        jobs.push({...job, companion, status, ...(attempt?.binding === undefined ? {} : {requestedHarness: attempt.choice, requestedDestination: attempt.binding.requested, ...(this.#store.startSent(attempt.operationId) ? {actualDestination: attempt.binding.actual} : {}), selectionReason: attempt.selectionReason}), ...(label === '' ? {} : {label}), ...(nativeClient === undefined ? {} : {nativeClient}),
+        jobs.push({...job, companion, status, ...(attempt?.binding === undefined ? {} : {requestedHarness: attempt.choice, requestedDestination: attempt.binding.requested, selectedDestination: attempt.binding.actual, ...(this.#store.workerStarted(attempt.operationId) ? {actualDestination: attempt.binding.actual} : {}), selectionReason: attempt.selectionReason}), ...(label === '' ? {} : {label}), ...(nativeClient === undefined ? {} : {nativeClient}),
           ...(attempt?.harness == null ? {} : {harness: attempt.harness}), steering: this.#steering(active), messages: this.#store.messages(job.jobId).filter(message =>
             this.#seams.jobVisible?.({...job, operationId: message.operationId}, companion) !== false),
           ...context, ...(attempt?.sessionId == null ? {} : {sessionId: attempt.sessionId}), ...(active === undefined ? {} : this.#runContext(active))});
@@ -210,7 +210,9 @@ export class CodingCoordinator {
   }
   #nativeView(operationId: string, saved?: NativeObservation): JobNativeClient | undefined {
     const native = this.#native.get(operationId);
-    const worker = this.#workerFor(this.#store.attempt(operationId));
+    const attempt = this.#store.attempt(operationId);
+    if (attempt?.binding !== undefined && attempt.binding.actual !== 'mac') return undefined;
+    const worker = this.#workerFor(attempt);
     if (native !== undefined && worker !== undefined && this.#connected() && native.selectionId === worker.selectionId) return native.view;
     const last = native?.view ?? saved;
     if (last === undefined) return undefined;
@@ -248,7 +250,7 @@ export class CodingCoordinator {
         const active = this.#active.get(operationId);
         const {nativeObservation, ...attemptContext} = context ?? {};
         const nativeVisible = nativeObservation !== undefined && this.#canUseCodingBrief({...job, operationId}, owner);
-        return {operationId, harness, ...(binding === undefined ? {} : {requestedHarness: choice, requestedDestination: binding.requested, ...(this.#store.startSent(operationId) ? {actualDestination: binding.actual} : {})}), sessionId: active?.sessionId ?? sessionId, status: active?.phase ?? status, selectionReason, result,
+        return {operationId, harness, ...(binding === undefined ? {} : {requestedHarness: choice, requestedDestination: binding.requested, selectedDestination: binding.actual, ...(this.#store.workerStarted(operationId) ? {actualDestination: binding.actual} : {})}), sessionId: active?.sessionId ?? sessionId, status: active?.phase ?? status, selectionReason, result,
           ...(context === undefined ? {} : {context: {...attemptContext, ...(nativeVisible ? {nativeObservation} : {})}})};
       });
     if (saved.length === 0) {
@@ -645,6 +647,7 @@ export class CodingCoordinator {
     if (job?.jobId !== jobId || attempt === undefined || this.#seams.jobVisible?.(job, attempt.companion) === false) return {code: 'not-found'};
     if (!this.#canUseCodingBrief(job, attempt.companion)) return {code: 'forbidden'};
     if (this.#store.attempts(jobId).at(-1)?.operationId !== operationId || !this.#store.resultSaved(operationId)) return {code: 'invalid-state'};
+    if (attempt.binding !== undefined && attempt.binding.actual !== 'mac') return {code: 'unsupported-capability'};
     const worker = this.#workerFor(attempt), endpointId = worker?.endpointId, offer = this.#native.get(operationId);
     if (worker === undefined || endpointId === undefined || offer === undefined || this.#nativeView(operationId)?.state !== 'available') return {code: 'unavailable'};
     const client = action === 'open-claude-desktop' ? 'claude-desktop' : 'terminal';
@@ -1041,7 +1044,7 @@ export class CodingCoordinator {
   async #observeNative(message: Message<CodingNativeClient>): Promise<void> {
     const {operationId, clients, state, observedAtMs} = message.data;
     const attempt = this.#store.attempt(operationId), worker = this.#workerFor(attempt);
-    if (worker === undefined || worker.endpointId !== message.subject || !this.#store.startSent(operationId) || !this.#connected() ||
+    if (worker?.destination !== 'mac' || worker.endpointId !== message.subject || !this.#store.startSent(operationId) || !this.#connected() ||
       (this.#active.get(operationId)?.worker !== worker && (attempt?.binding?.selectionId === undefined || attempt.binding.selectionId !== worker.selectionId))) return;
     const selectionId = worker.selectionId, view: NativeObservation = {clients, state, observedAtMs};
     await this.#persistObservation(`native-client:${message.id}`, message, () => this.outbox.transaction(() => {

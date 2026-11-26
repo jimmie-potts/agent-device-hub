@@ -30,6 +30,7 @@ test('Mac observes host pressure, native suites, occupied slots and operator wei
   assert.deepEqual(sample({load: 8}), {observation: {pressure: 'elevated', testSlots: 0}, reads: []});
   assert.deepEqual(sample({load: 13}), {observation: {pressure: 'high', testSlots: 0}, reads: []});
   assert.deepEqual(sample({core: health('unhealthy')}).observation, {pressure: 'normal', testSlots: 0});
+  assert.deepEqual(sample({listing: ''}).observation, {pressure: 'normal', testSlots: null});
   assert.deepEqual(sample({listing: null}).observation, {pressure: 'normal', testSlots: null});
   assert.deepEqual(sample({processList: null}).observation, {pressure: 'normal', testSlots: null});
 });

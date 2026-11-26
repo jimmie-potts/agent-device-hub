@@ -714,11 +714,26 @@ void test('Mac and PC keep their own coding attempt, permission, stop and result
   await until(() => w.work.filter(c => c.data.action === 'start').length === 2);
   assert.deepEqual(w.work.map(c => [c.data.operationId, c.subject, c.data.action === 'start' && c.data.revision]).sort(),
     [['first','fixture-pc',revision],['second','fixture-mac',revision]]);
+  const dispatched = w.owner().jobDetail('first-job')?.attempts[0];
+  assert.equal(dispatched?.selectedDestination, 'pc');
+  assert.equal(dispatched?.actualDestination, undefined, 'sending a start is not a worker observation');
   await admit('first', 'auto', true);
   await report(pc, 'fixture-pc', 'first', 'started'); await report(mac, 'fixture-mac', 'second', 'started');
   await until(() => w.owner().jobs().jobs.every(job => job.status === 'started'));
   assert.equal(w.owner().jobDetail('first-job')?.attempts[0]?.actualDestination, 'pc');
   assert.equal(w.owner().jobDetail('first-job')?.requestedDestination, 'auto');
+  await pc.publish('bunny.event.coding-progress.fixture-pc', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: 'fixture-pc',
+    dataschema: 'https://bunny.invalid/events/coding-progress/2.6', data: {operationId:'first',status:'native-client',clients:['terminal'],state:'available',observedAtMs:w.clock.now()}}, {parent});
+  assert.equal(w.owner().jobs().jobs.find(job => job.jobId === 'first-job')?.nativeClient, undefined);
+  await admit('pc-native', 'pc');
+  await until(() => w.work.some(command => command.data.operationId === 'pc-native'));
+  await report(pc, 'fixture-pc', 'pc-native', 'started');
+  await report(pc, 'fixture-pc', 'pc-native', 'completed');
+  await until(() => w.owner().jobDetail('pc-native-job')?.attempts[0]?.status === 'completed');
+  await pc.publish('bunny.event.coding-progress.fixture-pc', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: 'fixture-pc',
+    dataschema: 'https://bunny.invalid/events/coding-progress/2.6', data: {operationId: 'pc-native',status: 'native-client',clients:['terminal'],state:'available',observedAtMs:w.clock.now()}}, {parent});
+  assert.deepEqual(w.owner().prepareNativeClient({action: 'open-native-terminal', jobId: 'pc-native-job', operationId: 'pc-native',requestId: 'open-pc'}, parent), {code: 'unsupported-capability'});
+  assert.equal(w.owner().jobs().jobs.find(job => job.jobId === 'pc-native-job')?.nativeClient, undefined);
   pcAllowed = false;
   const denied = await admit('third', 'pc'); assert.equal(denied.status, 'rejected');
   assert.match(denied.status === 'rejected' ? denied.error.error.detail ?? '' : '', /permission.*mac/iu);
@@ -731,5 +746,24 @@ void test('Mac and PC keep their own coding attempt, permission, stop and result
   await w.restart();
   assert.equal(w.owner().jobDetail('first-job')?.attempts[0]?.actualDestination,'pc');
   assert.equal(w.owner().jobDetail('second-job')?.attempts[0]?.actualDestination,'mac');
-  assert.equal(w.work.filter(c => c.data.action === 'start').length,2);
+  assert.equal(w.work.filter(c => c.data.action === 'start').length,3);
+});
+
+void test('a refused or unanswered worker start retains selection without claiming an execution host after restart', async t => {
+  for (const refusal of [true, false]) {
+    const w = await world(t);
+    await w.control('enable');
+    if (refusal) w.refuseWork();
+    const reply = await w.owner().handOff({requestId: 'pending', taskId: 'task', companion: 'bunny', conversationId: 'fixture',
+      repository: 'agent-device-hub', brief: 'Run a synthetic check.', expectedRevision: w.owner().endpoint().revision}, parent);
+    assert.equal(reply.status, 'queued');
+    await until(() => w.work.length === 1);
+    if (refusal) await until(() => w.owner().jobDetail('pending-job')?.attempts[0]?.status === 'failed');
+    await w.restart();
+    const attempt = w.owner().jobDetail('pending-job')?.attempts[0];
+    assert.equal(attempt?.status, refusal ? 'failed' : 'uncertain');
+    assert.equal(attempt?.selectedDestination, 'mac');
+    assert.equal(attempt?.actualDestination, undefined);
+    assert.equal(w.work.length, 1);
+  }
 });

@@ -207,6 +207,7 @@ function TaskControls({context, command, state, profile, live, question, coding,
           {proposedRoute.requirements.os !== undefined && <><dt>Operating system</dt><dd>{proposedRoute.requirements.os}</dd></>}
           {proposedRoute.requirements.revision !== undefined && <><dt>Repository revision</dt><dd><code>{proposedRoute.requirements.revision}</code></dd></>}
           {proposedRoute.requirements.toolchains !== undefined && <><dt>Toolchains</dt><dd>{proposedRoute.requirements.toolchains.join(', ')}</dd></>}
+          {proposedRoute.requirements.standardTests === true && <><dt>Test profile</dt><dd>Standard</dd></>}
           {proposedRoute.requirements.testSlots !== undefined && <><dt>Test slots</dt><dd>{proposedRoute.requirements.testSlots}</dd></>}
           {proposedRoute.requirements.refusal !== undefined && <><dt>Routing restriction</dt>
             <dd>{proposedRoute.requirements.refusal === 'unknown-resource' ? 'Required resource is unknown'

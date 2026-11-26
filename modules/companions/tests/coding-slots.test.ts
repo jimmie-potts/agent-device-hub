@@ -1643,7 +1643,7 @@ void test('Conversation resolves its saved owner request against the designated 
     dataschema:'https://bunny.invalid/events/coding-endpoint/2.5',data:{requestId:randomUUID(),action:'enable',capacity:'uncapped',harnesses:[harness],
       worker:{os:'macos',repositories:[{name:'agent-device-hub',revision}],toolchains:['node24'],pressure:'normal',testSlots:4}}},{timeoutMs:5000});
   await w.control('enable');
-  await w.send('bunny','Verify the installed Mac operation for bunny-runtime.');
+  await w.send('bunny','Run the installed Mac operation and write the result to a file.');
   await settle(()=>w.task('bunny')?.questionId!=null);
   const id=w.task('bunny')?.taskId??assert.fail('task');
   const proposal=new AssistantStore(w.database()).task(id)?.question?.proposal;
@@ -1654,4 +1654,16 @@ void test('Conversation resolves its saved owner request against the designated 
   const start=w.starts()[0]?.data;assert.ok(start?.action==='start');
   assert.equal(start.revision,revision);
   assert.equal(w.starts()[0]?.subject,ENDPOINT);
+});
+
+void test('the established Mac accepts an ordinary test task without claiming enrolled capabilities', async context => {
+  const w = await world(context);
+  const harness: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: 'fixture',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: w.now(), capabilities: {steering: 'live', resume: 'saved-session', review: true}};
+  await w.enable('uncapped', [harness]);
+  await w.control('enable');
+  await w.send('bunny', 'Run the tests.');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  assert.equal(w.starts()[0]?.subject, ENDPOINT);
 });

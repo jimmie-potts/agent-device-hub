@@ -812,9 +812,8 @@ changed files and limitations. The worktree reference names the worker's
 worktree without exposing its host path. **Open original conversation**
 returns to the exchange that requested the job. On a coding approval, choose
 **Auto**, **Claude Code** or **Codex** for the harness. Choose **Auto**, **Mac**,
-**PC** or **Cloud** for the execution destination. The card shows the requested
-and actual destination and harness, and the Hub's selection reason when
-recorded. Readback for older jobs uses **Unknown** when the stored record has
+**PC** or **Cloud** for the execution destination. The card shows the requested harness and destination, the selected worker,
+and the Hub's reason. The actual destination remains Unknown until the worker reports a start. Readback for older jobs uses **Unknown** when the stored record has
 no destination.
 
 The Hub checks each enrolled worker's current repository revision, toolchain,
