@@ -894,7 +894,8 @@ export class CodingWorker {
         const target = await copyWorktree(proof.worktree, successor, proof.protectedRoot, home, proof.base, git);
         if (target === undefined) return undefined;
         const cwd = target.identity.root, profile = `bunny-native-${randomUUID()}`;
-        const toolchain = await verifyCodexToolchain(codex.executable, cwd, profile, home, process.env, original.root).catch(() => undefined);
+        const toolchain = await verifyCodexToolchain(codex.executable, cwd, profile, home, process.env, original.root, undefined, proof.worktree.identity.common)
+          .catch(() => undefined);
         if (toolchain === undefined) {
           await rm(cwd, {recursive: true, force: true}).catch(() => {});
           return errorBody('unavailable', {detail: CODEX_TOOLCHAIN_REFUSAL});

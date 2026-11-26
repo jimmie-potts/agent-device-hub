@@ -165,7 +165,9 @@ const configArg = (key: string, value: string | boolean): string[] => ['-c', `${
 export function codexArguments(cwd: string, profile: string, home: string, protectedRoot?: string, toolchain?: CodexToolchain): string[] {
   const gitReads = toolchain?.gitView === undefined ? [] : [toolchain.gitView.bin, ...toolchain.gitView.readable];
   const toolReads = toolchain === undefined ? {} : Object.fromEntries([toolchain.bin, ...toolchain.readable, ...gitReads].map(path => [path, 'read']));
-  const filesystem = {':minimal': 'read', ...toolReads, [cwd]: 'write', [join(cwd, '.git')]: 'read',
+  const commonDeny = Object.fromEntries([toolchain?.gitView?.common, toolchain?.protectedGit]
+    .flatMap(path => path === undefined ? [] : [[path, 'deny']]));
+  const filesystem = {':minimal': 'read', ...commonDeny, ...toolReads, [cwd]: 'write', [join(cwd, '.git')]: 'read',
     [join(cwd, '.codex')]: 'read', [join(home, 'auth.json')]: 'deny', ...(protectedRoot === undefined ? {} : {[protectedRoot]: 'deny'})};
   const rules = Object.entries(filesystem).map(([path, access]) => `${JSON.stringify(path)}=${JSON.stringify(access)}`).join(',');
   const {sqlite, logs} = startupStorage(home);
@@ -193,10 +195,10 @@ export function codexArguments(cwd: string, profile: string, home: string, prote
 
 /** Prove that the same CLI sandbox can execute the selected tools before it receives a brief or releases a terminal plan. */
 export async function verifyCodexToolchain(executable: string, cwd: string, profile: string, home: string,
-  environment: NodeJS.ProcessEnv, protectedRoot?: string, signal?: AbortSignal): Promise<CodexToolchain> {
+  environment: NodeJS.ProcessEnv, protectedRoot?: string, signal?: AbortSignal, protectedGit?: string): Promise<CodexToolchain> {
   const distribution = await prepareCodexToolchain(home);
   const gitView = await prepareLinkedGitView(cwd, home, signal);
-  const toolchain = gitView === undefined ? distribution : {...distribution, gitView};
+  const toolchain = {...distribution, ...(gitView === undefined ? {} : {gitView}), ...(protectedGit === undefined ? {} : {protectedGit})};
   try {
     const git = gitView === undefined ? 'git --no-optional-locks -c core.fsmonitor=false' : 'git';
     const probe = `node --version && npm --version && ${git} status --porcelain >/dev/null`;

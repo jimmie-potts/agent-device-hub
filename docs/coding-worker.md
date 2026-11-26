@@ -360,13 +360,15 @@ plan. The sandbox reads only the selected tool paths, the npm package and the
 required macOS OpenSSL config for this toolchain. Git uses no user or system
 configuration and skips optional index locks. npm runs offline with its update
 notifier and user and global configuration disabled.
-For a linked worktree, `git status` and `git diff` use the actual files and
-read-only index of the selected checkout. The worker supplies a private shallow
-copy of the detached HEAD's objects so Git can read that revision without
-accessing the original repository's shared config or history. The worker
-removes this copy after confirming the Codex writer has stopped. A later
-attempt uses a new copy. A saved terminal successor already has separate Git
-metadata and can use its own read-only Git directory.
+For a linked worktree, `git status` reads the actual files and index.
+`git diff` shows unstaged edits against the detached HEAD when the index has
+no staged changes. If an outside process stages a change, status still reports
+it and diff refuses. The sandbox denies shared Git metadata except the exact
+read-only index and HEAD files. A private shallow copy supplies the detached
+HEAD's objects. The worker removes this copy after confirming the Codex writer
+has stopped. A later attempt uses a new copy. A saved terminal successor uses
+its own read-only Git directory, with the earlier checkout and its common Git
+directory denied.
 The process can open its local stores during startup. The worker checks the
 effective configuration before reading the account or opening a thread.
 A reported path or route override, enabled telemetry, configured MCP servers

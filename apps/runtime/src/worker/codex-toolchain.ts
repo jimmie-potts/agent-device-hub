@@ -9,8 +9,8 @@ import {checkoutIdentity, sameCheckout} from './writer-proof.js';
 const GIT = '/Library/Developer/CommandLineTools/usr/bin/git';
 const OPENSSL = '/System/Library/OpenSSL/openssl.cnf';
 
-type GitView = {root: string; bin: string; readable: readonly string[]};
-export type CodexToolchain = {bin: string; readable: readonly string[]; gitView?: GitView};
+type GitView = {root: string; bin: string; common: string; readable: readonly string[]};
+export type CodexToolchain = {bin: string; readable: readonly string[]; gitView?: GitView; protectedGit?: string};
 
 export const codexToolchainVariables = (bin: string): Record<string, string> => ({
   GIT_CONFIG_NOSYSTEM: '1',
@@ -89,13 +89,27 @@ if (readFileSync(${JSON.stringify(headFile)}, 'utf8').trim() !== ${JSON.stringif
 }
 const separator = args.indexOf('--');
 const position = separator < 0 ? args.length : separator;
-if (command === 'diff') args.splice(position, 0, '--no-ext-diff', '--no-textconv');
-const result = spawnSync(${JSON.stringify(GIT)}, [
+const options = [
   '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
-  ${JSON.stringify(`--git-dir=${metadata}`)}, ${JSON.stringify(`--work-tree=${cwd}`)}, command, ...args,
-], {cwd: ${JSON.stringify(cwd)}, env: ${JSON.stringify({...GIT_ENV, GIT_INDEX_FILE: index})}, stdio: 'inherit'});
-if (result.signal !== null) process.kill(process.pid, result.signal);
-process.exitCode = result.status ?? 1;
+  ${JSON.stringify(`--git-dir=${metadata}`)}, ${JSON.stringify(`--work-tree=${cwd}`)},
+];
+const environment = {cwd: ${JSON.stringify(cwd)}, env: ${JSON.stringify({...GIT_ENV, GIT_INDEX_FILE: index})}, stdio: 'inherit'};
+const git = args => spawnSync(${JSON.stringify(GIT)}, [...options, ...args], environment);
+function finish(result) {
+  if (result.signal !== null) process.kill(process.pid, result.signal);
+  process.exit(result.status ?? 1);
+}
+if (command === 'diff') {
+  const staged = git(['diff-index', '--cached', '--quiet', 'HEAD', '--']);
+  if (staged.status === 1) {
+    process.stderr.write('Linked Codex diff requires an unstaged index. Git status still reports staged and unstaged changes.\\n');
+    process.exit(2);
+  }
+  if (staged.status !== 0) finish(staged);
+  args.splice(position, 0, '--no-ext-diff', '--no-textconv');
+}
+const result = git([command, ...args]);
+finish(result);
 `;
 }
 
@@ -126,7 +140,7 @@ export async function prepareLinkedGitView(cwd: string, home: string, signal?: A
       throw new Error('Codex checkout changed while preparing its Git view');
     }
     await writeFile(join(bin, 'git'), gitLauncher(cwd, metadata, index, headFile, head), {flag: 'wx', mode: 0o500});
-    return {root, bin, readable: [metadata, index, headFile]};
+    return {root, bin, common: identity.common, readable: [metadata, index, headFile]};
   } catch (error) {
     await rm(root, {recursive: true, force: true}).catch(() => {});
     throw error;

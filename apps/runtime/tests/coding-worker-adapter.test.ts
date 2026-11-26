@@ -337,6 +337,48 @@ void test('the qualified macOS Codex sandbox runs the narrow toolchain with fres
     assert.equal(await readFile(guard, 'utf8'), manifest);
   });
 
+void test('a linked checkout in shared temporary storage fences common metadata and refuses a staged diff',
+  {skip: process.platform !== 'darwin', timeout: 20_000}, async t => {
+    const executable = '/opt/homebrew/bin/codex', gitPath = '/Library/Developer/CommandLineTools/usr/bin/git';
+    if (!await access(executable).then(() => true, () => false) || !await access(gitPath).then(() => true, () => false)) {
+      t.skip('qualified Codex CLI or Apple Command Line Tools not present'); return;
+    }
+    const exec = promisify(execFile);
+    const root = await mkdtemp('/private/tmp/bunny-codex-common-fence-');
+    t.after(() => rm(root, {recursive: true, force: true}));
+    const home = join(root, 'profile'), repository = join(root, 'repository'), cwd = join(root, 'worktree');
+    await Promise.all([home, repository].map(path => mkdir(path, {mode: 0o700})));
+    const environment = {PATH: '/usr/bin:/bin'};
+    const env = codexEnvironment(environment, home);
+    const version = await exec(executable, ['--version'], {cwd: home, env});
+    if (version.stdout.trim() !== 'codex-cli 0.163.0') {t.skip('the supported Codex 0.163.0 is unavailable'); return;}
+    const git = (directory: string, ...args: string[]) => exec(gitPath, args, {cwd: directory, env});
+    await git(repository, 'init', '-q');
+    await writeFile(join(repository, 'code.txt'), 'initial\n');
+    await git(repository, 'add', 'code.txt');
+    await git(repository, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Initial fixture');
+    await git(repository, 'worktree', 'add', '--detach', cwd);
+    const profile = 'bunny-fixture-shared-temp';
+    const toolchain = await verifyCodexToolchain(executable, cwd, profile, home, environment);
+    t.after(() => releaseCodexToolchain(toolchain));
+    const run = (command: string) => exec(executable, ['sandbox', '-C', cwd, '-P', profile,
+      ...codexArguments(cwd, profile, home, undefined, toolchain), '--', '/bin/sh', '-c', command, 'fixture', join(repository, '.git/config')],
+    {cwd: home, env: codexEnvironment(environment, home, toolchain), timeout: 5000});
+    const ordinary = await run([
+      'set -eu',
+      'if /bin/cat "$1" >/dev/null 2>&1 || /usr/bin/touch "$1" 2>/dev/null; then exit 1; fi',
+      'printf "unstaged\\n" > code.txt',
+      'git status --short && git diff --numstat',
+    ].join('\n'));
+    assert.match(ordinary.stdout, /^ M code\.txt$/mu);
+    assert.match(ordinary.stdout, /^1\t1\tcode\.txt$/mu);
+    await git(cwd, 'add', 'code.txt');
+    await writeFile(join(cwd, 'code.txt'), 'edited after staging\n');
+    const staged = await run('git status --short && diff_status=0; git diff -- code.txt || diff_status=$?; test "$diff_status" = 2');
+    assert.match(staged.stdout, /^MM code\.txt$/mu);
+    assert.match(staged.stderr, /requires an unstaged index/u);
+  });
+
 void test('Codex readiness reports only subscription fields, plan and quota without opening a thread', async () => {
   const {adapter, requests} = fixture();
   assert.deepEqual(await adapter.readiness(), {installed: 'yes', signedIn: 'yes', version: '0.163.0', plan: 'plus',

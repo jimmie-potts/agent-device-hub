@@ -868,5 +868,6 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     assert.equal(plan.env.PATH?.split(':')[0]?.startsWith(join(home, 'toolchain') + '/'), true);
     assert.equal(plan.env.GIT_OPTIONAL_LOCKS, '0');
     assert.equal(plan.env.npm_config_offline, 'true');
+    assert.ok(plan.args.some(arg => arg.includes(`${JSON.stringify(join(canonical, '.git'))}="deny"`)));
     assert.equal(edge.progress.some(row => row.operationId === 'sibling' && row.status !== 'started'), false);
   });
