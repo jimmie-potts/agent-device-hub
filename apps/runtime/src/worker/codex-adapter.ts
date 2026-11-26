@@ -11,7 +11,7 @@ import {promisify} from 'node:util';
 import {Ajv2020} from 'ajv/dist/2020.js';
 import {createInterface} from 'node:readline';
 import type {CodingLimit, CodingLimitWindow} from '@jimmie-potts/event-contracts/v2/coding';
-import {checkStateDirectory, prepareStateDirectory} from '../state.js';
+import {checkStateDirectory, prepareStateDirectory, PrivateFileError, readPrivateFile} from '../state.js';
 import {CODEX_RESULT_SCHEMA, nativeSessionId, reportedModel, type AdapterEvidence, type AdapterHealth, type AdapterRun, type CodingAdapter} from './adapter.js';
 import {harnessEnvironment, parseVersion, UNKNOWN_READINESS, type HarnessReadiness} from './claude-stream.js';
 import {CODEX_TOOLCHAIN_REFUSAL, codexToolchainVariables, prepareCodexToolchain, prepareLinkedGitView, releaseCodexToolchain,
@@ -138,6 +138,22 @@ async function checkPrivateEntries(directory: string): Promise<void> {
   }
 }
 
+const USER_CONFIG = 'config.toml';
+const TUI_MARKER = /^\[tui\]\r?\nscreen_reader_detection_done = (?:true|false)(?:\r?\n)?$/u;
+
+/** Codex 0.163.0 writes only this marker on the supported native path. */
+export async function checkCodexUserConfig(home: string): Promise<void> {
+  if (await entry(join(home, '.codex')) !== undefined) throw new Error('codex worker profile contains configuration');
+  const config = join(home, USER_CONFIG);
+  const bytes = await readPrivateFile(config, 64).catch((error: unknown) => {
+    if (error instanceof PrivateFileError && error.problem === 'missing') return undefined;
+    throw error;
+  });
+  if (bytes !== undefined && (!bytes.every(byte => byte < 0x80) || !TUI_MARKER.test(bytes.toString('ascii')))) {
+    throw new Error('codex worker profile contains configuration');
+  }
+}
+
 export async function workerHome(home: string, environment: NodeJS.ProcessEnv,
   verifyStorage?: (home: string, directories: readonly string[]) => Promise<void>): Promise<string> {
   const path = await checkStateDirectory(home);
@@ -153,10 +169,6 @@ export async function workerHome(home: string, environment: NodeJS.ProcessEnv,
     throw new Error('codex worker profile must be separate');
   }
   if (!(await lstat(path)).isDirectory()) throw new Error('codex worker profile is missing');
-  // App-server has no ignore-user-config flag. Presence alone refuses; never read a supplied configuration.
-  for (const name of ['config.toml', '.codex']) {
-    if (await entry(join(path, name)) !== undefined) throw new Error('codex worker profile contains configuration');
-  }
   const auth = await entry(join(path, 'auth.json'));
   if (auth !== undefined && (!auth.isFile() || auth.uid !== process.getuid?.() || (auth.mode & 0o077) !== 0 || auth.nlink !== 1)) {
     throw new Error('codex worker credentials must be private to this profile');
@@ -166,6 +178,7 @@ export async function workerHome(home: string, environment: NodeJS.ProcessEnv,
     await prepareStateDirectory(directory);
     await checkPrivateEntries(directory);
   }
+  await checkCodexUserConfig(path);
   return path;
 }
 
@@ -178,7 +191,7 @@ export function codexArguments(cwd: string, profile: string, home: string, prote
     .flatMap(path => path === undefined ? [] : [[path, 'deny']]));
   const linuxDenials = toolchain?.linux === true ? {'/mnt': 'deny', '/init': 'deny', '/run/WSL': 'deny'} : {};
   const filesystem = {':minimal': 'read', ...linuxDenials, ...commonDeny, ...toolReads, [cwd]: 'write', [join(cwd, '.git')]: 'read',
-    [join(cwd, '.codex')]: 'read', [join(home, 'auth.json')]: 'deny', ...(protectedRoot === undefined ? {} : {[protectedRoot]: 'deny'})};
+    [join(cwd, '.codex')]: 'read', [join(home, 'auth.json')]: 'deny', [join(home, USER_CONFIG)]: 'deny', ...(protectedRoot === undefined ? {} : {[protectedRoot]: 'deny'})};
   const rules = Object.entries(filesystem).map(([path, access]) => `${JSON.stringify(path)}=${JSON.stringify(access)}`).join(',');
   const {sqlite, logs} = startupStorage(home);
   const toolVariables = toolchain === undefined ? {} : codexToolchainVariables(toolchain.bin);
@@ -261,6 +274,7 @@ export async function verifyCodexToolchain(executable: string, cwd: string, prof
   const toolchain = {...distribution, ...(gitView === undefined ? {} : {gitView}), ...(protectedGit === undefined ? {} : {protectedGit})};
   try {
     const git = gitView === undefined ? 'git --no-optional-locks -c core.fsmonitor=false' : 'git';
+    await checkCodexUserConfig(home);
     const probe = `node --version && npm --version && ${git} status --porcelain >/dev/null`;
     const runSandbox = (command: string[]) => execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
       '--', ...command], {cwd: home, env: codexEnvironment(environment, home, toolchain), signal, timeout: 5000, maxBuffer: 8192});
@@ -309,6 +323,7 @@ export async function verifyCodexWriterBoundary(executable: string, cwd: string,
     await writeFile(target, 'protected', {mode: 0o600});
     await symlink(target, alias);
     const script = 'umask 077; /usr/bin/touch "$1/ok" || exit 1; if /usr/bin/touch "$2/out" || /usr/bin/touch "$3" || /bin/ln "$4" "$1/hardlink" || /bin/mv "$2" "$2-moved"; then exit 1; fi';
+    await checkCodexUserConfig(home);
     await execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
       '--', '/bin/sh', '-c', script, 'bunny-boundary', sourceProbe, targetProbe, alias, target],
       {cwd: home, env: environment, timeout: 5000, maxBuffer: 4096});
@@ -431,6 +446,7 @@ export async function verifyCodexNativeResume(executable: string, cwd: string, o
   let wire: Wire | undefined;
   let checked: boolean;
   try {
+    await checkCodexUserConfig(home);
     wire = openCodex({executable, args: ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, original, toolchain)],
       cwd: home, env, signal, event: () => {}, closed: () => {}});
     await initialize(wire);
@@ -457,6 +473,7 @@ const initialize = async (wire: Wire) => {
 
 async function isolatedSettings(wire: Wire, cwd: string, home: string): Promise<boolean> {
   const {config} = record(await wire.request('config/read', {cwd, includeLayers: false}));
+  await checkCodexUserConfig(home);
   const {mcp_servers, plugins, hooks, notify, features, allow_login_shell, cli_auth_credentials_store, sqlite_home, log_dir,
     forced_login_method, model_provider, chatgpt_base_url, openai_base_url, otel} = record(config);
   const telemetry = record(otel);
@@ -538,6 +555,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       let unauthorized = false;
       try {
         await checkStorage?.(home, Object.values(startupStorage(home)));
+        await checkCodexUserConfig(home);
         const command = prepare(home, home, signal);
         wire = transport({...command, event: (method, data) => {if (observeAccount(method, data)) unauthorized = true;}, closed: () => {}});
         await initialize(wire);
@@ -551,6 +569,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       finally {wire?.close();}
     },
     async run(input: AdapterRun): Promise<AdapterEvidence> {
+      const profileRefusal = {reason: 'refused' as const, summary: 'Codex needs a dedicated private worker profile with only its supported TUI marker.'};
       const revision = quotaRevision;
       if (input.signal.aborted) return {reason: 'cancelled'};
       if (options.host === 'linux') {
@@ -561,8 +580,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       }
       let home: string;
       try {home = await workerHome(configuration.home, environment, checkStorage);}
-      catch (error) {return {reason: 'refused', summary: error instanceof WslStorageError
-        ? WSL_LOCATION_REFUSAL : 'Codex needs a separate private worker profile with no user configuration.'};}
+      catch (error) {return error instanceof WslStorageError ? {reason: 'refused', summary: WSL_LOCATION_REFUSAL} : profileRefusal;}
       const cwd = await realpath(input.worktree);
       if (inside(cwd, home) || inside(home, cwd)) return {reason: 'refused', summary: 'The Codex worker profile must be outside the worktree.'};
       const {signal} = input;
@@ -593,6 +611,8 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       }
       try {await checkStorage?.(home, Object.values(startupStorage(home)));}
       catch {await releaseCodexToolchain(toolchain); return {reason: 'refused', summary: WSL_LOCATION_REFUSAL};}
+      try {await checkCodexUserConfig(home);}
+      catch {await releaseCodexToolchain(toolchain); return profileRefusal;}
       if (signal.aborted) {await releaseCodexToolchain(toolchain); return {reason: 'cancelled'};}
       const command = prepare(home, cwd, signal, profile, protection, toolchain);
       const wire = transport({...command, event: (method, value) => {
@@ -628,6 +648,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           if (unauthorized || !quotaAllowed(revision)) return refusal('Codex reported contrary personal ChatGPT subscription evidence.');
           if (signal.aborted) return {reason: 'cancelled'};
           if (initialWindows !== undefined && windows.length === 0) windows = initialWindows;
+          await checkCodexUserConfig(home);
           const opened = record(await wire.request('thread/start', {cwd, runtimeWorkspaceRoots: [cwd], permissions: profile,
             modelProvider: 'openai', approvalPolicy: 'never', allowProviderModelFallback: false,
             developerInstructions: 'Work only on this delegated repository brief. Do not change settings, publish changes or open a pull request. Report checks and limitations. Use waiting-for-owner for an unresolved decision.',

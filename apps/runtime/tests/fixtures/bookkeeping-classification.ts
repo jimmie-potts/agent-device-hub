@@ -30,6 +30,7 @@ export const STATE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   'companion-speech-state/2.1': [],
   'coding-state/2.0': [], 'coding-state/2.1': [], 'coding-state/2.2': [], 'coding-state/2.3': [],
   'coding-state/2.4': [],
+  'coding-state/2.5': [],
   'music-capture-state/2.0': [], 'music-capture-state/2.1': [], 'music-capture-state/2.2': [],
   'music-lighting-state/2.0': [],
   'music-lighting-device/2.0': [],

@@ -22,7 +22,7 @@ import {readPrivateFile} from '../state.js';
 import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
 import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type AdapterSteer, type CodingAdapter} from './adapter.js';
-import {codexAdapter, codexArguments, codexEnvironment, isWsl2Host, qualifyWslCodex, verifyCodexNativeResume, verifyCodexToolchain, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
+import {checkCodexUserConfig, codexAdapter, codexArguments, codexEnvironment, isWsl2Host, qualifyWslCodex, verifyCodexNativeResume, verifyCodexToolchain, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
 import {WSL_LOCATION_REFUSAL, wslCheckoutIdentity, wslCheckoutPath, wslGit, wslWorktreeParent, WslStorageError} from './wsl-storage.js';
 import {CODEX_TOOLCHAIN_REFUSAL} from './codex-toolchain.js';
 import {NATIVE_UUID, NativeClients, nativeTerminal, type NativeTerminalPlan} from './native-clients.js';
@@ -1027,7 +1027,8 @@ export class CodingWorker {
           return undefined;
         }
         const args = ['resume', '--no-daemon', '--cd', cwd, ...codexArguments(cwd, profile, home, original.root, toolchain), sessionId];
-        return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(original.root, codex.executable, args, [proof.worktree.identity.common])};
+        return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(original.root, codex.executable, args, [proof.worktree.identity.common]),
+          validate: () => checkCodexUserConfig(home)};
       }
       const {claude} = this.configuration;
       if (claude === undefined || process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined || await projectSettingsRefusal(original.root) !== undefined) return undefined;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {access, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile} from 'node:fs/promises';
+import {access, chmod, link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -49,6 +49,7 @@ type Scenario = {
   steerable?: boolean; interrupt?: 'confirmed' | 'wrong-turn' | 'lost' | 'rejected' | 'writer-remains' | 'late-ack' | 'auth-change' | 'pending-terminal';
   beforeTurnAcknowledged?: () => void;
   toolchainUnavailable?: boolean;
+  duringToolchain?: () => Promise<void>;
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
 
@@ -175,8 +176,11 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
     };
   };
   const adapter = codexAdapter({executable: '/synthetic/codex', home}, {transport, version: () => Promise.resolve('0.163.0'),
-    toolchain: () => scenario.toolchainUnavailable === true ? Promise.reject(new Error('synthetic toolchain unavailable'))
-      : Promise.resolve({bin: '/synthetic/toolchain', readable: ['/synthetic/node', '/synthetic/npm', '/synthetic/git']}),
+    toolchain: async () => {
+      if (scenario.toolchainUnavailable === true) throw new Error('synthetic toolchain unavailable');
+      await scenario.duringToolchain?.();
+      return {bin: '/synthetic/toolchain', readable: ['/synthetic/node', '/synthetic/npm', '/synthetic/git']};
+    },
     environment: {PATH: '/synthetic/bin', HOME: '/synthetic/home', OPENAI_API_KEY: 'synthetic-key', CODEX_HOME: '/untrusted/config',
       BUNNY_CODING_TOKEN: 'worker-credential', CLAUDE_CODE_OAUTH_TOKEN: 'other-provider-token', ...environment}});
   const run = (worktree: string, callbacks?: Pick<AdapterRun, 'steering' | 'observedMessage' | 'namedStop'> & {signal?: AbortSignal}) => adapter.run({worktree, brief, bounds, signal: new AbortController().signal, ...callbacks, session: id => {sessions.push(id);}});
@@ -390,10 +394,15 @@ void test('a linked checkout in shared temporary storage fences common metadata 
     t.after(() => rm(root, {recursive: true, force: true}));
     const home = join(root, 'profile'), repository = join(root, 'repository'), cwd = join(root, 'worktree');
     await Promise.all([home, repository].map(path => mkdir(path, {mode: 0o700})));
+    const config = join(home, 'config.toml');
+    const marker = '[tui]\nscreen_reader_detection_done = true\n';
+    await writeFile(config, marker, {mode: 0o600});
     const environment = {PATH: '/usr/bin:/bin'};
     const env = codexEnvironment(environment, home);
     const version = await exec(executable, ['--version'], {cwd: home, env});
     if (version.stdout.trim() !== 'codex-cli 0.163.0') {t.skip('the supported Codex 0.163.0 is unavailable'); return;}
+    const read = await codexAdapter({executable, home}, {environment}).readiness();
+    assert.deepEqual(read, {installed: 'yes', signedIn: 'no', version: '0.163.0', plan: null});
     const git = (directory: string, ...args: string[]) => exec(gitPath, args, {cwd: directory, env});
     await git(repository, 'init', '-q');
     await writeFile(join(repository, 'code.txt'), 'initial\n');
@@ -404,11 +413,12 @@ void test('a linked checkout in shared temporary storage fences common metadata 
     const toolchain = await verifyCodexToolchain(executable, cwd, profile, home, environment);
     t.after(() => releaseCodexToolchain(toolchain));
     const run = (command: string) => exec(executable, ['sandbox', '-C', cwd, '-P', profile,
-      ...codexArguments(cwd, profile, home, undefined, toolchain), '--', '/bin/sh', '-c', command, 'fixture', join(repository, '.git/config')],
+      ...codexArguments(cwd, profile, home, undefined, toolchain), '--', '/bin/sh', '-c', command, 'fixture', join(repository, '.git/config'), config],
     {cwd: home, env: codexEnvironment(environment, home, toolchain), timeout: 5000});
     const ordinary = await run([
       'set -eu',
       'if /bin/cat "$1" >/dev/null 2>&1 || /usr/bin/touch "$1" 2>/dev/null; then exit 1; fi',
+      'if /bin/cat "$2" >/dev/null 2>&1 || /usr/bin/touch "$2" 2>/dev/null || /bin/rm "$2" 2>/dev/null; then exit 1; fi',
       'printf "unstaged\\n" > code.txt',
       'git status --short && git diff --numstat',
     ].join('\n'));
@@ -419,6 +429,7 @@ void test('a linked checkout in shared temporary storage fences common metadata 
     const staged = await run('git status --short && diff_status=0; git diff -- code.txt || diff_status=$?; test "$diff_status" = 2');
     assert.match(staged.stdout, /^MM code\.txt$/mu);
     assert.match(staged.stderr, /requires an unstaged index/u);
+    assert.equal(await readFile(config, 'utf8'), marker);
   });
 
 void test('Codex readiness reports only subscription fields, plan and quota without opening a thread', async () => {
@@ -520,6 +531,58 @@ void test('a worker profile containing user configuration refuses both entry poi
   await writeFile(join(profile, 'config.toml'), '[mcp_servers.synthetic]\ncommand = "/usr/bin/false"\n');
   const candidate = fixture({}, profile);
   assert.equal((await candidate.adapter.readiness()).signedIn, 'unknown');
+  assert.equal((await candidate.run(cwd)).reason, 'refused');
+  assert.deepEqual(candidate.requests, []);
+});
+
+void test('a private Codex TUI marker permits readiness and the next run from the same profile', async t => {
+  const profile = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-marker-')));
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => Promise.all([profile, cwd].map(path => rm(path, {recursive: true, force: true}))));
+  const config = join(profile, 'config.toml');
+  const marker = '[tui]\nscreen_reader_detection_done = true\n';
+  await writeFile(config, marker, {mode: 0o600});
+  const next = fixture({}, profile);
+  assert.equal((await next.adapter.readiness()).signedIn, 'yes');
+  assert.deepEqual((await next.run(cwd)).structured, report);
+  assert.equal(await readFile(config, 'utf8'), marker);
+});
+
+void test('Codex refuses extra, malformed, shared or aliased TUI marker files before startup', async t => {
+  const profile = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-marker-negative-')));
+  t.after(() => rm(profile, {recursive: true, force: true}));
+  const config = join(profile, 'config.toml'), original = join(profile, 'original.toml');
+  const marker = '[tui]\nscreen_reader_detection_done = false\n';
+  const refuses = async () => {
+    const candidate = fixture({}, profile);
+    assert.equal((await candidate.adapter.readiness()).signedIn, 'unknown');
+    assert.deepEqual(candidate.requests, []);
+    await rm(config);
+  };
+  for (const text of ['[tui]\nscreen_reader_detection_done = "true"\n', marker + 'foo = true\n',
+    marker + '[tui]\n', marker + ' '.repeat(64), marker + '\0']) {
+    await writeFile(config, text, {mode: 0o600});
+    await refuses();
+  }
+  await writeFile(config, marker, {mode: 0o600});
+  await chmod(config, 0o644);
+  await refuses();
+  await writeFile(original, marker, {mode: 0o600});
+  await symlink(original, config);
+  await refuses();
+  await link(original, config);
+  await refuses();
+  await writeFile(config, marker, {mode: 0o600});
+  assert.equal((await fixture({}, profile).adapter.readiness()).signedIn, 'yes');
+});
+
+void test('Codex refuses a marker replaced while the toolchain is being checked before opening the provider', async t => {
+  const profile = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-marker-change-')));
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => Promise.all([profile, cwd].map(path => rm(path, {recursive: true, force: true}))));
+  const config = join(profile, 'config.toml');
+  await writeFile(config, '[tui]\nscreen_reader_detection_done = true\n', {mode: 0o600});
+  const candidate = fixture({duringToolchain: () => writeFile(config, 'model = "synthetic"\n')}, profile);
   assert.equal((await candidate.run(cwd)).reason, 'refused');
   assert.deepEqual(candidate.requests, []);
 });
