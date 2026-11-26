@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {access, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile} from 'node:fs/promises';
+import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, test} from 'node:test';
 import {promisify} from 'node:util';
 import type {AdapterRun, AdapterSteer} from '../src/worker/adapter.js';
-import {codexAdapter, codexArguments, codexEnvironment, verifyCodexWriterBoundary, type CodexTransport} from '../src/worker/codex-adapter.js';
+import {codexAdapter, codexArguments, codexEnvironment, openCodex, verifyCodexToolchain, verifyCodexWriterBoundary, type CodexTransport} from '../src/worker/codex-adapter.js';
+import {codexToolchainVariables, releaseCodexToolchain} from '../src/worker/codex-toolchain.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX} from '../src/worker/claude-writer.js';
 import {claudeHarness} from '../src/worker/coding-worker.js';
 
@@ -45,6 +47,7 @@ type Scenario = {
   quotaResponse?: object; quotaReplies?: readonly (object | Promise<unknown> | Error)[]; quotaEvent?: 'initialize' | 'second-account' | 'pending-turn';
   steerable?: boolean; interrupt?: 'confirmed' | 'wrong-turn' | 'lost' | 'rejected' | 'writer-remains' | 'late-ack' | 'auth-change' | 'pending-terminal';
   beforeTurnAcknowledged?: () => void;
+  toolchainUnavailable?: boolean;
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
 
@@ -73,7 +76,9 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
     assert.ok(args.some(arg => arg.includes('.network.enabled=false')));
     assert.ok(args.some(arg => arg.includes(`${JSON.stringify(join(home, 'auth.json'))}="deny"`)));
     assert.equal(cwd, home, 'app-server starts outside the worktree');
-    assert.deepEqual(env, {PATH: '/synthetic/bin', HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'});
+    const path = env.PATH === '/synthetic/bin' ? '/synthetic/bin' : '/synthetic/toolchain:/synthetic/bin';
+    assert.deepEqual(env, {...(path === '/synthetic/bin' ? {} : codexToolchainVariables('/synthetic/toolchain')),
+      PATH: path, HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'});
     return {
       notify(method) {assert.equal(method, 'initialized');},
       close() {closed();},
@@ -169,6 +174,8 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
     };
   };
   const adapter = codexAdapter({executable: '/synthetic/codex', home}, {transport, version: () => Promise.resolve('0.163.0'),
+    toolchain: () => scenario.toolchainUnavailable === true ? Promise.reject(new Error('synthetic toolchain unavailable'))
+      : Promise.resolve({bin: '/synthetic/toolchain', readable: ['/synthetic/node', '/synthetic/npm', '/synthetic/git']}),
     environment: {PATH: '/synthetic/bin', HOME: '/synthetic/home', OPENAI_API_KEY: 'synthetic-key', CODEX_HOME: '/untrusted/config',
       BUNNY_CODING_TOKEN: 'worker-credential', CLAUDE_CODE_OAUTH_TOKEN: 'other-provider-token', ...environment}});
   const run = (worktree: string, callbacks?: Pick<AdapterRun, 'steering' | 'observedMessage' | 'namedStop'> & {signal?: AbortSignal}) => adapter.run({worktree, brief, bounds, signal: new AbortController().signal, ...callbacks, session: id => {sessions.push(id);}});
@@ -231,6 +238,104 @@ void test('Codex worker startup pins the ChatGPT subscription model route', () =
   const args = codexArguments('/synthetic/worktree', 'bunny-fixture', profileHome);
   assert.deepEqual(args.filter(arg => arg.startsWith('openai_base_url=')), ['openai_base_url="https://chatgpt.com/backend-api/codex"']);
 });
+
+void test('an unavailable Codex toolchain refuses before creating the app-server transport', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-toolchain-refusal-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const worker = fixture({toolchainUnavailable: true});
+  const result = await worker.run(cwd);
+  assert.equal(result.reason, 'refused');
+  assert.match(result.summary ?? '', /Node 24 distribution with npm and Apple Command Line Tools Git/u);
+  assert.deepEqual(worker.requests, []);
+});
+
+void test('the qualified macOS Codex sandbox runs the narrow toolchain with fresh and successor worktrees',
+  {skip: process.platform !== 'darwin', timeout: 30_000}, async t => {
+    const executable = '/opt/homebrew/bin/codex';
+    const exec = promisify(execFile);
+    if (!await access(executable).then(() => true, () => false) ||
+      !await access('/Library/Developer/CommandLineTools/usr/bin/git').then(() => true, () => false)) {
+      t.skip('qualified Codex CLI or Apple Command Line Tools not present'); return;
+    }
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-toolchain-')));
+    t.after(() => rm(root, {recursive: true, force: true}));
+    const home = join(root, 'profile'), repository = join(root, 'repository'), fresh = join(root, 'fresh'), successor = join(root, 'successor');
+    const outside = join(root, 'outside'), guard = join(repository, 'package.json');
+    await Promise.all([home, repository, successor].map(path => mkdir(path, {mode: 0o700})));
+    const environment = {PATH: '/usr/bin:/bin', OPENAI_API_KEY: 'must-stay-outside'};
+    const version = await exec(executable, ['--version'], {cwd: home, env: codexEnvironment(environment, home)});
+    if (version.stdout.trim() !== 'codex-cli 0.163.0') {t.skip('the supported Codex 0.163.0 is unavailable'); return;}
+    const git = (cwd: string, ...args: string[]) => exec('/Library/Developer/CommandLineTools/usr/bin/git', args, {cwd, env: codexEnvironment(environment, home)});
+    const manifest = JSON.stringify({scripts: {pass: 'node -e "console.log(37)"', fail: 'node -e "process.exit(23)"'}});
+    for (const cwd of [repository, successor]) {
+      await git(cwd, 'init', '-q');
+      await writeFile(join(cwd, 'package.json'), manifest);
+      await git(cwd, 'add', 'package.json');
+      await git(cwd, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Initial fixture');
+    }
+    await git(repository, 'worktree', 'add', '--detach', fresh);
+    await writeFile(outside, 'private fixture file', {mode: 0o600});
+    const server = createServer(socket => {socket.destroy();});
+    t.after(() => server.close());
+    await new Promise<void>((resolve, reject) => {server.once('error', reject); server.listen(0, '127.0.0.1', resolve);});
+    const listener = server.address();
+    assert.ok(listener !== null && typeof listener !== 'string');
+    const profile = 'bunny-fixture-toolchain';
+    for (const {cwd, protectedRoot} of [{cwd: fresh, protectedRoot: undefined}, {cwd: successor, protectedRoot: repository}]) {
+      const toolchain = await verifyCodexToolchain(executable, cwd, profile, home, environment, protectedRoot);
+      const env = codexEnvironment(environment, home, toolchain);
+      assert.equal(env.OPENAI_API_KEY, undefined);
+      assert.equal(toolchain.gitView !== undefined, cwd === fresh);
+      const local = await exec(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
+        '--', '/bin/sh', '-c', [
+          'set -eu',
+          'npm run pass',
+          'status=0; npm run fail || status=$?; test "$status" = 23',
+          'printf "\\n" >> package.json',
+          'git status --short',
+          'diff_status=0; git diff --numstat --exit-code || diff_status=$?; test "$diff_status" = 1',
+          'if /bin/cat "$1" >/dev/null 2>&1 || /usr/bin/touch "$2" 2>/dev/null; then exit 1; fi',
+          'node -e \'const s=require("node:net").connect(Number(process.argv[1]),"127.0.0.1");s.on("connect",()=>process.exit(1));s.on("error", e=>process.exit(e.code==="EPERM"||e.code==="EACCES"?0:1));\' "$3"',
+          'if /bin/cat "$4" >/dev/null 2>&1; then exit 1; fi',
+          'if /usr/bin/touch "$5" 2>/dev/null; then exit 1; fi',
+        ].join('\n'), 'bunny-toolchain-fixture', outside, join(root, 'blocked-write'), String(listener.port), join(repository, '.git/config'),
+        toolchain.gitView?.readable.find(path => path.endsWith('/index')) ?? join(cwd, '.git/index')],
+        {cwd: home, env, timeout: 8000});
+      assert.match(local.stdout, /^37$/mu);
+      assert.match(local.stdout, /^ M package\.json$/mu);
+      assert.match(local.stdout, /^1\t1\tpackage\.json$/mu);
+      if (toolchain.gitView !== undefined) {
+        const wire = openCodex({executable, args: ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, protectedRoot, toolchain)],
+          cwd: home, env, signal: AbortSignal.timeout(5000), event: () => {}, closed: () => {}});
+        try {
+          await wire.request('initialize', {clientInfo: {name: 'synthetic-toolchain', version: '1.0'}, capabilities: {experimentalApi: true}});
+          wire.notify('initialized');
+          const account = await wire.request('account/read', {refreshToken: false});
+          assert.ok(typeof account === 'object' && account !== null && 'account' in account && account.account === null);
+          const result = await wire.request('command/exec', {cwd, timeoutMs: 3000, command: ['/bin/sh', '-c',
+            'test "$GIT_CONFIG_GLOBAL" = /dev/null && test "$npm_config_offline" = true && node --version && npm run pass && git status --short && GIT_EXTERNAL_DIFF=/bin/false git diff --ext-diff --numstat']});
+          assert.ok(typeof result === 'object' && result !== null && 'exitCode' in result && 'stdout' in result);
+          assert.equal(result.exitCode, 0);
+          assert.match(String(result.stdout), /^v24\./mu);
+          assert.match(String(result.stdout), /^37$/mu);
+          assert.match(String(result.stdout), /^ M package\.json$/mu);
+          assert.match(String(result.stdout), /^1\t1\tpackage\.json$/mu);
+        } finally {
+          wire.close();
+          assert.equal(await wire.writerStopped?.(), true);
+        }
+      }
+      if (protectedRoot !== undefined) assert.equal(await verifyCodexWriterBoundary(executable, cwd, home, protectedRoot, profile, env, toolchain), true);
+      await releaseCodexToolchain(toolchain);
+      if (toolchain.gitView !== undefined) {
+        assert.equal(await access(toolchain.gitView.root).then(() => true, () => false), false);
+        const retry = await verifyCodexToolchain(executable, cwd, profile, home, environment);
+        assert.notEqual(retry.gitView?.root, toolchain.gitView.root);
+        await releaseCodexToolchain(retry);
+      }
+    }
+    assert.equal(await readFile(guard, 'utf8'), manifest);
+  });
 
 void test('Codex readiness reports only subscription fields, plan and quota without opening a thread', async () => {
   const {adapter, requests} = fixture();
