@@ -293,7 +293,12 @@ installation authority.
 On startup and every 45 seconds, the worker sends the Hub its operating system,
 configured `toolchains` names, the exact local `origin/main` commit for each
 available allowlisted repository and the harness readiness it can establish.
-It reports unknown resource pressure and test capacity when it has no sampler.
+On the Mac and in WSL on the PC, the worker samples one-minute load and the
+free test slots from the documented host profile. It reads process and local
+Docker status without creating a container or reserving a slot. The Hub uses
+the aggregate observation to choose a destination. The worker's normal test
+commands apply the host's admission checks again before starting anything.
+An unreadable count leaves the slot estimate unknown.
 The declaration includes repository names and revisions. Token and worktree
 paths stay on the worker. A revision-pinned start requires the exact declared
 commit and creates the worktree at that commit without fetching a newer one.

@@ -10,11 +10,12 @@ import {execFile} from 'node:child_process';
 import {mkdir, mkdtemp, readFile, realpath, rm, rmdir, stat} from 'node:fs/promises';
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
+import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {codingDestinationForSource, continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingNativeClient, type CodingNativeClientKind, type CodingProgress, type CodingProgressReason,
+import {codingDestinationForSource, continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingDestination, type CodingEndpointControl, type CodingHarnessReadiness, type CodingNativeClient, type CodingNativeClientKind, type CodingProgress, type CodingProgressReason,
   type CodingReadiness, type CodingResult, type CodingWork, type CodingWorkerDeclaration} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
@@ -33,6 +34,24 @@ export const WORKER_SCHEMA = 'coding-worker/1.2';
 const ENROLLED_SCHEMA = 'coding-worker/1.3';
 const ENROLLED_ENDPOINT_SCHEMA = 'https://bunny.invalid/events/coding-endpoint/2.5';
 const WORKER_REFRESH_MS = 45_000;
+type TestResources = Pick<CodingWorkerDeclaration, 'pressure' | 'testSlots'>;
+type ResourceProbe = (destination: CodingDestination) => Promise<TestResources>;
+const unknownResources: TestResources = {pressure: 'unknown', testSlots: null};
+async function observeResources(destination: CodingDestination): Promise<TestResources> {
+  if (destination !== 'mac' && destination !== 'pc') return unknownResources;
+  try {
+    const observer = fileURLToPath(new URL('../../../../../scripts/test-container/observe.mjs', import.meta.url));
+    const {stdout} = await run(process.execPath, [observer, destination], {encoding: 'utf8', maxBuffer: 1024, timeout: 6_000});
+    const sample: unknown = JSON.parse(stdout);
+    if (!isRecord(sample)) return unknownResources;
+    const {pressure, testSlots} = sample;
+    if (pressure !== 'normal' && pressure !== 'elevated' && pressure !== 'high' && pressure !== 'unknown') return unknownResources;
+    if (testSlots === null) return {pressure, testSlots};
+    return typeof testSlots === 'number' && Number.isInteger(testSlots) && testSlots >= 0 && testSlots <= 64
+      ? {pressure, testSlots} : unknownResources;
+  } catch {return unknownResources;}
+}
+
 const MAX_CONFIG_BYTES = 8192;
 /**
  * One stream event longer than this many characters (UTF-16 code units, so up to about three times as many bytes) is
@@ -401,7 +420,7 @@ export class CodingWorker {
   #refreshing = false;
   /** `log` is the process's own line writer, owned by the entry point; the library writes nothing itself. */
   constructor(readonly configuration: WorkerConfiguration, readonly token: string, harness?: Harness, readonly log: (line: string) => void = () => {}, connect: typeof connectRemote = connectRemote,
-    now: () => number = Date.now, runGit: GitRunner = git, timer: ProbeTimer = realTimer, adapters: readonly CodingAdapter[] = []) {
+    now: () => number = Date.now, runGit: GitRunner = git, timer: ProbeTimer = realTimer, adapters: readonly CodingAdapter[] = [], readonly resources: ResourceProbe = observeResources) {
     this.#harness = harness ?? claudeHarness(configuration.claude.executable, process.env,
       {...(configuration.claude.environment === undefined ? {} : {environment: configuration.claude.environment}), ...(configuration.repositories[0] === undefined ? {} : {probeCwd: configuration.repositories[0].path})});
     const cwd = configuration.repositories[0]?.path;
@@ -484,6 +503,9 @@ export class CodingWorker {
   async #probeDeclaration(): Promise<CodingWorkerDeclaration | undefined> {
     const enrollment = this.configuration.enrollment;
     if (enrollment === undefined) return undefined;
+    const destination = codingDestinationForSource(enrollment.source);
+    if (destination === undefined) throw new Error('coding-worker: invalid enrollment source');
+    const resourceSample = this.resources(destination).catch(() => unknownResources);
     const repositories = (await Promise.all(this.configuration.repositories.map(async ({name, path}) => {
       try {
         const revision = await this.#git(path, ['rev-parse', '--verify', 'origin/main^{commit}'], {timeoutMs: 10_000});
@@ -491,7 +513,7 @@ export class CodingWorker {
       } catch {return [];}
     }))).flat();
     if (repositories.length === 0) throw new Error('coding-worker: no declared repository revision is available');
-    return {os: enrollment.os, toolchains: enrollment.toolchains, repositories, pressure: 'unknown', testSlots: null};
+    return {os: enrollment.os, toolchains: enrollment.toolchains, repositories, ...await resourceSample};
   }
   #stopping = false;
   #redeclaring = false;

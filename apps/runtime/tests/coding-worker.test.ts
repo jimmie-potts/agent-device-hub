@@ -887,15 +887,27 @@ void test('an enrolled worker declares exact local revisions, rejects mismatches
     source: 'bunny/parts/coding-worker-cloud-synthetic', toolchains: ['node24']};
   assert.throws(() => parseConfiguration(enrolled), /HTTPS edge/u);
   const config = parseConfiguration({...enrolled, edge: 'https://edge.synthetic.invalid'});
-  const worker = new CodingWorker(config, 'synthetic'.padEnd(43, 'x'), undefined, () => {}, edge.connect, undefined, undefined, undefined, [adapter]);
+  const readings = [{pressure: 'normal', testSlots: 4}, {pressure: 'elevated', testSlots: 0}] as const;
+  let observations = 0;
+  t.mock.timers.enable({apis: ['setInterval']});
+  const probe = (destination: string) => {
+    assert.equal(destination, 'cloud-synthetic');
+    return Promise.resolve(readings[Math.min(observations++, readings.length - 1)] ?? readings[0]);
+  };
+  const worker = new CodingWorker(config, 'synthetic'.padEnd(43, 'x'), undefined, () => {}, edge.connect, undefined, undefined, undefined, [adapter], probe);
   t.after(() => worker.stop());
   await worker.start();
   assert.equal(edge.requests[0]?.dataschema, 'https://bunny.invalid/events/coding-endpoint/2.5');
   const facts = edge.requests[0]?.data as {worker?: {repositories: unknown; toolchains: unknown; pressure: unknown; testSlots: unknown}};
   assert.deepEqual(facts.worker?.repositories, [{name: 'agent-device-hub', revision}]);
   assert.deepEqual(facts.worker?.toolchains, ['node24']);
-  assert.equal(facts.worker?.pressure, 'unknown');
-  assert.equal(facts.worker?.testSlots, null);
+  assert.equal(facts.worker?.pressure, 'normal');
+  assert.equal(facts.worker?.testSlots, 4);
+  t.mock.timers.tick(45_000);
+  await until(() => edge.requests.length === 2);
+  const refreshed = edge.requests[1]?.data as typeof facts;
+  assert.equal(refreshed.worker?.pressure, 'elevated');
+  assert.equal(refreshed.worker?.testSlots, 0);
   const start: Extract<CodingWork, {action: 'start'}> = {requestId: 'pin', operationId: 'pin', action: 'start', taskId: 'task-1',
     repository: 'agent-device-hub', brief: 'Check synthetic base.', harness: 'codex', bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}};
   for (const request of [start, {...start, revision: 'a'.repeat(40)}]) {
