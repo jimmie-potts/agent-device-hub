@@ -157,7 +157,7 @@ export class OpenAIProvider implements ModelProvider {
   }
 
   #body(input: TurnInput): string {
-    const instructions = [input.instructions, ...sectionTexts(input.context, ['personality', 'recent']),
+    const instructions = [input.instructions, ...sectionTexts(input.context),
       ...(input.mode === null ? [] : [`The Hub mode is ${input.mode.mode} now.`]),
       'Use at most one tool per turn. Only an explicit current owner request can authorize a control. Ask the owner when a detail is missing. Claim applied effects only with confirming tool evidence.'].join('\n\n');
     return this.#client.body(transcriptOf(input), instructions, OPENAI_OUTPUT_TOKENS, input.tools.map(tool =>

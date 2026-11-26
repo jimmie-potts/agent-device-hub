@@ -42,7 +42,8 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   supervisor?: SupervisorIdentity;
   codingPreference?: CodingPreference;
   clarificationDevices?: readonly string[];
-  /** Query and transcript boundary from the scoped model call's admission. */
+  historyScope?: DeviceHistoryBinding;
+  /** Legacy Messages task's bound history query. */
   claudeHistory?: DeviceHistoryBinding & {replayFrom: number; ordinaryFrom?: number};
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;

@@ -311,7 +311,7 @@ const outcomes = (calls: readonly TitleCall[]) => calls.map(call => call.outcome
 
 void test('the first message of a conversation earns a model-written title, published at once as display metadata and on every later observation', {timeout: 20_000}, async context => {
   const provider = titler([titled('"#1896 Session tracking."')]);
-  const w = await world(context, {provider: model(), titleProvider: provider});
+  const w = await world(context, {provider: model(), syntheticTitleProvider: provider});
   await w.ask('Please look at issue #1896 and tell me where session tracking stands.');
   await w.titled(1);
   assert.match(provider.prompts[0] ?? '', /^Current title: none\n\nLatest events:\n- The owner sent a message\.\n/);
@@ -349,7 +349,7 @@ void test('the first message of a conversation earns a model-written title, publ
 
 void test('after a finished task the model keeps the title or gives a new one when the topic moved', {timeout: 20_000}, async context => {
   const provider = titler([titled('Lamp schedule'), kept, kept, titled('#91 Morning routine')]);
-  const w = await world(context, {provider: model(), titleProvider: provider});
+  const w = await world(context, {provider: model(), syntheticTitleProvider: provider});
   await w.ask('When does the lamp turn on?');
   await w.settled(2);
   await w.ask('Move it to seven.');
@@ -368,7 +368,7 @@ void test('no task count or time gap starts a check: the third task and a task a
   // started and when the first task after a day without lifecycle evidence started, so both held tasks below would find
   // a title call already made.
   const turnModel = gatedModel(), provider = titler([titled('Lamp schedule')]);
-  const w = await world(context, {provider: turnModel, titleProvider: provider});
+  const w = await world(context, {provider: turnModel, syntheticTitleProvider: provider});
   await w.ask('When does the lamp turn on?');
   await w.ask('Move it to seven.');
   await turns();
@@ -393,7 +393,7 @@ void test('no task count or time gap starts a check: the third task and a task a
 
 void test('the owner\'s rename is published at once, drops a title in flight and its follow-up, and the model keeps it until the topic changes', {timeout: 20_000}, async context => {
   const provider = titler(['hold', kept, kept, titled('Pantry inventory')]);
-  const w = await world(context, {provider: model(), titleProvider: provider});
+  const w = await world(context, {provider: model(), syntheticTitleProvider: provider});
   await w.ask('Synthetic first request about issue #5.');
   await provider.called(1);
   await turns();
@@ -530,7 +530,7 @@ void test('one title call per conversation: triggers during a call coalesce into
     return turn === 2 ? Promise.reject(new ProviderFault('invalid-message')) : Promise.resolve(done('Synthetic answer.'));
   }};
   const provider = titler(['hold', kept]);
-  const w = await world(context, {provider: failing, titleProvider: provider});
+  const w = await world(context, {provider: failing, syntheticTitleProvider: provider});
   await w.ask('When does the lamp turn on?');
   await provider.called(1);
   await turns();
@@ -553,7 +553,7 @@ void test('one title call per conversation: triggers during a call coalesce into
 
 void test('a late answer after a newer check is dropped: a call past its deadline is abandoned and its follow-up decides', {timeout: 20_000}, async context => {
   const provider = titler(['hold', titled('Newer title')]);
-  const w = await world(context, {provider: model(), titleProvider: provider});
+  const w = await world(context, {provider: model(), syntheticTitleProvider: provider});
   await w.ask('Synthetic request about the lamp.');
   await provider.called(1);
   await turns();
@@ -576,7 +576,7 @@ void test('a failed turn\'s closing reply is saved but never reaches the title p
     return turn === 2 ? Promise.reject(new ProviderFault('invalid-message')) : Promise.resolve(done('Synthetic answer.'));
   }};
   const provider = titler([titled('Lamp schedule'), kept, kept, titled('#88 Lamp schedule fix')]);
-  const w = await world(context, {provider: failing, titleProvider: provider});
+  const w = await world(context, {provider: failing, syntheticTitleProvider: provider});
   await w.ask('When does the lamp turn on?');
   await w.settled(2);
   await w.ask('Move it to seven.');
@@ -594,7 +594,7 @@ void test('a failed turn\'s closing reply is saved but never reaches the title p
 
 void test('a failed, refused, invalid or late title leaves the persona, never touches the task, and is not retried', {timeout: 20_000}, async context => {
   const provider = titler([new ProviderFault('capacity'), {text: null, usage: null}, titled('Title'), titled('token=synthetic-secret-1234'), 'hold']);
-  const w = await world(context, {provider: model(), titleProvider: provider});
+  const w = await world(context, {provider: model(), syntheticTitleProvider: provider});
   // Each task of the untitled conversation is checked at its first message and when it finishes.
   await w.ask('Synthetic request One.');
   await w.settled(2);
@@ -684,7 +684,7 @@ void test('a direct state-changing tool call starts a check with a fixed label a
     ? done('Synthetic reply about the mode.') : {text: null, calls: [{id: `call-${String(input.transcript.length)}`, name: 'set_mode', input: {mode: 'free'}}], stop: 'tool', units: 10})};
   const dispatched: string[] = [];
   const provider = titler([titled('Hub mode')]);
-  const w = await world(context, {provider: turnModel, titleProvider: provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(7), synced: true}),
+  const w = await world(context, {provider: turnModel, syntheticTitleProvider: provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(7), synced: true}),
     dispatch: data => {dispatched.push(data.requestId); return Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {}} as unknown as RequestResult);}});
   await w.start('Please switch the Hub to free mode.');
   await w.until(() => w.status()?.status === 'succeeded');
@@ -709,7 +709,7 @@ void test('an accepted coding hand-off starts a check whose prompt carries the b
   }};
   const delegated: string[] = [];
   const provider = titler([titled('Timer question'), titled('#2041 Flaky timer test')]);
-  const w = await world(context, {provider: turnModel, titleProvider: provider, tools: ['delegate_coding'],
+  const w = await world(context, {provider: turnModel, syntheticTitleProvider: provider, tools: ['delegate_coding'],
     coding: () => ({available: true, endpointId: 'worker', revision: 1}),
     delegate: data => {delegated.push(data.brief); return Promise.resolve({status: 'accepted', requestId: data.requestId} as unknown as RequestResult);}});
   const awaitingApproval = () => w.until(() => w.status()?.status === 'waiting' && w.status()?.questionId !== null && w.status()?.hasAnswer === false);
@@ -744,7 +744,7 @@ void test('a hand-off that waits for its companion\'s busy slot is an accepted h
     ? {text: null, calls: [{id: 'call-1', name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Fix the flaky timer test from issue #2041.'}}], stop: 'tool', units: 10}
     : done('Handed off.'))};
   const provider = titler([titled('Timer question'), titled('#2041 Flaky timer test')]);
-  const w = await world(context, {provider: turnModel, titleProvider: provider, tools: ['delegate_coding'],
+  const w = await world(context, {provider: turnModel, syntheticTitleProvider: provider, tools: ['delegate_coding'],
     coding: () => ({available: true, endpointId: 'worker', revision: 1}),
     delegate: data => Promise.resolve({status: 'waiting' as const, requestId: data.requestId})});
   await w.start('Can the worker look at the flaky timer test?');
@@ -766,7 +766,7 @@ void test('a coding hand-off\'s result starts a check labelled with its outcome 
       : done('Synthetic summary of the worker result.'));
   }};
   const provider = titler([titled('Readout generator test')]);
-  const w = await world(context, {provider: turnModel, titleProvider: provider, tools: ['delegate_coding']});
+  const w = await world(context, {provider: turnModel, syntheticTitleProvider: provider, tools: ['delegate_coding']});
   const work: {action: string; operationId: string}[] = [], endpointId = 'worker-endpoint-1';
   await w.core.respond<{requestId: string}>('bunny.cmd.coding-dispatch.assistant', async command => {
     const answer = await w.core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
@@ -837,7 +837,7 @@ async function restartable(context: TestContext, options: CompanionsOptions) {
 
 void test('startup reconciliation that finds a finished turn starts no title check', {timeout: 20_000}, async context => {
   const provider = titler([titled('Lamp schedule')]);
-  const w = await restartable(context, {provider: model(), titleProvider: provider});
+  const w = await restartable(context, {provider: model(), syntheticTitleProvider: provider});
   await w.start('When does the lamp turn on?');
   await w.until(() => w.status()?.status === 'succeeded');
   await w.settled(2);
@@ -860,7 +860,7 @@ void test('a coding job left pending at stop is settled at start without a title
       : done('Synthetic summary of the lost hand-off.'));
   }};
   const provider = titler([titled('Readout generator test')]);
-  const w = await restartable(context, {provider: turnModel, titleProvider: provider, tools: ['delegate_coding']});
+  const w = await restartable(context, {provider: turnModel, syntheticTitleProvider: provider, tools: ['delegate_coding']});
   const work: {action: string; operationId: string}[] = [], endpointId = 'worker-endpoint-1';
   await w.core.respond<{requestId: string}>('bunny.cmd.coding-dispatch.assistant', async command => {
     const answer = await w.core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
@@ -892,7 +892,7 @@ void test('a coding job left pending at stop is settled at start without a title
 void test('a check the spend limits refuse is never sent and leaves the title as it was; without prices the title model is priced at its built-in tier', {timeout: 20_000}, async context => {
   const provider = titler([titled('#7 Never sent')]);
   // A reservation of 1,024 output tokens at $20,000 per million passes the $20 daily limit.
-  const w = await world(context, {provider: model(), titleProvider: provider, prices: {'claude-haiku-5-5': {input: 1, output: 20_000, cacheWrite: 1, cacheRead: 1}}});
+  const w = await world(context, {provider: model(), syntheticTitleProvider: provider, prices: {'claude-haiku-5-5': {input: 1, output: 20_000, cacheWrite: 1, cacheRead: 1}}});
   await w.ask('Synthetic request.');
   assert.deepEqual((await w.settled(2)).map(call => [call.status, call.code]), [['failed', 'capacity'], ['failed', 'capacity']], 'the first message and the finished task');
   await turns();
@@ -902,7 +902,7 @@ void test('a check the spend limits refuse is never sent and leaves the title as
   assert.equal(w.module.inspectAssistant()?.tasks[0]?.status, 'succeeded', 'the task is untouched');
   // A titled conversation whose title call spent the day's limit: the next check is refused, and the title stays.
   const spender = titler([{text: 'Lamp schedule', usage: {input: 0, output: 4_000_000, cacheWrite: 0, cacheRead: 0}}]);
-  const titledWorld = await world(context, {provider: model(), titleProvider: spender});
+  const titledWorld = await world(context, {provider: model(), syntheticTitleProvider: spender});
   await titledWorld.ask('Synthetic lamp request.');
   assert.deepEqual((await titledWorld.settled(2)).map(call => [call.status, call.code ?? null, call.outcome]), [['succeeded', null, 'applied'], ['failed', 'capacity', null]]);
   await turns();
@@ -910,7 +910,7 @@ void test('a check the spend limits refuse is never sent and leaves the title as
   assert.deepEqual(titledWorld.titles.map(message => titleOf(message)?.value), ['Lamp schedule']);
   assert.deepEqual(titledWorld.store().record(titledWorld.conversation())?.title, {value: 'Lamp schedule', source: 'generated'});
   // With no configured prices (Hub #2047) claude-haiku-5-5 takes its built-in lower tier: 50 input and 6 output tokens at $0.10 and $0.50 per million.
-  const builtIn = await world(context, {provider: model(), titleProvider: titler([titled('#8 Built-in price')]), prices: {}});
+  const builtIn = await world(context, {provider: model(), syntheticTitleProvider: titler([titled('#8 Built-in price')]), prices: {}});
   await builtIn.ask('Synthetic request.');
   await builtIn.titled(1);
   const [first] = await builtIn.settled(2);
@@ -920,7 +920,7 @@ void test('a check the spend limits refuse is never sent and leaves the title as
 
 void test('a title call that Anthropic\'s monthly spend limit refuses keeps the persona and leaves the task untouched', {timeout: 20_000}, async context => {
   const provider = titler([new ProviderFault('capacity', false, undefined, SPEND_LIMIT_REACHED)]);
-  const w = await world(context, {provider: model(), titleProvider: provider, prices: {}});
+  const w = await world(context, {provider: model(), syntheticTitleProvider: provider, prices: {}});
   await w.ask('Synthetic request.');
   const calls = await w.settled(2);
   await turns();
@@ -932,7 +932,7 @@ void test('a title call that Anthropic\'s monthly spend limit refuses keeps the 
 
 void test('stopping the module abandons a title call in flight without waiting for it', {timeout: 20_000}, async context => {
   const provider = titler(['hold']);
-  const w = await world(context, {provider: model(), titleProvider: provider});
+  const w = await world(context, {provider: model(), syntheticTitleProvider: provider});
   await w.ask('Synthetic request.');
   await provider.called(1);
   await w.host.stop();

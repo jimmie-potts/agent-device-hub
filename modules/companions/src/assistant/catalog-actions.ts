@@ -405,7 +405,7 @@ export class ConversationActions {
     }
   }
 
-  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined; brightnessControl: boolean}): Promise<string | undefined> {
+  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined; brightnessControl: boolean; resolve: (id: string) => void}): Promise<string | undefined> {
     const input = call.input;
     switch (call.name) {
       case CREATE_SHOW: case EDIT_SHOW: case PREVIEW_SHOW: {
@@ -494,7 +494,7 @@ export class ConversationActions {
     return textResult(records?.filter(record => typeof record.id === 'string' && access('status', 'index', record.id) && access('status', 'details', record.id)).map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
   }
 
-  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: {subject: string | undefined; brightnessControl: boolean}): Promise<string> {
+  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: {subject: string | undefined; brightnessControl: boolean; resolve: (id: string) => void}): Promise<string> {
     const {target, owner} = input;
     if (typeof target !== 'string' || typeof owner !== 'string') return 'refused: invalid-request';
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
@@ -504,11 +504,13 @@ export class ConversationActions {
       const matches = await this.deviceSubjectMatches(scopedFacts.subject, parent);
       const selected = matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
-          target !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1 ||
-          !access('devices', 'label', selected.device.id)) return textResult({devices: []});
+          target !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
       const {owner: source, device} = selected;
+      scopedFacts.resolve(device.id);
+      if (!access('devices', 'index', device.id) || !access('devices', 'label', device.id) || !access('devices', 'status', device.id)) {
+        return textResult({devices: []});
+      }
       if (scopedFacts.brightnessControl) {
-        if (!access('devices', 'status', device.id)) return textResult({devices: []});
         const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');
         const controls = this.enabled.filter(name => name === SET_LIFX_BRIGHTNESS && source === LIFX && device.capabilities.brightness.supported ||
           name === tool && route.binding === 'device' && route.owners.some(owner => owner === source) && permitsDevice(route, device));
@@ -516,8 +518,8 @@ export class ConversationActions {
           lastReportedAvailability: device.availability, controls}]});
       }
       return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
-        ...(access('devices', 'status', device.id) ? {lastReportedAvailability: device.availability, observation: device.observed,
-          ...(source === WEMO ? {maximumOnLimit: this.deviceDisplay.powerLimit(device.id, this.context.clock.now())} : {})} : {})}]});
+        lastReportedAvailability: device.availability, observation: device.observed,
+        ...(source === WEMO ? {maximumOnLimit: this.deviceDisplay.powerLimit(device.id, this.context.clock.now())} : {})}]});
     }
     const {rows, unreadable} = await this.#deviceRecords(owners, parent);
     const visible = rows.filter(({device}) => access('devices', 'index', device.id) && access('devices', 'label', device.id));

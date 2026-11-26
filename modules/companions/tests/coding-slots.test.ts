@@ -1423,7 +1423,7 @@ for (const originalGrant of ['granted', 'revoked'] as const) {
     const ordinary = sharing();
     let revokedRequest: string | undefined;
     const share = Object.assign((query: ShareQuery) => ordinary(query) && !(revokedRequest !== undefined &&
-      query.destination === 'openai-supervisor' && query.field === 'request' && query.record === revokedRequest),
+      query.destination === 'external-model' && query.field === 'request' && query.record === revokedRequest),
     {revokesFields: true, allowsDerived: (query: ShareQuery) => ordinary.allowsDerived?.(query) !== false});
     const w = await world(context, {provider, share});
     const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
@@ -1479,7 +1479,7 @@ void test(`a restored Responses coding job with sharing ${restoredGrant} keeps i
   const ordinary = sharing();
   const share = Object.assign((query: ShareQuery) => ordinary(query) &&
     !(denied === 'worker denied' && query.destination === 'coding-worker' && query.source === 'coding' && query.field === 'brief') &&
-    !(denied === 'source denied' && query.destination === 'openai-supervisor' && query.source === 'conversation' && query.field === 'request'),
+    !(denied === 'source denied' && query.destination === 'external-model' && query.source === 'conversation' && query.field === 'request'),
   {revokesFields: true, allowsDerived: (query: ShareQuery) => ordinary.allowsDerived?.(query) !== false});
   const openAIRequests: string[] = [];
   const provider = new OpenAIProvider({model: OPENAI_MODEL, effort: 'medium', key: 'synthetic', transport: (_url, init) => {

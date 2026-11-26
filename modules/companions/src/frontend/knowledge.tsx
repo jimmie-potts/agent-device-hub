@@ -37,7 +37,7 @@ function ModelContext({context, profile, persona, revision, live, locked, enable
   const name = persona?.name ?? profile;
   return <section aria-label="Model context">
     <h3>Model context</h3>
-    <p>Each model call for {name} sends these sections, in this order, after the fixed instructions and before the current Hub mode. Each section has its own size budget and says what it left out. The recent conversation holds this conversation's earlier messages and tool results, never another companion's or another conversation's.</p>
+    <p>Preview the sections for {name}. Hosted models use the same sharing policy and select relevant excerpts when they have a current request.</p>
     <label style={{display: 'flex', alignItems: 'center', gap: '0.6rem', minBlockSize: '2.75rem'}}>
       <input type="checkbox" style={{flex: 'none', inlineSize: '1.1rem', blockSize: '1.1rem', margin: 0}} checked={enabled} disabled={locked}
         onChange={event => {send({action: 'set-context-knowledge', persona: profile, enabled: event.target.checked});}}/>
@@ -45,6 +45,7 @@ function ModelContext({context, profile, persona, revision, live, locked, enable
     <button type="button" disabled={!live} onClick={() => {void read();}}>Preview model context</button>
     {preview !== undefined && <div style={{overflowWrap: 'anywhere'}}>
       <p>{preview.basis.kind === 'task' ? 'The next call of the unfinished task' : 'The next message'} in {preview.conversationId === null ? 'a new conversation' : 'the current conversation'}, for the {preview.provider} provider.</p>
+      {(preview.sharingConflictCount ?? 0) > 0 && <p role="status">The model sharing configuration has conflicting grants. The affected fields stay private.</p>}
       <ol aria-label="Context sections">{preview.sections.map(section => <li key={section.name}>
         <h4>{SECTION_LABELS[section.name]}</h4>
         <p>{sectionSummary(section)}</p>
