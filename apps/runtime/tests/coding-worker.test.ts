@@ -738,7 +738,8 @@ for (const committed of [false, true]) {
   });
 }
 
-for (const alias of [false, true]) void test(`a saved Codex launch uses the verified checkout through the Mac repository path (alias: ${String(alias)})`,
+for (const {alias, conflictingRoute} of [{alias: false, conflictingRoute: false}, {alias: true, conflictingRoute: false}, {alias: false, conflictingRoute: true}]) void test(
+  `a saved Codex launch verifies the Mac checkout and subscription route (alias: ${String(alias)}, conflicting route: ${String(conflictingRoute)})`,
   {skip: process.platform !== 'darwin', timeout: 30_000}, async t => {
     const standalone = '/opt/homebrew/bin/codex';
     if (await realpath(standalone).catch(() => undefined) === undefined) {t.skip('standalone Codex unavailable'); return;}
@@ -750,14 +751,16 @@ for (const alias of [false, true]) void test(`a saved Codex launch uses the veri
     await mkdir(home, {mode: 0o700});
     const config = {sqlite_home: join(home, 'sqlite'), log_dir: join(home, 'log'), mcp_servers: {}, plugins: {}, hooks: null,
       allow_login_shell: false, cli_auth_credentials_store: 'file', forced_login_method: 'chatgpt', model_provider: 'openai',
-      chatgpt_base_url: 'https://chatgpt.com/backend-api/', openai_base_url: 'https://api.openai.com/v1',
+      chatgpt_base_url: 'https://chatgpt.com/backend-api/',
+      openai_base_url: conflictingRoute ? 'https://api.openai.com/v1' : 'https://chatgpt.com/backend-api/codex',
       otel: {exporter: 'none', trace_exporter: 'none', metrics_exporter: 'none', log_user_prompt: false},
       features: {hooks: false, apps: false, plugins: false, shell_snapshot: false}};
     await writeFile(executable, `#!${process.execPath}
 const args=process.argv.slice(2);
 if(args[0]==='sandbox') process.exit(require('node:child_process').spawnSync(${JSON.stringify(standalone)},args,{stdio:'inherit'}).status ?? 8);
 if(args[0]==='resume') {
-  console.log(JSON.stringify({cwd:process.cwd(), threadId:args.at(-1), selectedCwd:args[args.indexOf('--cd')+1], home:process.env.CODEX_HOME}));
+  console.log(JSON.stringify({cwd:process.cwd(), threadId:args.at(-1), selectedCwd:args[args.indexOf('--cd')+1], home:process.env.CODEX_HOME,
+    modelRoute:args.filter(arg=>arg.startsWith('openai_base_url='))}));
   process.exit(0);
 }
 if(args[0]!=='app-server') process.exit(9);
@@ -816,13 +819,19 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     socket.write('native\n');
     assert.equal((await replies.next()).value, 'waiting');
     const prepare = command({action: 'prepare-native-client', client: 'terminal', requestId: 'prepare-native', operationId: 'native'});
-    assert.deepEqual(await Promise.resolve(edge.respond({...prepare, expiresat: new Date(Date.now() + 25000).toISOString()})), {status: 'accepted'});
+    const prepared = await Promise.resolve(edge.respond({...prepare, expiresat: new Date(Date.now() + 25000).toISOString()}));
+    if (conflictingRoute) {
+      assert.deepEqual(prepared, errorBody('unavailable'));
+      return;
+    }
+    assert.deepEqual(prepared, {status: 'accepted'});
     const launch = command({action: 'open-native-terminal', requestId: 'launch-native', operationId: 'native', intentId: 'prepare-native'});
     assert.deepEqual(await Promise.resolve(edge.respond(launch)), {status: 'accepted'});
     const plan = JSON.parse((await replies.next()).value ?? assert.fail('native launch plan')) as {executable: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv};
     assert.notEqual(plan.cwd, original);
     assert.equal(await realpath(plan.cwd), plan.cwd);
     const {stdout} = await promisify(execFile)(plan.executable, plan.args, {cwd: plan.cwd, env: plan.env, timeout: 5000});
-    assert.deepEqual(JSON.parse(stdout), {cwd: plan.cwd, threadId: sessionId, selectedCwd: plan.cwd, home});
+    assert.deepEqual(JSON.parse(stdout), {cwd: plan.cwd, threadId: sessionId, selectedCwd: plan.cwd, home,
+      modelRoute: ['openai_base_url="https://chatgpt.com/backend-api/codex"']});
     assert.equal(edge.progress.some(row => row.operationId === 'sibling' && row.status !== 'started'), false);
   });

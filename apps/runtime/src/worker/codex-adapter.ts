@@ -23,7 +23,8 @@ const MESSAGE_BYTES = 1024 * 1024;
 const CLOSED = new Error('codex protocol closed');
 const CHATGPT_ORIGIN = 'https://chatgpt.com';
 const CHATGPT_BACKEND = `${CHATGPT_ORIGIN}/backend-api/`;
-const OPENAI_API = 'https://api.openai.com/v1';
+// Codex 0.163.0 uses this built-in provider route with ChatGPT auth.
+const CHATGPT_CODEX_BACKEND = `${CHATGPT_BACKEND}codex`;
 const PERSONAL_PLANS = new Set(['free', 'go', 'plus', 'pro', 'prolite', 'promax']);
 const MANAGED_PLAN = /^(?:team|(?:self_serve_)?business|ent26|enterprise|edu)(?:_|$)/;
 class CodexRpcError extends Error {
@@ -164,7 +165,7 @@ export function codexArguments(cwd: string, profile: string, home: string, prote
   return [...configArg('sqlite_home', sqlite), ...configArg('log_dir', logs),
     ...configArg('forced_login_method', 'chatgpt'), ...configArg('cli_auth_credentials_store', 'file'), ...configArg('model_provider', 'openai'),
     ...configArg('chatgpt_base_url', CHATGPT_BACKEND),
-    ...configArg('openai_base_url', OPENAI_API),
+    ...configArg('openai_base_url', CHATGPT_CODEX_BACKEND),
     ...configArg('approval_policy', 'never'), ...configArg('web_search', 'disabled'), ...configArg('allow_login_shell', false),
     ...configArg('analytics.enabled', false), ...configArg('feedback.enabled', false),
     ...configArg('otel.log_user_prompt', false), ...configArg('otel.exporter', 'none'), ...configArg('otel.trace_exporter', 'none'),
@@ -336,7 +337,7 @@ async function isolatedSettings(wire: Wire, cwd: string, home: string): Promise<
     && (notify === null || notify === undefined || (Array.isArray(notify) && notify.length === 0))
     && allow_login_shell === false && cli_auth_credentials_store === 'file' && forced_login_method === 'chatgpt' && model_provider === 'openai'
     && chatgpt_base_url === CHATGPT_BACKEND
-    && openai_base_url === OPENAI_API
+    && openai_base_url === CHATGPT_CODEX_BACKEND
     && telemetry.log_user_prompt === false
     && ['exporter', 'trace_exporter', 'metrics_exporter'].every(key => telemetry[key] === 'none')
     && ['apps', 'plugins', 'hooks', 'shell_snapshot'].every(name => flags[name] === false);
