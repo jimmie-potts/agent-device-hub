@@ -9,6 +9,7 @@ import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
 import {Messages} from '../knowledge/messages.js';
 import {advanceRevision, initializeRevision} from '../revision.js';
 import {randomUUID} from 'node:crypto';
+import {gzipSync, gunzipSync} from 'node:zlib';
 import type {DatabaseSync} from 'node:sqlite';
 import {isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
@@ -42,7 +43,9 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   supervisor?: SupervisorIdentity;
   codingPreference?: CodingPreference;
   clarificationDevices?: readonly string[];
-  /** Query and transcript boundary from the scoped model call's admission. */
+  historyScope?: DeviceHistoryBinding;
+  ownerInputStart?: string;
+  /** Legacy Messages task's bound history query. */
   claudeHistory?: DeviceHistoryBinding & {replayFrom: number; ordinaryFrom?: number};
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
@@ -53,8 +56,19 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
    * before this field has no recent conversation.
    */
   contextThrough?: number};
+export type ContextSourceVersion = {id: string; revision: number};
+export type SavedDisclosureProof = {
+  fields: readonly DisclosedField[]; sources: readonly string[]; legacy: boolean; complete: boolean; model: boolean;
+};
+export type HistoryCompaction = {
+  id: string; taskId: string; conversationId: string; provider: SupervisorIdentity; sources: readonly ContextSourceVersion[];
+  status: 'admitted' | 'succeeded' | 'failed' | 'uncertain'; text: string | null; stopCode?: ErrorCode;
+};
+export type HostedHistoryMessage = Pick<RecentMessage, 'id' | 'role' | 'text'> & {taskId: string; revision: number};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   directBrightness?: true;
+  historySources?: readonly ContextSourceVersion[];
+  inputVersions?: readonly {field: DisclosedField; version: string}[];
   codingApproval?: {destination: 'coding-worker'; repository: string; briefDigest: string};
   status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true;
   result: string | null; units: number | null; reservedUnits: number;
@@ -136,7 +150,12 @@ export class AssistantStore {
       CREATE TABLE IF NOT EXISTS assistant_confirmations (request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, record TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_confirmations_task ON assistant_confirmations(task_id);
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
-      CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
+      CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);
+      CREATE TABLE IF NOT EXISTS assistant_history_compactions (
+        id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, conversation_id TEXT NOT NULL, record TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS assistant_history_compactions_conversation ON assistant_history_compactions(conversation_id);
+      CREATE TABLE IF NOT EXISTS assistant_disclosure_proofs (
+        task_id TEXT NOT NULL, through_call INTEGER NOT NULL, proof BLOB NOT NULL, PRIMARY KEY(task_id,through_call)) STRICT;`);
     if (!database.prepare("SELECT 1 FROM pragma_table_info('assistant_messages') WHERE name='follows'").get()) {
       database.exec('ALTER TABLE assistant_messages ADD COLUMN follows TEXT');
     }
@@ -322,6 +341,39 @@ export class AssistantStore {
     });
     return {messages, total};
   }
+  /** Earlier owner and final assistant messages in their stored sequence, with no message-count ceiling. */
+  hostedHistory(profile: AssistantProfile, conversationId: string, through: number): Iterable<HostedHistoryMessage> {
+    if (this.messages.conversation(conversationId)?.profile !== profile) return [];
+    return this.database.prepare(`SELECT id,role,text,task_id AS taskId,COALESCE(json_extract(record,'$.revision'),0) AS revision
+      FROM assistant_messages WHERE conversation_id=? AND seq<=?
+      AND ((role='tool' AND record IS NULL) OR (record IS NOT NULL
+        AND (role='owner' OR (role='assistant' AND id=task_id || '-result'))
+        AND json_extract(record,'$.provenance.imported')=0 AND json_extract(record,'$.meaning.kind')='literal'
+        AND (json_extract(record,'$.speakerId')=? OR EXISTS (SELECT 1 FROM json_each(record,'$.recipientIds') WHERE value=?)
+          OR json_type(record,'$.recipientIds')='null')))
+      AND NOT EXISTS (SELECT 1 FROM companion_removals WHERE id=assistant_messages.id) ORDER BY seq`)
+      .iterate(conversationId, through, profile, profile) as Iterable<HostedHistoryMessage>;
+  }
+  historySourceRevision(id: string): number | undefined {
+    const row = this.database.prepare(`SELECT COALESCE(json_extract(record,'$.revision'),0) AS revision
+      FROM assistant_messages WHERE id=? AND NOT EXISTS (SELECT 1 FROM companion_removals WHERE id=assistant_messages.id)`)
+      .get(id) as {revision: number} | undefined;
+    return row?.revision;
+  }
+  lastHistoryCompaction(conversationId: string): HistoryCompaction | undefined {
+    return parsed<HistoryCompaction>(this.database.prepare(`SELECT record FROM assistant_history_compactions WHERE conversation_id=?
+      AND json_extract(record,'$.status')='succeeded' ORDER BY rowid DESC LIMIT 1`).get(conversationId) as RecordRow | undefined);
+  }
+  taskHistoryCompaction(taskId: string): HistoryCompaction | undefined {
+    return parsed<HistoryCompaction>(this.database.prepare('SELECT record FROM assistant_history_compactions WHERE task_id=?').get(taskId) as RecordRow | undefined);
+  }
+  hasHistoryCompaction(id: string, taskId: string): boolean {
+    return this.database.prepare('SELECT 1 FROM assistant_history_compactions WHERE id=? OR task_id=?').get(id, taskId) !== undefined;
+  }
+  saveHistoryCompaction(value: HistoryCompaction): void {
+    this.database.prepare(`INSERT INTO assistant_history_compactions VALUES (?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET record=excluded.record`).run(value.id, value.taskId, value.conversationId, JSON.stringify(value));
+  }
   /** Whether the owner turned on knowledge notes for the companion's context (Hub #2029); off until the owner does. */
   knowledgeEnabled(profile: AssistantProfile): boolean {
     return (this.database.prepare('SELECT knowledge FROM assistant_context_settings WHERE profile=?').get(profile) as {knowledge: number} | undefined)?.knowledge === 1;
@@ -423,6 +475,18 @@ export class AssistantStore {
   }
   calls(taskId: string): Call[] {return this.database.prepare('SELECT record FROM assistant_calls WHERE task_id=?').all(taskId).map(row => JSON.parse(row.record as string) as Call);}
   saveCall(call: Call): void {this.database.prepare('INSERT INTO assistant_calls VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(call.id, call.taskId, JSON.stringify(call));}
+  hasDisclosureProof(taskId: string, through: number): boolean {
+    return this.database.prepare('SELECT 1 FROM assistant_disclosure_proofs WHERE task_id=? AND through_call=?').get(taskId, through) !== undefined;
+  }
+  disclosureProof(taskId: string, through: number): SavedDisclosureProof | undefined {
+    const row = this.database.prepare('SELECT proof FROM assistant_disclosure_proofs WHERE task_id=? AND through_call=?')
+      .get(taskId, through) as {proof: Uint8Array} | undefined;
+    return row === undefined ? undefined : JSON.parse(gunzipSync(row.proof).toString()) as SavedDisclosureProof;
+  }
+  saveDisclosureProof(taskId: string, through: number, proof: SavedDisclosureProof): void {
+    this.database.prepare('INSERT OR IGNORE INTO assistant_disclosure_proofs VALUES (?,?,?)')
+      .run(taskId, through, gzipSync(JSON.stringify(proof), {level: 1}));
+  }
   confirmation(requestId: string): Confirmation | undefined {
     return parsed<Confirmation>(this.database.prepare('SELECT record FROM assistant_confirmations WHERE request_id=?').get(requestId) as RecordRow | undefined);
   }
@@ -489,9 +553,20 @@ export class AssistantStore {
     size: number, visibility?: MessageVisibility): MessageRow[] {
     const filter = `WHERE conversation_id=? AND ${condition}`;
     if (visibility === undefined) return this.database.prepare(`${messagesWithAttachments} ${filter} ORDER BY seq ${order} LIMIT ?`).all(conversationId, position, size) as MessageRow[];
-    const candidates = this.database.prepare(`SELECT id,role,task_id AS taskId,follows FROM assistant_messages ${filter} ORDER BY seq ${order}`)
-      .all(conversationId, position) as MessageSource[];
-    const ids = candidates.filter(message => visibility.shows(message)).slice(0, size).map(message => message.id);
+    // Finish each SELECT before evaluating visibility, which may save disclosure proof.
+    const select = this.database.prepare(`SELECT seq,id,role,task_id AS taskId,follows FROM assistant_messages ${filter} ORDER BY seq ${order} LIMIT ?`);
+    const ids: string[] = [];
+    let cursor = position;
+    while (ids.length < size) {
+      const candidates = select.all(conversationId, cursor, size) as (MessageSource & {seq: number})[];
+      for (const candidate of candidates) {
+        cursor = candidate.seq;
+        if (visibility.shows(candidate)) ids.push(candidate.id);
+        if (ids.length === size) break;
+      }
+      if (candidates.length < size) break;
+    }
+    if (ids.length === 0) return [];
     return this.database.prepare(`${messagesWithAttachments} WHERE msg.id IN (${ids.map(() => '?').join(',')}) ORDER BY seq ${order}`).all(...ids) as MessageRow[];
   }
   #visibleMessage(row: MessageRow, visibility?: MessageVisibility): ConversationMessage {

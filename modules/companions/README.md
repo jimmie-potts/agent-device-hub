@@ -593,31 +593,30 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   supervisor for new tasks. History stays readable. Tasks already pinned to
   the unavailable supervisor stay paused. Coding workers have their own
   configuration and approval.
-- OpenAI receives the current owner request and selected relevant data under
-  [ADR 0011](../../docs/decisions/0011-private-personal-data-retention.md).
-  Device reads resolve the opening affirmative target to an exact configured
-  ID or label. Ambiguous matches or later clauses add no device facts. For a
-  historical question about one Wemo plug or LIFX light, the shared history
-  read sends only the allowed duration totals or last observed change. The
-  current request sets the device and interval. For an explicit reference to a
-  previous request, the supervisor can receive a bounded excerpt from the
-  same conversation. A title for an untitled conversation uses only the
-  current request. Provider-native reasoning and tool items replay within
-  their original task and current subject. A steer submits the new request
-  with only relevant excerpts from an earlier subject. A missing or changed
-  provider leaves the task readable and paused. An earlier task with no
-  saved supervisor stays paused, and its unpinned queued work stays held.
-  Cancel the paused task and withdraw any unpinned messages to start a new
-  conversation. A recovered coding job requires the saved supervisor and the
-  approval for its exact operation, repository and brief. The approval uses
-  the worker grant. Earlier call disclosures must still pass the original
-  supervisor, private read and derived-input grants. If the approval or
-  supervisor cannot be verified, the job stays readable with a receipt
-  explaining that it did not start. Create a new job to authorize it. A
-  verified job can start without the supervisor credential or a model call.
-  Worker results remain in the private conversation. Pending title checks use
-  their own provider and permitted inputs. A pending Responses check skips a
-  conversation that already has a title.
+- Both hosted supervisors use the same [external-model sharing
+  policy](#external-model-sharing). Companions selects the active owner
+  request, relevant excerpts from the same conversation, relevant device
+  facts and explicitly requested bounded device-history summaries. A
+  follow-up can resolve an exact configured device from the same conversation.
+  An explicit request for on or off times for one device and period can
+  receive up to two pages of 12 history rows with in-period timestamps.
+  Current sharing rules apply on every page. An ordinary duration or
+  last-change request stays summary-only.
+  An ambiguous reference returns no retained device facts. A steer that
+  changes the subject starts a new scope. Provider-native reasoning and tool
+  items replay only within the originating task and adapter while current
+  grants permit their inputs.
+- A missing or changed provider leaves the task readable and paused. An
+  earlier task with no saved supervisor stays paused, and its unpinned queued
+  work stays held. Cancel the paused task and withdraw any unpinned messages
+  to start a new conversation. A recovered coding job requires the saved
+  supervisor identity and approval for its exact operation, repository and
+  brief. The approval uses the worker grant. Earlier call disclosures must
+  still pass the common model policy, private read and derived-input grants.
+  If the approval or supervisor identity cannot be verified, the job stays
+  readable with a receipt explaining that it did not start. Create a new job
+  to authorize it. A verified job can start without the supervisor credential
+  or a model call. Worker results remain in the private conversation.
 - Responses calls use Standard service and a 30-minute prompt cache. The
   published `gpt-6.2-sol` rates on 2026-11-24 are $2 per million input tokens,
   $2.50 for cache writes, $0.10 for cache reads and $10 for output, which
@@ -718,22 +717,12 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   which the API requires for the turn whose tool call awaits its result. One
   tool call per turn is acted on; a further call in one answer is dropped with
   its block.
-- The prompt holds the owner's typed text, the tool definitions and results,
-  the fixed instructions, the current Hub mode and the prompt context that the
-  sectioned context builder assembles for the task's companion (Hub #2029): its
-  curated persona, the owner's knowledge notes once the owner turns them on for
-  it, the owner's active explicit preferences, an empty long-term memory slot
-  and the recent messages and tool results of the task's own conversation, read
-  from the module's own records at each model call, so an edit or **Stop using**
-  applies to the next call (Hub #507, decision 5 on #46 as amended on
-  2026-10-31). Every section is framed as data that grants no tool, permission,
-  approval or device authority; permission is the allowlist and the core's
-  dispatcher, never prompt text. No inactive or historical entry, removed
-  message, other conversation, other companion's message or household record
-  enters the prompt. Each section keeps to its own budget and states what it
-  left out. Before Hub #2029, preferences over the context bound refused the
-  whole turn with `capacity`; now the section keeps the entries that fit and
-  states how many it left out, and the call is sent.
+- Companions assembles bounded context from its own records and applies the
+  current grants before a hosted model receives it. The fixed instructions
+  and the permitted tools are separate from Conversation data. The context
+  does not grant permission to use a tool or authorize a device action.
+  See [Recent context and New conversation](#recent-context-and-new-conversation)
+  for candidate sections and their budgets.
 
 - With spoken replies enabled in a tab (see [Browser speech](#browser-speech)),
   the result, question or refusal that ends a turn is spoken once through the
@@ -915,13 +904,36 @@ read paths without network or paid calls. The `assistant-task` and
 `assistant-mode-approval` catalog scenarios and the companions browser journey
 cover these paths.
 
-Conversation checks sharing before it builds a page, provider transcript,
-title prompt or coding brief. The private Companions section accepts
-`sharing` rules with `caller`, `companion`, `destination`, `purpose`, `source`,
-`field`, optional `record` and `allow`. A matching denial takes precedence.
-Changing a tool allowlist does not grant sharing. The current policy and
-OpenAI supervisor grant are recorded in
-[ADR 0011](../../docs/decisions/0011-private-personal-data-retention.md).
+### External-model sharing
+
+Conversation checks sharing before discovery, paging, model-bound tool
+results and submission. Earlier model replies and retained tool results are
+eligible only while their underlying disclosures can still be checked.
+A turn sends unread owner steers in the order they were admitted. Current
+grants apply to a previously assembled
+request and to replay. A required field denied at submission prevents
+transport. Private Conversation reads, speech and an approved coding brief
+keep their existing grants.
+
+Use Send, Queue, Steer and Answer as usual with a hosted supervisor.
+Companions applies the common field policy to submitted text and rechecks
+grants before sending a queued or resumed request. Configured credentials
+stay in the existing secret and transport paths.
+
+The private Companions section accepts `sharing` rules with `caller`,
+`companion`, `destination`, `purpose`, `source`, `field`, optional
+`record` and `allow`. Use `destination: "external-model"` for common
+model access. The `supervisor` purpose covers a turn's selected inputs and
+`title` covers the minimum permitted inputs for naming the conversation.
+The `prompt` purpose requires an explicit common grant for active knowledge
+or preferences. Knowledge notes also require the existing per-companion
+switch. Grant labels and text separately. A tool allowlist grants access to run
+a tool. The sharing policy controls which fields a model can see.
+
+Legacy model grant rules are interpreted in memory. The private source
+configuration remains intact. A matching explicit denial takes precedence.
+An ambiguous migration keeps the affected field private and reports the
+conflict in the private Model context preview. [ADR 0011](../../docs/decisions/0011-private-personal-data-retention.md#common-conversation-model-sharing-2026-11-26)
 
 ### Identities, staging and bounds
 
@@ -1138,11 +1150,11 @@ list coding agent sessions only. Native worker reporting is not part of this.
 
 ### Recent context and New conversation
 
-Each model call receives the companion's context as named sections in a fixed
-order, assembled by one builder (`src/assistant/context.ts`, Hub #2029). Each
-section has its own budget in UTF-8 bytes of its rendered text. A section over
-its budget keeps what fits and says, in its own text, how many items it left
-out; nothing is cut silently and no section refuses the call.
+The context builder assembles the companion's candidate context as named
+sections in a fixed order (`src/assistant/context.ts`, Hub #2029). Stable
+sections have individual UTF-8 byte limits and report omitted entries.
+Hosted conversation history uses the model's working token allowance.
+The synthetic provider uses a fixed recent-message section.
 
 | Order | Section | Budget | What it can contain |
 | --- | --- | --- | --- |
@@ -1150,10 +1162,9 @@ out; nothing is cut silently and no section refuses the call.
 | 2 | Knowledge notes | 32 KiB | The owner's active knowledge notes, by title and text. Off for each companion until the owner turns it on there; off sends nothing. Entries past the budget are left out, last first. |
 | 3 | Active preferences | 32 KiB | The owner's active explicit preferences, by title and text, or a line saying there are none. Entries past the budget are left out, last first. |
 | 4 | Long-term memory | 16 KiB | Nothing yet. A slot for each companion's later memory work. |
-| 5 | Recent conversation | 48 KiB and 48 messages | The task's own conversation's earlier owner messages, companion replies and tool results: device reads, catalog reads, coding hand-off receipts (sent, or waiting for the companion's worker slot), worker reports, refusals, declines and closing replies, and the companion's "Waiting to delegate" and "Delegated to" lines with the approved repository and brief. Each line names the saved message ID, the speaker or tool name, and an artwork attachment's request ID and description. Older messages are left out first. |
+| 5 | Conversation history | Selected model token allowance for hosted calls. 48 KiB and 48 messages for synthetic calls. | Eligible earlier owner messages, companion replies and tool results from the task's conversation. Saved messages name the source message and speaker. The synthetic section can show an artwork attachment's request ID and description and leaves older messages out first. |
 
-The recent conversation holds what was saved before the task started, so it
-stays the same for all of the task's calls and the cached prefix holds. A
+The history window starts with what was saved before the task started. A
 message saved later, such as an earlier reply's late confirmation, waits for
 the next task. It never holds another conversation, another companion's
 messages, a Reachy and MicroDuck exchange, a removed message, a message the
@@ -1171,6 +1182,53 @@ follow-up such as "dim it" therefore still goes through the proposal's current
 device guards and the owner's approval. `read_saved_art` names each artwork's
 source request, so an attachment's request ID leads to its artwork ID.
 
+#### Hosted working context
+
+The supervisor receives eligible earlier owner messages, companion replies
+and permitted tool-result projections in their saved order. The model
+interprets prior references in light of the current request. Device tools
+still apply current scope, sharing and approval checks. Raw tool internals
+and previous timestamp-detail disclosures stay outside automatic history.
+
+Companions measures the complete serialized request, including instructions,
+tools, current input and native continuation. It reserves output space in
+the selected model's context window and applies a local working-input ceiling
+of 128,000 estimated tokens. The estimate charges short ASCII words at
+three letters per token rounded up, other bytes individually, plus 8,192
+tokens for provider framing. With an unlisted model, the fit uses one
+estimated token per byte and the local budget. The 32 KiB individual
+owner-message admission limit, adapter transport bounds, turn reservations
+and spend limits apply independently. When the current input and its required
+continuation alone exceed the working allowance, Companions keeps the saved
+input and refuses the request before reserving spend for it.
+
+When eligible older exchanges no longer fit, Companions keeps a recent
+verbatim tail and asks the pinned supervisor for a bounded continuity
+summary. That text-only call has no tools and requests at most 2,048 output
+tokens. Each task can start at most one compaction, with a 45-second
+deadline and a reservation capped at 10% of remaining daily and monthly
+spend. While that call runs, Companions holds enough local spend for the
+planned ordinary request's required input. That hold is excluded from
+reported spend. Later additions and the current synced Hub mode are checked
+when the ordinary request is admitted. Summaries carry earlier decisions, open requests or questions,
+device references and corrections. The saved history retains full messages
+and details that the summary omits. Companions verifies the covered source
+versions and current grants before sending or reusing summary text. An edit,
+removal or revocation can invalidate the checkpoint. Saved replies and
+questions remain readable under the owner's private grants. Private display
+and speech check current grants for the original fields inherited through
+earlier replies and tool results. Companions saves deduplicated field
+requirements alongside finalized hosted replies and eligible tool results.
+Older released ledgers provide direct disclosure requirements when needed.
+The proof records disclosure requirements without caching an authorization
+result. A derived reply without its required saved proof is withheld, and
+the original stays in private storage. If cost, the deadline,
+provider availability or an unusable answer prevents compaction, Companions
+can continue with an eligible verbatim tail. An ambiguous attempt keeps
+its receipt and spend reservation. Its work is not repeated, and a different
+older prefix can still be compacted as history grows. The summary and earlier messages confer
+no permission to act.
+
 The Anthropic adapter sends the system prompt as two blocks. The first holds
 the fixed instructions and rules, the personality, the knowledge notes, the
 preferences and the memory slot, and carries its own cache breakpoint, so a
@@ -1181,12 +1239,11 @@ task. When active preferences or knowledge notes pass their section's budget,
 the Preferences and Companion knowledge pages say how many each model call
 leaves out.
 
-Where it goes: the sections reach only the task's model provider, the
-configured Anthropic provider or the local synthetic one, which sends nothing.
-ADR 0011's 2026-10-05 amendment allows retained personal data in prompts to
-Claude. Any other provider needs its own owner decision. The context is
-assembled at each call and not saved; the task record keeps only the message
-sequence its recent conversation reads up to.
+The local synthetic provider uses the sectioned context and makes no network
+call. Hosted providers receive the fields permitted for the active request by
+the [external-model sharing policy](#external-model-sharing). Companions
+checks current grants and scope before a call. The task record keeps the
+message sequence used to bound recent context.
 
 The **Companion knowledge** page's **Model context** section turns knowledge
 notes on or off for the chosen companion (the `set-context-knowledge`
@@ -1268,9 +1325,10 @@ which writes the fixed title `Synthetic conversation`.
   The prompt gives the current title and who set it (`Current title, written
   by the title model: …`, `Current title, set by the owner: …` or `Current
   title: none`), the fixed labels of the events that asked for the check, and
-  the conversation's last eight owner and assistant messages, escaped and cut
-  so the whole prompt stays within 2 KiB. A label is the module's own text with
-  at most a tool identifier, a decision or an outcome word, for example `The
+  permitted excerpts from up to eight recent owner and assistant messages,
+  escaped and cut so the whole prompt stays within 2 KiB. A label is the
+  module's own text with at most a tool identifier, a decision or an outcome
+  word, for example `The
   owner approved set_mode.`, `A tool call changed state: set_mode was
   accepted.` or `A coding hand-off's result arrived: completed.`. The prompt
   carries no tool result, dispatch receipt or worker report. It also carries
@@ -1307,8 +1365,9 @@ which writes the fixed title `Synthetic conversation`.
   exactly the right title is refused. A failed, refused or invalid first
   title leaves the persona name; a later failed check keeps the earlier title.
   Nothing is retried.
-- **Where it goes.** The conversation's recent messages go to Anthropic's
-  title model, as the turns' messages go to the turn model. The title is
+- **Where it goes.** The title purpose sends the minimum permitted current
+  request and any same-conversation excerpts needed for the title. Device
+  facts and history stay out of the title request. The title is
   stored on the conversation with its source, generated or the owner's, and
   published at once as display metadata in `lifecycle/2.3`, which changes only
   the session's title and keeps no expiring session alive, and on every later

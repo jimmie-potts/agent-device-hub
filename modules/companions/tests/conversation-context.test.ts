@@ -626,9 +626,10 @@ void test('on one configured provider each companion gets its own sections, and 
   for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
     const preview = await w.preview(profile);
     assert.deepEqual([preview.provider, preview.model], ['anthropic', 'model-a']);
-    accepted(await w.send(profile, `PRIVATE-${profile} follow-up`));
+    assert.equal(previewed(preview, 'recent').included, 2);
+    accepted(await w.send(profile, `Tell me more about the previous PRIVATE-${profile} request.`));
     const next = await shared.next();
-    assert.deepEqual(next.input.context.sections, preview.sections, `${profile}: the preview is the next call`);
+    assert.deepEqual(next.input.context.sections.filter(section => section.name !== 'recent'), preview.sections.filter(section => section.name !== 'recent'));
     assert.equal(next.input.context.profile, profile);
     const recent = text(next.input, 'recent');
     assert.match(recent, new RegExp(`PRIVATE-${profile} first`));

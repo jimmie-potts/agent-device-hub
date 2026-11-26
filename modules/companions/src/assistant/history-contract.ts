@@ -43,7 +43,7 @@ export type ConversationList = {version: 1; profile: AssistantProfile; conversat
  * conversation's unfinished task, or that of a new message's task.
  */
 export type ContextPreview = {schema: 'assistant-context/1.0'; revision: number; profile: AssistantProfile; conversationId: string | null;
-  provider: AssistantProvider; model: string; basis: {kind: 'task'; taskId: string} | {kind: 'next-message'}; sections: readonly ContextSection[]};
+  provider: AssistantProvider; model: string; sharingConflictCount?: number; basis: {kind: 'task'; taskId: string} | {kind: 'next-message'}; sections: readonly ContextSection[]};
 
 type Cursor = {profile: AssistantProfile; conversationId: string; seq: number};
 

@@ -324,3 +324,58 @@ coding transcripts, media, bulk history and unrelated fields stay private.
 Apply the scope before discovery, paging and submission. The adapter and its
 enabled operation belong to
 [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108).
+
+## Common Conversation model sharing, 2026-11-26
+
+The owner selected one external-model sharing policy for Conversation in
+[Hub #2180](https://github.com/jimmie-potts/agent-device-hub/issues/2180).
+This supersedes the destination-specific supervisor grants in the preceding
+section for configured Conversation models. Companions applies the same
+field policy to Anthropic Messages and OpenAI Responses for the same
+companion, owner request, conversation and purpose.
+
+A supervisor may receive the active owner request, eligible owner messages,
+companion replies and permitted tool results from the same conversation,
+scoped device facts and explicitly requested bounded historical summaries.
+Include eligible past messages in saved order within the selected model's
+working token allowance. When they exceed that allowance, use a bounded
+summary of older exchanges and keep the most recent exchanges verbatim.
+The pinned supervisor may generate the summary under the same Conversation
+grants with no tools. Keep original history and compaction checkpoints
+private. Past messages and summaries grant no authority or approval.
+
+An explicit question about the on or off times
+of one specific device over a specified period may receive bounded timestamps
+for that device and period. The explicit request is sufficient when the
+current common field policy allows it. A saved denial still applies. Ordinary
+duration and last-change questions receive only the bounded summary.
+
+A title request may receive the minimum current request and same-conversation
+excerpts needed to name the conversation. Active knowledge notes and explicit
+preferences require a common prompt grant. Knowledge notes also require the
+existing per-companion enablement. Keep other authorized non-device uses
+within their existing purposes.
+Raw logs, unrelated sessions and conversations, raw coding transcripts,
+media, bulk history and unrelated fields stay private.
+
+Conversation uses the owner's ordinary Send, Queue, Steer and Answer actions
+to submit text to the selected supervisor. The common field policy applies
+to that text and all other model inputs. Provider settings and secret files
+stay in their existing configuration boundary. The adapter uses its configured
+credential for transport authentication outside model input.
+
+Check current access before discovery, pages, tool results and model
+submission. Apply the check again for derived text and replay after a steer
+or restart. Revalidate a summary's covered source versions and grants before
+reuse. An edited, removed or revoked source invalidates its derived context.
+Provider-native continuation belongs to its originating task and
+adapter. A denial of required input refuses the call before it is sent.
+
+Interpret legacy grants under the common policy and preserve the private
+originals. An explicit denial survives migration. Where existing choices
+conflict and cannot be mapped within the owner's policy, keep the affected
+field private and surface the conflict locally. Private reads and an approved
+coding brief use their existing grants. Separately approved services use
+their existing inputs and approval. The preceding restrictions on collection,
+GitHub publication and the delivery orchestrator's decision input still
+apply.

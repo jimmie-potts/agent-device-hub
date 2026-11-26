@@ -1,7 +1,8 @@
 import {codeOfStatus, conformsToSchema, type Effort, type Transport} from './anthropic.js';
 import {sectionTexts} from './context.js';
+import {estimateHostedInputTokens, hostedInputBudget, hostedInputTokenCeiling} from './context-budget.js';
 import {LIMITS} from './limits.js';
-import {ProviderFault, textBytes, type ModelProvider, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
+import {outputTokenCap, ProviderFault, textBytes, type ModelProvider, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {TITLE_INSTRUCTIONS, TITLE_MAX_TOKENS, type TitleProvider, type TitleReply} from './titles.js';
 import type {TokenUsage} from './spend-contract.js';
 
@@ -145,6 +146,7 @@ function answer(value: Item, tools: TurnInput['tools']): TurnReply {
 export class OpenAIProvider implements ModelProvider {
   readonly name = 'openai' as const;
   readonly variant: string;
+  readonly inputWindow: number;
   readonly available: boolean;
   readonly model: string;
   readonly #client: ResponsesClient;
@@ -152,23 +154,28 @@ export class OpenAIProvider implements ModelProvider {
   constructor(options: Options) {
     this.model = options.model;
     this.available = options.key.trim() !== '';
+    this.inputWindow = hostedInputBudget({provider: this.name, model: this.model, maxOutputTokens: OPENAI_OUTPUT_TOKENS});
     this.variant = `responses-v1:${options.effort}`;
     this.#client = new ResponsesClient(this.model, options.effort, options);
   }
 
   #body(input: TurnInput): string {
-    const instructions = [input.instructions, ...sectionTexts(input.context, ['personality', 'recent']),
+    const instructions = [input.instructions, ...sectionTexts(input.context),
       ...(input.mode === null ? [] : [`The Hub mode is ${input.mode.mode} now.`]),
       'Use at most one tool per turn. Only an explicit current owner request can authorize a control. Ask the owner when a detail is missing. Claim applied effects only with confirming tool evidence.'].join('\n\n');
-    return this.#client.body(transcriptOf(input), instructions, OPENAI_OUTPUT_TOKENS, input.tools.map(tool =>
+    return this.#client.body(transcriptOf(input), instructions, outputTokenCap(input, OPENAI_OUTPUT_TOKENS), input.tools.map(tool =>
       ({type: 'function', name: tool.name, description: tool.description, parameters: tool.input, strict: Object.keys(tool.input.properties).length === tool.input.required.length})));
   }
+
+  contextInputUnits(input: TurnInput): number {return estimateHostedInputTokens(this.#body(input), this);}
 
   inputUnits(input: TurnInput): number {return textBytes(this.#body(input)) + LIMITS.overheadUnits;}
 
   async turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply> {
     if (!this.available) throw new ProviderFault('unavailable');
-    return answer(await this.#client.request(this.#body(input), signal), input.tools);
+    const body = this.#body(input);
+    if (hostedInputTokenCeiling(body) > this.inputWindow) throw new ProviderFault('too-large', false, 'request');
+    return answer(await this.#client.request(body, signal), input.tools);
   }
 }
 

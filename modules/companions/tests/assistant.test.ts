@@ -16,9 +16,11 @@ import {fullDisk, InProcessBus, type Participant, type ModuleContext, type Reque
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {configureCompanions, createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AnthropicProvider} from '../src/assistant/anthropic.js';
+import {AnthropicTitleProvider} from '../src/assistant/titles.js';
 import {OPENAI_MODEL, OPENAI_URL, OpenAIProvider, OpenAITitleProvider} from '../src/assistant/openai.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
+import {saveFinalDisclosureProofs} from '../src/assistant/disclosure-proof.js';
 import {inputBound} from '../src/assistant/spend.js';
 import {assistantStateDraft, DECLINED, REFUSED, UNSPOKEN} from '../src/assistant/engine.js';
 import {sectionOf} from '../src/assistant/context.js';
@@ -1334,10 +1336,10 @@ void test('Reachy and MicroDuck use the configured provider with their own curat
     [['reachy', `You are Reachy, the owner's home assistant. ${persona('reachy').character} Answer in one to three short sentences.`],
       ['microduck', `You are MicroDuck, the owner's home assistant. ${persona('microduck').character} Answer in one to three short sentences.`]]);
   assert.match(sectionOf(provider.inputs[1]?.context ?? assert.fail('MicroDuck call'), 'personality').text ?? '', /English text is intended meaning, never spoken English\./);
-  for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'read_sessions', 'set_lifx_power'], 'every companion receives the configured tools');
+  for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'set_lifx_power'], 'each companion receives the same model-safe tools');
   assert.equal((await input(w.core, w.module(), 'Synthetic bunny request')).status, 'accepted');
   await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === 'bunny')?.status === 'succeeded');
-  assert.deepEqual(provider.inputs[2]?.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'read_sessions', 'set_lifx_power'], 'B.U.N.N.Y. is offered every listed tool');
+  assert.deepEqual(provider.inputs[2]?.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'set_lifx_power'], 'B.U.N.N.Y. receives the same projection');
   assert.deepEqual(TOOLS.filter(tool => deviceToolOwner(tool.name) !== undefined).map(tool => tool.name).sort(), [...DEVICE_TOOLS].sort(), 'the shared scope names every device tool');
   assert.equal(w.module().inspectAssistant()?.provider, 'anthropic');
   // A test or harness may still give one profile the labelled synthetic provider; the others keep the configured one.
@@ -1736,7 +1738,7 @@ void test('a refusal is offered to speech, a result over the spoken bound stays 
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
 });
 
-void test('Responses never substitutes an older owner excerpt for the latest private job question', async context => {
+void test('Responses keeps permitted history while omitting revoked and private job questions', async context => {
   const bodies: string[] = [];
   const allow = sharing();
   let denied: string | undefined;
@@ -1746,7 +1748,7 @@ void test('Responses never substitutes an older owner excerpt for the latest pri
       content: [{type: 'output_text', text: 'Fixture answer.', annotations: []}]}], usage: {input_tokens: 10, output_tokens: 3}})));
   }});
   const w = await world(context, {provider, share: query => allow(query) && !(denied !== undefined && query.record === denied &&
-    query.destination === 'openai-supervisor' && query.field === 'excerpt')});
+    query.destination === 'external-model' && query.field === 'excerpt')});
   await control(w.core, w.module(), 'enable');
   const ask = async (text: string, profile = 'bunny') => {
     const latest = () => w.module().inspectAssistant()?.tasks.find(row => row.profile === profile);
@@ -1763,14 +1765,14 @@ void test('Responses never substitutes an older owner excerpt for the latest pri
   const deniedTask = await ask('Synthetic newly revoked owner statement.');
   denied = deniedTask + '-prompt';
   await ask('Repeat my last message.');
-  assert.doesNotMatch(bodies.at(-1) ?? '', /newly revoked|earlier owner statement|private to Reachy/u);
+  assert.doesNotMatch(bodies.at(-1) ?? '', /newly revoked|private to Reachy/u);
   denied = undefined;
   await ask(earlier);
   const sent = bodies.length;
   await ask('What is the status of coding job synthetic-step-1-job?');
   assert.equal(bodies.length, sent);
   await ask('Repeat my last message.');
-  assert.doesNotMatch(bodies.at(-1) ?? '', /earlier owner statement|private to Reachy|step-1-job|Private owner question/u);
+  assert.doesNotMatch(bodies.at(-1) ?? '', /private to Reachy|step-1-job|Private owner question/u);
 });
 
 void test('resuming a local job status request commits its reply before a later paid queue refusal', async context => {
@@ -2509,15 +2511,16 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     if (body.input.some(item => item.content === 'PRIVATE_SUPERSEDED_SUBJECT')) return superseded.promise;
     if (body.input.some(item => item.content === 'Synthetic provider spend refusal')) return Promise.resolve(new Response(null, {status: 429}));
     if (body.input.some(item => item.content === 'Synthetic lost reply')) return Promise.reject(new Error('synthetic transport reset'));
+    const ownerRequest = body.input.find(item => item.role === 'user')?.content;
     let output: unknown[];
     if (body.tools.length === 0) return pendingTitle.promise;
     if (body.input.length === 1 && body.input[0]?.content === 'Is Studio Plug on?') return pendingRead.promise;
     if (body.input.some(item => item.content === 'New synthetic topic')) output = [message('A fresh topic.')];
     else if (body.input.some(item => item.type === 'function_call_output')) output = [message('I checked the tool result.')];
-    else if (init.body.includes('What is the status of catalog-plug')) output = [functionCall('read_devices', {target: 'catalog-plug', owner: 'bunny/modules/pixoo'})];
-    else if (init.body.includes('Turn off Catalog Plug')) output = [functionCall('control_power_set', {target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
-    else if (init.body.includes('What color is it')) output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
-    else if (init.body.includes('Turn off Studio Plug') || init.body.includes('Could Studio Plug be off')) output = [reasoning, functionCall('set_wemo_power', {device: 'studio-plug', on: false})];
+    else if (ownerRequest === 'What is the status of catalog-plug?') output = [functionCall('read_devices', {target: 'catalog-plug', owner: 'bunny/modules/pixoo'})];
+    else if (ownerRequest === 'Turn off Catalog Plug') output = [functionCall('control_power_set', {target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
+    else if (ownerRequest === 'What color is it?') output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
+    else if (ownerRequest === 'Turn off Studio Plug' || ownerRequest === 'Could Studio Plug be off?') output = [reasoning, functionCall('set_wemo_power', {device: 'studio-plug', on: false})];
     else output = [reasoning, functionCall('read_wemo', {device: 'studio-plug'})];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage})));
   }};
@@ -2669,6 +2672,610 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
 });
 
 
+void test('model sharing conflicts are visible only through permitted private context reads', async context => {
+  const base = sharing([{caller: 'companion', companion: 'bunny', destination: 'anthropic', purpose: 'prompt',
+    source: 'knowledge', field: 'text', record: 'PRIVATE_CONFLICT', allow: true}]);
+  let allowed = true;
+  const share = Object.assign((query: ShareQuery) => base(query) && (allowed ||
+    (query.destination !== 'private-conversation' || query.source !== 'conversation' || query.field !== 'details')), {conflicts: base.conflicts ?? 0});
+  const w = await world(context, {share});
+  const read = () => w.module().manifest.content?.('assistant-context', {query: {profile: 'bunny'}, signal: new AbortController().signal});
+  const result = await read();
+  assert.ok(result !== undefined && !('error' in result));
+  const detail = Buffer.from(result.bytes).toString();
+  assert.match(detail, /"sharingConflictCount":1/);
+  assert.doesNotMatch(detail, /PRIVATE_CONFLICT/);
+  allowed = false;
+  assert.deepEqual(await read(), errorBody('forbidden'));
+});
+
+void test('hosted turns use the same bounded conversation context for each companion', async context => {
+  const captured = {anthropic: [] as string[], openai: [] as string[]};
+  const outputs = {anthropic: [] as string[], openai: [] as string[]};
+  const titlePrompts = {anthropic: [] as string[], openai: [] as string[]};
+  const followUp = 'How bright is the second one?';
+  const compare = 'Compare Desk Lamp and Hall Lamp.';
+  const unrelated = 'Tell me a joke about paper.';
+  const args = {device: 'hall'};
+  const anthropic = new AnthropicProvider({key: 'configured-key-canary', transport: (_url, init) => {
+    assert.doesNotMatch(init.body, /configured-key-canary/);
+    const body = JSON.parse(init.body) as {system: {text: string}[]; messages: {content: {text?: string; type?: string; content?: string}[]}[]};
+    captured.anthropic.push(body.system.map(block => block.text).join('\n'));
+    const result = body.messages.flatMap(item => item.content).find(block => block.type === 'tool_result')?.content;
+    if (result !== undefined) outputs.anthropic.push(result);
+    const read = result === undefined && body.messages[0]?.content[0]?.text === followUp;
+    return Promise.resolve(Response.json({content: read ? [{type: 'tool_use', id: 'read', name: 'read_lifx', input: args}]
+      : [{type: 'text', text: 'Synthetic reply.'}], stop_reason: read ? 'tool_use' : 'end_turn',
+      usage: {input_tokens: 20, output_tokens: 10}}));
+  }});
+  const response = (output: unknown[]) => Promise.resolve(Response.json({status: 'completed', output, usage: {input_tokens: 20, output_tokens: 10}}));
+  const message = (text: string) => ({type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]});
+  const openai = new OpenAIProvider({key: 'configured-key-canary', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    assert.doesNotMatch(init.body, /configured-key-canary/);
+    const body = JSON.parse(init.body) as {instructions: string; input: {content?: string; type?: string; output?: string}[]};
+    captured.openai.push(body.instructions);
+    const result = body.input.find(item => item.type === 'function_call_output')?.output;
+    if (result !== undefined) outputs.openai.push(result);
+    if (result === undefined && body.input[0]?.content === followUp) return response([{type: 'function_call', id: 'fc_read',
+      call_id: 'call_read', name: 'read_lifx', arguments: JSON.stringify(args)}]);
+    return response([message('Synthetic reply.')]);
+  }});
+  const titleProvider = new AnthropicTitleProvider({key: 'configured-key-canary', transport: (_url, init) => {
+    assert.doesNotMatch(init.body, /configured-key-canary/);
+    const body = JSON.parse(init.body) as {messages: {content: string}[]};
+    titlePrompts.anthropic.push(JSON.stringify(body.messages));
+    return Promise.resolve(Response.json({content: [{type: 'text', text: 'Fixture controls'}], stop_reason: 'end_turn', usage: {input_tokens: 10, output_tokens: 4}}));
+  }});
+  const openAITitleProvider = new OpenAITitleProvider({key: 'configured-key-canary', model: OPENAI_MODEL, transport: (_url, init) => {
+    assert.doesNotMatch(init.body, /configured-key-canary/);
+    const body = JSON.parse(init.body) as {input: unknown};
+    titlePrompts.openai.push(JSON.stringify(body.input));
+    return response([message('Fixture controls')]);
+  }});
+  const commonPreference = sharing((['bunny', 'reachy', 'microduck'] as const).flatMap(companion =>
+    (['label', 'text'] as const).map(field => ({caller: 'companion', companion, destination: 'external-model',
+      purpose: 'prompt', source: 'preferences', field, record: 'Shared fixture preference', allow: true}))));
+  const w = await world(context, {provider: anthropic, alternateProvider: openai, titleProvider, openAITitleProvider, tools: ['read_lifx'], share: commonPreference,
+    devices: owner => owner === 'bunny/modules/lifx' ? [light('desk', 'Desk Lamp'), light('hall', 'Hall Lamp'), light('private-device', 'PRIVATE_DEVICE')] : []});
+  const preferences = new PreferenceStore(w.host().moduleDatabase() ?? assert.fail('preference store'));
+  preferences.apply({action: 'create', title: 'Fixture preference', text: 'PRIVATE_PREFERENCE', expectedRevision: preferences.revision()}, Date.now());
+  preferences.apply({action: 'create', title: 'Shared fixture preference', text: 'Owner-approved fixture preference.', expectedRevision: preferences.revision()}, Date.now());
+  await control(w.core, w.module(), 'enable');
+  for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
+    for (const provider of ['anthropic', 'openai'] as const) {
+      const priorTitles = titlePrompts[provider].length;
+      for (const text of [compare, followUp, unrelated]) {
+        const previous = w.module().inspectAssistant()?.tasks.find(task => task.profile === profile)?.taskId;
+        assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {provider, profile})).status, 'accepted');
+        await until(() => w.module().inspectAssistant()?.tasks.some(task => task.profile === profile && task.taskId !== previous && task.status === 'succeeded') === true);
+      }
+      assert.match(captured[provider].at(-1) ?? '', /Owner-approved fixture preference/);
+      assert.match(captured[provider].at(-2) ?? '', /Compare Desk Lamp and Hall Lamp/);
+      assert.match(captured[provider].at(-1) ?? '', /Compare Desk Lamp and Hall Lamp/);
+      assert.doesNotMatch(captured[provider].at(-1) ?? '', /PRIVATE_PREFERENCE|PRIVATE_DEVICE/);
+      assert.match(outputs[provider].at(-1) ?? '', /Hall Lamp \(hall\)/);
+      assert.doesNotMatch(outputs[provider].at(-1) ?? '', /Desk Lamp|PRIVATE_DEVICE/);
+      await until(() => titlePrompts[provider].length > priorTitles);
+      assert.match(titlePrompts[provider][priorTitles] ?? '', /Compare Desk Lamp and Hall Lamp/);
+      assert.equal((await input(w.core, w.module(), '', false, randomUUID(), {action: 'new-conversation', profile, text: undefined})).status, 'accepted');
+    }
+  }
+  assert.deepEqual(outputs.anthropic, outputs.openai);
+  assert.doesNotMatch(JSON.stringify(titlePrompts), /Owner-approved fixture preference/);
+  assert.doesNotMatch(JSON.stringify({captured, titlePrompts}), /PRIVATE_PREFERENCE|PRIVATE_DEVICE/);
+});
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`a revoked common request grants no send or opaque replay on ${name}`, async context => {
+    const baseline = sharing();
+    let revoked: string | undefined, revokeAtSizing = true, calls = 0;
+    const provider: ModelProvider = {name, model: name === 'openai' ? OPENAI_MODEL : 'claude-sonnet-5-5',
+      inputUnits: turn => {
+        if (revokeAtSizing) {
+          const message = turn.transcript.find(item => item.role === 'owner')?.text;
+          assert.equal(message, 'Revoke after assembly.');
+          const started = task(w)?.taskId ?? assert.fail('task id');
+          revoked = `${started}-prompt`;
+        }
+        return 10_000;
+      },
+      turn: () => {calls += 1; return Promise.resolve(call('ask_owner', {text: 'Which lamp?'}, 'fixture-ask'));}};
+    const w = await world(context, {provider,
+      share: query => baseline(query) && !(query.destination === 'external-model' && query.field === 'request' && query.record === revoked)});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), 'Revoke after assembly.')).status, 'accepted');
+    await until(() => status(w) === 'failed');
+    assert.equal(task(w)?.code, 'forbidden');
+    assert.equal(calls, 0);
+
+    revokeAtSizing = false;
+    assert.equal((await input(w.core, w.module(), 'Allow a clarification.')).status, 'accepted');
+    await until(() => status(w) === 'waiting');
+    const waiting = task(w) ?? assert.fail('waiting for an answer');
+    await w.restart();
+    revoked = `${waiting.taskId}-prompt`;
+    assert.equal((await input(w.core, w.module(), 'Hall Lamp.', true, randomUUID(),
+      {taskId: waiting.taskId, questionId: waiting.questionId})).status, 'accepted');
+    await until(() => status(w) === 'failed');
+    assert.equal(task(w)?.code, 'forbidden');
+    assert.equal(calls, 1, 'the resumed task did not disclose its saved transcript');
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} keeps a related prior answer and sends every newly admitted steer`, async context => {
+    const seen: {owner: string[]; instructions: string}[] = [];
+    const previousPrompt = 'Give me the synthetic orbital report.';
+    const previousAnswer = 'A sapphire sensor tracks the fictional ORBITAL_FIXTURE vehicle.';
+    const followUp = 'Explain the sapphire sensor.';
+    const advicePrompt = 'Suggest a way to remember recurring chores.';
+    const advice = 'Try setting a recurring alarm.';
+    const desk = 'What is the brightness of Desk Lamp?';
+    const hall = 'What is the brightness of Hall Lamp?';
+    const deskAnswer = 'Desk Lamp reported a reading. DESK_PRIVATE_SENTINEL.';
+    const heldPrompt = 'Wait with this first synthetic subject.';
+    const heldModel = deferred<Response>();
+    const respond = (text: string) => Promise.resolve(Response.json(name === 'anthropic'
+      ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage: {input_tokens: 20, output_tokens: 10}}
+      : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}],
+        usage: {input_tokens: 20, output_tokens: 10}}));
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {system?: {text: string}[]; instructions?: string; input?: {role: string; content: string; type?: string}[];
+        messages?: {role: string; content: {type: string; text?: string}[]}[]};
+      const owner = body.messages?.filter(item => item.role === 'user').flatMap(item => item.content.flatMap(block =>
+        block.type === 'text' && block.text !== undefined ? [block.text] : [])) ?? body.input?.filter(item => item.role === 'user').map(item => item.content) ?? [];
+      seen.push({owner, instructions: body.system?.map(block => block.text).join('\n') ?? body.instructions ?? ''});
+      if (owner[0] === heldPrompt) return heldModel.promise;
+      if (owner[0] === desk) {
+        const result = body.messages?.some(item => item.content.some(block => block.type === 'tool_result')) === true ||
+          body.input?.some(item => item.type === 'function_call_output') === true;
+        if (result) return respond(deskAnswer);
+        return Promise.resolve(Response.json(name === 'anthropic'
+          ? {content: [{type: 'tool_use', id: 'read_desk', name: 'read_lifx', input: {device: 'desk'}}],
+            stop_reason: 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+          : {status: 'completed', output: [{type: 'function_call', id: 'fc_read_desk', call_id: 'read_desk',
+            name: 'read_lifx', arguments: '{"device":"desk"}'}], usage: {input_tokens: 20, output_tokens: 10}}));
+      }
+      return respond(owner[0] === previousPrompt ? previousAnswer : owner[0] === advicePrompt ? advice : 'Synthetic reply.');
+    };
+    const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const baseline = sharing();
+    let revoked: string | undefined;
+    const w = await world(context, {provider, tools: ['read_lifx'],
+      devices: owner => owner === 'bunny/modules/lifx' ? [light('desk', 'Desk Lamp'), light('hall', 'Hall Lamp')] : [],
+      share: query => baseline(query) && !(query.destination === 'external-model' &&
+      query.field === 'request' && query.record === revoked)});
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string) => {
+      const prior = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+      await until(() => task(w)?.taskId !== prior && status(w) === 'succeeded');
+      return task(w)?.taskId ?? assert.fail('task');
+    };
+    const origin = await ask(previousPrompt);
+    await ask(followUp);
+    assert.match(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'the earlier permitted answer reaches the new task');
+    revoked = `${origin}-prompt`;
+    await ask(followUp);
+    assert.doesNotMatch(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'the prior answer cannot bypass its original request grant');
+    await ask(advicePrompt);
+    await ask('Could you remind me what you recommended?');
+    assert.match(seen.at(-1)?.instructions ?? '', /Try setting a recurring alarm/, 'a follow-up keeps the earlier answer without matching its wording');
+    await ask('Who is Ada?');
+    assert.match(seen.at(-1)?.instructions ?? '', /Try setting a recurring alarm/, 'the permitted timeline is the same after a topic change');
+    await ask(desk);
+    await ask(hall);
+    assert.match(seen.at(-1)?.instructions ?? '', /DESK_PRIVATE_SENTINEL/,
+      'permitted prior device facts are preserved as history after a device change');
+
+    assert.equal((await input(w.core, w.module(), heldPrompt)).status, 'accepted');
+    await until(() => seen.at(-1)?.owner[0] === heldPrompt);
+    const taskId = task(w)?.taskId ?? assert.fail('steered task');
+    const steers = ['First unread owner update.', 'Second unread owner update.'];
+    for (const text of steers) assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {action: 'steer', taskId})).status, 'accepted');
+    heldModel.resolve(await respond('PRIVATE_SUPERSEDED_FIXTURE'));
+    await until(() => status(w) === 'succeeded');
+    assert.deepEqual(seen.at(-1)?.owner, steers, 'all unread steer messages arrive in order in the next model request');
+    assert.doesNotMatch(JSON.stringify(seen.at(-1)), /PRIVATE_SUPERSEDED_FIXTURE|first synthetic subject/);
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} rolls chronological history, compacts a reusable prefix, and invalidates edited or denied sources`, async context => {
+    const ordinary: string[] = [], compactions: string[] = [];
+    const old = 'Set the weekend reminder for Saturday at seven. ORIGINAL_SCHEDULE.';
+    const revised = 'Set the weekend reminder for Sunday at eight. REVISED_SCHEDULE.';
+    const unresolved = 'Confirm who will supply the timer batteries.';
+    const originReply = 'I saved that plan. SAVED_PRIVATE_ORIGIN_REPLY.';
+    const usage = {input_tokens: 20, output_tokens: 10};
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {system?: {text: string}[]; instructions?: string; tools: unknown[]};
+      const instructions = body.system?.map(block => block.text).join('\n') ?? body.instructions ?? '';
+      const compaction = instructions.startsWith('Summarize the supplied older conversation exchanges');
+      let text = 'Synthetic reply acknowledging the owner’s update.';
+      if (compaction) {
+        assert.deepEqual(body.tools ?? [], []);
+        compactions.push(init.body);
+        const decision = init.body.includes('REVISED_SCHEDULE') ? revised : init.body.includes('ORIGINAL_SCHEDULE') ? old : 'Other daily details were discussed.';
+        text = JSON.stringify({decisions: [decision], openQuestions: init.body.includes(unresolved) ? [unresolved] : [], references: [], corrections: []});
+      } else {
+        if (ordinary.length === 0) text = originReply;
+        ordinary.push(init.body);
+      }
+      return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage}
+        : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}], usage}));
+    };
+    const adapter = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const provider: ModelProvider & {inputWindow: number} = {name, model: adapter.model, inputWindow: 115_000,
+      contextInputUnits: input => adapter.contextInputUnits(input), turn: (input, signal) => adapter.turn(input, signal)};
+    const baseline = sharing();
+    let revoked: string | undefined;
+    const w = await world(context, {provider, share: query => baseline(query) && !(query.destination === 'external-model' &&
+      query.field === 'excerpt' && query.record === revoked)});
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string) => {
+      const before = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+      await until(() => task(w)?.taskId !== before && status(w) === 'succeeded');
+      return task(w)?.taskId ?? assert.fail('task');
+    };
+    const origin = await ask(old + ' ' + unresolved);
+    const filler = (index: number) => `Synthetic exchange ${String(index)}. ${'The household note describes a separate daily plan. '.repeat(20)}`;
+    for (let index = 0; index < 26; index += 1) await ask(filler(index));
+    const before = ordinary.at(-1) ?? '';
+    assert.match(before, /ORIGINAL_SCHEDULE/);
+    assert.ok((before.match(/\[message /g)?.length ?? 0) > 48, 'history crosses the former message ceiling');
+    assert.ok(before.indexOf('Synthetic exchange 0') < before.indexOf('Synthetic exchange 20'));
+    assert.equal(compactions.length, 0);
+
+    provider.inputWindow = 15_000;
+    await ask('Which day did we decide on for the weekend reminder?');
+    assert.equal(compactions.length, 1);
+    assert.match(compactions[0] ?? '', /ORIGINAL_SCHEDULE/);
+    assert.doesNotMatch(compactions[0] ?? '', /Which day did we decide on/);
+    const after = ordinary.at(-1) ?? '';
+    assert.match(after, /Summary of older exchanges.*ORIGINAL_SCHEDULE.*Recent exchanges.*Synthetic exchange 25/s);
+    assert.match(after, /Confirm who will supply the timer batteries/);
+    assert.ok(after.includes(filler(25).trimEnd()), 'the most recent owner message is verbatim');
+    assert.doesNotMatch(after, /Synthetic exchange 0\./);
+    const savedSummary = w.store().lastHistoryCompaction(task(w)?.conversationId ?? '');
+    assert.equal(savedSummary?.status, 'succeeded');
+    assert.equal(w.store().savedMessage(origin, `${origin}-prompt`)?.text, old + ' ' + unresolved);
+    await w.restart();
+    provider.inputWindow = 60_000;
+    await ask('And what time was it?');
+    assert.equal(compactions.length, 1, 'the same authorized prefix is reused after restart');
+    assert.match(ordinary.at(-1) ?? '', /Summary of older exchanges.*ORIGINAL_SCHEDULE/s);
+    provider.inputWindow = 18_000;
+    for (let index = 26; index < 55 && compactions.length < 2; index += 1) await ask(filler(index));
+    assert.equal(compactions.length, 2, 'a growing conversation compacts another portion without starting over');
+    assert.match(compactions[1] ?? '', /Summary of earlier exchanges.*ORIGINAL_SCHEDULE/s);
+    assert.ok(!(compactions[1] ?? '').includes(`${origin}-prompt`), 'incremental compaction uses the validated summary, not its original raw prefix');
+
+    revoked = `${origin}-prompt`;
+    await ask('Check the weekend plan again.');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE/, 'a denied source invalidates the persisted summary');
+    revoked = undefined;
+    w.store().messages.correct(`${origin}-prompt`, {kind: 'literal', text: revised, language: 'en'});
+    await ask('What is the corrected weekend plan?');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE|SAVED_PRIVATE_ORIGIN_REPLY/);
+    assert.ok((await page(w)).messages.some(message => message.text === originReply), 'correcting an input preserves the saved reply in private history');
+    assert.match(ordinary.at(-1) ?? '', /REVISED_SCHEDULE/, 'a correction is the new source for history or compaction');
+    assert.equal(w.store().savedMessage(origin, `${origin}-prompt`)?.text, revised, 'compaction keeps local records independent of the summary');
+    w.store().messages.remove(`${origin}-prompt`, Date.now());
+    await ask('Give me the current notes.');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE|REVISED_SCHEDULE|SAVED_PRIVATE_ORIGIN_REPLY/, 'removal invalidates derived history');
+    assert.ok((await page(w)).messages.some(message => message.text === originReply), 'removing an input preserves the saved reply in private history');
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} refuses oversized required owner input and native continuation before spend or transport`, async context => {
+    const bodies: string[] = [];
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      bodies.push(init.body);
+      return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: [{type: 'tool_use', id: 'tool_read', name: 'read_lifx', input: {device: 'desk'}}], stop_reason: 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: [{type: 'function_call', id: 'fc_read', call_id: 'tool_read',
+          name: 'read_lifx', arguments: '{"device":"desk"}'}], usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const adapter = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const provider: ModelProvider & {inputWindow: number} = {name, model: adapter.model, inputWindow: 9_000,
+      contextInputUnits: input => adapter.contextInputUnits(input), turn: (input, signal) => {
+        // Give the native continuation exactly the required first request's budget.
+        provider.inputWindow = adapter.contextInputUnits(input);
+        return adapter.turn(input, signal);
+      }};
+    const w = await world(context, {provider, tools: ['read_lifx'], devices: () => [light('desk', 'Desk Lamp')]});
+    await control(w.core, w.module(), 'enable');
+    const spendRows = () => w.host().moduleDatabase()?.prepare('SELECT id FROM assistant_spend').all().length;
+    const original = 'Retain the whole owner message. '.repeat(350).trimEnd();
+    assert.equal((await input(w.core, w.module(), original)).status, 'accepted');
+    await until(() => status(w) === 'failed');
+    assert.equal(task(w)?.code, 'capacity');
+    assert.deepEqual(bodies, []);
+    assert.equal(spendRows(), 0);
+    assert.ok((await page(w)).messages.some(message => message.text === original));
+
+    assert.equal((await input(w.core, w.module(), '', false, randomUUID(), {action: 'new-conversation', text: undefined})).status, 'accepted');
+    provider.inputWindow = 100_000;
+    const before = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), 'What is the brightness of Desk Lamp?')).status, 'accepted');
+    await until(() => task(w)?.taskId !== before && status(w) === 'failed');
+    assert.equal(task(w)?.code, 'capacity');
+    assert.equal(bodies.length, 1);
+    assert.equal(spendRows(), 1, 'only the sent first call consumes a reservation');
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} checks origin device grants for privately displayed and spoken derived replies`, async context => {
+    const phrase = 'The test device reported a reading. ORIGIN_FACT.';
+    const repeated = 'The earlier reading was recorded. DERIVED_FACT.';
+    const read = 'What is the brightness of Desk Lamp?';
+    const quote = 'What did the earlier reading say?';
+    const bodies: string[] = [];
+    const offers: SpokenReply[] = [];
+    const usage = {input_tokens: 20, output_tokens: 10};
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      bodies.push(init.body);
+      const first = init.body.includes(read) && !init.body.includes(quote) && !init.body.includes('tool_result') && !init.body.includes('function_call_output');
+      if (first) return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: [{type: 'tool_use', id: 'read_desk', name: 'read_lifx', input: {device: 'desk'}}], stop_reason: 'tool_use', usage}
+        : {status: 'completed', output: [{type: 'function_call', id: 'fc_read_desk', call_id: 'read_desk',
+          name: 'read_lifx', arguments: '{"device":"desk"}'}], usage}));
+      const text = init.body.includes(quote) ? init.body.includes(phrase) ? repeated : 'No previous reading.' : phrase;
+      return Promise.resolve(Response.json(name === 'anthropic' ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage}
+        : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}], usage}));
+    };
+    const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const baseline = sharing();
+    let revoked: 'private-conversation' | 'conversation-speech' | undefined;
+    const w = await world(context, {provider, tools: ['read_lifx'], devices: owner => owner === 'bunny/modules/lifx' ? [light('desk', 'Desk Lamp')] : [],
+      speak: offer => {offers.push(offer);}, share: query => baseline(query) && !(query.destination === revoked &&
+        query.source === 'devices' && query.field === 'status' && query.record === 'desk')});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), read)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    const first = task(w)?.taskId ?? assert.fail('origin task');
+    assert.ok(w.store().calls(first).some(call => call.disclosures?.some(field =>
+      field.source === 'devices' && field.field === 'status' && field.record === 'desk') === true));
+    assert.equal((await input(w.core, w.module(), quote)).status, 'accepted');
+    await until(() => task(w)?.taskId !== first && status(w) === 'succeeded');
+    const derived = task(w)?.taskId ?? assert.fail('derived task');
+    const messageId = `${derived}-result`;
+    assert.match(bodies.at(-1) ?? '', /ORIGIN_FACT/);
+    assert.ok((await page(w)).messages.some(message => message.text === repeated));
+    assert.ok(offers.some(offer => offer.messageId === messageId));
+
+    revoked = 'conversation-speech';
+    const spoken = offers.length;
+    assert.equal((await control(w.core, w.module(), 'speak', derived, randomUUID(), {messageId})).status, 'rejected');
+    assert.equal(offers.length, spoken);
+    assert.ok((await page(w)).messages.some(message => message.text === repeated), 'speech revocation keeps private display available');
+
+    revoked = 'private-conversation';
+    await w.restart();
+    assert.doesNotMatch(JSON.stringify(await page(w)), /ORIGIN_FACT|DERIVED_FACT/);
+    assert.equal((await control(w.core, w.module(), 'speak', derived, randomUUID(), {messageId})).status, 'rejected');
+    assert.equal(offers.length, spoken);
+  });
+
+  for (const permission of ['unchanged', 'gained', 'lost'] as const) {
+    void test(`${name} rebuilds synced mode during compaction with ${permission} permission`, async context => {
+      const pending = deferred<Response>(), ordinary: string[] = [];
+      let started = false, mode = hub(1), allowed = permission !== 'gained';
+      const policy = sharing();
+      const response = (text: string) => Response.json(name === 'anthropic'
+        ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}],
+          usage: {input_tokens: 20, output_tokens: 10}});
+      const transport = (_url: string, init: {body: string}): Promise<Response> => {
+        if (init.body.includes('Summarize the supplied older conversation exchanges')) {
+          started = true;
+          return pending.promise;
+        }
+        ordinary.push(init.body);
+        return Promise.resolve(response('Synthetic reply.'));
+      };
+      const adapter = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+        : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+      const provider: ModelProvider & {inputWindow: number} = {name, model: adapter.model, inputWindow: 115_000,
+        contextInputUnits: input => adapter.contextInputUnits(input), turn: (input, signal) => adapter.turn(input, signal)};
+      const w = await world(context, {provider, core: () => ({sessions: [], mode, synced: true}),
+        share: query => policy(query) && !(query.destination === 'external-model' && query.source === 'devices' &&
+          query.field === 'status' && query.record === 'hub' && !allowed)});
+      await control(w.core, w.module(), 'enable');
+      for (let index = 0; index < 8; index += 1) {
+        const earlier = task(w)?.taskId;
+        assert.equal((await input(w.core, w.module(), `Earlier exchange ${String(index)}. ${'The recent note describes a daily plan. '.repeat(60)}`)).status, 'accepted');
+        await until(() => task(w)?.taskId !== earlier && status(w) === 'succeeded');
+      }
+      provider.inputWindow = 14_000;
+      const earlier = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), 'What is the Hub mode now?')).status, 'accepted');
+      await until(() => started);
+      mode = hub(2, 'quiet');
+      allowed = permission !== 'lost';
+      pending.resolve(response(JSON.stringify({decisions: ['Keep the daily plan.'], openQuestions: [], references: [], corrections: []})));
+      await until(() => task(w)?.taskId !== earlier && status(w) === 'succeeded');
+      assert.doesNotMatch(ordinary.at(-1) ?? '', /The Hub mode is work now/);
+      assert.equal((ordinary.at(-1) ?? '').includes('The Hub mode is quiet now.'), permission !== 'lost');
+    });
+  }
+}
+
+void test('latest Conversation paging skips denied rows and stops after the visible lookahead', async context => {
+  const checked: string[] = [];
+  const policy = sharing();
+  const w = await world(context, {share: query => {
+    if (query.destination === 'private-conversation' && query.field === 'text' && query.record?.startsWith('page-fixture-') === true) {
+      checked.push(query.record);
+      if (query.record === 'page-fixture-34' || query.record === 'page-fixture-32') return false;
+    }
+    return policy(query);
+  }});
+  const store = w.store();
+  const saved = store.newTask('bunny', 'Seeded private Conversation.');
+  saved.status = 'succeeded';
+  store.save(saved);
+  for (let index = 1; index <= 36; index += 1) {
+    const id = `page-fixture-${String(index)}`;
+    store.message(saved, id, 'owner', id, Date.now());
+  }
+  const first = await page(w, 'bunny', 'recent');
+  assert.deepEqual(first.messages.map(message => message.id),
+    Array.from({length: 18}, (_, index) => index + 19).filter(index => index !== 32 && index !== 34)
+      .map(index => `page-fixture-${String(index)}`));
+  assert.deepEqual(checked, Array.from({length: 19}, (_, index) => `page-fixture-${String(36 - index)}`));
+});
+
+void test('a 1001-turn Conversation keeps the latest reply readable and speakable, with current origin grants', async context => {
+  const offers: SpokenReply[] = [];
+  const baseline = sharing();
+  let denied: 'private-conversation' | 'conversation-speech' | undefined;
+  const provider: ModelProvider = {name: 'openai', model: OPENAI_MODEL, turn: () => assert.fail('private reads must not contact the model')};
+  const w = await world(context, {provider, speak: offer => {offers.push(offer);}, share: query => baseline(query) &&
+    !(query.destination === denied && query.source === 'devices' && query.field === 'status' && query.record === 'proof-desk')});
+  await control(w.core, w.module(), 'enable');
+  const store = w.store();
+  const history: {id: string; revision: number}[] = [];
+  const latestText = 'The retained origin detail is still available.';
+  const now = Date.now();
+  let taskId = '';
+  store.database.exec('BEGIN');
+  try {
+    for (let index = 0; index <= 1000; index += 1) {
+      const saved = store.newTask('bunny', 'Retain the synthetic reading.', {provider: 'openai', model: OPENAI_MODEL, variant: ''});
+      saved.status = 'succeeded';
+      saved.modelCalls = 1;
+      taskId = saved.id;
+      const promptId = `${taskId}-prompt`, resultId = `${taskId}-result`;
+      store.save(saved);
+      store.message(saved, promptId, 'owner', saved.prompt, now + index);
+      store.message(saved, resultId, 'assistant', index === 1000 ? latestText : 'Synthetic intermediate answer.', now + index);
+      store.saveCall({version: 1, id: `${taskId}-step-0`, taskId, runId: 'fixture', ordinal: 0, kind: 'model', status: 'succeeded',
+        result: '{}', units: 1, reservedMs: 0, elapsedMs: 0, reservedUnits: 1, traceparent: '',
+        disclosures: [{source: 'conversation', field: 'request', record: promptId},
+          ...(index === 0 ? [{source: 'devices', field: 'status', record: 'proof-desk'} as const] : [])],
+        ...(index === 0 ? {} : {historySources: history})});
+      // The origin uses the released direct ledger. Later tasks use normal finalization.
+      if (index > 0) saveFinalDisclosureProofs(store, saved);
+      history.push({id: promptId, revision: 1}, {id: resultId, revision: 1});
+    }
+    store.database.exec('COMMIT');
+  } catch (error) {
+    store.database.exec('ROLLBACK');
+    throw error;
+  }
+
+  const messageId = `${taskId}-result`;
+  const speak = () => control(w.core, w.module(), 'speak', taskId, randomUUID(), {messageId});
+  const visible = (await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText);
+  const speech = (await speak()).status;
+  assert.deepEqual({visible, speech}, {visible: true, speech: 'accepted'});
+  assert.equal(offers.at(-1)?.text, latestText);
+
+  denied = 'conversation-speech';
+  assert.equal((await speak()).status, 'rejected');
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
+
+  denied = 'private-conversation';
+  await w.restart();
+  assert.ok(!(await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
+  assert.equal((await speak()).status, 'rejected');
+  assert.equal(offers.length, 1);
+
+  denied = undefined;
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
+  assert.equal((await speak()).status, 'accepted');
+});
+
+void test('missing proof withholds an unpublished derived reply while released direct history remains usable', async context => {
+  const requests: TurnInput[] = [];
+  const provider: ModelProvider = {name: 'openai', model: OPENAI_MODEL, turn: request => {
+    requests.push(request);
+    return Promise.resolve(reply('Fresh synthetic reply.'));
+  }};
+  const w = await world(context, {provider});
+  await control(w.core, w.module(), 'enable');
+  const store = w.store(), now = Date.now();
+  const origin = store.newTask('bunny', 'Old saved owner message.', {provider: 'openai', model: OPENAI_MODEL, variant: ''});
+  const append = (saved: typeof origin, text: string, historySources?: {id: string; revision: number}[]) => {
+    saved.status = 'succeeded';
+    saved.modelCalls = 1;
+    store.save(saved);
+    const id = `${saved.id}-result`;
+    store.message(saved, `${saved.id}-prompt`, 'owner', saved.prompt, now);
+    store.message(saved, id, 'assistant', text, now);
+    store.saveCall({version: 1, id: `${saved.id}-step-0`, taskId: saved.id, runId: 'fixture', ordinal: 0, kind: 'model', status: 'succeeded',
+      result: '{}', units: 1, reservedMs: 0, elapsedMs: 0, reservedUnits: 1, traceparent: '',
+      disclosures: [{source: 'conversation', field: 'request', record: `${saved.id}-prompt`}],
+      ...(historySources === undefined ? {} : {historySources})});
+    return id;
+  };
+  const oldId = append(origin, 'RELEASED_DIRECT_REPLY');
+  const missing = store.newTask('bunny', 'A saved follow-up.', origin.supervisor);
+  const missingId = append(missing, 'UNPROVEN_DERIVED_REPLY', [{id: oldId, revision: 1}]);
+  await w.restart();
+  const saved = (await page(w, 'bunny', 'recent')).messages;
+  assert.ok(saved.some(message => message.id === oldId));
+  assert.ok(!saved.some(message => message.id === missingId));
+  assert.equal(w.store().savedMessage(missing.id, missingId)?.text, 'UNPROVEN_DERIVED_REPLY');
+  assert.equal((await control(w.core, w.module(), 'speak', missing.id, randomUUID(), {messageId: missingId})).status, 'rejected');
+
+  assert.equal((await input(w.core, w.module(), 'Check our prior exchange.')).status, 'accepted');
+  await until(() => task(w)?.taskId !== missing.id && status(w) === 'succeeded');
+  assert.match(JSON.stringify(requests.at(-1)), /RELEASED_DIRECT_REPLY/);
+  assert.doesNotMatch(JSON.stringify(requests.at(-1)), /UNPROVEN_DERIVED_REPLY/);
+});
+
+for (const failure of ['uncertain', 'provider-capacity'] as const) {
+  void test(`optional compaction preserves provider spend and unknown-retry boundaries on ${failure}`, async context => {
+    let compacted = 0, ordinary = 0;
+    const provider: ModelProvider & {inputWindow: number} = {name: 'openai', model: OPENAI_MODEL, inputWindow: 30_000,
+      contextInputUnits: input => Buffer.byteLength(JSON.stringify(input)),
+      turn: input => {
+        if (input.instructions.startsWith('Summarize the supplied older conversation exchanges')) {
+          compacted += 1;
+          return Promise.reject(failure === 'uncertain' ? new ProviderFault('unavailable', true)
+            : new ProviderFault('capacity', false, undefined, 'The provider spend limit was reached.'));
+        }
+        ordinary += 1;
+        return Promise.resolve(reply('Synthetic reply.'));
+      }};
+    const w = await world(context, {provider});
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string, terminal: 'succeeded' | 'failed' = 'succeeded') => {
+      const before = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+      await until(() => task(w)?.taskId !== before && status(w) === terminal);
+    };
+    for (let index = 0; index < 7; index += 1) await ask(`Synthetic observation ${String(index)}. ${'A bounded report. '.repeat(52)}`);
+    provider.inputWindow = 4_500;
+    await ask('Check the plan again.', failure === 'uncertain' ? 'succeeded' : 'failed');
+    assert.equal(compacted, 1);
+    if (failure === 'provider-capacity') {
+      assert.equal(task(w)?.code, 'capacity');
+      assert.equal(ordinary, 7, 'a hard provider refusal stops the ordinary send');
+    } else {
+      assert.equal(ordinary, 8, 'an uncertain optional call leaves the allowed recent-tail path');
+      await w.restart();
+      await ask('Check the plan after restart.');
+      assert.equal(compacted, 1, 'an ambiguous prefix is not automatically charged again');
+      assert.equal(ordinary, 9);
+      provider.inputWindow = 5_500;
+      for (let index = 0; index < 8 && compacted === 1; index += 1) await ask(`Distinct future exchange ${String(index)}. ${'A fresh note. '.repeat(80)}`);
+      assert.equal(compacted, 2, 'a distinct bounded prefix can compact after an earlier uncertain call');
+    }
+  });
+}
+
 void test('Responses device reads bind the affirmative subject without widening it', async context => {
   const cases = [
     ['What is the brightness of Desk Lamp, not all lights?', 'Desk Lamp (desk)'],
@@ -2717,7 +3324,7 @@ for (const kind of ['timer', 'brightness'] as const) {
     const plugs = [plug, otherPlug, ...duplicatePlugs];
     const tool = kind === 'timer' ? 'read_wemo' : 'read_devices';
     let target = kind === 'timer' ? 'Test Plug' : display.id;
-    let denied: 'private-conversation' | 'openai-supervisor' | undefined;
+    let denied: 'private-conversation' | 'external-model' | undefined;
     const baseline = sharing();
     const share = (query: ShareQuery) => baseline(query) && !(query.destination === denied &&
       query.source === 'devices' && query.field === 'label' && query.record === (kind === 'timer' ? plug.id : display.id));
@@ -2759,7 +3366,7 @@ for (const kind of ['timer', 'brightness'] as const) {
     const known = kind === 'timer' ? /maximum-on limit is enabled.*Time remaining at this read: about 2 hours 4 minutes/isu : /"brightness":\{"status":"known","value":37\}/u;
     const missing = kind === 'timer' ? /not-found/u : /"devices":\[\]/u;
     for (const profile of ['bunny', 'reachy', 'microduck']) assert.match(await ask(prompt, profile), known, profile);
-    for (const side of ['private-conversation', 'openai-supervisor'] as const) {
+    for (const side of ['private-conversation', 'external-model'] as const) {
       denied = side;
       assert.match(await ask(prompt), missing);
     }
@@ -2884,16 +3491,16 @@ void test('Responses history requires one exact device and current summary grant
   }});
   const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
     sent.push(init.body);
-    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
     const result = body.input.find(item => item.type === 'function_call_output')?.output;
     if (result !== undefined) results.push(result);
-    const output = result === undefined
+    const output = result === undefined && body.tools.some(tool => tool.name === 'read_device_history')
       ? [{type: 'function_call', id: 'fc_history', call_id: 'call_history', name: 'read_device_history', arguments: JSON.stringify(args)}]
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic history answer.', annotations: []}]}];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 40}})));
   }});
   const share = (query: ShareQuery) => baseline(query) && !(query.source === 'devices' && query.field === 'summary' && query.record === target &&
-    (denied === 'local' && query.destination === 'private-conversation' || denied === 'remote' && query.destination === 'openai-supervisor'));
+    (denied === 'local' && query.destination === 'private-conversation' || denied === 'remote' && query.destination === 'external-model'));
   const w = await world(context, {provider, openAITitleProvider: titleProvider, timeZone: 'UTC', share, tools: ['read_device_history'],
     devices: owner => owner === WEMO_OWNER ? [{...light('plug', 'Hall Plug'), kind: 'wemo'}]
       : [light(target, 'Desk Lamp'), light('other', 'Hall Lamp'), light('first', 'Shared Name'), light('second', 'Shared Name')],
@@ -2942,7 +3549,9 @@ void test('Responses history requires one exact device and current summary grant
   assert.match(lastChange, /"lastChange":\{"atMs":1795521600001,"from":"off","to":"on"\}/);
   assert.doesNotMatch(lastChange, /seq|durations/);
   assert.match(await ask('How long was Desk Lamp on from 2026-11-31T12:00:00Z to 2026-12-01T13:00:00Z?'), /forbidden/);
-  assert.match(await ask('Tell me a synthetic joke.'), /forbidden/);
+  const noHistoryRead = results.length;
+  await ask('Tell me a synthetic joke.');
+  assert.equal(results.length, noHistoryRead, 'an unrelated request is not offered the history tool');
   assert.equal(reads, 2);
   assert.equal(results.filter(value => value.includes('"on":421')).length, 1);
   assert.ok(titles.length > 0);
@@ -2963,6 +3572,96 @@ void test('Responses history requires one exact device and current summary grant
   assert.doesNotMatch(sent.join(' '), /PRIVATE_EVIDENCE_ID|PRIVATE_OPERATION_ID/);
 });
 
+
+void test('both hosted supervisors disclose requested power timestamps only while detail sharing holds', async context => {
+  const source = 'bunny/modules/lifx', target = 'desk';
+  const day = Date.parse('2026-11-25T00:00:00Z'), fromAtMs = day - 86_400_000;
+  const onAt = fromAtMs + 200, offAt = fromAtMs + 621;
+  const aggregate = 'How long was Desk Lamp on yesterday?';
+  const timestamps = 'Show on/off timestamps for Desk Lamp yesterday.';
+  const justOn = 'When did Desk Lamp turn on yesterday?';
+  const args = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
+  const captures = {anthropic: {requests: [] as string[], results: [] as string[]}, openai: {requests: [] as string[], results: [] as string[]}};
+  const usage = {input_tokens: 20, output_tokens: 10};
+  const anthropic = new AnthropicProvider({key: 'fixture', transport: (_url, init) => {
+    const capture = captures.anthropic;
+    capture.requests.push(init.body);
+    const body = JSON.parse(init.body) as {messages: {content: {type: string; content?: string}[]}[]};
+    const result = body.messages.flatMap(item => item.content).find(block => block.type === 'tool_result')?.content;
+    if (result !== undefined) capture.results.push(result);
+    return Promise.resolve(Response.json({content: result === undefined ? [{type: 'tool_use', id: 'read_history', name: 'read_device_history', input: args}]
+      : [{type: 'text', text: 'Synthetic history answer.'}], stop_reason: result === undefined ? 'tool_use' : 'end_turn', usage}));
+  }});
+  const openai = new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const capture = captures.openai;
+    capture.requests.push(init.body);
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const result = body.input.find(item => item.type === 'function_call_output')?.output;
+    if (result !== undefined) capture.results.push(result);
+    return Promise.resolve(Response.json({status: 'completed', usage, output: result === undefined
+      ? [{type: 'function_call', id: 'fc_read_history', call_id: 'read_history', name: 'read_device_history', arguments: JSON.stringify(args)}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic history answer.', annotations: []}]}]}));
+  }});
+  let revokeAfterRead = false, revoked = false, reads = 0;
+  let deniedDiscovery: 'private-conversation' | 'external-model' | undefined;
+  const localDetailsDenied = sharing([{caller: 'owner', companion: 'bunny', destination: 'private-conversation',
+    purpose: 'read', source: 'devices', field: 'details', record: target, allow: false}]);
+  let legacyLocalDenial = false;
+  const baseline = sharing();
+  const w = await world(context, {provider: anthropic, alternateProvider: openai, timeZone: 'UTC', tools: ['read_device_history'],
+    share: query => (legacyLocalDenial ? localDetailsDenied : baseline)(query) && !(query.destination === deniedDiscovery && query.source === 'devices' && query.field === 'index') &&
+      !(revoked && query.destination === 'external-model' && query.source === 'devices' &&
+      query.field === 'details' && query.record === target),
+    devices: owner => owner === source ? [light(target, 'Desk Lamp'), light('other', 'Hall Lamp')] : [],
+    dispatch: () => assert.fail('history sends no device command'),
+    deviceHistory: query => {
+      reads += 1;
+      assert.deepEqual(query, {source, target, fromAtMs, toAtMs: day});
+      if (revokeAfterRead) revoked = true;
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 155, complete: true, durations: {on: 421, off: 86_399_379, unknown: 200},
+        lastChange: {atMs: offAt, seq: 154, from: 'on', to: 'off'}, evidence: [
+          {seq: 153, messageId: 'PRIVATE_EVIDENCE_ON', atMs: onAt, confirmedThroughMs: offAt, kind: 'observation', power: 'on'},
+          {seq: 154, messageId: 'PRIVATE_EVIDENCE_OFF', atMs: offAt, confirmedThroughMs: day, kind: 'observation', power: 'off'},
+        ], links: [{requestId: 'PRIVATE_HISTORY_OPERATION', observationSeq: 154, sentSeq: 151, transmissionOutcomeSeq: 152,
+          transmittedAtMs: fromAtMs}]};
+    }}, undefined, day + 5000);
+  await control(w.core, w.module(), 'enable');
+  const interval = {fromAtMs, toAtMs: day};
+  for (const provider of ['anthropic', 'openai'] as const) {
+    const capture = captures[provider];
+    const ask = async (prompt: string, terminal: 'succeeded' | 'failed' = 'succeeded') => {
+      const previous = task(w)?.taskId;
+      const before = capture.requests.length;
+      assert.equal((await input(w.core, w.module(), prompt, false, randomUUID(), {provider})).status, 'accepted');
+      await until(() => task(w)?.taskId !== previous && status(w) === terminal);
+      assert.equal(capture.requests.length, before + (terminal === 'succeeded' ? 2 : 1));
+      return capture.results.at(-1) ?? '';
+    };
+    assert.deepEqual(JSON.parse(await ask(aggregate)), {interval, complete: true, durations: {on: 421, off: 86_399_379, unknown: 200}});
+    assert.deepEqual(JSON.parse(await ask(timestamps)), {interval, complete: true, unknownMs: 200,
+      evidence: [{atMs: onAt, power: 'on'}, {atMs: offAt, power: 'off'}], next: null, capped: false});
+    assert.deepEqual(JSON.parse(await ask(justOn)), {interval, complete: true, unknownMs: 200, evidence: [{atMs: onAt, power: 'on'}], next: null, capped: false});
+    for (const destination of ['private-conversation', 'external-model'] as const) {
+      deniedDiscovery = destination;
+      assert.equal(await ask(aggregate), 'refused: forbidden');
+      assert.equal(await ask(timestamps), 'refused: forbidden');
+    }
+    deniedDiscovery = undefined;
+    legacyLocalDenial = true;
+    assert.equal(await ask(aggregate), 'refused: forbidden');
+    assert.equal(await ask(timestamps), 'refused: forbidden');
+    legacyLocalDenial = false;
+    const resultCount = capture.results.length;
+    revokeAfterRead = true;
+    await ask(timestamps, 'failed');
+    assert.equal(task(w)?.code, 'forbidden');
+    assert.equal(capture.results.length, resultCount);
+    revokeAfterRead = false;
+    revoked = false;
+    assert.doesNotMatch(capture.requests.join('\n'), /PRIVATE_EVIDENCE|PRIVATE_HISTORY_OPERATION|confirmedThroughMs|observationSeq/u);
+  }
+  assert.equal(reads, 8);
+});
 
 void test('an unpinned legacy task and queue remain readable without resuming on a synthetic host', async context => {
   const earlier = counted(() => call('ask_owner', {text: 'Which option?'}));
@@ -3016,36 +3715,17 @@ void test('an unpinned legacy task and queue remain readable without resuming on
   assert.equal(w.store().task(task(w)?.taskId ?? '')?.supervisor?.provider, 'synthetic');
 });
 
-void test('Claude uses only the owner-bound history tool and two pages from the same local day', async context => {
+void test('Messages uses the owner-bound aggregate and excludes private evidence fields', async context => {
   const day = Date.parse('2026-11-02T00:00:00Z');
   const source = 'bunny/modules/lifx';
-  const empty = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
-  const prompt = 'How long was Desk Lamp on yesterday?';
-  const pages: {next: string | null; capped: boolean; evidence: {atMs: number; kind: string}[]}[] = [];
+  const inputFields = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
   const turns: TurnInput[] = [];
   let reads = 0;
   const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: request => {
     const latest = request.transcript.filter(item => item.role === 'owner').at(-1)?.text;
     if (latest === 'PRIVATE_PRIOR_TOPIC') return Promise.resolve(reply('PRIVATE_PRIOR_REPLY'));
     turns.push(request);
-    const results = request.transcript.filter(item => item.role === 'tool');
-    const result = results.at(-1)?.result ?? '';
-    if (latest !== prompt) return Promise.resolve(result === ''
-      ? call('read_device_history', empty) : reply('No resolved device history.'));
-    switch (results.length) {
-      case 0: return Promise.resolve(call('read_device_history', {...empty, source: WEMO_OWNER, target: 'hall'}));
-      case 1: return Promise.resolve(call('read_device_history', empty));
-      case 2: {
-        const page = JSON.parse(result) as (typeof pages)[number];
-        pages.push(page);
-        return Promise.resolve(call('read_device_history', {...empty, cursor: page.next}));
-      }
-      case 3: {
-        pages.push(JSON.parse(result) as (typeof pages)[number]);
-        return Promise.resolve(call('read_device_history', empty));
-      }
-      default: return Promise.resolve(reply('Synthetic scoped answer.'));
-    }
+    return Promise.resolve(request.transcript.some(item => item.role === 'tool') ? reply('Synthetic scoped answer.') : call('read_device_history', inputFields));
   }};
   const w = await world(context, {provider, timeZone: 'UTC', tools: ['read_devices', 'read_device_history'],
     devices: owner => owner === source ? [light('desk', 'Desk Lamp'), light('a', 'Duplicated'), light('b', 'Duplicated')]
@@ -3057,31 +3737,21 @@ void test('Claude uses only the owner-bound history tool and two pages from the 
       const {fromAtMs, toAtMs} = query;
       return {schema: DEVICE_HISTORY_VERSION, query, boundary: 25, complete: true, lastChange: null,
         durations: {on: 100, off: 0, unknown: toAtMs - fromAtMs - 100}, links: [],
-        evidence: Array.from({length: 25}, (_, seq) => ({seq, messageId: 'PRIVATE_ROW', atMs: fromAtMs + seq - 1,
-          confirmedThroughMs: fromAtMs + seq + 1, power: 'on', kind: 'observation'}))};
+        evidence: [{seq: 1, messageId: 'PRIVATE_ROW', atMs: fromAtMs + 1, confirmedThroughMs: fromAtMs + 2, power: 'on', kind: 'observation'}]};
     }}, undefined, day + 1000);
   await control(w.core, w.module(), 'enable');
-  const ask = async (text: string) => {
+  for (const text of ['PRIVATE_PRIOR_TOPIC', 'How long was Desk Lamp on yesterday?', 'How long was Duplicated on yesterday?',
+    'How long was Desk Lamp on from 2026-02-30T00:00:00Z to 2026-03-01T00:00:00Z?']) {
     const previous = task(w)?.taskId;
     assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
     await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
-  };
-  await ask('PRIVATE_PRIOR_TOPIC');
-  await ask(prompt);
+  }
+  const result = turns[1]?.transcript.find(item => item.role === 'tool')?.result ?? assert.fail('missing aggregate');
+  assert.deepEqual(JSON.parse(result), {interval: {fromAtMs: day - 86_400_000, toAtMs: day}, complete: true, durations: {on: 100, off: 0, unknown: 86_399_900}});
   assert.equal(reads, 1);
-  assert.deepEqual(pages.map(page => page.evidence.length), [12, 12]);
-  assert.deepEqual(pages[0]?.evidence[0], {atMs: day - 86_400_000, confirmedThroughMs: day - 86_400_000 + 1,
-    kind: 'continuation', power: 'on'});
-  assert.equal(typeof pages[0]?.next, 'string');
-  assert.equal(pages[1]?.next, null);
-  assert.equal(pages[1]?.capped, true);
-  assert.match(JSON.stringify(turns.at(-1)?.transcript), /history page limit reached/u);
-  assert.doesNotMatch(JSON.stringify(turns), /PRIVATE_|"seq"|"boundary"|"links"/u);
-  assert.ok(turns.every(turn => turn.tools.length === 1 && turn.tools[0]?.name === 'read_device_history'));
-  await ask('How long was Duplicated on yesterday?');
-  await ask('How long was Desk Lamp on from 2026-02-30T00:00:00Z to 2026-03-01T00:00:00Z?');
   assert.match(JSON.stringify(turns.at(-1)?.transcript), /refused: forbidden/u);
-  assert.equal(reads, 1);
+  assert.doesNotMatch(JSON.stringify(turns), /PRIVATE_ROW|"seq"|"boundary"|"links"/u);
+  assert.ok(turns.every(turn => turn.tools.length === 1 && turn.tools[0]?.name === 'read_device_history'));
 });
 
 void test('Claude keeps the history scope when registry labels change after model admission', async context => {
@@ -3108,7 +3778,7 @@ void test('Claude keeps the history scope when registry labels change after mode
   assert.equal(turns.length, 1);
 });
 
-void test('Claude keeps a named history question private when the history tool is disabled', async context => {
+void test('Messages offers no history read when the history tool is disabled', async context => {
   const turns: TurnInput[] = [];
   const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: request => {
     turns.push(request);
@@ -3123,11 +3793,12 @@ void test('Claude keeps a named history question private when the history tool i
   await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
   assert.equal(turns[0]?.tools.some(tool => tool.name === 'read_devices'), true);
   assert.deepEqual(turns[1]?.tools, []);
-  assert.doesNotMatch(JSON.stringify(turns[1]), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
+  assert.match(JSON.stringify(turns[1]), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
+  assert.doesNotMatch(JSON.stringify(turns[1]?.transcript), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
 });
 
 for (const invalidation of ['device registry remap', 'local owner-message revocation', 'local device status revocation'] as const) {
-  void test(`Claude withholds a saved page on ${invalidation}`, async context => {
+  void test(`Messages withholds a saved history aggregate on ${invalidation}`, async context => {
     const source = 'bunny/modules/lifx';
     const allowed = sharing();
     const turns: TurnInput[] = [];
@@ -3170,7 +3841,7 @@ void test('Responses resolves an exact brightness instruction before sending one
   let pixooReads = 0, staleAtRead = Number.POSITIVE_INFINITY;
   let active = {id: target, attempt: true, repeat: false, wrongAmount: false, bypassLookup: false};
   let readOwner = 'auto', writeOwner = owner, readTarget = '', writeTarget: string | undefined;
-  let denied: 'private-conversation' | 'openai-supervisor' | undefined;
+  let denied: 'private-conversation' | 'external-model' | undefined;
   let outcome: 'accepted' | 'revoke-after-acceptance' | 'uncertain' = 'accepted';
   let deniedReceipt: {destination: 'private-conversation' | 'conversation-speech'; requestId: string} | undefined;
   const spoken: string[] = [];
@@ -3202,7 +3873,7 @@ void test('Responses resolves an exact brightness instruction before sending one
     speak: reply => {spoken.push(reply.text);},
     dispatch: data => {
       requests.push(data);
-      if (outcome === 'revoke-after-acceptance') denied = 'openai-supervisor';
+      if (outcome === 'revoke-after-acceptance') denied = 'external-model';
       return Promise.resolve(outcome === 'uncertain' ? {status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')} : accepted(data.requestId));
     }});
   const participant = w.bus.connect(owner);
@@ -3285,7 +3956,7 @@ void test('Responses resolves an exact brightness instruction before sending one
   await ask('Set Shared Display brightness to 37%');
   assert.equal(lookup.at(-1), '{"devices":[]}');
   active = {...active, id: target};
-  for (const destination of ['private-conversation', 'openai-supervisor'] as const) {
+  for (const destination of ['private-conversation', 'external-model'] as const) {
     denied = destination;
     await ask('Set fixture-display brightness to 37%');
     assert.equal(lookup.at(-1), '{"devices":[]}');
@@ -3302,7 +3973,7 @@ void test('Responses resolves an exact brightness instruction before sending one
     assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
     assert.doesNotMatch(lookup.at(-1) ?? '', /literal-label/u);
   }
-  for (const destination of ['private-conversation', 'openai-supervisor'] as const) {
+  for (const destination of ['private-conversation', 'external-model'] as const) {
     denied = destination;
     await ask(`What is the current brightness of id:${target}?`);
     assert.equal(lookup.at(-1), '{"devices":[]}');
@@ -3484,7 +4155,7 @@ void test('Claude reads an explicit device ID within its current grants when a l
   }});
   const standard = sharing();
   const w = await world(context, {provider, tools: ['read_devices', 'control_brightness_set'],
-    share: query => standard(query) && !(denied && query.destination === 'anthropic' && query.source === 'devices' &&
+    share: query => standard(query) && !(denied && query.destination === 'external-model' && query.source === 'devices' &&
       query.field === 'status' && query.record === id),
     dispatch: () => assert.fail('A catalog read must not send a command')});
   const pixoo = w.bus.connect(owner);

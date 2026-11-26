@@ -6,7 +6,8 @@
 // and never logged, stored or published. ADR 0012 forbids automatic resends. Provider selection is fixed for the task.
 import type {TokenUsage} from './spend-contract.js';
 import {sectionTexts} from './context.js';
-import {ProviderFault, textBytes, type ModelProvider, type ToolCall, type ToolDefinition, type ToolInputSchema, type TranscriptItem, type TurnInput, type TurnReply, type TurnStop} from './provider.js';
+import {estimateHostedInputTokens, hostedInputBudget, hostedInputTokenCeiling} from './context-budget.js';
+import {outputTokenCap, ProviderFault, textBytes, type ModelProvider, type ToolCall, type ToolDefinition, type ToolInputSchema, type TranscriptItem, type TurnInput, type TurnReply, type TurnStop} from './provider.js';
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_VERSION = '2026-10-21';
@@ -123,27 +124,37 @@ export class AnthropicProvider implements ModelProvider {
   readonly available: boolean;
   readonly model: string;
   readonly variant: string;
+  readonly inputWindow: number;
   readonly #effort: Effort;
   readonly #transport: Transport;
   readonly #url: string;
   readonly #key: string;
   constructor(options: AnthropicOptions) {
     this.model = options.model ?? DEFAULT_MODEL; this.#effort = options.effort ?? 'medium'; this.#key = options.key;
+    this.inputWindow = hostedInputBudget({provider: this.name, model: this.model, maxOutputTokens: MAX_TOKENS});
     this.variant = `messages-v1:${this.#effort}`;
     this.available = this.#key.trim() !== '';
     this.#transport = options.transport ?? ((url, init) => fetch(url, init)); this.#url = options.url ?? ANTHROPIC_URL;
   }
-  async turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply> {
-    if (!this.available) throw new ProviderFault('unavailable');
-    const body = JSON.stringify({model: this.model, max_tokens: MAX_TOKENS, system: this.#system(input),
-      tools: input.tools.map((tool, index) => ({name: tool.name, description: tool.description, input_schema: tool.input,
-        ...(index < STRICT_TOOL_LIMIT ? {strict: true} : {})})),
-      tool_choice: {type: 'auto', disable_parallel_tool_use: true}, messages: toMessages(input.transcript), output_config: {effort: this.#effort},
+  #body(input: TurnInput): string {
+    const tools = input.tools.map((tool, index) => ({name: tool.name, description: tool.description, input_schema: tool.input,
+      ...(index < STRICT_TOOL_LIMIT ? {strict: true} : {})}));
+    return JSON.stringify({model: this.model, max_tokens: outputTokenCap(input, MAX_TOKENS), system: this.#system(input),
+      ...(tools.length === 0 ? {} : {tools, tool_choice: {type: 'auto', disable_parallel_tool_use: true}}),
+      messages: toMessages(input.transcript), output_config: {effort: this.#effort},
       // Automatic prompt caching (Hub #2024): the API places the breakpoint on the last cacheable block and moves it as the
       // transcript grows. Tools, then the system prompt, then the replayed transcript are byte-stable between a task's
       // calls, so the next call reads the earlier ones' prefix from the cache at the five-minute lifetime. The system
       // prompt's first block carries its own breakpoint (Hub #2029), so a later task also reads the stable sections.
       cache_control: {type: 'ephemeral'}});
+  }
+
+  contextInputUnits(input: TurnInput): number {return estimateHostedInputTokens(this.#body(input), this);}
+
+  async turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply> {
+    if (!this.available) throw new ProviderFault('unavailable');
+    const body = this.#body(input);
+    if (hostedInputTokenCeiling(body) > this.inputWindow) throw new ProviderFault('too-large', false, 'request');
     let response: Response;
     try {
       // The API never redirects; refusing one keeps the key from following a redirect to another origin.
