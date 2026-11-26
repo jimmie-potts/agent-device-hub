@@ -2,7 +2,7 @@ import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
 import type {BoundControl} from './control-intent.js';
 import type {DeviceHistoryBinding} from './device-history.js';
-import type {CodingChoice} from '../coding/routing.js';
+import type {CodingChoice, CodingDestinationChoice, CodingRequirements} from '../coding/routing.js';
 import type {MessageCodingInput, OpenNativeClientInput, StopCodingInput} from './history-contract.js';
 import type {Confirmation} from './confirmation.js';
 import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
@@ -15,7 +15,7 @@ import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jim
 
 import type {TranscriptItem} from './provider.js';
 import {RECENT_MESSAGES, type RecentMessage} from './context.js';
-import {HISTORY_ROWS, historyCursor, readHistoryCursor, type ConversationMessage, type RecentConversationPage, type SavedQuestion} from './history-contract.js';
+import {HISTORY_ROWS, historyCursor, readHistoryCursor, type ConversationMessage, type RecentConversationPage, type SavedQuestion, type CodingPreference} from './history-contract.js';
 import {projectionOf, waitsOnOwner, type Reported} from './sessions.js';
 import {MessageQueue} from './queue.js';
 
@@ -34,12 +34,13 @@ export {LIMITS} from './limits.js';
 /** Submission time is private task metadata for delayed owner messages. */
 type SavedTranscriptItem = (Extract<TranscriptItem, {role: 'owner'}> & {submittedAtMs?: number})
   | Exclude<TranscriptItem, {role: 'owner'}>;
-export type Question = SavedQuestion & {call: string; codingChoice?: CodingChoice};
+export type Question = SavedQuestion & {call: string; codingChoice?: CodingChoice; codingDestination?: CodingDestinationChoice; codingRequirements?: CodingRequirements};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   /** Only the private Conversation page renders this receipt, after a fresh exact Jobs lookup. */
   localJobStatus?: {question: string; visible?: {jobId: string; operationId: string; status: string}};
   control?: BoundControl;
   supervisor?: SupervisorIdentity;
+  codingPreference?: CodingPreference;
   clarificationDevices?: readonly string[];
   /** Query and transcript boundary from the scoped model call's admission. */
   claudeHistory?: DeviceHistoryBinding & {replayFrom: number; ordinaryFrom?: number};
@@ -73,7 +74,7 @@ export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; 
  * Decline with message for an approval.
  */
 export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'queue' | 'edit-queued' | 'steer'; profile: AssistantProfile; text: string; expectedRevision: number; provider?: SupervisorIdentity['provider'];
-  taskId?: string; questionId?: string; queuedId?: string; harness?: CodingChoice};
+  taskId?: string; questionId?: string; queuedId?: string; harness?: CodingChoice; destination?: CodingDestinationChoice; requirements?: CodingRequirements};
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
 export type Stage = {ref: string; requestId: string; input: StagedInput | StopCodingInput | MessageCodingInput | OpenNativeClientInput; expires: number};
@@ -88,7 +89,7 @@ type MessageVisibility = {
   attachment(requestId: string): boolean;
   task(taskId: string): boolean;
 };
-type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
+type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows' | 'codingRefusal'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
   artStatus: Call['status'] | null; artResult: string | null};
 const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,msg.follows,
   art.request_id AS artRequestId,art.description AS artDescription,intent.targets AS artTargets,json_extract(call.record, '$.status') AS artStatus,
@@ -499,7 +500,9 @@ export class AssistantStore {
     const follows = followed !== undefined && visibility.shows(followed) ? row.follows : null;
     const visible = row.artRequestId !== null && !visibility.attachment(row.artRequestId)
       ? {...row, artRequestId: null, artDescription: null} : row;
-    return messageOf({...visible, text: visibility.privateText?.(row) ?? visible.text, follows});
+    const message = messageOf({...visible, text: visibility.privateText?.(row) ?? visible.text, follows});
+    return message.role === 'tool' && message.text.startsWith('refused: ') && this.call(message.id)?.codingApproval !== undefined
+      ? {...message, codingRefusal: true} : message;
   }
   #visibleQuestion(task: Task, visibility?: MessageVisibility): Question | null {
     const question = task.question;

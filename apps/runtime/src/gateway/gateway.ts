@@ -28,7 +28,7 @@ import type {Redactions, RuntimeLogger} from '../log.js';
 import type {EdgeConfig} from '../state.js';
 import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {MUSIC_PLAYBACK_SOURCE} from '@jimmie-potts/event-contracts/v2/music-playback';
-import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
+import {codingDestinationForSource} from '@jimmie-potts/event-contracts/v2/coding';
 import {
   Access, BROWSER_SOURCE, REQUEST_HEADER, carriesSession, contextOf, edgePermissions, endedCookie, principalOf, sessionCookie, type Principal,
 } from './access.js';
@@ -183,7 +183,7 @@ export class Gateway {
         const lost = source === BROWSER_SOURCE ? {family: 'companion-speech-lost', type: 'org.bunny.companion-speech.endpoint-lost'}
           : source === MUSIC_PRODUCER_SOURCE ? {family: 'music-capture-lost', type: 'org.bunny.music-capture.endpoint-lost'}
           : source === MUSIC_PLAYBACK_SOURCE ? {family: 'music-playback-lost', type: 'org.bunny.music-playback.endpoint-lost'}
-          : source === CODING_WORKER_SOURCE ? {family: 'coding-lost', type: 'org.bunny.coding.endpoint-lost'} : undefined;
+          : codingDestinationForSource(source) !== undefined ? {family: 'coding-lost', type: 'org.bunny.coding.endpoint-lost'} : undefined;
         if (lost === undefined) return;
         void own.publish(`bunny.event.${lost.family}.${id}`, {
           kind: 'occurrence', type: lost.type, subject: id, dataschema: `${SCHEMA_BASE}${lost.family}/2.0`, data: {id},
@@ -304,7 +304,7 @@ export class Gateway {
    * Admits the caller of a route, or refuses it before anything happens. `credential` routes, MCP among them, take a
    * client credential only, never a browser session.
    */
-  #admit(request: IncomingMessage, {credential = false}: {credential?: boolean} = {}): Principal {
+  #admit(request: IncomingMessage, {credential = false, workerEndpoint = false}: {credential?: boolean; workerEndpoint?: boolean} = {}): Principal {
     // A browser session on a credential's route is told so first, whatever else it lacks.
     const session = typeof request.headers.authorization !== 'string' && carriesSession(request);
     if (credential && session) throw refuse('forbidden', 'this route takes a client credential, not a browser session');
@@ -313,7 +313,10 @@ export class Gateway {
     const {principal} = admission;
     if (privateProxyOrigin(request, this.#options.edge.privateProxy) !== undefined && principal.kind === 'credential'
       && (principal.role !== undefined || principal.scopes.has('admin'))) {
-      throw refuse('forbidden', 'the private entry takes ordinary read, control or ingest credentials');
+      const destination = codingDestinationForSource(principal.source);
+      if (!workerEndpoint || principal.role !== 'coding-worker' || destination === undefined || destination === 'mac' || principal.scopes.size !== 0) {
+        throw refuse('forbidden', 'the private entry does not grant this credential access to the route');
+      }
     }
     if (credential && principal.kind !== 'credential') throw refuse('forbidden', 'this route takes a client credential, not a browser session');
     return principal;
@@ -372,7 +375,8 @@ export class Gateway {
   #remote(request: IncomingMessage, response: ServerResponse, call: string): void {
     const route: EdgeRoute = (CALLS as readonly string[]).includes(call) || call === 'stream' ? call as EdgeRoute : 'other';
     let principal: Principal;
-    try { principal = this.#admit(request); }
+    const workerEndpoint = ['stream', 'respond', 'reply', 'publish', 'request', 'close'].includes(call);
+    try { principal = this.#admit(request, {workerEndpoint}); }
     catch (error) {
       if (!(error instanceof Refused)) throw error;
       const {code} = error.body.error;

@@ -1,5 +1,6 @@
 import {statusQuestion, type CodingJobEntry} from '../coding/job-page.js';
-import {codingChoice, type CodingChoice} from '../coding/routing.js';
+import {codingChoice, codingDestinationChoice, type CodingChoice, type CodingRequirements} from '../coding/routing.js';
+import type {CodingDestination} from '@jimmie-potts/event-contracts/v2/coding';
 import {catalogRoute, SHOW_SAVE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {createHash, randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
@@ -20,7 +21,7 @@ import {AssistantStore, GRAPH_VERSION, LIMITS, RESPONSES_GRAPH_VERSION, terminal
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
-import {accessFor, canRevokeFields, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
+import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
 import {ALL_WEMO_PLUGS, authorizesControl, brightnessSubject, literalDeviceId, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
@@ -35,6 +36,7 @@ import {changesOf, observationDraft, observationOf, titleObservationOf} from './
 import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} from './titles.js';
 import {describePowerLimit, followPowerLimits, localInstant} from './power-limits.js';
 import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices, type DeviceReadDisplay} from './devices.js';
+import {bindCodingRequirements, codingOS, codingRequirements, ownerCodingRoute} from './coding-request.js';
 import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_WEMO, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
 
 export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provider.js';
@@ -71,6 +73,7 @@ export type AssistantOptions = {
    * when the worker's endpoint does (Hub #2028). The profile names the companion whose slot the hand-off would use.
    */
   coding?: (profile: AssistantProfile) => {available: boolean; endpointId: string | null; revision: number};
+  codingRequirements?: (ownerRequest: string) => CodingRequirements | undefined;
   /** Hands an approved delegation to the core's tracked dispatcher; the worker's result comes back through `deliver`. */
   delegate?: Delegate;
   backgroundCoding?: boolean;
@@ -883,7 +886,7 @@ export class AssistantEngine {
       if (!fresh && !jobAction && !(object(value) && value.action === 'edit-queued')) this.#ready();
       if (fresh && (Object.keys(value).some(key => !['action', 'profile', 'expectedRevision'].includes(key)) || !profile(value.profile) ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
-      if (!fresh && !jobAction && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId', 'harness', 'provider'].includes(key)) ||
+      if (!fresh && !jobAction && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId', 'harness', 'destination', 'requirements', 'provider'].includes(key)) ||
         !profile(value.profile) || !['start', 'answer', 'queue', 'edit-queued', 'steer'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
       // A steer names the turn it expects (Hub #2031), and with a question the one it skips or declines.
@@ -891,7 +894,12 @@ export class AssistantEngine {
         : value.action === 'steer' ? typeof value.taskId !== 'string' || !(value.questionId === undefined || typeof value.questionId === 'string') || value.queuedId !== undefined
           : value.action === 'edit-queued' ? value.taskId !== undefined || value.questionId !== undefined || typeof value.queuedId !== 'string' || !QUEUED_ID.test(value.queuedId)
             : value.taskId !== undefined || value.questionId !== undefined || value.queuedId !== undefined)) fail('invalid-request');
-      if (object(value) && value.harness !== undefined && (value.action !== 'answer' || value.text !== 'approve' || !codingChoice(value.harness))) fail('invalid-request');
+      if (object(value) && (value.harness !== undefined || value.destination !== undefined || value.requirements !== undefined)) {
+        if (value.action !== 'start' && (value.action !== 'answer' || value.text !== 'approve')) fail('invalid-request');
+        if (value.harness !== undefined && !codingChoice(value.harness)) fail('invalid-request');
+        if (value.destination !== undefined && !codingDestinationChoice(value.destination)) fail('invalid-request');
+        if (value.requirements !== undefined && !codingRequirements(value.requirements)) fail('invalid-request');
+      }
       if (!fresh && !jobAction && value.provider !== undefined && (!['start', 'queue'].includes(String(value.action)) ||
         (value.provider !== 'anthropic' && value.provider !== 'openai'))) fail('invalid-request');
       const input = (fresh ? {...value, text: ''} : value) as Stage['input'];
@@ -1029,6 +1037,10 @@ export class AssistantEngine {
         const reached = paid.name === 'synthetic' ? undefined : this.spend.reached(paid.model, pin.pricing);
         if (reached !== undefined) throw new Fault('capacity', reached);
         task = this.store.newTask(input.profile, input.text, pin);
+        if (input.harness !== undefined || input.destination !== undefined || input.requirements !== undefined) {
+          task.codingPreference = {harness: input.harness ?? 'auto', destination: input.destination ?? 'auto',
+            ...(input.requirements === undefined ? {} : {requirements: input.requirements})};
+        }
         this.store.message(task, `${task.id}-prompt`, 'owner', input.text, this.context.clock.now());
         // The first message of an untitled conversation earns it a model-written title (Hub #2025, #2075).
         if (this.titles.started(task.conversationId)) titled = {id: task.id, conversationId: task.conversationId, profile: task.profile, event: {kind: 'message'}};
@@ -1038,9 +1050,11 @@ export class AssistantEngine {
         // An approval is answered only by the two literal decisions, so free text can neither apply nor dismiss a proposal; a delegation is answered by the worker alone.
         if (task.question.kind === 'delegation') fail('invalid-state');
         if (task.question.kind === 'approval' && !['approve', 'decline'].includes(input.text)) fail('invalid-request');
-        if (input.harness !== undefined) {
+        if (input.harness !== undefined || input.destination !== undefined || input.requirements !== undefined) {
           if (task.question.proposal?.family !== 'coding-dispatch') fail('invalid-request');
-          task.question.codingChoice = input.harness;
+          if (input.harness !== undefined) task.question.codingChoice = input.harness;
+          if (input.destination !== undefined) task.question.codingDestination = input.destination;
+          if (input.requirements !== undefined) task.question.codingRequirements = input.requirements;
         }
         task.question.answer = input.text;
         this.store.message(task, `${task.question.id}-answer`, 'owner', input.text, this.context.clock.now());
@@ -1137,8 +1151,8 @@ export class AssistantEngine {
   canReadCodingJobBrief(profile: AssistantProfile, job: CodingJob): boolean {
     return this.canReadCodingJob(profile, job) && this.#publicRead(profile).read('coding', 'brief', job.repository);
   }
-  canMessageCodingJob(profile: AssistantProfile, job: CodingJob): boolean {
-    const destination = this.#fields(profile, 'brief', 'coding-worker');
+  canMessageCodingJob(profile: AssistantProfile, job: CodingJob, execution: CodingDestination = 'mac'): boolean {
+    const destination = this.#fields(profile, 'brief', codingShareDestination(execution));
     return this.canReadCodingJob(profile, job) && destination('coding', 'repository', job.repository) &&
       destination('coding', 'brief', job.repository);
   }
@@ -1421,10 +1435,10 @@ export class AssistantEngine {
   }
   #fields(companion: AssistantProfile, purpose: ShareQuery['purpose'], destination: ShareQuery['destination'] | 'openai' = this.provider(companion).name): FieldAccess {
     if (destination === 'openai') return () => false;
-    return accessFor(this.options.share, {caller: destination === 'private-conversation' || destination === 'conversation-speech' || destination === 'coding-worker' ? 'owner' : 'companion',
+    return accessFor(this.options.share, {caller: destination === 'private-conversation' || destination === 'conversation-speech' || purpose === 'brief' ? 'owner' : 'companion',
       companion, purpose, destination});
   }
-  codingBriefRefusal({requestId, taskId, repository, brief}: CodingBrief): CodingBriefRefusal | undefined {
+  codingBriefRefusal({requestId, taskId, repository, brief}: CodingBrief, destination: CodingDestination | null = 'mac'): CodingBriefRefusal | undefined {
     const task = this.store.task(taskId);
     const receipt = this.store.call(requestId);
     const approval = receipt?.codingApproval;
@@ -1433,14 +1447,15 @@ export class AssistantEngine {
       approval?.destination !== 'coding-worker' || approval.repository !== repository || approval.briefDigest !== digest(brief)) {
       return 'unverified-supervisor';
     }
-    return this.#codingInputsRefusal(task, repository, receipt.ordinal);
+    return this.#codingInputsRefusal(task, repository, receipt.ordinal, destination);
   }
-  #codingInputsRefusal(task: Task, repository: string, before: number): CodingBriefRefusal | undefined {
+  #codingInputsRefusal(task: Task, repository: string, before: number, execution: CodingDestination | null): CodingBriefRefusal | undefined {
     const pin = task.supervisor;
     if (pin === undefined || pin.provider !== 'openai' && pin.provider !== 'anthropic' && pin.provider !== 'synthetic' ||
       task.graphVersion !== (pin.provider === 'openai' ? RESPONSES_GRAPH_VERSION : GRAPH_VERSION)) return 'unverified-supervisor';
-    const target = this.#fields(task.profile, 'brief', 'coding-worker');
-    if (!target('coding', 'repository', repository) || !target('coding', 'brief', repository)) return 'grant-denied';
+    const destination = execution === null ? null : codingShareDestination(execution);
+    const target = destination === null ? undefined : this.#fields(task.profile, 'brief', destination);
+    if (target !== undefined && (!target('coding', 'repository', repository) || !target('coding', 'brief', repository))) return 'grant-denied';
     const share = this.options.share;
     const read = this.#fields(task.profile, 'read', 'private-conversation');
     const discovery = this.#fields(task.profile, 'discovery', 'private-conversation');
@@ -1448,14 +1463,18 @@ export class AssistantEngine {
     // Earlier call disclosures were selected for the pinned supervisor when those calls were made.
     const inputs: FieldAccess = (source, field, record) => {
       const localField = source === 'conversation' && (field === 'request' || field === 'excerpt') ? 'text' : field;
-      return (localField === 'index' ? discovery : read)(source, localField, record) &&
+      const destinationAllows = destination === null || (destination === 'coding-worker'
+        ? (share?.allowsDerived?.({caller: 'owner', companion: task.profile, purpose: 'brief', destination, source, field,
+          ...(record === undefined ? {} : {record})}) ?? (share === undefined || share.revokesFields === false || target?.(source, field, record) === true))
+        : target?.(source, field, record) === true);
+      return destinationAllows && (localField === 'index' ? discovery : read)(source, localField, record) &&
         (source !== 'conversation' || record === undefined || this.store.messages.removal(record) === undefined) &&
-        (pin.provider === 'openai' ? record !== undefined && recordedSupervisorField(share, task.profile, 'supervisor', source, field, record) : model(source, field, record)) &&
-        (share?.allowsDerived?.({caller: 'owner', companion: task.profile, purpose: 'brief', destination: 'coding-worker', source, field,
-          ...(record === undefined ? {} : {record})}) ?? (share === undefined || share.revokesFields === false || target(source, field, record)));
+        (pin.provider === 'openai' ? record !== undefined && recordedSupervisorField(share, task.profile, 'supervisor', source, field, record) : model(source, field, record));
     };
-    const localOptionsAllowed = task.clarificationDevices?.every(id => discovery('devices', 'index', id) && read('devices', 'label', id)) ?? true;
-    return localOptionsAllowed && this.#callDisclosuresAllowed(task.id, inputs, call => call.ordinal < before) ? undefined : 'grant-denied';
+    const localOptionsAllowed = task.clarificationDevices?.every(id => discovery('devices', 'index', id) && read('devices', 'label', id) &&
+      (execution === null || execution === 'mac' || target?.('devices', 'label', id) === true)) ?? true;
+    return localOptionsAllowed && this.#callDisclosuresAllowed(task.id, inputs, call => call.ordinal < before,
+      execution === null || execution === 'mac' ? !canRevokeFields(share) : false) ? undefined : 'grant-denied';
   }
   #historyDevices() {
     return ([ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER] as const).flatMap(owner =>
@@ -1635,8 +1654,8 @@ export class AssistantEngine {
     if (this.store.task(taskId)?.clarificationDevices?.some(id => effects === undefined && !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
     return this.#callDisclosuresAllowed(taskId, access, call => effects?.has(call.id) !== false);
   }
-  #callDisclosuresAllowed(taskId: string, access: FieldAccess, relevant: (call: Call) => boolean): boolean {
-    const acceptsOldRecords = !canRevokeFields(this.options.share);
+  #callDisclosuresAllowed(taskId: string, access: FieldAccess, relevant: (call: Call) => boolean,
+    acceptsOldRecords = !canRevokeFields(this.options.share)): boolean {
     return this.store.calls(taskId).every(call => !relevant(call) || call.incompleteDisclosures !== true && (call.disclosures === undefined
       ? call.status !== 'succeeded' || acceptsOldRecords : call.disclosures.every(field => this.#disclosureAllowed(field, access))));
   }
@@ -1959,12 +1978,22 @@ export class AssistantEngine {
       return {id, text: text.slice(0, 1024), answer: null, kind: 'clarification', call: call.id, proposal: null};
     }
     if (call.name === DELEGATE_CODING) {
-      const {repository, brief} = call.input;
+      const {repository, brief, harness, destination, os} = call.input;
       if (typeof repository !== 'string' || !REPOSITORY.test(repository) || repository.length > 64 || typeof brief !== 'string' || brief.trim() === '' || textBytes(brief) > BRIEF_BYTES) return undefined;
       // A busy slot still proposes: an approved hand-off waits for it (Hub #2028). Only a missing worker refuses.
-      const coding = this.options.coding?.(this.#task(taskId).profile);
+      const task = this.#task(taskId);
+      const coding = this.options.coding?.(task.profile);
       if (coding === undefined || !coding.available || coding.endpointId === null) return undefined;
-      const proposal: Proposal = {family: 'coding-dispatch', target: 'assistant', data: {repository, brief: brief.trim()}, expectedRevision: coding.revision};
+      if (harness !== undefined && !codingChoice(harness) || destination !== undefined && !codingDestinationChoice(destination) ||
+        os !== undefined && !codingOS(os) || Object.keys(call.input).some(key => !['repository', 'brief', 'harness', 'destination', 'os'].includes(key))) return undefined;
+      const preference = task.codingPreference;
+      const ownerRoute = ownerCodingRoute(task.prompt);
+      const choice = preference?.harness ?? ownerRoute.harness ?? harness;
+      const execution = preference?.destination ?? ownerRoute.destination ?? destination;
+      const requirements = bindCodingRequirements(preference?.requirements ?? (os === undefined ? undefined : {os}), this.options.codingRequirements?.(task.prompt));
+      const proposal: Proposal = {family: 'coding-dispatch', target: 'assistant', expectedRevision: coding.revision,
+        data: {repository, brief: brief.trim(), ...(choice === undefined ? {} : {harness: choice}),
+          ...(execution === undefined ? {} : {destination: execution}), ...(requirements === undefined ? {} : {requirements})}};
       return {id, text: `Delegate to the coding worker in ${repository}: ${proposal.data.brief}`.slice(0, 1024), answer: null, kind: 'approval', call: call.id, proposal};
     }
     const owner = deviceToolOwner(call.name);
@@ -2045,8 +2074,13 @@ export class AssistantEngine {
   #proposalRefusal(call: ToolCall): string {
     const copy = this.#core();
     if (call.name === DELEGATE_CODING) {
-      const {repository, brief} = call.input;
-      if (typeof repository !== 'string' || !REPOSITORY.test(repository) || typeof brief !== 'string' || brief.trim() === '' || textBytes(brief) > BRIEF_BYTES) return 'The repository name or the brief is not usable: name an allowlisted repository and write a brief under 4 KiB; nothing was proposed.';
+      const {repository, brief, harness, destination, os} = call.input;
+      if (typeof repository !== 'string' || !REPOSITORY.test(repository) || repository.length > 64 || typeof brief !== 'string' ||
+        brief.trim() === '' || textBytes(brief) > BRIEF_BYTES) return 'Name an allowlisted repository and write a brief under 4 KiB.';
+      if (harness !== undefined && !codingChoice(harness) || destination !== undefined && !codingDestinationChoice(destination) ||
+        os !== undefined && !codingOS(os) || Object.keys(call.input).some(key => !['repository', 'brief', 'harness', 'destination', 'os'].includes(key))) {
+        return 'The coding proposal has an invalid harness, destination or requirement.';
+      }
       return 'No coding worker is connected right now, so nothing was proposed; the owner can start the worker on their computer.';
     }
     const owner = deviceToolOwner(call.name);
@@ -2276,7 +2310,7 @@ export class AssistantEngine {
         this.store.artReply(current, id, artDescription, this.context.clock.now(), Array.isArray(displays) && displays.every((v): v is string => typeof v === 'string') ? displays : undefined);
       });
     } else {
-      if (this.#codingInputsRefusal(task, proposal.data.repository, state.step) !== undefined) return refuse('refused', 'Coding brief sharing is not permitted.');
+      if (this.#codingInputsRefusal(task, proposal.data.repository, state.step, this.options.backgroundCoding === true ? null : 'mac') !== undefined) return refuse('refused', 'Coding brief sharing is not permitted.');
       const delegate = this.options.delegate;
       if (delegate === undefined) return refuse('refused', 'This tool is not permitted.');
       // The task waits on the delegation before the hand-off leaves, so a worker's word that comes back faster than this
@@ -2286,9 +2320,14 @@ export class AssistantEngine {
       delegation = pending;
       // A hand-off whose companion's slot is busy waits for it; it was approved and is sent once when the slot frees.
       const companion = PROFILES.find(entry => entry.id === task.profile)?.name ?? task.profile;
+      const choice = question.codingChoice ?? proposal.data.harness;
+      const destination = question.codingDestination ?? proposal.data.destination;
+      const requirements = bindCodingRequirements(question.codingRequirements,
+        bindCodingRequirements(proposal.data.requirements, this.options.codingRequirements?.(task.prompt)));
       result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, conversationId: task.conversationId,
         companion: task.profile, repository: proposal.data.repository, brief: proposal.data.brief,
-        expectedRevision: proposal.expectedRevision, ...(question.codingChoice === undefined ? {} : {choice: question.codingChoice})}, active.span.context, signal)
+        expectedRevision: proposal.expectedRevision, ...(choice === undefined ? {} : {choice}),
+        ...(destination === undefined ? {} : {destination}), ...(requirements === undefined ? {} : {requirements})}, active.span.context, signal)
         .then(answer => {
           if (answer.status === 'queued') {
             job = {jobId: answer.jobId, operationId: answer.requestId, taskId: task.id, conversationId: task.conversationId, repository: proposal.data.repository, brief: proposal.data.brief};
@@ -2340,12 +2379,7 @@ export class AssistantEngine {
         const text = waits ? waitingText(delegation.text) : delegation.text;
         if (waits && current.question?.kind === 'delegation') current.question.text = text;
         this.store.message(current, delegation.id, 'assistant', text, this.context.clock.now()); handedOff = true;
-      } else {
-        if (question.codingChoice !== undefined && result.startsWith('refused: ')) {
-          this.store.message(current, `${id}-choice-refused`, 'tool', result, this.context.clock.now());
-        }
-        if (current.question?.kind === 'delegation') current.question = question;
-      }
+      } else if (current.question?.kind === 'delegation') current.question = question;
     });
     // An accepted coding hand-off, and any other accepted command, which changes state, ask the title model to check the
     // conversation's title (Hub #2025, #2075), so an issue named only in a brief can lead it. The receipt is a tool result

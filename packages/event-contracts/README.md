@@ -1220,6 +1220,12 @@ existing contract. `coding-state/2.4` gives total run and waiting counts with
 bounded previews of 8 runs and 32 waits. Conversation reads active jobs
 through its independently paged content endpoint.
 
+`coding-endpoint/2.5` adds a source-bound host declaration with operating
+system, named toolchains, allowlisted repository revisions and test resource
+observations. `coding-state/2.5` adds live destinations with their connection
+and selection identities. A `coding-work/2.6` start requires an exact Git
+revision. Earlier Mac declarations and work versions remain supported.
+
 A `coding-work/2.4` message names one operation and carries at most 4,096
 UTF-8 bytes of owner instruction. Its request ID correlates the instruction
 with an optional `coding-progress/2.5` native input observation. A saved-client handoff on `coding-work/2.5` prepares privately and launches only when a distinct command names the preparation.

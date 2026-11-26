@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {accessFor, parseSharingGrants, sharing, supervisorFields} from '../src/assistant/sharing.js';
+import {bindCodingRequirements, codingRequirements} from '../src/assistant/coding-request.js';
+import {accessFor, codingShareDestination, parseSharingGrants, sharing, supervisorFields} from '../src/assistant/sharing.js';
 
 void test('the supervisor receives only selected current and same-conversation fields', () => {
   const messages = new Map([
@@ -47,4 +48,37 @@ void test('revocations survive rebuilding policy and a different caller or purpo
   assert.equal(worker('coding', 'brief', 'repo'), true);
   assert.equal(worker('coding', 'details', 'repo'), false);
   assert.equal(worker('devices', 'details', 'plug'), false);
+});
+
+void test('a remote coding grant belongs to the exact destination and field', () => {
+  const grants = parseSharingGrants([
+    {caller: 'owner', companion: 'bunny', purpose: 'brief', destination: 'coding-worker:cloud-fixture',
+      source: 'coding', field: 'brief', record: 'fixture-repo', allow: true},
+    {caller: 'owner', companion: 'bunny', purpose: 'brief', destination: 'coding-worker:pc',
+      source: 'sessions', field: 'label', allow: true},
+    {caller: 'owner', companion: 'bunny', purpose: 'brief', destination: 'coding-worker:pc',
+      source: 'sessions', field: 'label', record: 'hidden-session', allow: false},
+  ]);
+  assert.ok(grants);
+  const policy = sharing(grants);
+  const fields = (destination: Parameters<typeof codingShareDestination>[0]) =>
+    accessFor(policy, {caller: 'owner', companion: 'bunny', purpose: 'brief', destination: codingShareDestination(destination)});
+  assert.equal(fields('mac')('coding', 'brief', 'fixture-repo'), true, 'the installed Mac keeps the original grant');
+  assert.equal(fields('pc')('coding', 'brief', 'fixture-repo'), false);
+  assert.equal(fields('cloud-fixture')('coding', 'brief', 'fixture-repo'), true);
+  assert.equal(fields('cloud-fixture')('coding', 'repository', 'fixture-repo'), false);
+  assert.equal(fields('cloud-other')('coding', 'brief', 'fixture-repo'), false);
+  assert.equal(fields('pc')('sessions', 'label', 'visible-session'), true);
+  assert.equal(fields('pc')('sessions', 'label', 'hidden-session'), false);
+});
+
+void test('trusted coding requirements constrain owner input without granting resources', () => {
+  const installation = {kind: 'installation', id: 'runtime/upgrade'} as const;
+  assert.equal(codingRequirements({resource: installation, os: 'macos', testSlots: 2}), true);
+  assert.equal(codingRequirements({resource: {...installation, destinations: ['mac']}}), false);
+  assert.equal(codingRequirements({refusal: 'unknown-resource'}), false);
+  assert.equal(codingRequirements({refusal: 'unknown-resource'}, true), true);
+  assert.deepEqual(bindCodingRequirements({os: 'windows', toolchains: ['node-24'], testSlots: 1},
+    {os: 'macos', resource: installation, toolchains: ['python-3.14'], testSlots: 2}),
+  {os: 'macos', resource: installation, toolchains: ['node-24', 'python-3.14'], testSlots: 2, refusal: 'conflicting-platform'});
 });

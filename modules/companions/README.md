@@ -810,8 +810,40 @@ native session as soon as the worker reports it. **Attempts and results**
 shows saved attempts, known usage, decisions that need the owner, checks,
 changed files and limitations. The worktree reference names the worker's
 worktree without exposing its host path. **Open original conversation**
-returns to the exchange that requested the job. Choose **Auto**, **Claude Code**
-or **Codex** on an approval when the worker advertises harness selection.
+returns to the exchange that requested the job. On a coding approval, choose
+**Auto**, **Claude Code** or **Codex** for the harness. Choose **Auto**, **Mac**,
+**PC** or **Cloud** for the execution destination. The card shows the requested harness and destination, the selected worker,
+and the Hub's reason. The actual destination remains Unknown until the worker reports a start. Readback for older jobs uses **Unknown** when the stored record has
+no destination.
+
+The Hub checks each enrolled worker's current repository revision, toolchain,
+subscription, sharing grant and pressure before ranking it. A worker reports
+resources every 45 seconds. A declaration older than two minutes cannot admit
+a new job. An explicit host or harness mismatch leaves the job unstarted and
+shows the available alternatives. A job that may have reached its worker keeps
+its attempt identity after a disconnect. Native handoff and continuation use
+the original verified checkout on that host.
+
+To route a step that requires a device or the installed runtime, the operator
+can add `codingResources` to the private Companions section. Each entry has
+`kind` (`device-route`, `device-proximity` or `installation`), the existing
+target or operation `id`, and its allowed `destinations`. For example, an
+authorized edge check and a proximity check for the same target can list
+different workers. An installation entry names only the designated Mac.
+These entries select where a step can run. The existing controller or
+installation operator still owns the operation. A request to write an installer
+can run as ordinary coding work. A request to verify the installed runtime
+requires the operator's route.
+
+To start from **Jobs**, open **New coding job**, choose a companion, harness
+and destination, then select **Continue in Conversation**. Enter a brief that
+names the repository and choose **Request coding job**. Review the proposal
+before approving it. A job request uses a separate draft and waits if that
+companion has a task or queued messages. If the Hub refuses the combination,
+Conversation shows its reason and any eligible alternatives. The approval
+also shows execution requirements identified from your request and the Hub's
+configured operations. Those requirements guide worker selection. Device and
+installation permissions still come from their owning interfaces.
 For a verified stopped attempt, **Attempts and results** offers continuation
 with the named harness under the same job. If the Hub has a reason to refuse
 continuation, the card shows it.

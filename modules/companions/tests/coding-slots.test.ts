@@ -34,13 +34,13 @@ async function settle(check: () => boolean, what = 'expected state arrived'): Pr
   assert.ok(check(), what);
 }
 /** Each profile's model: a task's first call proposes a hand-off, and the call after the worker's word reports it. */
-const delegating = (profile: AssistantProfile, brief = `Synthetic ${profile} brief.`): ModelProvider => ({name: 'synthetic', model: 'synthetic', turn: input => Promise.resolve<TurnReply>(input.transcript.every(item => item.role === 'owner')
-  ? {text: null, calls: [{id: `call-${profile}-${String(input.transcript.length)}`, name: 'delegate_coding', input: {repository: 'agent-device-hub', brief}}], stop: 'tool', units: 10}
+const delegating = (profile: AssistantProfile, brief = `Synthetic ${profile} brief.`, route: {harness?: string; destination?: string} = {}): ModelProvider => ({name: 'synthetic', model: 'synthetic', turn: input => Promise.resolve<TurnReply>(input.transcript.every(item => item.role === 'owner')
+  ? {text: null, calls: [{id: `call-${profile}-${String(input.transcript.length)}`, name: 'delegate_coding', input: {repository: 'agent-device-hub', brief, ...route}}], stop: 'tool', units: 10}
   : {text: `Synthetic ${profile} report.`, calls: [], stop: 'end', units: 10})});
 const result = (summary: string): CodingResult => ({outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: [], checks: [],
   findings: [], limitations: [], summary, sessionId: null, usage: null});
 
-async function world(context: TestContext, options: CompanionsOptions = {}) {
+async function world(context: TestContext, options: CompanionsOptions = {}, section: Record<string, unknown> = {}) {
   let now = Date.parse('2026-11-24T18:00:00Z');
   const timers = new Map<number, {due: number; callback: () => void}>(); let timerId = 0;
   const time = {clock: {now: () => now}, scheduler: {after: (delay: number, callback: () => void) => {const id = ++timerId; timers.set(id, {due: now + delay, callback}); return () => {timers.delete(id);};}}};
@@ -102,7 +102,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   });
   const make = () => {
     const module = createCompanionsModule({timeZone: 'America/Chicago', tools: ['delegate_coding'], provider: delegating('bunny'), profileProviders: {reachy: delegating('reachy'), microduck: delegating('microduck')}, ...options});
-    return {module, host: new ModuleHarness(module, {bus, stateDir: dir, section: {}, ...time})};
+    return {module, host: new ModuleHarness(module, {bus, stateDir: dir, section, ...time})};
   };
   let {module, host} = make();
   await host.start();
@@ -114,11 +114,11 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action, expectedRevision: state().revision, ...extra}}, {requestId, timeoutMs: 5000});
   };
-  const send = async (profile: AssistantProfile, text: string, answer = false, harness?: 'auto' | 'claude-code' | 'codex'): Promise<RequestResult> => {
+  const send = async (profile: AssistantProfile, text: string, answer = false, harness?: 'auto' | 'claude-code' | 'codex', destination?: 'mac' | 'pc'): Promise<RequestResult> => {
     const requestId = randomUUID(), current = task(profile);
     const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
       bytes: Buffer.from(JSON.stringify({action: answer ? 'answer' : 'start', profile, expectedRevision: state().revision, text,
-        ...(answer ? {taskId: current?.taskId, questionId: current?.questionId, ...(harness === undefined ? {} : {harness})} : {})}))});
+        ...(answer ? {taskId: current?.taskId, questionId: current?.questionId, ...(destination === undefined ? {} : {destination}), ...(harness === undefined ? {} : {harness})} : {})}))});
     assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
@@ -195,7 +195,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     assert.ok(reply !== undefined && !('error' in reply));
     return JSON.parse(Buffer.from(reply.bytes).toString()) as CodingJobDetail;
   };
-  return {continueJob, jobDetail, jobs, message, openNative, holdNativePreparation, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
+  return {worker, now: time.clock.now, continueJob, jobDetail, jobs, message, openNative, holdNativePreparation, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
     const release = releaseStart ?? assert.fail('serial responder has a delivered start to acknowledge');
     releaseStart = undefined; release();
   }, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, lose, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
@@ -1605,4 +1605,65 @@ void test('local clarification choices do not become prior supervisor disclosure
   assert.equal(bodies.length, 2);
   for (const body of bodies) for (const device of ids) assert.ok(!body.includes(device));
   assert.ok(store.calls(id).filter(call => call.kind === 'model').every(call => call.disclosures?.every(field => field.source !== 'devices') === true));
+});
+
+for (const contradiction of [false,true]) {
+  void test(`owner route survives a supervisor's ${contradiction ? 'conflicting' : 'omitted'} destination and harness`, async t => {
+    const provider = delegating('bunny','Synthetic owner route.',contradiction ? {harness:'claude-code',destination:'mac'} : {});
+    const w = await world(t,{provider});
+    const health: CodingHarnessReadiness = {harness:'claude-code',installed:'yes',signedIn:'yes',plan:'max',version:'fixture',limits:null,
+      limitsObservedAtMs:null,checkedAtMs:1,capabilities:{steering:'live',resume:'saved-session',review:true}};
+    await w.enable('uncapped',[health,{...health,harness:'codex'}]);
+    await w.control('enable');
+    await w.send('bunny','Use Codex on the PC to check the synthetic repository.');
+    await settle(()=>w.task('bunny')?.hasAnswer===false && w.task('bunny')?.questionId!=null);
+    const current = w.task('bunny') ?? assert.fail('task');
+    const proposal = new AssistantStore(w.database()).task(current.taskId)?.question?.proposal;
+    assert.ok(proposal?.family==='coding-dispatch');
+    assert.equal(proposal.data.harness,'codex'); assert.equal(proposal.data.destination,'pc');
+    if (contradiction) {
+      await w.send('bunny','approve',true,'claude-code','mac');
+      await settle(()=>w.starts().length===1);
+      const start = w.starts()[0]?.data; assert.ok(start?.action==='start');
+      assert.equal(start.harness,'claude-code');
+    } else {
+      await w.send('bunny','approve',true);
+      await w.waitMessages('bunny',/No connected pc worker|eligible alternatives/iu);
+      assert.equal(w.starts().length,0);
+    }
+  });
+}
+
+void test('Conversation resolves its saved owner request against the designated installed operator before dispatch', async t => {
+  const revision='a'.repeat(40);
+  const w=await world(t,{}, {codingResources:[{kind:'installation',id:'bunny-runtime',destinations:['mac']}]});
+  const harness: CodingHarnessReadiness={harness:'claude-code',installed:'yes',signedIn:'yes',plan:'max',version:'fixture',limits:null,
+    limitsObservedAtMs:null,checkedAtMs:w.now(),capabilities:{steering:'live',resume:'saved-session',review:true}};
+  await w.worker.request(`bunny.cmd.coding-endpoint.${ENDPOINT}`,{type:'org.bunny.coding.endpoint.requested',subject:ENDPOINT,
+    dataschema:'https://bunny.invalid/events/coding-endpoint/2.5',data:{requestId:randomUUID(),action:'enable',capacity:'uncapped',harnesses:[harness],
+      worker:{os:'macos',repositories:[{name:'agent-device-hub',revision}],toolchains:['node24'],pressure:'normal',testSlots:4}}},{timeoutMs:5000});
+  await w.control('enable');
+  await w.send('bunny','Run the installed Mac operation and write the result to a file.');
+  await settle(()=>w.task('bunny')?.questionId!=null);
+  const id=w.task('bunny')?.taskId??assert.fail('task');
+  const proposal=new AssistantStore(w.database()).task(id)?.question?.proposal;
+  assert.ok(proposal?.family==='coding-dispatch');
+  assert.deepEqual(proposal.data.requirements,{resource:{kind:'installation',id:'bunny-runtime'}});
+  await w.approved('bunny');
+  await settle(()=>w.starts().length===1);
+  const start=w.starts()[0]?.data;assert.ok(start?.action==='start');
+  assert.equal(start.revision,revision);
+  assert.equal(w.starts()[0]?.subject,ENDPOINT);
+});
+
+void test('the established Mac accepts an ordinary test task without claiming enrolled capabilities', async context => {
+  const w = await world(context);
+  const harness: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: 'fixture',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: w.now(), capabilities: {steering: 'live', resume: 'saved-session', review: true}};
+  await w.enable('uncapped', [harness]);
+  await w.control('enable');
+  await w.send('bunny', 'Run the tests.');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  assert.equal(w.starts()[0]?.subject, ENDPOINT);
 });

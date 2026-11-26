@@ -8,6 +8,22 @@ import {defineFamily, registerFamilies, routedSubject} from './registry.js';
 
 /** The source the worker's credential acts as; the gateway binds the role to it. */
 export const CODING_WORKER_SOURCE = 'bunny/parts/coding-worker';
+export type CodingDestination = 'mac' | 'pc' | `cloud-${string}`;
+export const codingWorkerSourceReserved = (source: string): boolean =>
+  source === CODING_WORKER_SOURCE || source.startsWith(`${CODING_WORKER_SOURCE}-`);
+
+function cloudDestination(value: string): value is `cloud-${string}` {
+  return value.length <= 38 && /^cloud-[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
+}
+
+export function codingDestinationForSource(source: string): CodingDestination | undefined {
+  if (source === CODING_WORKER_SOURCE) return 'mac';
+  if (source === `${CODING_WORKER_SOURCE}-pc`) return 'pc';
+  if (!codingWorkerSourceReserved(source)) return undefined;
+  const suffix = source.slice(CODING_WORKER_SOURCE.length + 1);
+  return cloudDestination(suffix) ? suffix : undefined;
+}
+
 /** Slice-one bounds the owner accepted: twenty minutes, sixty turns, five dollars per task. */
 export const DEFAULT_CODING_BOUNDS: CodingBounds = Object.freeze({wallClockMs: 1_200_000, maxTurns: 60, budgetUsd: 5});
 export type CodingBounds = {wallClockMs: number; maxTurns: number; budgetUsd: number};
@@ -36,9 +52,16 @@ export const CODING_WORKER_SLOTS = 3;
  * Version 2.0 declares availability; 2.1 lets an enable carry the worker's readiness, and an enable from the selected
  * endpoint refreshes it; 2.2 (Hub #2028) lets an enable declare how many runs the worker holds at once.
  */
-export type CodingEndpointControl = {requestId: string; action: 'enable' | 'disable'; readiness?: CodingReadiness; slots?: number; capacity?: 'uncapped'; harnesses?: CodingHarnessReadiness[]};
+export type CodingWorkerDeclaration = {
+  os: 'macos' | 'windows' | 'linux';
+  toolchains: string[];
+  repositories: {name: string; revision: string}[];
+  pressure: 'normal' | 'elevated' | 'high' | 'unknown';
+  testSlots: number | null;
+};
+export type CodingEndpointControl = {requestId: string; action: 'enable' | 'disable'; readiness?: CodingReadiness; slots?: number; capacity?: 'uncapped'; harnesses?: CodingHarnessReadiness[]; worker?: CodingWorkerDeclaration};
 /** Version 2.1 (Hub #2028) tags a start with the companion that asked; a 2.0 start has no companion. */
-export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; companion?: CodingCompanion; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId; continuation?: CodingContinuation} | {action: 'cancel'} | {action: 'message'; text: string} | {action: 'prepare-native-client'; client: CodingNativeClientKind} |
+export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; companion?: CodingCompanion; repository: string; revision?: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId; continuation?: CodingContinuation} | {action: 'cancel'} | {action: 'message'; text: string} | {action: 'prepare-native-client'; client: CodingNativeClientKind} |
   {action: 'open-native-terminal'; intentId: string} | {action: 'open-claude-desktop'; intentId: string});
 export type CodingCheck = {name: string; status: 'passed' | 'failed' | 'skipped' | 'unrun' | 'unknown'; detail?: string};
 /** A usage limit the harness reported: the window it named and when it resets, each null when the tool did not say. */
@@ -87,7 +110,8 @@ export type CodingWaiting = {operationId: string; taskId: string; companion: Cod
  */
 export type CodingState = {id: 'coding'; revision: number; endpointId: string | null; availability: 'off' | 'available' | 'unavailable';
   active: {operationId: string; taskId: string; status: 'dispatching' | 'started' | 'cancelling' | 'uncertain'} | null; readiness?: CodingReadiness | null;
-  slots?: number | null; capacity?: 'uncapped' | null; selectionId?: string; harnesses?: CodingHarnessReadiness[] | null; counts?: {runs: number; waiting: number}; runs?: CodingRunEntry[]; waiting?: CodingWaiting[]};
+  slots?: number | null; capacity?: 'uncapped' | null; selectionId?: string; harnesses?: CodingHarnessReadiness[] | null; counts?: {runs: number; waiting: number}; runs?: CodingRunEntry[]; waiting?: CodingWaiting[];
+  workers?: {destination: CodingDestination; endpointId: string; selectionId: string}[]};
 
 const codingSubject = (message: Message): string | undefined => message.subject === 'coding' ? undefined : 'envelope /subject must be coding';
 const assistantSubject = (message: Message): string | undefined => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant';
@@ -127,6 +151,7 @@ function checkEndpoint(message: Message): string | undefined {
   if (data.action === 'disable' && data.readiness !== undefined) return 'payload readiness goes with enable only';
   if (data.action === 'disable' && data.slots !== undefined) return 'payload slots go with enable only';
   if (data.action === 'disable' && data.harnesses !== undefined) return 'payload harnesses go with enable only';
+  if (data.worker !== undefined && new Set(data.worker.repositories.map(repo => repo.name)).size !== data.worker.repositories.length) return 'payload repository names must be unique';
   return checkHarnesses(data.harnesses);
 }
 
@@ -142,6 +167,10 @@ function checkState(message: Message): string | undefined {
   const data = message.data as Required<CodingState>;
   const harnessIssue = checkHarnesses(data.harnesses);
   if (harnessIssue !== undefined) return harnessIssue;
+  const workers = data.workers ?? [];
+  for (const key of ['destination', 'endpointId', 'selectionId'] as const) {
+    if (new Set(workers.map(worker => worker[key])).size !== workers.length) return 'payload workers must have distinct destinations, endpoints and selections';
+  }
   const operations = [...data.runs, ...data.waiting].map(entry => entry.operationId);
   if (new Set(operations).size !== operations.length) return 'payload an operation is listed once';
   if (data.counts === undefined && new Set(data.runs.map(run => run.companion)).size !== data.runs.length) return 'payload a companion has at most one run';
@@ -157,6 +186,7 @@ export const codingFamilies = [
   defineFamily('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', checkEndpoint, '2.2'),
   defineFamily('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', checkEndpoint, '2.3'),
   defineFamily('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', checkEndpoint, '2.4'),
+  defineFamily('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', checkEndpoint, '2.5'),
   defineFamily('coding-dispatch', 'command', 'org.bunny.coding.dispatch.requested', assistantSubject),
   defineFamily('coding-dispatch', 'command', 'org.bunny.coding.dispatch.requested', assistantSubject, '2.1'),
   defineFamily('coding-dispatch', 'command', 'org.bunny.coding.dispatch.requested', assistantSubject, '2.2'),
@@ -168,6 +198,7 @@ export const codingFamilies = [
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.3'),
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.4'),
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.5'),
+  defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.6'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.1'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.2'),
@@ -182,6 +213,7 @@ export const codingFamilies = [
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.2'),
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.3'),
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.4'),
+  defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.5'),
   defineFamily('coding-run', 'command', 'org.bunny.coding.run.requested', assistantSubject, '2.2'),
   defineFamily('coding-run', 'command', 'org.bunny.coding.run.requested', assistantSubject, '2.3'),
 ] as const;

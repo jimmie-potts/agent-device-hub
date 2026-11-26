@@ -1,11 +1,11 @@
 import type {DatabaseSync} from 'node:sqlite';
 import {isErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {AttemptContext, CodingAttemptEntry, CodingAttemptResult, CodingJobEntry, JobMessage} from './job-page.js';
-import type {CodingCompanion, CodingContinuation, CodingProgress} from '@jimmie-potts/event-contracts/v2/coding';
-import type {CodingChoice, CodingHarness} from './routing.js';
+import type {CodingCompanion, CodingDestination, CodingContinuation, CodingProgress} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingChoice, CodingDestinationChoice, CodingHarness, CodingRequirements} from './routing.js';
 
 /** One accepted coding operation: which task it serves, which worker endpoint runs it and how it ended. */
-export type CodingResponsibility = {operationId: string; taskId: string; endpointId: string; traceparent: string; started: boolean; status: 'pending' | CodingProgress['status']};
+export type CodingResponsibility = {operationId: string; taskId: string; endpointId: string; traceparent: string; sent?: boolean; started: boolean; status: 'pending' | CodingProgress['status']};
 /**
  * One approved hand-off waiting for its companion's slot (Hub #2028), oldest first. `sending` marks the one whose
  * dispatch has left and whose acceptance has not been recorded; a start finds it of unknown fate, never resends it.
@@ -13,8 +13,9 @@ export type CodingResponsibility = {operationId: string; taskId: string; endpoin
 export type CodingWaitingRecord = {operationId: string; taskId: string; companion: CodingCompanion; repository: string; brief: string; traceparent: string; sending: boolean};
 export type CodingOrigin = {conversationId: string; taskId: string};
 export type CodingJob = CodingOrigin & {jobId: string; operationId: string; repository: string; brief: string};
+export type AttemptDestination = {requested: CodingDestinationChoice; actual: CodingDestination; endpointId?: string; selectionId?: string; revision?: string; requirements?: CodingRequirements};
 export type CodingAttempt = CodingAttemptEntry & {
-  jobId: string; choice: CodingChoice; companion: CodingCompanion; handoffToken?: string; selectionId?: string; continuation?: CodingContinuation;
+  binding?: AttemptDestination; jobId: string; choice: CodingChoice; companion: CodingCompanion; handoffToken?: string; selectionId?: string; continuation?: CodingContinuation;
 };
 export type CodingUpdateKind = 'sent' | 'stop-unconfirmed' | 'result';
 export type CodingJobRead = Pick<CodingJob, 'jobId' | 'operationId' | 'taskId' | 'conversationId' | 'repository'> & {originalOperationId: string};
@@ -35,6 +36,9 @@ export class CodingStore {
       traceparent TEXT NOT NULL, started INTEGER NOT NULL DEFAULT 0 CHECK(started IN (0,1)),
       status TEXT NOT NULL DEFAULT 'pending'
     ) STRICT`);
+    if (!database.prepare('PRAGMA table_info(companion_coding)').all().some(column => column.name === 'sent')) {
+      database.exec('ALTER TABLE companion_coding ADD COLUMN sent INTEGER CHECK(sent IN (0,1))');
+    }
     database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_waiting (
       operation_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, companion TEXT NOT NULL CHECK(companion IN ('bunny','reachy','microduck')),
       repository TEXT NOT NULL, brief TEXT NOT NULL, traceparent TEXT NOT NULL, sending INTEGER NOT NULL DEFAULT 0 CHECK(sending IN (0,1))
@@ -55,6 +59,9 @@ export class CodingStore {
     ) STRICT`);
     if (!database.prepare('PRAGMA table_info(companion_coding_attempts)').all().some(column => column.name === 'context')) {
       database.exec('ALTER TABLE companion_coding_attempts ADD COLUMN context TEXT');
+    }
+    if (!database.prepare('PRAGMA table_info(companion_coding_attempts)').all().some(column => column.name === 'destination')) {
+      database.exec('ALTER TABLE companion_coding_attempts ADD COLUMN destination TEXT');
     }
     database.exec('CREATE INDEX IF NOT EXISTS companion_coding_attempt_job ON companion_coding_attempts(job_id)');
     database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_job_updates (
@@ -156,10 +163,10 @@ export class CodingStore {
       return {requestId, operationId, status, observed: observed === 1, recordedAtMs, ...(isErrorCode(code) ? {code} : {})};
     });
   }
-  createAttempt(attempt: Pick<CodingAttempt, 'jobId' | 'operationId' | 'choice' | 'companion' | 'harness' | 'selectionReason' | 'continuation'>): void {
-    this.database.prepare(`INSERT INTO companion_coding_attempts(operation_id,job_id,choice,companion,harness,selection_reason,from_operation_id,from_token)
-      VALUES(?,?,?,?,?,?,?,?)`).run(attempt.operationId, attempt.jobId, attempt.choice, attempt.companion, attempt.harness, attempt.selectionReason,
-      attempt.continuation?.fromOperationId ?? null, attempt.continuation?.token ?? null);
+  createAttempt(attempt: Pick<CodingAttempt, 'jobId' | 'operationId' | 'choice' | 'companion' | 'harness' | 'selectionReason' | 'continuation' | 'binding'>): void {
+    this.database.prepare(`INSERT INTO companion_coding_attempts(operation_id,job_id,choice,companion,harness,selection_reason,from_operation_id,from_token,destination)
+      VALUES(?,?,?,?,?,?,?,?,?)`).run(attempt.operationId, attempt.jobId, attempt.choice, attempt.companion, attempt.harness, attempt.selectionReason,
+      attempt.continuation?.fromOperationId ?? null, attempt.continuation?.token ?? null, attempt.binding === undefined ? null : JSON.stringify(attempt.binding));
   }
   attempts(jobId: string): CodingAttempt[] {
     return this.database.prepare('SELECT * FROM companion_coding_attempts WHERE job_id=? ORDER BY rowid').all(jobId).map(row => this.#attempt(row));
@@ -178,9 +185,13 @@ export class CodingStore {
       (status !== 'queued' && status !== 'dispatching' && status !== 'started' && status !== 'cancelling' && status !== 'completed' && status !== 'failed' &&
         status !== 'cancelled' && status !== 'uncertain') || (result !== null && typeof result !== 'string')) throw new Error('coding-attempt-invalid');
     return {operationId, jobId, choice, companion, harness, sessionId, selectionReason, status, result: result === null ? null : JSON.parse(result) as CodingAttemptResult,
+      ...(typeof row.destination === 'string' ? {binding: JSON.parse(row.destination) as AttemptDestination} : {}),
       ...(typeof row.context === 'string' ? {context: JSON.parse(row.context) as AttemptContext} : {}),
       ...(typeof handoffToken === 'string' ? {handoffToken} : {}), ...(typeof selectionId === 'string' ? {selectionId} : {}),
       ...(typeof from === 'string' && typeof token === 'string' ? {continuation: {fromOperationId: from, token}} : {})};
+  }
+  bindAttempt(operationId: string, binding: AttemptDestination): void {
+    this.database.prepare('UPDATE companion_coding_attempts SET destination=? WHERE operation_id=?').run(JSON.stringify(binding), operationId);
   }
   routeAttempt(operationId: string, harness: CodingHarness | undefined, reason: string): void {
     this.database.prepare("UPDATE companion_coding_attempts SET harness=?, selection_reason=? WHERE operation_id=? AND status='queued'")
@@ -239,16 +250,28 @@ export class CodingStore {
     this.database.prepare('UPDATE companion_coding_job_updates SET delivered=1 WHERE operation_id=? AND kind=?').run(operationId, kind);
   }
   /** Records the responsibility and, in the same transaction, ends the hand-off's wait if it waited. */
-  accept(record: Omit<CodingResponsibility, 'started' | 'status'>): void {
+  accept(record: Omit<CodingResponsibility, 'started' | 'status'>, binding?: AttemptDestination): void {
     this.database.exec('SAVEPOINT coding_accept');
     try {
-      this.database.prepare('INSERT INTO companion_coding(operation_id,task_id,endpoint_id,traceparent) VALUES(?,?,?,?)')
+      this.database.prepare('INSERT INTO companion_coding(operation_id,task_id,endpoint_id,traceparent,sent) VALUES(?,?,?,?,0)')
         .run(record.operationId, record.taskId, record.endpointId, record.traceparent);
       this.database.prepare('INSERT INTO companion_coding_accepted_waits SELECT operation_id,traceparent FROM companion_coding_waiting WHERE operation_id=?').run(record.operationId);
       this.database.prepare('DELETE FROM companion_coding_waiting WHERE operation_id=?').run(record.operationId);
+      if (binding !== undefined) this.bindAttempt(record.operationId, binding);
       this.observeAttempt(record.operationId, 'dispatching');
       this.database.exec('RELEASE coding_accept');
     } catch (error) {this.database.exec('ROLLBACK TO coding_accept'); this.database.exec('RELEASE coding_accept'); throw error;}
+  }
+  startSent(operationId: string): boolean {
+    const row = this.database.prepare('SELECT sent,started FROM companion_coding WHERE operation_id=?').get(operationId);
+    return row?.sent === 1 || row?.started === 1;
+  }
+  workerStarted(operationId: string): boolean {
+    return this.database.prepare('SELECT started FROM companion_coding WHERE operation_id=?').get(operationId)?.started === 1;
+  }
+  markSending(operationId: string): void {
+    const record = this.database.prepare("UPDATE companion_coding SET sent=1 WHERE operation_id=? AND status='pending' AND sent=0").run(operationId);
+    if (record.changes !== 1) throw new Error('coding-start-already-sent');
   }
   started(operationId: string): void {this.database.prepare('UPDATE companion_coding SET started=1 WHERE operation_id=?').run(operationId);}
   settle(operationId: string, status: CodingProgress['status']): void {
@@ -258,7 +281,7 @@ export class CodingStore {
     return this.database.prepare('SELECT * FROM companion_coding WHERE status=? ORDER BY rowid').all(status).map(row => {
       if (typeof row.operation_id !== 'string' || typeof row.task_id !== 'string' || typeof row.endpoint_id !== 'string' || typeof row.traceparent !== 'string'
         || (row.started !== 0 && row.started !== 1) || typeof row.status !== 'string') throw new Error('coding-responsibility-invalid');
-      return {operationId: row.operation_id, taskId: row.task_id, endpointId: row.endpoint_id, traceparent: row.traceparent, started: row.started === 1, status: row.status as CodingResponsibility['status']};
+      return {operationId: row.operation_id, taskId: row.task_id, endpointId: row.endpoint_id, traceparent: row.traceparent, ...(row.sent == null ? {} : {sent: row.sent === 1}), started: row.started === 1, status: row.status as CodingResponsibility['status']};
     });
   }
   terminalStatus(operationId: string): 'completed' | 'failed' | 'cancelled' | 'uncertain' | undefined {
@@ -275,8 +298,10 @@ export class CodingStore {
   sending(operationId: string): void {this.database.prepare('UPDATE companion_coding_waiting SET sending=1 WHERE operation_id=?').run(operationId);}
   /** Ends a wait without a run: cancelled, refused or of unknown fate. */
   unwait(operationId: string): void {this.database.prepare('DELETE FROM companion_coding_waiting WHERE operation_id=?').run(operationId);}
-  waitingCount(): number {
-    const row = this.database.prepare('SELECT count(*) AS total FROM companion_coding_waiting').get();
+  waitingCount(destination: CodingDestination): number {
+    const row = this.database.prepare(`SELECT count(*) AS total FROM companion_coding_waiting w
+      LEFT JOIN companion_coding_attempts a ON a.operation_id=w.operation_id
+      WHERE COALESCE(json_extract(a.destination,'$.actual'),'mac')=?`).get(destination);
     if (typeof row?.total !== 'number') throw new Error('coding-waiting-invalid');
     return row.total;
   }

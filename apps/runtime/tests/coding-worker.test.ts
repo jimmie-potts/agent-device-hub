@@ -24,7 +24,7 @@ const configuration = (repository: string) => ({schema: 'coding-worker/1.0', edg
   claude: {executable: '/nonexistent/claude', permissionMode: 'acceptEdits', allowedTools: DEFAULT_ALLOWED_TOOLS}});
 const command = (data: CodingWork, source = 'bunny/modules/companions'): Command<CodingWork> => ({specversion: '1.0', bunnyprofile: '2.0', id: `cmd-${data.requestId}`, source, kind: 'command',
   type: 'org.bunny.coding.work.requested', subject: 'worker-endpoint-1', time: new Date().toISOString(), datacontenttype: 'application/json',
-  dataschema: `https://bunny.invalid/events/coding-work/${'continuation' in data ? '2.3' : 'harness' in data ? '2.2' : 'companion' in data ? '2.1' : '2.0'}`,
+  dataschema: `https://bunny.invalid/events/coding-work/${'revision' in data ? '2.6' : 'continuation' in data ? '2.3' : 'harness' in data ? '2.2' : 'companion' in data ? '2.1' : '2.0'}`,
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', expiresat: new Date(Date.now() + 5000).toISOString(), data});
 async function until(check: () => boolean, seen: () => unknown = () => undefined): Promise<void> {
   for (let i = 0; i < 1000; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 10));}
@@ -871,3 +871,51 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     assert.ok(plan.args.some(arg => arg.includes(`${JSON.stringify(join(canonical, '.git'))}="deny"`)));
     assert.equal(edge.progress.some(row => row.operationId === 'sibling' && row.status !== 'started'), false);
   });
+
+void test('an enrolled worker declares exact local revisions, rejects mismatches, and starts only the pinned checkout', async t => {
+  const repo = await repository(t), edge = fakeEdge(), observed: string[] = [];
+  const revision = git(repo, 'rev-parse', 'origin/main');
+  const adapter: CodingAdapter = {
+    id: 'codex', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
+    readiness: () => Promise.resolve({installed: 'yes', signedIn: 'yes', version: '0.0.0', plan: null}),
+    run: ({worktree}) => {
+      observed.push(git(worktree, 'rev-parse', 'HEAD'));
+      return Promise.resolve({reason: 'refused', summary: 'Synthetic adapter checked its base.'});
+    },
+  };
+  const enrolled = {...configuration(repo), schema: 'coding-worker/1.3',
+    source: 'bunny/parts/coding-worker-cloud-synthetic', toolchains: ['node24']};
+  assert.throws(() => parseConfiguration(enrolled), /HTTPS edge/u);
+  const config = parseConfiguration({...enrolled, edge: 'https://edge.synthetic.invalid'});
+  const readings = [{pressure: 'normal', testSlots: 4}, {pressure: 'elevated', testSlots: 0}] as const;
+  let observations = 0;
+  t.mock.timers.enable({apis: ['setInterval']});
+  const probe = (destination: string) => {
+    assert.equal(destination, 'cloud-synthetic');
+    return Promise.resolve(readings[Math.min(observations++, readings.length - 1)] ?? readings[0]);
+  };
+  const worker = new CodingWorker(config, 'synthetic'.padEnd(43, 'x'), undefined, () => {}, edge.connect, undefined, undefined, undefined, [adapter], probe);
+  t.after(() => worker.stop());
+  await worker.start();
+  assert.equal(edge.requests[0]?.dataschema, 'https://bunny.invalid/events/coding-endpoint/2.5');
+  const facts = edge.requests[0]?.data as {worker?: {repositories: unknown; toolchains: unknown; pressure: unknown; testSlots: unknown}};
+  assert.deepEqual(facts.worker?.repositories, [{name: 'agent-device-hub', revision}]);
+  assert.deepEqual(facts.worker?.toolchains, ['node24']);
+  assert.equal(facts.worker?.pressure, 'normal');
+  assert.equal(facts.worker?.testSlots, 4);
+  t.mock.timers.tick(45_000);
+  await until(() => edge.requests.length === 2);
+  const refreshed = edge.requests[1]?.data as typeof facts;
+  assert.equal(refreshed.worker?.pressure, 'elevated');
+  assert.equal(refreshed.worker?.testSlots, 0);
+  const start: Extract<CodingWork, {action: 'start'}> = {requestId: 'pin', operationId: 'pin', action: 'start', taskId: 'task-1',
+    repository: 'agent-device-hub', brief: 'Check synthetic base.', harness: 'codex', bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}};
+  for (const request of [start, {...start, revision: 'a'.repeat(40)}]) {
+    const answer = edge.respond(command(request));
+    assert.ok('error' in answer && answer.error.code === 'invalid-state');
+  }
+  assert.equal(edge.progress.length, 0);
+  assert.deepEqual(edge.respond(command({...start, revision})), {status: 'accepted'});
+  await until(() => edge.progress.some(item => item.status === 'failed'));
+  assert.deepEqual(observed, [revision]);
+});
