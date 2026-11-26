@@ -22,7 +22,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {ALL_WEMO_PLUGS, authorizesControl, brightnessSubject, literalDeviceId, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
+import {ALL_WEMO_PLUGS, authorizesControl, brightnessSubject, literalDeviceId, literalDeviceSubject, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
@@ -210,12 +210,12 @@ function deviceRequestSubject(text: string): string | undefined {
   const affirmative = normalizedControlText(opening).replace(/ only$/u, '');
   const timerSubject = /^(?:is|was) (?:the )?timer for (?:the )?(.+?) (?:on|off|active|armed)$/u.exec(affirmative)?.[1]
     ?? /^(?:is|was) (?:the )?timer (?:on|off|active|armed) for (?:the )?(.+)$/u.exec(affirmative)?.[1];
-  const subject = timerSubject
+  const readSubject = timerSubject
     ?? /^(?:please )?(?:what (?:is|was) (?:the )?(?:(?:currently )?reported |current )?(?:status|state|brightness|power) of|(?:show|check|read) (?:me )?(?:the )?(?:status|state|brightness|power) (?:of|for)) (?:the )?(.+)$/u.exec(affirmative)?.[1]
-    ?? /^(?:please )?(?:(?:list|show|check|read) (?:the )?(.+)|(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available))$/u.exec(affirmative)?.slice(1).find(value => value !== undefined)
-    ?? powerSubject(text);
+    ?? /^(?:please )?(?:(?:list|show|check|read) (?:the )?(.+)|(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available))$/u.exec(affirmative)?.slice(1).find(value => value !== undefined);
+  const subject = readSubject ?? powerSubject(text);
   if (subject === undefined || remainder !== undefined && deviceGroup(subject) !== undefined) return undefined;
-  return subject;
+  return readSubject === undefined ? subject : literalDeviceSubject(opening, readSubject);
 }
 
 function deviceGroup(subject: string | undefined): AssistantDeviceOwner | undefined {
@@ -2008,7 +2008,7 @@ export class AssistantEngine {
       const subject = powerSubject(instruction);
       const addressed = subject !== undefined && answer === null ? devices?.filter(device =>
         subject === normalizedControlText(device.id) || subject === normalizedControlText(deviceLabel(device))) : undefined;
-      const selected = addressed !== undefined && addressed.length > 1 ? {matches: addressed} : chooseDevice(devices, call.input.device);
+      const selected = addressed !== undefined && addressed.length > 1 ? {matches: addressed} : chooseDevice(devices, call.input.device, call.name === SET_LIFX_BRIGHTNESS);
       if ('matches' in selected) {
         const text = deviceClarification(owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light', selected.matches.map(device => device.id), canNameDevice);
         return {id, text, answer: null, kind: 'clarification', call: call.id, proposal: null};
@@ -2090,7 +2090,7 @@ export class AssistantEngine {
     }
     const owner = deviceToolOwner(call.name);
     if (owner !== undefined) {
-      const selected = chooseDevice(this.options.devices?.(owner), call.input.device);
+      const selected = chooseDevice(this.options.devices?.(owner), call.input.device, call.name === SET_LIFX_BRIGHTNESS);
       if ('matches' in selected) return 'Multiple devices match. Ask the owner for an exact device ID.';
       const result = 'code' in selected ? selected : deviceProposal(call, selected.device);
       return 'code' in result ? `refused: ${result.code}; no ${owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light'} change was proposed.` : 'This tool is not permitted.';

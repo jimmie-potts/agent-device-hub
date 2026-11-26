@@ -3169,6 +3169,7 @@ void test('Responses resolves an exact brightness instruction before sending one
   let modelCalls = 0, replayedReceipts = 0;
   let pixooReads = 0, staleAtRead = Number.POSITIVE_INFINITY;
   let active = {id: target, attempt: true, repeat: false, wrongAmount: false, bypassLookup: false};
+  let readOwner = 'auto', writeOwner = owner, readTarget = '', writeTarget: string | undefined;
   let denied: 'private-conversation' | 'openai-supervisor' | undefined;
   let outcome: 'accepted' | 'revoke-after-acceptance' | 'uncertain' = 'accepted';
   let deniedReceipt: {destination: 'private-conversation' | 'conversation-speech'; requestId: string} | undefined;
@@ -3186,12 +3187,12 @@ void test('Responses resolves an exact brightness instruction before sending one
     if (results.some(result => /^The brightness|^accepted:/u.test(result))) replayedReceipts += 1;
     const tool = (name: string, args: Record<string, unknown>, id: string) =>
       [{type: 'function_call', id: 'fc_'+id, call_id: id, name, arguments: JSON.stringify(args)}];
-    const control = (id: string) => tool('control_brightness_set', {owner, target: active.id,
+    const control = (id: string) => tool('control_brightness_set', {owner: writeOwner, target: writeTarget ?? active.id,
       arguments: JSON.stringify({percent: active.wrongAmount ? 82 : 37})}, id);
     const done = [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic answer.', annotations: []}]}];
     if (results.length === 1) lookup.push(results[0] ?? '');
     const followed = results.at(-1);
-    const output = results.length === 0 ? tool('read_devices', {owner: 'auto', target: ''}, 'lookup')
+    const output = results.length === 0 ? tool('read_devices', {owner: readOwner, target: readTarget}, 'lookup')
       : results.length === 1 && active.attempt && (active.bypassLookup || results[0]?.includes(JSON.stringify(active.id)) === true) ? control('first')
       : followed === 'yes' || followed === 'id:fixture-display' || followed === 'other-display' || followed === 'maybe fixture-display'
         ? control(`follow-${String(results.length)}`) : results.length === 2 && active.repeat ? control('repeated') : done;
@@ -3224,7 +3225,10 @@ void test('Responses resolves an exact brightness instruction before sending one
   };
   active = {...active, repeat: true};
   for (const [index, profile] of ['bunny', 'reachy', 'microduck'].entries()) {
-    await ask('Set fixture-display brightness to 37%', profile);
+    readOwner = index === 2 ? owner : 'auto';
+    readTarget = ['', target, `id:${target}`][index] ?? '';
+    writeTarget = index === 0 ? target : `id:${target}`;
+    await ask(`Set id:${target} brightness to 37%`, profile);
     assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
     assert.match(lookup.at(-1) ?? '', /"controls":\["control_brightness_set"\]/u);
     assert.doesNotMatch(lookup.at(-1) ?? '', /PRIVATE_OTHER_DISPLAY|configurationRevision|generation|observation/u);
@@ -3245,6 +3249,28 @@ void test('Responses resolves an exact brightness instruction before sending one
     assert.doesNotMatch(saved[0]?.text ?? '', /reports 37%/u);
     assert.equal(w.module().inspectAssistant()?.tasks.find(item => item.profile === profile)?.status, 'succeeded');
   }
+  // An explicit ID cannot resolve through a label, even when the owner-bound device has that label.
+  devices[0] = {...display, label: 'id:foreign'};
+  readTarget = 'id:foreign';
+  await ask(`Set id:${target} brightness to 37%`);
+  assert.equal(lookup.at(-1), '{"devices":[]}');
+  readTarget = `id:${target}`;
+  readOwner = 'bunny/modules/lifx';
+  await ask(`Set id:${target} brightness to 37%`);
+  assert.equal(lookup.at(-1), '{"devices":[]}');
+  readOwner = 'auto';
+  writeOwner = 'bunny/modules/lifx';
+  await ask(`Set id:${target} brightness to 37%`);
+  assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+  assert.equal(requests.length, 3);
+  writeOwner = owner;
+  writeTarget = 'id:foreign';
+  await ask(`Set id:${target} brightness to 37%`);
+  assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+  assert.equal(requests.length, 3);
+  devices[0] = display;
+  readTarget = '';
+  writeTarget = undefined;
   active = {...active, repeat: false, wrongAmount: true};
   await ask('Set fixture-display brightness to 37%');
   assert.equal(requests.length, 3);
@@ -3269,6 +3295,23 @@ void test('Responses resolves an exact brightness instruction before sending one
   await ask('What is the currently reported brightness of fixture-display?');
   assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
   assert.equal(requests.length, 3);
+  devices.push({...display, id: 'literal-label', label: `id:${target}`});
+  active = {...active, attempt: false};
+  for (readTarget of ['', `id:${target}`, target]) {
+    await ask(`What is the current brightness of id:${target}?`);
+    assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+    assert.doesNotMatch(lookup.at(-1) ?? '', /literal-label/u);
+  }
+  for (const destination of ['private-conversation', 'openai-supervisor'] as const) {
+    denied = destination;
+    await ask(`What is the current brightness of id:${target}?`);
+    assert.equal(lookup.at(-1), '{"devices":[]}');
+  }
+  assert.equal(requests.length, 3);
+  denied = undefined;
+  readTarget = '';
+  devices.pop();
+  active = {...active, attempt: true};
   devices.push({...unsupported, id: 'unsupported-alias', label: target});
   active = {...active, id: target, bypassLookup: true};
   await ask('Set fixture-display brightness to 37%', 'reachy');
@@ -3374,7 +3417,7 @@ void test('a scoped brightness lookup supports the typed LIFX tool and refuses a
     if (write) evidence.push(results[0]?.output ?? '');
     const output = results.length <= 1 ? [{type: 'function_call', id: write ? 'fc_set' : 'fc_read', call_id: write ? 'set' : 'read',
       name: write ? 'set_lifx_brightness' : 'read_devices',
-      arguments: JSON.stringify(write ? {device: exact.id, percent: 37} : {target: '', owner: 'auto'})}]
+      arguments: JSON.stringify(write ? {device: `id:${exact.id}`, percent: 37} : {target: `id:${exact.id}`, owner: 'auto'})}]
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic result.', annotations: []}]}];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
   }});
@@ -3423,4 +3466,51 @@ void test('a scoped brightness lookup supports the typed LIFX tool and refuses a
   assert.equal(evidence.at(-1), '{"devices":[]}');
   assert.doesNotMatch(JSON.stringify((await page(w)).currentTask?.question), /private-alias/u);
   assert.equal(requests.length, 1);
+});
+
+void test('Claude reads an explicit device ID within its current grants when a label has the same text', async context => {
+  const owner = 'bunny/modules/pixoo', id = 'fixture-display';
+  const records = [light(id, 'Main display'), light('other-display', `id:${id}`)].map(row => ({...row, kind: 'pixoo' as const}));
+  let selector = `id:${id}`, source = owner, denied = false;
+  const selections: string[] = [];
+  const provider = new AnthropicProvider({key: 'fake', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {messages: {content: {type: string; content?: string}[]}[]};
+    const result = body.messages.flatMap(message => message.content).find(block => block.type === 'tool_result');
+    if (result?.content !== undefined) selections.push(result.content);
+    return Promise.resolve(Response.json({content: result === undefined
+      ? [{type: 'tool_use', id: 'read', name: 'read_devices', input: {owner: source, target: selector}}]
+      : [{type: 'text', text: 'The lookup is complete.'}],
+    stop_reason: result === undefined ? 'tool_use' : 'end_turn', usage: {input_tokens: 20, output_tokens: 20}}));
+  }});
+  const standard = sharing();
+  const w = await world(context, {provider, tools: ['read_devices', 'control_brightness_set'],
+    share: query => standard(query) && !(denied && query.destination === 'anthropic' && query.source === 'devices' &&
+      query.field === 'status' && query.record === id),
+    dispatch: () => assert.fail('A catalog read must not send a command')});
+  const pixoo = w.bus.connect(owner);
+  context.after(() => pixoo.close());
+  await pixoo.serveSync(['device'], () => ({revision: 1, states: records.map(data => ({
+    type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+  }))}));
+  await control(w.core, w.module(), 'enable');
+  const ask = async (prompt: string) => {
+    const prior = task(w)?.taskId;
+    const before = selections.length;
+    assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+    await until(() => task(w)?.taskId !== prior && status(w) === 'succeeded');
+    assert.equal(selections.length, before + 1);
+    const result = JSON.parse(selections[before] ?? '') as {devices: {id: string; owner: string}[]};
+    return result.devices.map(device => [device.owner, device.id]);
+  };
+  assert.deepEqual(await ask(`Set id:${id} brightness to 37%`), [[owner, id]]);
+  source = 'auto';
+  assert.deepEqual(await ask(`What is the current brightness of id:${id}?`), [[owner, id]]);
+  denied = true;
+  assert.deepEqual(await ask(`Check the reported brightness of id:${id}.`), []);
+  denied = false;
+  source = 'bunny/modules/lifx';
+  assert.deepEqual(await ask(`Check the status of id:${id}.`), []);
+  source = owner;
+  selector = id;
+  assert.deepEqual(await ask('Check Main display status.'), [[owner, id]]);
 });

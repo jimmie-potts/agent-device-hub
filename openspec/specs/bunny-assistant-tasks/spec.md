@@ -1017,6 +1017,8 @@ For an explicit request by the authorized owner in private Conversation, each co
 
 - **WHEN** the owner names `id:<device-id>` in the brightness instruction or in an answer to its clarification
 - **THEN** Conversation resolves the literal ID against the matching devices, ignoring display labels for that selection
+- **AND** a recognized read-only status question that names the literal ID selects only that ID under the current grants and sends no command
+- **AND** the device lookup for either supervisor and the brightness command tools accept the bare returned ID or an explicit `id:<device-id>` selector, which matches only that ID within the selected owner scope
 - **AND** before dispatch, Conversation checks the current access to the original request and any exact clarification
 - **AND** an unresolved or no longer permitted ID sends no command
 
