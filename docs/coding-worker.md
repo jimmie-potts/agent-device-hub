@@ -482,8 +482,10 @@ confirms the selected Mac batch. [Private HTTPS route](../apps/runtime/PRIVATE-A
    The preflight checks each configured checkout, its actual Git metadata
    and its `.local/worktrees` path before testing in a disposable checkout.
    Keep the checkout and Git metadata on the distro's root filesystem, with
-   no symlink in either worktree-parent component. It uses an empty child
-   profile and requires a real checkout write, tests an outside file and a private
+   no symlink in either worktree-parent component. If `/tmp` is a separate
+   filesystem, set `TMPDIR` to an owner-only directory on the distro's root
+   filesystem for the preflight and worker. It uses an empty child profile
+   and requires a real checkout write, tests an outside file and a private
    loopback listener, and checks Node, npm and Git in the same Codex profile.
    The preflight opens no worker token and sends no model request.
    A namespace or toolchain refusal leaves the worker unqualified. Keep the
@@ -535,7 +537,7 @@ an empty profile and an example HTTPS origin. It leaves the token path absent.
   umask 077
   probe="$(mktemp -d "$HOME/bunny-wsl-probe.XXXXXXXX")"
   trap 'rm -rf -- "$probe"' EXIT
-  mkdir -m 700 "$probe/profile" "$probe/repository"
+  mkdir -m 700 "$probe/profile" "$probe/repository" "$probe/tmp"
   git -C "$probe/repository" init --quiet --initial-branch=main --template=
   git -C "$probe/repository" -c core.hooksPath=/dev/null \
     -c user.name='Synthetic fixture' -c user.email='fixture@example.invalid' \
@@ -556,7 +558,8 @@ const config = {
 };
 writeFileSync(join(root, 'worker.json'), JSON.stringify(config), {mode: 0o600, flag: 'wx'});
 NODE
-  env -u CODEX_HOME node apps/runtime/bin/coding-worker.mjs verify-wsl "$probe/worker.json"
+  env -u CODEX_HOME TMPDIR="$probe/tmp" \
+    node apps/runtime/bin/coding-worker.mjs verify-wsl "$probe/worker.json"
 )
 ```
 
