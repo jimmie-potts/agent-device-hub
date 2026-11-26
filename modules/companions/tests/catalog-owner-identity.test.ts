@@ -9,6 +9,22 @@ import {InProcessBus, type BunnyModule} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {ConversationActions, type CatalogAdmission, type CatalogIdentityQuery} from '../src/assistant/catalog-actions.js';
 
+import {catalogSelectorSelected} from '../src/assistant/catalog-grounding.js';
+import {exactControlIds, type ModelControlScope} from '../src/assistant/model-control.js';
+
+void test('a current named destructive asset selection never falls back to an earlier original', () => {
+  const previous = '11111111-1111-4111-8111-111111111111';
+  const scope = (text: string): ModelControlScope => ({request: {id: 'request', revision: 1, text},
+    exactTargets: exactControlIds(text), history: [], references: [], modeRevision: null});
+  const earlier = [`Use asset id:${previous}`];
+  for (const name of ['Sunrise', 'Missing Sunrise']) {
+    const request = scope(`Delete asset ${name} on id:desk-pixoo`);
+    assert.equal(catalogSelectorSelected('asset', previous, request, earlier, ['desk-pixoo']), false);
+    assert.equal(catalogSelectorSelected('asset', name, request, earlier, ['desk-pixoo']), true);
+  }
+  assert.equal(catalogSelectorSelected('asset', previous, scope('Delete it on id:desk-pixoo'), earlier, ['desk-pixoo']), true);
+});
+
 void test('catalog proposals bind only names from owner context to their existing guarded commands', async context => {
   const bus = new InProcessBus();
   const nanoleaf = bus.connect('bunny/modules/nanoleaf');
@@ -47,7 +63,8 @@ void test('catalog proposals bind only names from owner context to their existin
   const catalog = actions ?? assert.fail('started Catalog owner fixture');
   const trace = {traceparent: '00-11111111111111111111111111111111-2222222222222222-01'};
   const admit = (name: string): CatalogAdmission => ({selector: (_kind, value) => value === name,
-    target: () => granted ? undefined : 'forbidden', current: () => true, visible: () => granted});
+    target: () => granted ? undefined : 'forbidden', current: () => true, visible: () => granted,
+    covers: () => true, ownerText: () => ({text: '', explicitIds: []})});
   const show = (name: string, ownerName: string) => catalog.propose('scene-activate', {id: 'scene', name: 'control_scene_activate',
     input: {owner: 'bunny/modules/nanoleaf', target: 'wall', arguments: JSON.stringify({sceneId: name})}}, trace, () => true, admit(ownerName));
   assert.deepEqual(await show('Unrequested scene', 'Saved waves'), {code: 'invalid-request'});
@@ -57,18 +74,20 @@ void test('catalog proposals bind only names from owner context to their existin
   assert.deepEqual(ready.proposal.data, {sceneId});
   assert.deepEqual(ready.proposal.binding, {kind: 'device', target: 'wall', owner: 'bunny/modules/nanoleaf', configurationRevision: 7,
     generation: {epoch: 'start-1', sequence: 0}});
-  const asset = (name: string) => catalog.propose('pixoo-asset-change', {id: 'asset', name: 'control_pixoo_asset_change',
-    input: {owner: 'bunny/modules/pixoo', target: 'display', arguments: JSON.stringify({change: {operation: 'delete', assetId: name}})}},
+  const asset = (name: string, target = 'display') => catalog.propose('pixoo-asset-change', {id: 'asset', name: 'control_pixoo_asset_change',
+    input: {owner: 'bunny/modules/pixoo', target, arguments: JSON.stringify({change: {operation: 'delete', assetId: name}})}},
   trace, () => true, admit(name));
   const selected = await asset('Original');
   assert.ok('proposal' in selected);
   assert.deepEqual(selected.proposal.data, {change: {operation: 'delete', assetId}});
   assert.ok('question' in await asset('Duplicate'));
   assert.deepEqual(requests, [{kind: 'scene', deviceId: 'wall', name: 'Saved waves'},
-    {kind: 'asset', name: 'Original'}, {kind: 'asset', name: 'Duplicate'}]);
+    {kind: 'asset', name: 'Original', currentText: ''}, {kind: 'asset', name: 'Duplicate', currentText: ''}]);
   granted = false;
-  assert.deepEqual(await asset('Distinct denied name'), {code: 'forbidden'});
-  assert.deepEqual(await show('Saved waves', 'Saved waves'), {code: 'forbidden'});
+  for (const target of ['id:display', 'id:unconfigured', 'display', 'unused label']) {
+    assert.deepEqual(await asset('Duplicate', target), {code: 'not-found'});
+  }
+  assert.deepEqual(await show('Saved waves', 'Saved waves'), {code: 'not-found'});
   assert.equal(requests.length, 3, 'a denied device cannot be probed for private names');
   granted = true;
   revokeOnLookup = true;

@@ -2710,8 +2710,9 @@ export class AssistantEngine {
     knownTargets: readonly (readonly string[])[] | undefined, draftRevision?: number): BoundControl | {code: ErrorCode} | {clarify: readonly string[]} {
     const scope = this.#currentModelControl(task, modelCallId);
     if (scope === undefined) return {code: 'invalid-state'};
-    if (proposal.family === 'mode-set' && this.store.call(modelCallId)?.modelControlProof?.modeRevision !== proposal.expectedRevision) {
-      return {code: 'revision-conflict'};
+    if (proposal.family === 'mode-set') {
+      if (scope.exactTargets.some(id => id !== 'hub')) return {code: 'not-found'};
+      if (this.store.call(modelCallId)?.modelControlProof?.modeRevision !== proposal.expectedRevision) return {code: 'revision-conflict'};
     }
     if (!this.#catalogFieldsPermitted(task, proposal)) return {code: 'forbidden'};
     if (proposal.family === 'catalog-action' && proposal.command === 'art-catalog-edit' && proposal.data.action === 'delete') {

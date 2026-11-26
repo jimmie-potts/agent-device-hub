@@ -4781,6 +4781,11 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     await ask('Pause a different speaker.', {name: playback,
       input: {owner: 'bunny/modules/playback', target: 'other-speaker', arguments: '{"action":"pause"}'}});
     assert.equal(calls.length, 2, 'an unknown target never enters dispatch');
+    for (const selector of ['???', 'bad/path', '', 'a'.repeat(64), '11111111-1111-4111-8111-111111111111']) {
+      await ask(`Pause id:${selector}.`, {name: playback,
+        input: {owner: 'bunny/modules/playback', target: 'desk-speaker', arguments: '{"action":"pause"}'}});
+    }
+    assert.equal(calls.length, 2, 'an unaccounted complete selector never falls back to the previously selected speaker');
     extraSpeaker = true;
     await ask('Pause id:desk-speaker.', {name: playback,
       input: {owner: 'bunny/modules/playback', target: 'hall-speaker', arguments: '{"action":"pause"}'}});
@@ -4834,7 +4839,7 @@ function catalogPhrases(): CatalogPhrase[] {
   return [
     onWall('device-mode-set', 'Switch Studio Wall to free mode.', {mode: 'free'}),
     onWall('scene-activate', 'Put Northern Lights on Studio Wall.', {sceneId: 'Northern Lights'},
-       {say: 'Use id:scene-' + 'c'.repeat(64) + ' on Studio Wall.', settings: {sceneId: 'scene-' + noticeId}, code: 'invalid-request'},
+       {say: 'Use id:scene-' + 'c'.repeat(64) + ' on Studio Wall.', settings: {sceneId: 'scene-' + noticeId}, code: 'not-found'},
       {sceneId: 'scene-' + noticeId}),
     onWall('moment-play', 'Give Studio Wall five seconds of celebration.', {mood: 'celebrate', durationMs: 5000},
       {say: 'Give Studio Wall two hours of celebration.', settings: {mood: 'celebrate', durationMs: 7_200_000}, code: 'invalid-request'}),
@@ -4854,7 +4859,7 @@ function catalogPhrases(): CatalogPhrase[] {
       {say: 'Rename revision six of Evening Loop to Last Light on Kitchen Display.', settings: {change: {operation: 'rename', playlistId: 'Evening Loop', revision: 6, name: 'Last Light'}}, code: 'revision-conflict'},
       {change: {operation: 'rename', playlistId, revision: 7, name: 'Last Light'}}),
     onScreen('pixoo-asset-change', 'Render the Blue Kite original again for Kitchen Display.', {change: {operation: 'render', assetId: 'Blue Kite'}},
-      {say: 'Render original id:33333333-3333-4333-8333-333333333333 on Kitchen Display.', settings: {change: {operation: 'render', assetId}}, code: 'invalid-request'},
+      {say: 'Render original id:33333333-3333-4333-8333-333333333333 on Kitchen Display.', settings: {change: {operation: 'render', assetId}}, code: 'not-found'},
       {change: {operation: 'render', assetId}}),
     onScreen('pixoo-notice-dismiss', 'Dismiss fixture-notice for session ' + noticeId + ' on Kitchen Display.', {session: noticeId, noticeId: 'fixture-notice'}),
     record('wemo-hold-release', 'Release the hold on Bench Plug.', 'Bench Plug', {}, 'bench-plug', 'bunny/modules/wemo',
@@ -4971,7 +4976,8 @@ for (const host of ['anthropic', 'openai'] as const) {
       readCatalogIdentity: query => Promise.resolve(
         query.kind === 'scene' && query.deviceId === 'studio-wall' && query.name === 'Northern Lights'
           ? {id: 'scene-' + 'a'.repeat(64)}
-          : query.kind === 'asset' && query.name === 'Blue Kite' ? {id: '22222222-2222-4222-8222-222222222222'} : errorBody('not-found')),
+          : query.kind === 'asset' && (query.name === 'Blue Kite' || query.id === '22222222-2222-4222-8222-222222222222')
+            ? {id: '22222222-2222-4222-8222-222222222222'} : errorBody('not-found')),
       share: query => policy(query) && !(modeDenied && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'hub'), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
       artworkId: id, sourceRequestId: 'kite-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
         outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
@@ -5034,6 +5040,21 @@ for (const host of ['anthropic', 'openai'] as const) {
         assert.match(String(effect.data.momentId), /^[\da-f-]{36}$/u);
       } else assert.deepEqual(effect.data, {...(row.expected ?? row.settings), ...namedGuards});
     }
+
+    const assetId = '22222222-2222-4222-8222-222222222222';
+    const assetTool = catalogTool('pixoo-asset-change');
+    const deleteAsset = (id: string, owner = 'bunny/modules/pixoo') =>
+      argumentsFor(owner, 'new-pixoo', {change: {operation: 'delete', assetId: id}});
+    const priorWrites = delivered.length;
+    await ask(`Delete asset id:${assetId} on id:new-pixoo.`, assetTool, deleteAsset(assetId, 'bunny/modules/nanoleaf'));
+    for (const name of ['Sunrise', 'Missing Sunrise']) {
+      const refusal = await ask(`Delete asset ${name} on id:new-pixoo.`, assetTool, deleteAsset(assetId));
+      assert.equal(refusal, 'refused: invalid-request', name);
+    }
+    assert.equal(delivered.length, priorWrites, 'neither named replacement falls back to the previous original');
+    await ask('Delete it on id:new-pixoo.', assetTool, deleteAsset(assetId));
+    assert.equal(delivered.length, priorWrites + 1);
+    assert.deepEqual(delivered[priorWrites]?.data.data, {change: {operation: 'delete', assetId}});
 
     const prior = delivered.length;
     const drafts = new ShowDrafts(w.host().moduleDatabase() ?? assert.fail('draft database'));

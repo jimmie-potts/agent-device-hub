@@ -87,7 +87,7 @@ void it('splits an oversized playlist catalog into bounded SQL pages with every 
 void it('looks up original assets without renditions and refuses duplicate or absent names', async () => {
   const originals: string[] = [];
   const world = await fixture(async (library, database) => {
-    for (const [index, name] of ['Original', 'Duplicate', 'duplicate'].entries()) {
+    for (const [index, name] of ['Original', 'Duplicate', 'duplicate', 'Sunrise'].entries()) {
       const source = await sharp({create: {width: 64, height: 64, channels: 3, background: {r: index + 1, g: 10, b: 20}}}).png().toBuffer();
       const imported = await library.importMedia(bytesOf(source), name);
       originals.push(imported.asset.id);
@@ -101,6 +101,17 @@ void it('looks up original assets without renditions and refuses duplicate or ab
     assert.deepEqual(json(await read('asset-id-by-name', request({name: 'original'}))), {id: originals[0]});
     for (const [name, code] of [['Duplicate', 'invalid-state'], ['absent', 'not-found'], [' ', 'invalid-request']] as const) {
       const found = await read('asset-id-by-name', request({name}));
+      assert.equal(found !== undefined && 'error' in found && found.error.code, code);
+    }
+    const originalId = originals[0] ?? assert.fail('original ID');
+    assert.deepEqual(json(await read('asset-id-by-name', request({id: originalId, currentText: 'Delete it on id:desk-pixoo'}))),
+      {id: originals[0]});
+    for (const [selector, code] of [
+      [{id: originalId, currentText: 'Delete Sunrise, then show it on id:desk-pixoo'}, 'invalid-request'],
+      [{id: originalId, currentText: 'Delete Duplicate'}, 'invalid-state'],
+      [{name: 'Missing Sunrise', currentText: 'Delete Missing Sunrise on id:desk-pixoo'}, 'not-found'],
+    ] as const) {
+      const found = await read('asset-id-by-name', request(selector));
       assert.equal(found !== undefined && 'error' in found && found.error.code, code);
     }
     assert.deepEqual(json(await read('catalog-media', request())), before);

@@ -164,14 +164,16 @@ export class ConversationActions {
       row.owner === 'bunny/modules/' + item.kind && row.device.id === item.target)?.device));
   }
 
-  async #artSelection(names: unknown, parent: TraceContext, canNameDevice: CanNameDevice, artwork?: ArtworkSummary, requestedFormat?: 'png' | 'gif'): Promise<
+  async #artSelection(names: unknown, parent: TraceContext, canNameDevice: CanNameDevice, artwork?: ArtworkSummary,
+    requestedFormat?: 'png' | 'gif', visible?: (id: string) => boolean): Promise<
     {targets: string[]; labels: string[]; guards: ArtShowGuard[]; known: readonly (readonly string[])[]} | {question: string} | Refusal> {
     if (!Array.isArray(names) || names.length > 3 || !names.every((value): value is string =>
       typeof value === 'string' && value.trim().length > 0 && value.length <= (value.startsWith('id:') ? 131 : 128))) return {code: 'invalid-request'};
     const targets: string[] = [], labels: string[] = [], guards: ArtShowGuard[] = [];
     if (names.length === 0) return {targets, labels, guards, known: []};
-    const devices = names.every(name => normalize(name) === 'browser') ? [] : await this.#artDestinations(parent);
-    if (devices === undefined) return {code: 'unavailable'};
+    const configured = names.every(name => normalize(name) === 'browser') ? [] : await this.#artDestinations(parent);
+    if (configured === undefined) return {code: 'unavailable'};
+    const devices = visible === undefined ? configured : configured.filter(device => visible(device.target));
     const lookup = (name: string) => {
       const key = normalizedControlText(name);
       const exactId = name.startsWith('id:') ? name.slice(3) : name;
@@ -309,15 +311,16 @@ export class ConversationActions {
       const found = matchingDevices(eligible, name, owner, literalId);
       const selected = found[0];
       const nested = nestedSelectors(family, data);
-      if (found.length > 1) {
-        if (admission !== undefined && !admission.covers([...found.map(({device}) => device.id), ...nested])) return {code: 'not-found'};
+      const alternatives = eligible.map(row => ({id: row.device.id, label: deviceLabel(row.device)}));
+      if (found.length > 1 && selected !== undefined) {
+        const result = admission?.target(selected.device.id, 'devices', alternatives, false, nested);
+        if (result !== undefined && result !== 'invalid-state') return {code: 'not-found'};
         return {question: deviceClarification('device', found.map(({device}) => device.id), canNameDevice)};
       }
       if (selected === undefined) return {code: admission === undefined && unreadable.length > 0 ? 'unavailable' : 'not-found'};
       const {device} = selected;
       targets = [[device.id, deviceLabel(device)]];
       knownTargets = visible.filter(row => permitsDevice(route, row.device)).map(row => [row.device.id, deviceLabel(row.device)]);
-      const alternatives = eligible.map(row => ({id: row.device.id, label: deviceLabel(row.device)}));
       const guard = () => admission?.target(device.id, 'devices', alternatives, false, nested);
       const refused = guard();
       if (refused !== undefined) return refused === 'invalid-state'
@@ -388,7 +391,7 @@ export class ConversationActions {
       if (owner !== route.owner || name !== route.target) return {code: 'forbidden'};
       binding = {kind: 'fixed', target: route.target, owner};
       if (family !== 'art-show' && family !== 'nanoleaf-show-save' &&
-        admission !== undefined && !admission.covers(nestedSelectors(family, data))) return {code: 'not-found'};
+        admission !== undefined && !admission.covers([route.target, ...nestedSelectors(family, data)])) return {code: 'not-found'};
       if (family === 'nanoleaf-reactive-preset-save') {
         if (admission?.visible('status', route.target) === false) return {code: 'forbidden'};
         const library = (await this.#snapshot<{revision: number; presets: readonly {presetId: string; name: string}[]}>(
@@ -418,6 +421,9 @@ export class ConversationActions {
         return {question: 'Which saved artwork should I use? Give its ID or refer to an artwork already in this conversation.'};
       }
       const artworkId = data.artworkId;
+      if (admission !== undefined && contextDisplays.every(name => normalize(name) === 'browser') &&
+        !admission.covers([binding.target, artworkId, 'browser'])) return {code: 'not-found'};
+      if (admission?.visible('artwork', artworkId) === false) return {code: 'not-found'};
       const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
       if (admission?.visible('artwork', artworkId) === false) return {code: 'not-found'};
       if (art === undefined) return {code: 'unavailable'};
@@ -430,7 +436,7 @@ export class ConversationActions {
         admission.attachedArtwork?.(job.requestId, artworkIds, displayIds) === true ? job.requestId : undefined;
       if (!explicit && attachment === undefined) {
         // A single visible item can explain the incompatibility. A show still needs an identified artwork.
-        if (recent !== undefined && contextDisplays.length === 1 && normalize(contextDisplays[0] ?? '') === 'browser' &&
+        if (admission.covers([artworkId, 'browser']) && recent !== undefined && contextDisplays.length === 1 && normalize(contextDisplays[0] ?? '') === 'browser' &&
           usableArtComposition(recent, 'ui') === undefined && art.artworks.filter(item => admission.visible('artwork', item.artworkId)).length === 1) {
           return {question: 'This artwork has no browser rendition. Which available destination would you like? Give the artwork ID as well.'};
         }
@@ -441,10 +447,12 @@ export class ConversationActions {
       if (retained !== undefined && 'error' in retained) return {code: retained.error.code};
       const artwork = recent ?? retained;
       if (artwork === undefined) return {code: 'not-found'};
-      const selected = await this.#artSelection(data.targets, parent, canNameDevice, artwork);
+      const selected = await this.#artSelection(data.targets, parent, canNameDevice, artwork, undefined,
+        admission === undefined ? undefined : id => admission.visible('devices', id));
       if (admission?.visible('artwork', artworkId) === false ||
         attachment !== undefined && admission?.attachedArtwork?.(attachment, artworkIds, displayIds) !== true) return {code: 'not-found'};
       if (!('targets' in selected)) return selected;
+      if (admission !== undefined && !admission.covers([binding.target, artworkId, ...selected.targets])) return {code: 'not-found'};
       const sourceRequestId = job?.requestId ?? retained?.sourceRequestId;
       const attached = sourceRequestId === undefined ? undefined : this.context.database().prepare(
         'SELECT description FROM assistant_art_attachments WHERE request_id=?').get(sourceRequestId);
@@ -599,7 +607,10 @@ export class ConversationActions {
 
   mutateDraft(call: ToolCall, access: FieldAccess, admission: CatalogAdmission): {text: string; draftId: string} | (Refusal & {draftId?: string}) {
     const drafts = this.#authoring();
-    if (call.name === CREATE_SHOW) return access('shows', 'details') ? drafts.create(call.input) : {code: 'forbidden'};
+    if (call.name === CREATE_SHOW) {
+      if (!access('shows', 'details')) return {code: 'forbidden'};
+      return admission.covers([]) ? drafts.create(call.input) : {code: 'not-found'};
+    }
     const selector = call.input.draftId;
     if (typeof selector !== 'string' || !admission.selector('draft', selector)) return {code: 'not-found'};
     const allowed = (id: string) => access('shows', 'details', id);
