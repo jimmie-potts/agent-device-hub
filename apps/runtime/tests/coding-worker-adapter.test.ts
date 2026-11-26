@@ -43,7 +43,8 @@ type Scenario = {
   effectiveConfig?: object; auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; changeAuth?: boolean;
   rootReport?: {writableRoots?: unknown; runtimeWorkspaceRoots?: unknown};
   quotaResponse?: object; quotaReplies?: readonly (object | Promise<unknown> | Error)[]; quotaEvent?: 'initialize' | 'second-account' | 'pending-turn';
-  steerable?: boolean;
+  steerable?: boolean; interrupt?: 'confirmed' | 'wrong-turn' | 'lost' | 'rejected' | 'writer-remains' | 'late-ack' | 'auth-change' | 'pending-terminal';
+  beforeTurnAcknowledged?: () => void;
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
 
@@ -52,8 +53,9 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
   const requests: string[] = [], sessions: string[] = [];
   let starts = 0, accounts = 0, quotaReads = 0;
   let wireSchema: unknown;
+  let releaseInterrupt: (() => void) | undefined;
   let finishTurn: (() => void) | undefined;
-  const transport: CodexTransport = ({args, cwd, env, event, closed}) => {
+  const transport: CodexTransport = ({args, cwd, env, signal, event, closed}) => {
     finishTurn = () => {
       event('item/completed', {threadId, turnId, item: {type: 'agentMessage', text: JSON.stringify(report)}});
       event('turn/completed', {threadId, turn: {id: turnId, status: 'completed'}});
@@ -75,6 +77,7 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
     return {
       notify(method) {assert.equal(method, 'initialized');},
       close() {closed();},
+      writerStopped: () => Promise.resolve(scenario.interrupt !== 'writer-remains'),
       request(method, params) {
         requests.push(method);
         switch (method) {
@@ -114,6 +117,13 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
               queueMicrotask(() => {event('account/rateLimits/updated', {rateLimits: {...window, planType: 'enterprise'}});});
               return new Promise(() => {});
             }
+            if (scenario.beforeTurnAcknowledged !== undefined) {
+              const pending = new Promise<never>((_resolve, reject) => {
+                signal.addEventListener('abort', () => {closed(); reject(new Error('closed'));}, {once: true});
+              });
+              scenario.beforeTurnAcknowledged();
+              return pending;
+            }
             if (scenario.steerable === true) return Promise.resolve({turn: {id: turnId}});
             queueMicrotask(() => {
               if (scenario.terminal === 'lost') {closed(); return;}
@@ -126,6 +136,21 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
                 error: {codexErrorInfo: scenario.terminal}}});
             });
             return Promise.resolve({turn: {id: turnId}});
+          }
+          case 'turn/interrupt': {
+            assert.deepEqual(params, {threadId, turnId});
+            if (scenario.interrupt === 'lost') {closed(); return new Promise(() => {});}
+            const id = scenario.interrupt === 'wrong-turn' ? 'sibling' : turnId;
+            const terminal = () => {event('turn/completed', {threadId, turn: {id, status: 'interrupted'}});};
+            if (scenario.interrupt === 'pending-terminal') {
+              releaseInterrupt = terminal;
+              return Promise.resolve({});
+            }
+            terminal();
+            if (scenario.interrupt === 'wrong-turn') closed();
+            if (scenario.interrupt === 'auth-change') event('account/updated', {authMode: 'apikey'});
+            if (scenario.interrupt === 'late-ack') return new Promise<object>(resolve => {releaseInterrupt = () => {resolve({});};});
+            return scenario.interrupt === 'rejected' ? Promise.reject(new Error('refused')) : Promise.resolve({});
           }
           case 'turn/steer': {
             assert.equal(scenario.steerable, true);
@@ -146,9 +171,61 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
   const adapter = codexAdapter({executable: '/synthetic/codex', home}, {transport, version: () => Promise.resolve('0.163.0'),
     environment: {PATH: '/synthetic/bin', HOME: '/synthetic/home', OPENAI_API_KEY: 'synthetic-key', CODEX_HOME: '/untrusted/config',
       BUNNY_CODING_TOKEN: 'worker-credential', CLAUDE_CODE_OAUTH_TOKEN: 'other-provider-token', ...environment}});
-  const run = (worktree: string, callbacks?: Pick<AdapterRun, 'steering' | 'observedMessage'>) => adapter.run({worktree, brief, bounds, ...callbacks, signal: new AbortController().signal, session: id => {sessions.push(id);}});
-  return {adapter, requests, sessions, run, starts: () => starts, output: () => wireSchema, finish: () => {finishTurn?.();}};
+  const run = (worktree: string, callbacks?: Pick<AdapterRun, 'steering' | 'observedMessage' | 'namedStop'> & {signal?: AbortSignal}) => adapter.run({worktree, brief, bounds, signal: new AbortController().signal, ...callbacks, session: id => {sessions.push(id);}});
+  return {adapter, requests, sessions, run, releaseInterrupt: () => {releaseInterrupt?.();}, starts: () => starts, output: () => wireSchema, finish: () => {finishTurn?.();}};
 }
+
+void test('named Codex stop requires its exact interrupted turn, RPC acknowledgement and stopped writer', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-stop-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  for (const mode of ['confirmed', 'wrong-turn', 'lost', 'rejected', 'writer-remains', 'late-ack', 'auth-change'] as const) {
+    const trial = fixture({steerable: true, interrupt: mode});
+    let stop: (() => void) | undefined;
+    let ready: () => void = () => {};
+    const armed = new Promise<void>(resolve => {ready = resolve;});
+    const run = trial.run(cwd, {namedStop: handle => {stop = handle;}, steering: handler => {if (handler !== undefined) ready();}});
+    await armed;
+    assert.ok(stop, 'the named active Codex turn must provide a correlated stop');
+    stop(); stop();
+    const result = await run;
+    assert.equal(trial.requests.filter(method => method === 'turn/interrupt').length, 1);
+    assert.equal(result.sessionId, threadId);
+    assert.equal(result.uncertain === true, mode !== 'confirmed');
+    if (mode === 'late-ack') trial.releaseInterrupt();
+    if (mode === 'confirmed') {
+      assert.equal(result.reason, 'cancelled');
+      assert.equal(result.writerStopped, true);
+    }
+  }
+});
+
+void test('a steering message cannot reach Codex after the worker requests interruption', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-stop-steer-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const trial = fixture({steerable: true, interrupt: 'pending-terminal'});
+  let stop: (() => void) | undefined, steer: AdapterSteer | undefined, ready: () => void = () => {};
+  const armed = new Promise<void>(resolve => {ready = resolve;});
+  const run = trial.run(cwd, {namedStop: handle => {stop = handle;}, steering: handle => {steer = handle; if (handle !== undefined) ready();}});
+  await armed;
+  const admitted = steer ?? assert.fail('live steering');
+  (stop ?? assert.fail('active turn'))();
+  assert.equal(await admitted('message-1', 'Only add the requested test.'), 'unavailable');
+  assert.equal(steer, undefined);
+  assert.equal(trial.requests.includes('turn/steer'), false);
+  trial.releaseInterrupt();
+  assert.equal((await run).reason, 'cancelled');
+});
+
+void test('a stop before Codex acknowledges the active turn cannot select a turn to interrupt', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-early-stop-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const controller = new AbortController();
+  const trial = fixture({beforeTurnAcknowledged: () => {controller.abort();}});
+  const result = await trial.run(cwd, {signal: controller.signal, namedStop: () => assert.fail('No active turn acknowledgement')});
+  assert.equal(result.uncertain, true);
+  assert.equal(result.reason, 'lost');
+  assert.equal(trial.requests.includes('turn/interrupt'), false);
+});
 
 void test('Codex worker startup pins the ChatGPT subscription model route', () => {
   const args = codexArguments('/synthetic/worktree', 'bunny-fixture', profileHome);

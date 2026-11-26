@@ -18,6 +18,7 @@ const validOutput = new Ajv2020({strict: true}).compile(CODEX_RESULT_SCHEMA);
 const PROBE_MS = 10_000;
 const QUOTA_MS = 2000;
 const STEER_MS = 4000;
+const INTERRUPT_MS = 4000;
 const STEER_LIMIT = 32;
 const MESSAGE_BYTES = 1024 * 1024;
 const CLOSED = new Error('codex protocol closed');
@@ -211,6 +212,20 @@ type Wire = {
 };
 export type CodexTransport = (input: {executable: string; args: string[]; cwd: string; env: Record<string, string>; signal: AbortSignal;
   event: (method: string, data: unknown) => void; closed: () => void}) => Wire;
+
+// A v2 turn/interrupt reply is empty. The independently delivered terminal event can arrive first.
+async function interruptTurn(wire: Wire, threadId: string, turnId: string, completed: Promise<void>,
+  lost: Promise<void>, interrupted: () => boolean): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const receipt = wire.request('turn/interrupt', {threadId, turnId});
+    const confirmed = Promise.all([receipt, completed]).then(([ack]) =>
+      object(ack) && Object.keys(ack).length === 0 && interrupted());
+    return await Promise.race([confirmed, lost.then(() => false),
+      new Promise<boolean>(resolve => {timer = setTimeout(() => {resolve(false);}, INTERRUPT_MS);})]);
+  } catch {return false;}
+  finally {if (timer !== undefined) clearTimeout(timer);}
+}
 
 /** One child, one stdio connection and a small number of in-flight request IDs. */
 export const openCodex: CodexTransport = ({executable, args, cwd, env, signal, event, closed}) => {
@@ -424,6 +439,8 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const sentMessages = new Set<string>();
       let pendingSteer = false;
       let wireClosed = false;
+      let disconnected: () => void = () => {};
+      const closed = new Promise<void>(resolve => {disconnected = resolve;});
       let message: string | undefined, terminal: Record<string, unknown> | undefined;
       let settle = (): void => {};
       const completed = new Promise<void>(resolve => {settle = resolve;});
@@ -453,7 +470,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         }
         const turn = record(data.turn);
         if (method === 'turn/completed' && turnId !== undefined && turn.id === turnId) {terminal = turn; settle();}
-      }, closed: () => {wireClosed = true; settle();}});
+      }, closed: () => {wireClosed = true; disconnected(); settle();}});
       const refusal = (summary: string): AdapterEvidence => ({reason: 'refused', summary});
       const execute = async (): Promise<AdapterEvidence> => {
         try {
@@ -503,8 +520,16 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           const model = reportedModel(opened.model);
           if (model !== undefined) input.reportedModel?.(model);
           const nativeThread = sessionId;
+          let interrupt: Promise<boolean> | undefined;
+          input.namedStop?.(() => {
+            if (interrupt !== undefined || wireClosed || unauthorized || signal.aborted || terminal !== undefined) return;
+            input.steering?.(undefined);
+            interrupt = interruptTurn(wire, nativeThread, acceptedTurn, completed, Promise.race([closed, revoked]),
+              () => terminal?.status === 'interrupted' && terminal.error == null);
+            void interrupt.then(settle);
+          });
           input.steering?.(async (messageId, text) => {
-            if (signal.aborted || wireClosed || terminal !== undefined || unauthorized || !quotaAllowed(revision) ||
+            if (interrupt !== undefined || signal.aborted || wireClosed || terminal !== undefined || unauthorized || !quotaAllowed(revision) ||
                 pendingSteer || sentMessages.size >= STEER_LIMIT || sentMessages.has(messageId)) return 'unavailable';
             pendingSteer = true;
             sentMessages.add(messageId);
@@ -522,6 +547,12 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
             }
           });
           await completed;
+          if (interrupt !== undefined) {
+            const confirmed = await interrupt;
+            if (unauthorized) return contrary(sessionId);
+            if (!confirmed || wireClosed || signal.aborted) return {reason: 'lost', uncertain: true, sessionId, windows};
+            return {reason: 'cancelled', sessionId, windows};
+          }
           if (unauthorized) return contrary(sessionId);
           if (terminal === undefined) return {reason: 'lost', uncertain: true, sessionId, windows};
           const cause = record(terminal.error).codexErrorInfo;
@@ -547,6 +578,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           options.transport === undefined && await verifyCodexWriterBoundary(configuration.executable, cwd, home, protectedRoot, profile, command.env);
         return {...evidence, writerStopped: true, ...(confined && protectedRoot !== undefined ? {writerFence: {root: protectedRoot, home}} : {})};
       }
+      if (dispatched && evidence.reason === 'cancelled') return {...evidence, reason: 'lost', uncertain: true};
       return stopped === false && dispatched ? {...evidence, uncertain: true} : evidence;
     },
   };

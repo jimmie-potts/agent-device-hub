@@ -563,6 +563,7 @@ for (const [origin, destination, scenarios] of [
     const writerHome = join(dirname(repo), 'isolated-writer-home');
     await mkdir(writerHome);
     let priorWorktree: string | undefined, resumed = 0, edited = false;
+    let finishSibling: (() => void) | undefined;
     const initialSession = `${origin}-partial-id`, resumedSession = `${destination}-continuation-id`;
     const partialReport = {outcome: 'incomplete', summary: 'Synthetic partial result.', checks: [{name: 'git diff', status: 'passed'}], findings: [], limitations: []};
     const completeReport = {outcome: 'tested-candidate', summary: 'Synthetic completion.', checks: [{name: 'unit test', status: 'passed'}], findings: [], limitations: []};
@@ -600,13 +601,23 @@ for (const [origin, destination, scenarios] of [
     const codex: CodingAdapter = {
       id: 'codex', capabilities: {steering: 'unsupported', resume: 'saved-session', review: true},
       readiness: () => Promise.resolve({installed: 'yes', signedIn: 'yes', version: 'synthetic', plan: 'plus'}),
-      async run({worktree, session, signal, brief, continuationRoot}) {
+      async run({worktree, session, signal, brief, continuationRoot, namedStop}) {
+        if (brief === 'Concurrent sibling') {
+          await new Promise<void>(resolve => {finishSibling = resolve;});
+          assert.equal(signal.aborted, false);
+          return {structured: completeReport};
+        }
         if (origin !== 'codex') {
           await complete(worktree, brief);
           await session(resumedSession);
           return {writerStopped: true, structured: completeReport};
         }
-        await partial(worktree, signal, () => session(initialSession));
+        if (scenario === 'continue') {
+          const interrupted = new AbortController();
+          namedStop?.(() => {interrupted.abort();});
+          await partial(worktree, interrupted.signal, () => session(initialSession));
+          assert.equal(signal.aborted, false, 'the named stop kept the provider channel open');
+        } else await partial(worktree, signal, () => session(initialSession));
         return {reason: 'cancelled', structured: partialReport,
           ...(scenario === 'uncertain' ? {uncertain: true} : {writerStopped: true}),
           ...(scenario === 'no-confinement' || continuationRoot === undefined ? {} : {writerFence: {root: continuationRoot, home: writerHome}})};
@@ -640,6 +651,10 @@ for (const [origin, destination, scenarios] of [
       harness: origin, repository: 'agent-device-hub', brief: 'Synthetic approved brief.', bounds: {wallClockMs: 60_000, maxTurns: 4, budgetUsd: 1}};
     assert.deepEqual(edge.respond(command(initial)), {status: 'accepted'});
     await until(() => edited);
+    if (origin === 'codex' && scenario === 'continue') {
+      assert.deepEqual(edge.respond(command({...initial, operationId: 'sibling', requestId: 'sibling', brief: 'Concurrent sibling'})), {status: 'accepted'});
+      await until(() => finishSibling !== undefined);
+    }
     if (scenario === 'root-replaced-live') {
       const original = priorWorktree ?? assert.fail('source checkout');
       await rename(original, `${original}-old`);
@@ -651,6 +666,11 @@ for (const [origin, destination, scenarios] of [
     assert.deepEqual(edge.respond(command({action: 'cancel', requestId: 'stop-partial', operationId: 'partial'})), {status: 'accepted'});
     await until(() => edge.progress.some(entry => entry.operationId === 'partial' && entry.status !== 'started'));
     const result = edge.progress.find(entry => entry.operationId === 'partial' && entry.status !== 'started');
+    if (finishSibling !== undefined) {
+      assert.equal(edge.progress.some(entry => entry.operationId === 'sibling' && entry.status !== 'started'), false);
+      finishSibling();
+      await until(() => edge.progress.some(entry => entry.operationId === 'sibling' && entry.status === 'completed'));
+    }
     if (scenario === 'uncertain') {assert.equal(result?.status, 'uncertain'); assert.equal(result?.handoffToken, undefined); return;}
     assert.ok(result?.status === 'cancelled');
     if (scenario === 'untracked' || scenario === 'no-confinement' || scenario === 'root-replaced-live') {assert.equal(result.handoffToken, undefined); return;}

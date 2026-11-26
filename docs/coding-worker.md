@@ -382,7 +382,7 @@ loss after dispatch is uncertain. There is no automatic retry.
 | --- | --- | --- |
 | Subscription evidence | Preflight rejects contrary evidence. Stream init names the credential source. | Account must identify a ChatGPT sign-in before the turn. |
 | Usage limits | Windows observed during a run, or unknown | Account windows when reported, or unknown |
-| Cancellation | The worker terminates the child | The worker terminates the app-server process group |
+| Cancellation | The worker terminates the child | Once the turn is acknowledged, the worker requests its interruption, waits up to four seconds for the acknowledgement and matching terminal event, then verifies the process group has exited. A missing proof leaves the stop uncertain. |
 | Native identity | First validated session ID in the stream | Validated thread ID before the turn |
 | Review a named revision | Yes | Yes |
 | Message a running job | Unsupported | The worker sends the message to the named thread and active turn. A matching turn receipt confirms acceptance. |
