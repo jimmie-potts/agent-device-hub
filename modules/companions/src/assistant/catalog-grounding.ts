@@ -76,12 +76,20 @@ function containsControlQuote(body: string, quote: string, prior: boolean): bool
   if (index === -1 || body.indexOf(quote, index + 1) !== -1 ||
     /[\p{L}\p{N}_-]/u.test(body[index - 1] ?? '') ||
     /[\p{L}\p{N}_-]/u.test(body[index + quote.length] ?? '')) return false;
-  if (!prior) return true;
-  // A reference in a second instruction cannot identify the target of the first.
   const before = body.slice(0, index).trim();
+  const after = body.slice(index + quote.length).trimStart();
+  const comparison = /\b(?:instead of|rather than|as opposed to|compared (?:to|with)|versus|vs|other than|except(?: for)?)\b/iu;
+  // Neither operand of an explicit comparison can authorize a write by itself.
+  if (comparison.test(before) || comparison.test(after) || /\blike$/iu.test(before) || /^like\b/iu.test(after)) return false;
+  if (!prior) return true;
+  const words = normalizedControlText(quote);
   const reference = /^(?:it|them|(?:this|that|the same|the previous|the first|the second|the last)(?: (?:one|asset|original|image|artwork|animation|draft|cue|scene|playlist|rendition|speaker|screen|panel|display|light|device|record|item|notice|preset|session))?)$/iu;
-  return reference.test(normalizedControlText(quote)) &&
-    !/[.!?;]|\b(?:and|then|but|or)\b|\b(?:like|as)$/iu.test(before);
+  if (!reference.test(words) || /[.!?;]|\b(?:and|then|but|or)\b|\bas$/iu.test(before)) return false;
+  // A quoted name or restrictive modifier belongs to the referring phrase.
+  if (/^(?:[:"'“‘`(]|(?:named|called|titled|labeled|labelled|whose|which|that|with the name)\b)/iu.test(after)) return false;
+  if (/^,/u.test(after) && !/^(?:in|on|at|with|from|for|to)$/iu.test(before)) return false;
+  if (words === 'it' || words === 'them') return true;
+  return after === '' || /^[.!?,;]|^(?:on|in|at|to|from|for|by|again|please|now)\b/iu.test(after);
 }
 
 export function catalogQuoteNames(quote: string, id: string, label = id): boolean {

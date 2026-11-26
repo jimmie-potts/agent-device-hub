@@ -4804,6 +4804,10 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
       ['Pause North Hall Speaker.', 'hall-speaker', ownerReference('primary', 'Hall Speaker')],
       ['Instead of Desk Speaker, pause Hall Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker')],
       ['Pause the other speaker like that one.', 'desk-speaker', ownerReference('primary', 'that one', 'prior')],
+      ['Instead of Desk Speaker, pause Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker')],
+      ['Pause Missing Speaker instead of Desk Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker')],
+      ['Pause Desk Speaker versus Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker')],
+      ['Pause Missing Speaker, rather than the music.', 'desk-speaker', ownerReference('primary', 'music')],
     ] as const;
     const substitutions: string[] = [];
     for (const [utterance, target, reference] of misleading) {
@@ -5116,6 +5120,11 @@ for (const host of ['anthropic', 'openai'] as const) {
     const redirected = await ask('Delete asset Missing Sunrise on id:new-pixoo, then show it.', assetTool, deleteAsset(assetId),
       [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'it', 'prior')]);
     assert.equal(redirected, 'refused: invalid-state');
+    for (const modifier of ['named Missing Sunrise', 'called “Missing Sunrise”', '“Missing Sunrise”', 'Missing Sunrise', ', Missing Sunrise,']) {
+      const result = await ask(`Delete that asset${modifier.startsWith(',') ? '' : ' '}${modifier} on id:new-pixoo.`, assetTool, deleteAsset(assetId),
+        [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'that asset', 'prior')]);
+      assert.equal(result, 'refused: invalid-state', modifier);
+    }
     assert.equal(delivered.length, priorWrites, 'neither a replacement name nor an unrelated trailing pronoun selects the previous original');
     const playlistTool = catalogTool('pixoo-playlist-change');
     assert.equal(await ask('Delete the Morning Loop playlist on Kitchen Display.', playlistTool,
