@@ -640,8 +640,8 @@ export class AssistantEngine {
     return run;
   }
 
-  async #waitForConfirmation(watch: Confirmation, ms: number, signal: AbortSignal): Promise<void> {
-    const following = this.#followConfirmation(watch);
+  async #waitForConfirmations(watches: readonly Confirmation[], ms: number, signal: AbortSignal): Promise<void> {
+    const following = Promise.all(watches.map(watch => this.#followConfirmation(watch)));
     if (ms <= 0 || signal.aborted) return;
     let cancel: Cancel | undefined;
     let abort: (() => void) | undefined;
@@ -1344,7 +1344,11 @@ export class AssistantEngine {
       if (terminal(task.status)) return;
       if (startup) this.#restoreCodingReceipts(task);
       const brightness = this.#brightnessReceipt(task);
-      const wemoReceipt = startup && this.store.confirmations(task.id).some(watch => watch.dispatchState !== undefined);
+      // Only close a dispatch whose own checkpoint was interrupted after settlement. Older watches can outlive a steer.
+      const wemoReceipt = startup && snapshot?.next.length === 1 && snapshot.next[0] === 'act' &&
+        this.store.queue.steers(task.id).length === 0 && values?.step !== undefined &&
+        this.store.confirmations(task.id).some(watch => watch.dispatchState !== undefined &&
+          watch.questionId === `${task.id}-step-${String(values.step)}`);
       if (unresolved(this.store.calls(taskId))) {task.status = 'uncertain'; task.code = 'uncertain-result';}
       else if (brightness !== undefined) {
         task.status = 'succeeded'; task.code = null;
@@ -2930,16 +2934,21 @@ export class AssistantEngine {
     }
     const accepted = group === undefined ? result.startsWith('accepted') :
       group.some(({command}) => this.store.confirmation(command.requestId)?.dispatchState === 'accepted');
-    const confirmation = this.store.confirmation(id);
-    if (confirmation !== undefined) {
+    const requestIds = group === undefined ? [id] : group.map(({command}) => command.requestId);
+    const confirmations = requestIds.flatMap(requestId => this.store.confirmation(requestId) ?? []);
+    if (confirmations.length > 0) {
       const remaining = Math.min(IN_TURN_CONFIRMATION_MS, LIMITS.toolMs - (this.context.clock.now() - startedAtMs));
-      await this.#waitForConfirmation(confirmation, remaining, active.controller.signal);
+      await this.#waitForConfirmations(confirmations, remaining, active.controller.signal);
       this.#fence(active);
-      const recorded = this.store.confirmation(id) ?? confirmation;
-      if (hosted) {
-        result = recorded.result === undefined ? 'The command was accepted. Its effect is unconfirmed.' :
-          recorded.result.startsWith('applied') ? 'The applied effect was confirmed.' : 'The command has a result. Its effect is unconfirmed.';
-      } else result = recorded.result ?? pending(recorded);
+      const recorded = confirmations.map(watch => this.store.confirmation(watch.requestId) ?? watch);
+      if (group !== undefined) result = recorded.map(watch => confirmationText(watch)).join('\n');
+      else if (recorded[0] !== undefined) {
+        const [watch] = recorded;
+        if (hosted) {
+          result = watch.result === undefined ? 'The command was accepted. Its effect is unconfirmed.' :
+            watch.result.startsWith('applied') ? 'The applied effect was confirmed.' : 'The command has a result. Its effect is unconfirmed.';
+        } else result = watch.result ?? pending(watch);
+      }
     }
     if (scopedBrightness !== undefined && (accepted || stoppedBeforeBrightness(result))) {
       return {step: state.step + 1, next: 'end', result: ''};

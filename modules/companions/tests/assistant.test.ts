@@ -413,6 +413,13 @@ void test('a seek binds the light, position and direction in an ordinary request
   assert.equal(authorizesControl(seek, 'Jump the light show to -1.5 seconds on the Studio Wall', '', wall, ''), false);
 });
 
+async function finishWemoConfirmationWindow(w: Awaited<ReturnType<typeof world>>): Promise<void> {
+  const taskId = task(w)?.taskId ?? assert.fail('saved Wemo task');
+  await until(() => w.store().calls(taskId).some(receipt => receipt.kind === 'tool' && receipt.status === 'succeeded' &&
+    receipt.action?.control?.proposal.family === 'power-set'));
+  w.advance(1001);
+}
+
 void test('an explicit Wemo group binds every target once', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
   const requests: AssistantDispatch[] = [];
@@ -421,6 +428,7 @@ void test('an explicit Wemo group binds every target once', async context => {
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Turn off all Wemo plugs');
+  await finishWemoConfirmationWindow(w);
   await until(() => status(w) === 'succeeded' && requests.length === 2);
   assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
   assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
@@ -440,6 +448,7 @@ void test('a lost Wemo group reply preserves each dispatch receipt across restar
   }});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Turn off all Wemo plugs');
+  await finishWemoConfirmationWindow(w);
   await until(() => status(w) === 'succeeded');
   const ids = requests.map(request => request.requestId);
   assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
@@ -1069,6 +1078,7 @@ for (const host of ['anthropic', 'openai'] as const) for (const profile of ['bun
     const send = (text: string) => input(w.core, w.module(), text, false, randomUUID(), {profile});
     await control(w.core, w.module(), 'enable');
     assert.equal((await send(pair)).status, 'accepted');
+    await finishWemoConfirmationWindow(w);
     await until(() => status(w) === 'succeeded');
     assert.deepEqual(commands.map(command => command.target), ['table-plug', 'shelf-plug']);
     assert.equal((await send(question)).status, 'accepted');
@@ -1210,12 +1220,80 @@ void test('a Wemo steer stops the unsent part of a pair and preserves the first 
   assert.equal((await input(w.core, w.module(), 'Leave shelf-plug alone.', false, randomUUID(),
     {action: 'steer', taskId: task(w)?.taskId})).status, 'accepted');
   pending.resolve(accepted(sent[0]?.requestId ?? assert.fail('first request')));
+  await finishWemoConfirmationWindow(w);
   await until(() => status(w) === 'succeeded');
   assert.deepEqual(sent.map(command => command.target), ['table-plug']);
   const text = (await page(w)).messages.map(message => message.text).join('\n');
   assert.match(text, /table-plug: Power request accepted/);
   assert.match(text, /shelf-plug: New owner input arrived/);
   assert.match(text, /I will leave it alone/);
+});
+
+void test('restart keeps a steered Wemo clarification despite an earlier accepted receipt', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id, 'Reading plug'), kind: 'wemo' as const}));
+  const pending = deferred<RequestResult>();
+  const sent: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['id:table-plug'], true) :
+    turn === 2 ? call('ask_owner', {text: 'Which Reading plug should I turn off?'}) : wemoPower(['id:shelf-plug'], false));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {sent.push(data); return sent.length === 1 ? pending.promise : Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on id:table-plug.');
+  await until(() => sent.length === 1);
+  const original = sent[0] ?? assert.fail('original request');
+  const taskId = task(w)?.taskId ?? assert.fail('original task');
+  assert.equal((await input(w.core, w.module(), 'Turn off the Reading plug.', false, randomUUID(),
+    {action: 'steer', taskId})).status, 'accepted');
+  pending.resolve(accepted(original.requestId));
+  await until(() => w.store().calls(taskId).some(receipt => receipt.kind === 'tool' && receipt.status === 'succeeded'));
+  w.advance(1001);
+  await until(() => status(w) === 'waiting');
+  const question = task(w)?.questionId;
+  assert.ok(question);
+  assert.equal(w.store().confirmation(original.requestId)?.dispatchState, 'accepted');
+  await w.restart();
+  assert.equal(status(w), 'waiting');
+  assert.equal(task(w)?.questionId, question);
+  assert.deepEqual(sent, [original]);
+  await input(w.core, w.module(), 'Turn off id:shelf-plug.', true);
+  await until(() => sent.length === 2);
+  assert.equal(sent[1]?.target, 'shelf-plug');
+  assert.notEqual(sent[1]?.requestId, original.requestId);
+});
+
+void test('a Wemo pair waits together for timely child readbacks', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const sent: AssistantDispatch[] = [];
+  const provider = counted(() => wemoPower(plugs.map(plug => plug.id), true));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {sent.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const atMs = Date.now();
+  const wemo = w.bus.connect('bunny/modules/wemo');
+  context.after(() => wemo.close());
+  await wemo.serveSync(['device'], () => ({revision: 0, states: []}));
+  await w.core.serveSync(['operation'], () => ({revision: 0, states: []}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on table-plug and shelf-plug.');
+  await until(() => sent.length === 2 && w.store().calls(task(w)?.taskId ?? '').some(receipt => receipt.kind === 'tool' && receipt.status === 'succeeded'));
+  assert.equal(status(w), 'running', 'both child confirmations have an in-turn window');
+  for (const [index, dispatch] of sent.entries()) {
+    const plug = plugs[index] ?? assert.fail('registered target');
+    const {requestId} = dispatch;
+    const id = operationEntityId(requestId);
+    const operation: OperationRecord = {id, revision: index + 1, requestId, target: dispatch.target,
+      kind: 'device', family: 'power-set', command: 'org.bunny.power.set.requested', requestedBy: 'bunny/modules/companions',
+      status: 'completed', result: 'succeeded', evidence: 'transmitted', sentAtMs: atMs, updatedAtMs: atMs, deadlineAtMs: atMs + 1000};
+    await w.core.publish('bunny.state.operation.' + id, {kind: 'state', type: 'org.bunny.operation.updated', subject: id,
+      dataschema: 'https://bunny.invalid/events/operation/2.0', data: operation});
+    await wemo.publish('bunny.state.device.' + plug.id, {kind: 'state', type: 'org.bunny.device.updated', subject: plug.id,
+      dataschema: DEVICE_POWER_READBACK_SCHEMA, data: {...plug, revision: index + 1, powerReadbacks: [{requestId,
+        configurationRevision: plug.configurationRevision, generation: plug.generation, transmittedAtMs: atMs,
+        requestedOn: true, reading: {status: 'known', on: true, observedAtMs: atMs + 1}}]}});
+  }
+  await until(() => status(w) === 'succeeded');
+  const result = (await page(w)).messages.find(message => message.id === task(w)?.taskId + '-result');
+  assert.match(result?.text ?? '', /table-plug reports power on/);
+  assert.match(result?.text ?? '', /shelf-plug reports power on/);
 });
 
 void test('a Wemo pair reports the held target and dispatches the available target once', async context => {
@@ -1226,6 +1304,7 @@ void test('a Wemo pair reports the held target and dispatches the available targ
     devices: () => [available, held], dispatch: data => {sent.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Turn on table-plug and shelf-plug.');
+  await finishWemoConfirmationWindow(w);
   await until(() => status(w) === 'succeeded');
   assert.deepEqual(sent.map(command => command.target), ['table-plug']);
   const text = (await page(w)).messages.map(message => message.text).join('\n');
