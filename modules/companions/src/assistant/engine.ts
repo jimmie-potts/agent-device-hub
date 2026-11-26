@@ -26,7 +26,7 @@ import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
-import {ConversationActions, deviceClarification, type RetainedArtworkRead} from './catalog-actions.js';
+import {chooseBrightnessSubject, ConversationActions, deviceClarification, type RetainedArtworkRead} from './catalog-actions.js';
 import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {catalogCommand, catalogTool, isCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
 import {canReadDeviceHistory, DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
@@ -1785,16 +1785,17 @@ export class AssistantEngine {
     let direct: BoundControl | undefined;
     const command = call === undefined ? undefined : catalogCommand(call.name);
     const currentTask = this.#task(state.taskId);
-    const brightnessTarget = openai && next === 'approve' && (command === 'brightness-set' || call?.name === SET_LIFX_BRIGHTNESS) &&
-      this.#controlClarification(currentTask)?.answer == null ? this.#openAIScope(currentTask).brightnessTarget : undefined;
+    const brightnessTarget = openai && next === 'approve' && (command === 'brightness-set' || call?.name === SET_LIFX_BRIGHTNESS)
+      ? this.#openAIScope(currentTask).brightnessTarget : undefined;
     const brightnessMatches = brightnessTarget === undefined ? [] : await this.#catalog().deviceSubjectMatches(brightnessTarget, active.span.context);
+    const brightnessAnswer = this.#controlClarification(currentTask)?.answer ?? undefined;
     const savedControl = task.control?.requestId === `${task.id}-step-${String(state.step + 1)}` ? task.control : undefined;
     const group = next === 'approve' && call?.name === SET_WEMO_POWER && typeof call.input.device === 'string'
       && normalizedControlText(call.input.device) === ALL_WEMO_PLUGS;
     if (savedControl !== undefined) {
       direct = savedControl;
       next = 'act';
-    } else if (call !== undefined && brightnessMatches.length > 1) {
+    } else if (call !== undefined && brightnessMatches.length > 1 && chooseBrightnessSubject(brightnessMatches, brightnessAnswer) === undefined) {
       const id = `${state.taskId}-q${String(currentTask.questions + 1)}`;
       question = {id, kind: 'clarification', text: deviceClarification('device', brightnessMatches.map(({device}) => device.id), canNameDevice),
         answer: null, call: call.id, proposal: null};
@@ -1946,7 +1947,10 @@ export class AssistantEngine {
     const instruction = latest?.text ?? task.prompt;
     const sourceId = latest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, latest) ?? `${task.id}-prompt`;
     const clarification = this.#controlClarification(task);
-    const answer = clarification?.answer ?? '';
+    const savedAnswer = clarification?.answer ?? '';
+    const brightness = this.#taskProvider(task).name === 'openai' && brightnessSubject(instruction) !== undefined &&
+      (proposal.family === 'brightness-set' || proposal.family === 'catalog-action' && proposal.command === 'brightness-set');
+    const answer = brightness ? savedAnswer.trim().replace(/^id:/u, '') : savedAnswer;
     const ownerMessageIds = clarification !== undefined && clarification.answer !== null ? [sourceId, `${clarification.id}-answer`] : [sourceId];
     if (this.store.calls(task.id).some(receipt => {
       const control = receipt.action?.control;
@@ -2098,14 +2102,16 @@ export class AssistantEngine {
       return refuse('superseded', 'The owner sent new input before dispatch. The earlier control request was not sent.');
     }
     if (!this.#toolsFor(task).some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
-    let scopedBrightness: {subject: string; owner: string; access: FieldAccess} | undefined;
+    let scopedBrightness: {subject: string; owner: string; access: FieldAccess; answerId?: string} | undefined;
     if (openai && proposal.family !== 'coding-dispatch') {
       const boundDevice = direct === undefined ? undefined : proposal.target;
       const scope = this.#openAIScope(task, 'supervisor', boundDevice);
-      if (scope.brightnessTarget !== undefined && direct?.ownerMessageIds.length === 1 &&
+      if (scope.brightnessTarget !== undefined && direct !== undefined &&
         (proposal.family === 'brightness-set' || proposal.family === 'catalog-action' && proposal.command === 'brightness-set')) {
+        const answerId = direct.ownerMessageIds[1];
         scopedBrightness = {subject: scope.brightnessTarget, access: scope.fields,
-          owner: proposal.family === 'brightness-set' ? ASSISTANT_LIGHT_OWNER : proposal.binding.owner};
+          owner: proposal.family === 'brightness-set' ? ASSISTANT_LIGHT_OWNER : proposal.binding.owner,
+          ...(answerId === undefined ? {} : {answerId})};
       }
       const access = scope.fields;
       if ([proposal, ...(direct?.additional ?? [])].some(item => !access('devices', 'label', item.target) || !access('devices', 'status', item.target))) {
@@ -2145,10 +2151,15 @@ export class AssistantEngine {
       };
       result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
         if (scopedBrightness !== undefined) {
-          const {subject, owner, access} = scopedBrightness;
+          const {subject, owner, access, answerId} = scopedBrightness;
           const matches = await this.#catalog().deviceSubjectMatches(subject, parent);
-          const match = matches.length === 1 ? matches[0] : undefined;
           this.#fence(active);
+          const answer = answerId === undefined ? undefined : this.store.savedMessage(task.id, answerId);
+          if (answerId !== undefined && (answer?.role !== 'owner' || this.store.messages.removal(answerId) !== undefined ||
+            !this.#fields(task.profile, 'read', 'private-conversation')('conversation', 'text', answerId))) {
+            return {text: 'refused: the owner’s exact brightness clarification is no longer available.', units: 0};
+          }
+          const match = chooseBrightnessSubject(matches, answer?.text);
           if (match?.owner !== owner || match.device.id !== proposal.target ||
             !access('devices', 'label', proposal.target) || !access('devices', 'status', proposal.target) ||
             this.store.queue.steers(task.id).length > 0) {

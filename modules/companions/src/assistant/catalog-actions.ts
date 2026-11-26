@@ -53,6 +53,11 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
 type Refusal = {code: ErrorCode};
 type Match = {owner: string; device: DeviceRecord};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
+export function chooseBrightnessSubject(matches: readonly Match[], answer?: string): Match | undefined {
+  const selected = answer === undefined ? matches : matches.filter(({device}) => device.id === answer.trim().replace(/^id:/u, ''));
+  return selected.length === 1 ? selected[0] : undefined;
+}
+
 function matchingDevices(rows: readonly Match[], target: string, owner: string): readonly Match[] {
   const exact = rows.filter(({device}) => device.id === target);
   if (owner !== 'auto' && exact.length > 0) return exact;
