@@ -1217,7 +1217,10 @@ versions and current grants before sending or reusing summary text. An edit,
 removal or revocation can invalidate the checkpoint. Saved replies and
 questions remain readable under the owner's private grants. Private display
 and speech check current grants for the original fields inherited through
-earlier replies and tool results. If cost, the deadline,
+earlier replies and tool results. Companions saves deduplicated field
+requirements alongside hosted replies and reconstructs them from older saved
+ledgers when needed. The proof records disclosure requirements without
+caching an authorization result or requiring the full ancestry on each read. If cost, the deadline,
 provider availability or an unusable answer prevents compaction, Companions
 can continue with an eligible verbatim tail. An ambiguous attempt keeps
 its receipt and spend reservation. Its work is not repeated, and a different

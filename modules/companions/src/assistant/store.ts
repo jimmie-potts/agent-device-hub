@@ -9,6 +9,7 @@ import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
 import {Messages} from '../knowledge/messages.js';
 import {advanceRevision, initializeRevision} from '../revision.js';
 import {randomUUID} from 'node:crypto';
+import {gzipSync, gunzipSync} from 'node:zlib';
 import type {DatabaseSync} from 'node:sqlite';
 import {isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
@@ -56,6 +57,9 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
    */
   contextThrough?: number};
 export type ContextSourceVersion = {id: string; revision: number};
+export type SavedDisclosureProof = {
+  fields: readonly DisclosedField[]; sources: readonly string[]; legacy: boolean; complete: boolean; model: boolean;
+};
 export type HistoryCompaction = {
   id: string; taskId: string; conversationId: string; provider: SupervisorIdentity; sources: readonly ContextSourceVersion[];
   status: 'admitted' | 'succeeded' | 'failed' | 'uncertain'; text: string | null; stopCode?: ErrorCode;
@@ -149,7 +153,9 @@ export class AssistantStore {
       CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);
       CREATE TABLE IF NOT EXISTS assistant_history_compactions (
         id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, conversation_id TEXT NOT NULL, record TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS assistant_history_compactions_conversation ON assistant_history_compactions(conversation_id);`);
+      CREATE INDEX IF NOT EXISTS assistant_history_compactions_conversation ON assistant_history_compactions(conversation_id);
+      CREATE TABLE IF NOT EXISTS assistant_disclosure_proofs (
+        task_id TEXT NOT NULL, through_call INTEGER NOT NULL, proof BLOB NOT NULL, PRIMARY KEY(task_id,through_call)) STRICT;`);
     if (!database.prepare("SELECT 1 FROM pragma_table_info('assistant_messages') WHERE name='follows'").get()) {
       database.exec('ALTER TABLE assistant_messages ADD COLUMN follows TEXT');
     }
@@ -469,6 +475,15 @@ export class AssistantStore {
   }
   calls(taskId: string): Call[] {return this.database.prepare('SELECT record FROM assistant_calls WHERE task_id=?').all(taskId).map(row => JSON.parse(row.record as string) as Call);}
   saveCall(call: Call): void {this.database.prepare('INSERT INTO assistant_calls VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(call.id, call.taskId, JSON.stringify(call));}
+  disclosureProof(taskId: string, through: number): SavedDisclosureProof | undefined {
+    const row = this.database.prepare('SELECT proof FROM assistant_disclosure_proofs WHERE task_id=? AND through_call=?')
+      .get(taskId, through) as {proof: Uint8Array} | undefined;
+    return row === undefined ? undefined : JSON.parse(gunzipSync(row.proof).toString()) as SavedDisclosureProof;
+  }
+  saveDisclosureProof(taskId: string, through: number, proof: SavedDisclosureProof): void {
+    this.database.prepare('INSERT OR IGNORE INTO assistant_disclosure_proofs VALUES (?,?,?)')
+      .run(taskId, through, gzipSync(JSON.stringify(proof), {level: 1}));
+  }
   confirmation(requestId: string): Confirmation | undefined {
     return parsed<Confirmation>(this.database.prepare('SELECT record FROM assistant_confirmations WHERE request_id=?').get(requestId) as RecordRow | undefined);
   }

@@ -64,6 +64,13 @@ outside the policy change.
   recheck grants before provider transport. Existing secret files and
   transport authentication stay outside model input.
 
+Hosted replies retain the union of their original disclosure requirements in
+a private proof. Older ledgers can supply that proof when first read. The
+proof keeps source identity and field requirements without storing any
+authorization result, and language-model replay still checks current source
+revisions and grants. Private display and speech check their own current
+grants against the same proof.
+
 ## Risks / trade-offs
 
 A summary can omit detail or misinterpret a reference. Keep original messages

@@ -1228,7 +1228,7 @@ For [Hub #2180](https://github.com/jimmie-potts/agent-device-hub/issues/2180), C
 
 The hosted working context SHALL fit within the selected model's estimated token allowance, after reserving instructions, tools, current input, continuation and output. Individual message admission, transport safety and spend limits SHALL remain independent. If the required request alone exceeds the working allowance, Companions SHALL preserve the saved input and refuse transport before reserving spend for that request. When the eligible history outgrows its allowance, Companions SHALL preserve recent exchanges verbatim and automatically attempt a bounded summary of older exchanges. The summary SHALL carry relevant decisions, unresolved requests, device references and corrections as historical background. A compaction request SHALL send no tools and SHALL use the same pinned supervisor, with its existing spend, receipt and uncertainty controls. A missing or unusable compaction MAY leave only the eligible verbatim tail while original history remains privately readable. Past messages and derived text SHALL grant no approval or authority to act.
 
-A saved summary SHALL be scoped to its conversation and covered sources. Before reuse or disclosure, Companions SHALL recheck the covered source versions and currently applicable grants. An edit, removal or revocation SHALL prevent disclosure of stale derived text. Saved replies and questions SHALL remain visible where the owner's private read grants permit them. Private display and speech SHALL also check the respective current grants for the original fields inherited through earlier replies or tool results. After awaiting compaction, the ordinary call SHALL refresh any shared current state from its authoritative synced copy before admission. Companions SHALL NOT repeat a compaction with an uncertain receipt under a new identity merely to produce the same summary.
+A saved summary SHALL be scoped to its conversation and covered sources. Before reuse or disclosure, Companions SHALL recheck the covered source versions and currently applicable grants. An edit, removal or revocation SHALL prevent disclosure of stale derived text. Saved replies and questions SHALL remain visible where the owner's private read grants permit them. Private display and speech SHALL also check the respective current grants against deduplicated original field requirements inherited through earlier replies or tool results. Companions SHALL retain a reusable private disclosure proof and derive equivalent proof for older saved ledgers when needed, without withholding a permitted saved reply because its lineage has grown. After awaiting compaction, the ordinary call SHALL refresh any shared current state from its authoritative synced copy before admission. Companions SHALL NOT repeat a compaction with an uncertain receipt under a new identity merely to produce the same summary.
 
 The owner's explicit Send, Queue, Steer and Answer actions SHALL use the existing Conversation input path. The common policy SHALL govern submitted text and other model-bound fields. Configured credentials and secret files SHALL stay in the existing configuration and transport mechanisms, outside model input.
 
@@ -1257,6 +1257,13 @@ The runtime SHALL normalize existing model grants into the common policy without
 - **WHEN** the task resumes, and an input source is later edited, removed or denied
 - **THEN** the checkpoint is reusable only while its source versions and grants still match
 - **AND** stale derived text does not reach the next transport, and the uncertain attempt is not resent as new work
+
+#### Scenario: Private reply inherits grants through many exchanges
+
+- **GIVEN** a saved reply derives from an older grant-controlled reading across a long conversation
+- **WHEN** the owner reads the latest page or asks to speak the reply, including after a restart
+- **THEN** an allowed reply remains available irrespective of lineage length
+- **AND** withdrawing the original private read or speech grant withholds the reply for that recipient
 
 #### Scenario: Submit ordinary Conversation text
 

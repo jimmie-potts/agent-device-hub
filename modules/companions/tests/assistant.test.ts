@@ -3109,6 +3109,65 @@ for (const name of ['anthropic', 'openai'] as const) {
   }
 }
 
+void test('a 1001-turn legacy Conversation keeps the latest reply readable and speakable, with current origin grants', async context => {
+  const offers: SpokenReply[] = [];
+  const baseline = sharing();
+  let denied: 'private-conversation' | 'conversation-speech' | undefined;
+  const provider: ModelProvider = {name: 'openai', model: OPENAI_MODEL, turn: () => assert.fail('private reads must not contact the model')};
+  const w = await world(context, {provider, speak: offer => {offers.push(offer);}, share: query => baseline(query) &&
+    !(query.destination === denied && query.source === 'devices' && query.field === 'status' && query.record === 'proof-desk')});
+  await control(w.core, w.module(), 'enable');
+  const store = w.store();
+  const history: {id: string; revision: number}[] = [];
+  const latestText = 'The retained origin detail is still available.';
+  const now = Date.now();
+  let taskId = '';
+  store.database.exec('BEGIN');
+  try {
+    for (let index = 0; index <= 1000; index += 1) {
+      const saved = store.newTask('bunny', 'Retain the synthetic reading.', {provider: 'openai', model: OPENAI_MODEL, variant: ''});
+      saved.status = 'succeeded';
+      saved.modelCalls = 1;
+      taskId = saved.id;
+      const promptId = `${taskId}-prompt`, resultId = `${taskId}-result`;
+      store.save(saved);
+      store.message(saved, promptId, 'owner', saved.prompt, now + index);
+      store.message(saved, resultId, 'assistant', index === 1000 ? latestText : 'Synthetic intermediate answer.', now + index);
+      store.saveCall({version: 1, id: `${taskId}-step-0`, taskId, runId: 'fixture', ordinal: 0, kind: 'model', status: 'succeeded',
+        result: '{}', units: 1, reservedMs: 0, elapsedMs: 0, reservedUnits: 1, traceparent: '',
+        disclosures: [{source: 'conversation', field: 'request', record: promptId},
+          ...(index === 0 ? [{source: 'devices', field: 'status', record: 'proof-desk'} as const] : [])],
+        historySources: history});
+      history.push({id: promptId, revision: 1}, {id: resultId, revision: 1});
+    }
+    store.database.exec('COMMIT');
+  } catch (error) {
+    store.database.exec('ROLLBACK');
+    throw error;
+  }
+
+  const messageId = `${taskId}-result`;
+  const speak = () => control(w.core, w.module(), 'speak', taskId, randomUUID(), {messageId});
+  const visible = (await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText);
+  const speech = (await speak()).status;
+  assert.deepEqual({visible, speech}, {visible: true, speech: 'accepted'});
+  assert.equal(offers.at(-1)?.text, latestText);
+
+  denied = 'conversation-speech';
+  assert.equal((await speak()).status, 'rejected');
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
+
+  denied = 'private-conversation';
+  await w.restart();
+  assert.ok(!(await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
+  assert.equal((await speak()).status, 'rejected');
+  assert.equal(offers.length, 1);
+
+  denied = undefined;
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
+  assert.equal((await speak()).status, 'accepted');
+});
+
 for (const failure of ['uncertain', 'provider-capacity'] as const) {
   void test(`optional compaction preserves provider spend and unknown-retry boundaries on ${failure}`, async context => {
     let compacted = 0, ordinary = 0;

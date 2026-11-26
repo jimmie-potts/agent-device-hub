@@ -18,6 +18,7 @@ import {actionDescription, closingReply, type ActionEvidence} from './closing-re
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, RESPONSES_GRAPH_VERSION, terminal, unresolved, type Appended, type Call, type MessageSource, type Question, type Stage, type StagedInput, type Task, type HostedHistoryMessage, type ContextSourceVersion, type HistoryCompaction} from './store.js';
+import {savedDisclosureProof} from './disclosure-proof.js';
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
@@ -1207,7 +1208,7 @@ export class AssistantEngine {
       const canReadSaved = (taskId: string) => {
         let allowed = savedDisclosures.get(taskId);
         if (allowed === undefined) {
-          allowed = this.#savedDisclosureAllowed(taskId, read, savedDisclosures);
+          allowed = this.#savedDisclosureAllowed(taskId, read);
           savedDisclosures.set(taskId, allowed);
         }
         return allowed;
@@ -1347,6 +1348,9 @@ export class AssistantEngine {
         if (task.question === null) {task.status = 'uncertain'; task.code = 'uncertain-result';}
         else {task.status = task.question.answer === null ? 'waiting' : 'paused'; task.code = null;}
       } else {task.status = 'paused'; task.code = null;}
+      if (result !== undefined && task.supervisor !== undefined && task.supervisor.provider !== 'synthetic') {
+        savedDisclosureProof(this.store, task);
+      }
       if (active !== undefined) this.#settle(task, active);
       if (startup) this.#finishRecoveredRun(task);
     }, active?.span.context ?? (traceparent === null ? undefined : {traceparent}));
@@ -1945,60 +1949,14 @@ export class AssistantEngine {
     if (update !== undefined && (update.jobId !== job.jobId || codingUpdateMessageId(job, update.kind) !== message.id)) return false;
     return this.#codingJobAllowed(job, access);
   }
-  #savedDisclosureAllowed(taskId: string, access: FieldAccess, cache?: Map<string, boolean>): boolean {
+  #savedDisclosureAllowed(taskId: string, access: FieldAccess): boolean {
     const acceptsOldRecords = !canRevokeFields(this.options.share);
-    const root = this.store.task(taskId);
-    if (root === undefined) return this.store.calls(taskId).every(call =>
+    const task = this.store.task(taskId);
+    if (task === undefined) return this.store.calls(taskId).every(call =>
       (call.historySources?.length ?? 0) === 0 && this.#recordedFieldsAllowed(call, access, acceptsOldRecords));
-    const pending = [{task: root, through: Infinity}], inspected = new Map<string, number>();
-    const sources = new Set<string>();
-    let links = 0;
-    // The historical projection records every source, including sources covered by a summary.
-    while (pending.length > 0) {
-      const next = pending.pop();
-      if (next === undefined) return false;
-      const {task, through} = next;
-      const cached = cache?.get(task.id);
-      if (cached === true) continue;
-      if (cached === false && through === Infinity) return false;
-      const previous = inspected.get(task.id) ?? -1;
-      if (previous >= through) continue;
-      inspected.set(task.id, through);
-      if (task.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
-      const calls = this.store.calls(task.id);
-      if (task.id !== root.id && !calls.some(call => call.ordinal <= through && call.kind === 'model' && call.status === 'succeeded')) return false;
-      for (const call of calls) {
-        if (call.ordinal <= previous || call.ordinal > through) continue;
-        if (!this.#recordedFieldsAllowed(call, access, acceptsOldRecords)) return false;
-        const lineage = call.historySources ?? [];
-        links += lineage.length;
-        if (links > 1_000_000) return false;
-        for (const {id} of lineage) {
-          if (sources.has(id)) continue;
-          if (sources.size >= 16_384 || !access('conversation', 'text', id)) return false;
-          sources.add(id);
-          const source = this.store.messageSource(id);
-          if (source === undefined) {
-            if (this.store.messages.removal(id)?.conversationId !== root.conversationId) return false;
-            // A removed final reply still has its task's saved disclosure ledger.
-            if (!id.endsWith('-result')) continue;
-          } else if (source.role === 'owner') continue;
-          const origin = this.store.task(source?.taskId ?? id.slice(0, -'-result'.length));
-          if (origin?.conversationId !== root.conversationId || origin.profile !== root.profile ||
-            origin.status !== 'succeeded' || origin.supervisor === undefined || origin.supervisor.provider === 'synthetic') return false;
-          if (source?.role === 'tool') {
-            const tool = this.store.call(id);
-            if (!access('conversation', 'details', id) || tool?.taskId !== origin.id || tool.kind !== 'tool' || tool.status !== 'succeeded') return false;
-            pending.push({task: origin, through: tool.ordinal});
-          } else {
-            if (id !== `${origin.id}-result`) return false;
-            pending.push({task: origin, through: Infinity});
-          }
-        }
-      }
-    }
-    for (const [id, through] of inspected) if (through === Infinity) cache?.set(id, true);
-    return true;
+    const proof = savedDisclosureProof(this.store, task);
+    return proof.complete && (!proof.legacy || acceptsOldRecords) &&
+      proof.fields.every(field => this.#disclosureAllowed(field, access));
   }
   #replayable(taskId: string, access: FieldAccess, effects?: ReadonlySet<string>): boolean {
     if (this.store.task(taskId)?.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
