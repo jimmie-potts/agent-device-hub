@@ -4720,20 +4720,23 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
       : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
     const calls: AssistantDispatch[] = [];
     const policy = sharing();
-    let denied = true, deniedDraft = false;
+    let denied = true, deniedDraft = false, extraSpeaker = false;
     const w = await world(context, {provider, share: query => policy(query) && !(query.destination === 'private-conversation' &&
       (denied && query.source === 'playback' || deniedDraft && query.source === 'shows')),
       tools: [playback, 'read_playback', edit, 'read_light_shows'],
       dispatch: request => {calls.push(request); return Promise.resolve(accepted(request.requestId));}});
     const owner = w.bus.connect('bunny/modules/playback');
     context.after(() => owner.close());
-    await owner.serveSync(['playback'], () => ({revision: 7, states: [{type: 'org.bunny.playback.updated',
-      subject: 'desk-speaker', dataschema: 'https://bunny.invalid/events/playback/2.0',
-      data: {id: 'desk-speaker', revision: 7, availability: 'available',
-        playback: {status: 'known', player: 'playing', controls: ['pause', 'play'], title: 'PRIVATE_PLAYBACK_TITLE'}}}]}));
+    await owner.serveSync(['playback'], () => ({revision: 7, states: (extraSpeaker ? ['desk-speaker', 'hall-speaker'] : ['desk-speaker']).map(id => ({
+      type: 'org.bunny.playback.updated', subject: id, dataschema: 'https://bunny.invalid/events/playback/2.0',
+      data: {id, revision: 7, availability: 'available', playback: {status: 'known', player: 'playing', controls: ['pause', 'play'], title: 'PRIVATE_PLAYBACK_TITLE'}},
+    }))}));
     const drafts = new ShowDrafts(w.host().moduleDatabase() ?? assert.fail('open database'));
     assert.ok('text' in drafts.create({name: 'Desk show', starter: 'warm'}));
     const summary = drafts.list(0, 1, '', () => true)[0] ?? assert.fail('saved draft');
+    assert.ok('text' in drafts.create({name: 'Red Dawn', starter: 'ocean'}));
+    const red = drafts.list(0, 2, '', () => true).find(item => item.name === 'Red Dawn') ?? assert.fail('second saved draft');
+    const redBefore = drafts.read(red.id);
     const before = drafts.read(summary.id) ?? assert.fail('current draft');
     const cue = before.value.timeline.cues[0]?.id ?? assert.fail('starter cue');
     const stale = {draftId: summary.id, revision: summary.revision - 1, cue, changes: '{"intensity":0.25}'};
@@ -4755,6 +4758,12 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     assert.deepEqual(drafts.read(summary.id), before, 'the stale edit changes neither the revision nor the draft');
     assert.equal(calls.length, 0, 'a private draft edit never dispatches to a device');
 
+    await ask('Read the Red Dawn draft.', {name: 'read_light_shows', input: {view: 'drafts', id: red.id, offset: 0}});
+    await ask(`Edit the first cue on id:${summary.id}.`, {name: edit,
+      input: {...stale, draftId: 'Red Dawn', revision: red.revision, cue: '1'}});
+    assert.deepEqual(drafts.read(red.id), redBefore, 'an earlier valid draft cannot replace the current explicit draft ID');
+    assert.deepEqual(drafts.read(summary.id), before, 'a mismatched draft proposal never silently redirects the write');
+
     const expected = [playback, 'read_playback', edit, 'read_light_shows'];
     assert.deepEqual(expected.filter(tool => !offered.has(tool)), [], 'the hosted adapter receives enabled catalog tools');
     denied = false;
@@ -4772,6 +4781,11 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     await ask('Pause a different speaker.', {name: playback,
       input: {owner: 'bunny/modules/playback', target: 'other-speaker', arguments: '{"action":"pause"}'}});
     assert.equal(calls.length, 2, 'an unknown target never enters dispatch');
+    extraSpeaker = true;
+    await ask('Pause id:desk-speaker.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'hall-speaker', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 2, 'a different existing playback record never enters dispatch');
+
 
     await ask('Make the first cue in the Desk show draft half as bright.', {name: edit,
       input: {...stale, draftId: 'Desk show', revision: summary.revision, cue: '1'}});
@@ -4820,7 +4834,7 @@ function catalogPhrases(): CatalogPhrase[] {
   return [
     onWall('device-mode-set', 'Switch Studio Wall to free mode.', {mode: 'free'}),
     onWall('scene-activate', 'Put Northern Lights on Studio Wall.', {sceneId: 'Northern Lights'},
-      {say: 'Use sunset on Studio Wall even though it is missing.', settings: {sceneId: 'sunset'}, code: 'not-found'},
+       {say: 'Use id:scene-' + 'c'.repeat(64) + ' on Studio Wall.', settings: {sceneId: 'scene-' + noticeId}, code: 'invalid-request'},
       {sceneId: 'scene-' + noticeId}),
     onWall('moment-play', 'Give Studio Wall five seconds of celebration.', {mood: 'celebrate', durationMs: 5000},
       {say: 'Give Studio Wall two hours of celebration.', settings: {mood: 'celebrate', durationMs: 7_200_000}, code: 'invalid-request'}),
@@ -4840,11 +4854,13 @@ function catalogPhrases(): CatalogPhrase[] {
       {say: 'Rename revision six of Evening Loop to Last Light on Kitchen Display.', settings: {change: {operation: 'rename', playlistId: 'Evening Loop', revision: 6, name: 'Last Light'}}, code: 'revision-conflict'},
       {change: {operation: 'rename', playlistId, revision: 7, name: 'Last Light'}}),
     onScreen('pixoo-asset-change', 'Render the Blue Kite original again for Kitchen Display.', {change: {operation: 'render', assetId: 'Blue Kite'}},
-      wrongScreen, {change: {operation: 'render', assetId}}),
+      {say: 'Render original id:33333333-3333-4333-8333-333333333333 on Kitchen Display.', settings: {change: {operation: 'render', assetId}}, code: 'invalid-request'},
+      {change: {operation: 'render', assetId}}),
     onScreen('pixoo-notice-dismiss', 'Dismiss fixture-notice for session ' + noticeId + ' on Kitchen Display.', {session: noticeId, noticeId: 'fixture-notice'}),
     record('wemo-hold-release', 'Release the hold on Bench Plug.', 'Bench Plug', {}, 'bench-plug', 'bunny/modules/wemo',
       {say: 'Release the hold from an older operation on Bench Plug.', settings: {heldRequestId: 'old-operation'}, code: 'revision-conflict'}),
-    record('mode-override-set', 'Keep Studio Wall in free mode regardless of Hub mode.', 'Studio Wall', {mode: 'free'}, wall),
+    record('mode-override-set', 'Keep Studio Wall in free mode regardless of Hub mode.', 'Studio Wall', {mode: 'free'}, wall, core,
+      {say: 'Keep id:studio-wall in free mode.', selector: 'id:wall-right', code: 'invalid-state'}),
     record('notice-clear', 'Clear all notices for the Writing session.', 'Writing', {noticeId: null}, noticeId),
     record('session-label-set', 'Call the Writing session Revised chapter.', 'Writing', {label: 'Revised chapter'}, noticeId),
     record('inbox-handle', 'Dismiss Inbox item fixture-inbox.', 'fixture-inbox', {action: 'dismiss'}),
@@ -4852,7 +4868,7 @@ function catalogPhrases(): CatalogPhrase[] {
     record('lighting-layout-set', 'Clear my saved room lighting groups and assignments.', 'lighting', {layout: {rooms: [], assignments: [], groups: [], home: null}}),
     record('playback-layout-set', 'Remove the custom placements for Music cards.', 'playback', {assignments: []}),
     record('playback-control', 'Give the music a break, please.', 'auto', {action: 'pause'}, 'desk-speaker', 'bunny/modules/playback',
-      {say: 'Pause music on the spare speaker.', selector: 'spare-speaker', code: 'unavailable'}),
+      {say: 'Pause music on the spare speaker.', selector: 'spare-speaker', code: 'not-found'}),
     record('volcano-session-gap', 'Set Volcano’s session gap to half an hour.', 'Volcano', {gapMinutes: 30}, 'volcano', 'bunny/modules/volcano'),
     record('art-catalog-edit', 'Favorite the saved artwork ' + playlistId + '.', 'art', {action: 'favorite', artworkId: playlistId, favorite: true}, 'art', 'bunny/modules/art',
       {say: 'Favorite it in the other art catalog.', selector: 'other-catalog', code: 'forbidden'}),

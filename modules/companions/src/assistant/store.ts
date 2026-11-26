@@ -69,6 +69,7 @@ export type HostedHistoryMessage = Pick<RecentMessage, 'id' | 'role' | 'text'> &
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   directBrightness?: true;
   modelControlProof?: ModelControlProof;
+  privateDraftId?: string;
   wemoFacts?: readonly {id: string; revision: string}[];
   historySources?: readonly ContextSourceVersion[];
   inputVersions?: readonly {field: DisclosedField; version: string}[];

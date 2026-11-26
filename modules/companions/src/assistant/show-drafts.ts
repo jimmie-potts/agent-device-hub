@@ -46,13 +46,31 @@ export class ShowDrafts {
       value: {showId: id, expectedVersion: raw.expectedVersion, name: value.name, versionName: value.versionName, timeline: value.timeline}};
   }
 
-  find(selector: unknown): Draft | {code: ErrorCode} {
-    if (typeof selector !== 'string' || selector.length === 0 || selector.length > 128) return {code: 'invalid-request'};
-    const exact = this.read(selector);
-    if (exact !== undefined) return exact;
-    const rows = this.database.prepare("SELECT id FROM assistant_show_drafts WHERE lower(json_extract(value, '$.name')) = lower(?) LIMIT 2").all(selector.trim());
-    if (rows.length > 1) return {code: 'invalid-state'};
-    return this.read(rows[0]?.id) ?? {code: 'not-found'};
+  references(visible: (id: string) => boolean): {id: string; label: string}[] {
+    const rows = this.database.prepare("SELECT id, json_extract(value, '$.name') AS name FROM assistant_show_drafts");
+    const result: {id: string; label: string}[] = [];
+    for (const {id, name} of rows.iterate()) {
+      if (typeof id === 'string' && typeof name === 'string' && visible(id)) result.push({id, label: name});
+    }
+    return result;
+  }
+
+  find(selector: unknown, visible: (id: string) => boolean = () => true): Draft | {code: ErrorCode} {
+    if (typeof selector !== 'string' || selector.length === 0 || selector.length > 131) return {code: 'invalid-request'};
+    const exactId = selector.startsWith('id:') ? selector.slice(3) : selector;
+    if (/^show-[a-z0-9-]+$/u.test(exactId)) {
+      if (!visible(exactId)) return {code: 'not-found'};
+      const exact = this.read(exactId);
+      if (exact !== undefined || selector.startsWith('id:')) return exact ?? {code: 'not-found'};
+    }
+    let chosen: string | undefined;
+    const matches = this.database.prepare("SELECT id FROM assistant_show_drafts WHERE lower(json_extract(value, '$.name')) = lower(?)");
+    for (const {id} of matches.iterate(selector.trim())) {
+      if (typeof id !== 'string' || !visible(id)) continue;
+      if (chosen !== undefined) return {code: 'invalid-state'};
+      chosen = id;
+    }
+    return this.read(chosen) ?? {code: 'not-found'};
   }
 
   create(input: Readonly<Record<string, unknown>>): Result {

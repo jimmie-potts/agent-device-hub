@@ -32,8 +32,9 @@ import {buildConversationCompactionInput, COMPACTION_OUTPUT_TOKENS, readConversa
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
-import {chooseBrightnessSubject, ConversationActions, deviceClarification, type CatalogIdentityRead, type RetainedArtworkRead} from './catalog-actions.js';
+import {chooseBrightnessSubject, ConversationActions, deviceClarification, type CatalogAdmission, type CatalogIdentityRead, type RetainedArtworkRead} from './catalog-actions.js';
 import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {catalogSelectorSelected} from './catalog-grounding.js';
 import {catalogCommand, catalogTool, draftMutation, isCatalogTool, modelCatalogCommand, modelCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
 import {DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
 import {SyntheticProvider} from './synthetic.js';
@@ -135,7 +136,7 @@ const stoppedBeforeBrightness = (text: string | null): boolean =>
   text === BRIGHTNESS_REQUEST_UNAVAILABLE || text === BRIGHTNESS_ANSWER_UNAVAILABLE;
 
 type Answer = {text: string; units: number | null; usage?: TokenUsage | null; historySources?: Call['historySources']; inputVersions?: Call['inputVersions']; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[];
-  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true; wemoFacts?: Call['wemoFacts']};
+  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true; wemoFacts?: Call['wemoFacts']; privateDraftId?: string};
 /** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
 type Budget = {units: number; unit: string; spend?: {model: string; inputUnits: number; outputUnits: number; pricing?: NonNullable<SupervisorIdentity['pricing']>}};
 function fail(code: ErrorCode): never {throw new Fault(code);}
@@ -2018,6 +2019,15 @@ export class AssistantEngine {
   #callAllowed(call: Call, access: FieldAccess, acceptsOldRecords: boolean,
     history?: ReadonlyMap<string, HostedHistoryMessage>): boolean {
     const historyRevision = (id: string) => history === undefined ? this.store.historySourceRevision(id) : history.get(id)?.revision;
+    const control = call.action?.control;
+    const catalog = control?.modelCallId !== undefined && (control.proposal.family === 'mode-set' ||
+      control.proposal.family === 'catalog-action' && modelCatalogCommand(control.proposal.command)) ? control.proposal : undefined;
+    if (call.privateDraftId !== undefined || catalog !== undefined) {
+      const task = this.store.task(call.taskId);
+      if (task === undefined ||
+        call.privateDraftId !== undefined && !this.#fields(task.profile, 'read', 'private-conversation')('shows', 'details', call.privateDraftId) ||
+        catalog !== undefined && !this.#catalogFieldsPermitted(task, catalog)) return false;
+    }
     return this.#recordedFieldsAllowed(call, access, acceptsOldRecords) &&
       (call.historySources?.every(({id, revision}) => access('conversation', 'excerpt', id) && historyRevision(id) === revision) ?? true) &&
       (call.inputVersions?.every(({field, version}) => field.source === 'conversation' && field.record !== undefined && history !== undefined
@@ -2313,11 +2323,9 @@ export class AssistantEngine {
         next = 'act';
       }
     } else if (next === 'approve' && command !== undefined && call !== undefined) {
-      const scope = interpreted ? this.#currentModelControl(currentTask, id) : undefined;
-      const selectors = scope === undefined ? [] : this.#catalogReferenceTexts(currentTask, scope, id, true);
-      const selected = command === 'art-request' && this.store.hasArtReply(task.id) || interpreted && scope === undefined
-        ? {code: 'invalid-state'} : await this.#catalog().propose(command, call, active.span.context, canNameDevice,
-          name => selectors.some(text => containsControlValue(text, name)));
+      const admission = interpreted ? this.#catalogAdmission(currentTask.id, id, call.name) : undefined;
+      const selected = command === 'art-request' && this.store.hasArtReply(task.id) || admission?.current() === false
+        ? {code: 'invalid-state'} : await this.#catalog().propose(command, call, active.span.context, canNameDevice, admission);
       const questionId = `${state.taskId}-q${String(this.#task(state.taskId).questions + 1)}`;
       if ('code' in selected) result = `refused: ${selected.code}`;
       else if ('question' in selected) {
@@ -2584,6 +2592,53 @@ export class AssistantEngine {
     return [scope.request.text, scope.answer?.text ?? '', ...prior];
   }
 
+  #catalogAdmission(taskId: string, modelCallId: string, tool: string): CatalogAdmission {
+    const current = () => {
+      const task = this.#task(taskId);
+      const scope = this.#currentModelControl(task, modelCallId);
+      return scope !== undefined && this.#toolsFor(task).some(item => item.name === tool) ? {task, scope} : undefined;
+    };
+    const visible: CatalogAdmission['visible'] = (source, id) => {
+      const active = current();
+      if (active === undefined) return false;
+      const {task} = active;
+      const read = this.#fields(task.profile, 'read', 'private-conversation');
+      if (source !== 'devices') return read(source, 'details', id);
+      const discover = this.#fields(task.profile, 'discovery', 'private-conversation');
+      const hosted = this.#taskProvider(task).name !== 'synthetic';
+      return discover(source, 'index', id) && (['index', 'label', 'status'] as const).every(field =>
+        read(source, field, id) && (!hosted || recordedSupervisorField(this.options.share, task.profile, 'supervisor', source, field, id)));
+    };
+    return {
+      current: () => current() !== undefined,
+      selector: (kind, selector, contextIds) => {
+        const active = current();
+        if (active === undefined) return false;
+        return catalogSelectorSelected(kind, selector, active.scope,
+          this.#catalogReferenceTexts(active.task, active.scope, modelCallId, true).slice(2), contextIds);
+      },
+      visible,
+      target: (id, source, alternatives, implicit = false) => {
+        const active = current();
+        if (active === undefined || !visible(source, id)) return 'forbidden';
+        const {task, scope} = active;
+        const texts = this.#catalogReferenceTexts(task, scope, modelCallId, true);
+        const references = alternatives.map(target => ({...target, binding: '', allowed: visible(source, target.id), eligible: false}));
+        const addressed = new Set([scope.request.text, scope.answer?.text ?? ''].flatMap(text => controlReferenceIds(references, text)));
+        const exact = scope.exactTargets.filter(value => references.some(reference => reference.id === value));
+        const otherRoutingId = scope.exactTargets.some(value => !exact.includes(value) &&
+          !/^(?:scene-|show-)[a-z0-9-]+$|^[a-f0-9]{64}$|^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(value));
+        if (otherRoutingId) return 'not-found';
+        if (implicit && alternatives.length === 1 && exact.length === 0 && addressed.size === 0) return undefined;
+        const eligible = new Set(texts.flatMap(text => controlReferenceIds(references, text)));
+        const selected = resolveModelControl({...scope, exactTargets: exact,
+          references: references.map(reference => ({...reference, eligible: eligible.has(reference.id)}))},
+        {requestId: scope.request.id, selection: {kind: 'references', targets: [id], contextTargets: []}, settings: null}, false, 1);
+        return selected.kind === 'refused' ? selected.code : selected.kind === 'clarify' ? 'invalid-state' : undefined;
+      },
+    };
+  }
+
   #catalogDeviceSelection(task: Task, scope: ModelControlScope, targets: readonly string[],
     knownTargets: readonly (readonly string[])[], modelCallId: string) {
     const read = this.#fields(task.profile, 'read', 'private-conversation');
@@ -2613,6 +2668,8 @@ export class AssistantEngine {
       return discover('devices', 'index', id) && (['index', 'label', 'status'] as const).every(field =>
         local('devices', field, id) && (!hosted || recordedSupervisorField(this.options.share, task.profile, 'supervisor', 'devices', field, id)));
     };
+    if (command === 'music-lighting-control' && data.action === 'start-show' &&
+        (typeof data.showId !== 'string' || !local('shows', 'details', data.showId))) return false;
     if (binding.kind === 'device' || command === 'mode-override-set' || command === 'music-lighting-control') return device(proposal.target);
     if (command === 'art-show' || command === 'art-catalog-edit') {
       return typeof data.artworkId === 'string' && local('artwork', 'details', data.artworkId) &&
@@ -2636,7 +2693,7 @@ export class AssistantEngine {
     if (proposal.family === 'catalog-action' && proposal.command === 'art-catalog-edit' && proposal.data.action === 'delete') {
       const id = proposal.data.artworkId;
       const tokens = `${scope.request.text} ${scope.answer?.text ?? ''}`.split(/[^a-zA-Z0-9_.-]+/u);
-      if (typeof id !== 'string' || !tokens.some(token => token === id || token === `${id}.`)) return {code: 'invalid-request'};
+      if (typeof id !== 'string' || !tokens.some(token => token === id || token === `${id}.`)) return {code: 'not-found'};
     }
     if (this.store.calls(task.id).some(receipt => receipt.action?.control?.ownerMessageIds[0] === scope.request.id &&
       proposalTool(receipt.action.control.proposal) === call.name && receipt.action.control.proposal.target === proposal.target)) {
@@ -2645,11 +2702,12 @@ export class AssistantEngine {
     if (proposal.family === 'catalog-action') {
       const artTargets = proposal.command === 'art-show' && Array.isArray(proposal.data.targets)
         ? proposal.data.targets.filter((target): target is string => typeof target === 'string') : [];
-      const physical = proposal.binding.kind === 'device' ? [proposal.target] : artTargets.filter(target => target !== 'browser');
+      const physical = artTargets.filter(target => target !== 'browser');
       if (artTargets.includes('browser') && !['browser', 'dashboard'].some(label =>
         [scope.request.text, scope.answer?.text ?? ''].some(text => containsControlValue(text, label)))) return {code: 'invalid-request'};
       if (physical.length > 0) {
-        const selected = this.#catalogDeviceSelection(task, scope, physical, knownTargets ?? [], modelCallId);
+        const targets = scope.exactTargets.filter(id => id !== proposal.data.artworkId);
+        const selected = this.#catalogDeviceSelection(task, {...scope, exactTargets: targets}, physical, knownTargets ?? [], modelCallId);
         if (selected.kind === 'refused') return {code: selected.code};
         if (selected.kind === 'clarify') return {clarify: selected.targets};
       }
@@ -2815,14 +2873,16 @@ export class AssistantEngine {
         }
         this.#fence(active);
         const privateRead = this.#fields(task.profile, 'read', 'private-conversation');
-        const selectors = this.#catalogReferenceTexts(task, controlScope, modelCall);
+        const admission = this.#catalogAdmission(task.id, modelCall, call.name);
         return this.outbox.transaction(() => {
-          const result = this.#catalog().mutateDraft(call, privateRead, (draftId, name) => selectors.some(text =>
-            containsControlValue(text, draftId) || containsControlValue(text, name)));
-          if ('code' in result) return {text: `refused: ${result.code}`, units: 0, disclosures: []};
+          this.#fence(active);
+          if (!admission.current()) return {text: 'refused: invalid-state', units: 0, disclosures: []};
+          const result = this.#catalog().mutateDraft(call, privateRead, admission);
+          if ('code' in result) return {text: `refused: ${result.code}`, units: 0, disclosures: [],
+            ...(result.draftId === undefined ? {} : {privateDraftId: result.draftId})};
           if (provider.name === 'synthetic') return {text: result.text, units: 0, disclosures: []};
           this.store.message(task, `${id}-draft-${result.draftId}`, 'tool', result.text, this.context.clock.now());
-          return {text: 'accepted: the private draft was updated.', units: 0, disclosures: []};
+          return {text: 'accepted: the private draft was updated.', units: 0, disclosures: [], privateDraftId: result.draftId};
         });
       } else if (isCatalogTool(call.name)) {
         const evidence: ActionEvidence[] = [];
@@ -3278,6 +3338,7 @@ export class AssistantEngine {
         if (reply.historySources !== undefined) call.historySources = reply.historySources;
         if (reply.inputVersions !== undefined) call.inputVersions = reply.inputVersions;
         if (reply.wemoFacts !== undefined) call.wemoFacts = reply.wemoFacts;
+        if (reply.privateDraftId !== undefined) call.privateDraftId = reply.privateDraftId;
         if (reply.incompleteDisclosures === true) call.incompleteDisclosures = true;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
         for (const confirmation of reply.confirmations ?? []) this.store.saveConfirmation(confirmation);
