@@ -312,6 +312,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     {source: 'coding', field: 'repository', record: 'agent-device-hub'},
     {source: 'coding', field: 'brief', record: 'agent-device-hub'},
     {source: 'conversation', field: 'text'},
+    {source: 'devices', field: 'status', record: 'hub'},
   ].map(grant => ({...grant, caller: 'owner', companion: 'bunny', destination: 'coding-worker:pc', purpose: 'brief', allow: true})) : [];
   const moduleConfig = {
     ...(options.art === true ? {art: options.artRecentLimit === undefined ? {} : {recentLimit: options.artRecentLimit}} : {}),

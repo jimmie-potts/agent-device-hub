@@ -49,7 +49,7 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
       await conversation.getByRole('textbox', {name: 'Message', exact: true}).fill(text);
       await conversation.locator('.conversation-composer-actions').getByRole('button', {name: text.startsWith('Tell the') ? 'Message job' : 'Send', exact: true}).click();
     };
-    const approve = async (name: string, harness: 'auto' | 'codex' = 'auto', destination: 'auto' | 'mac' | 'pc' = 'auto') => {
+    const approve = async (name: string, harness: 'auto' | 'codex' = 'auto', destination: 'auto' | 'mac' = 'auto') => {
       await send(`Please delegate the ${name} logging check.`);
       const approval = conversation.getByRole('button', {name: 'Approve proposal', exact: true});
       const choices = conversation.getByRole('combobox', {name: 'Coding harness'});
@@ -249,7 +249,16 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
       assert.equal(pcEnabled.status, 'accepted');
       await conversation.getByRole('button', {name: 'Cancel task', exact: true}).click();
       await newConversation.click();
-      await approve('PC-only synthetic', 'codex', 'pc');
+      await page.goto(`${world.url}/#/module/companions/jobs`);
+      await jobs.locator('summary').filter({hasText: /^New coding job$/u}).click();
+      await jobs.getByRole('combobox', {name: 'Companion'}).selectOption('bunny');
+      await jobs.getByRole('combobox', {name: 'Coding harness'}).selectOption('codex');
+      await jobs.getByRole('combobox', {name: 'Execution destination'}).selectOption('pc');
+      await jobs.getByRole('link', {name: 'Continue in Conversation'}).click();
+      const pcDraft = conversation.getByRole('form', {name: 'New coding job'});
+      await pcDraft.getByRole('textbox', {name: 'Job brief'}).fill('Check the synthetic fixture in agent-device-hub.');
+      await pcDraft.getByRole('button', {name: 'Request coding job'}).click();
+      await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).click();
       await waitFor(() => pcCommands.length === 1);
       const pcRun = pcCommands[0] ?? assert.fail('expected a job on the synthetic PC');
       assert.ok(pcRun.action === 'start' && pcRun.harness === 'codex');

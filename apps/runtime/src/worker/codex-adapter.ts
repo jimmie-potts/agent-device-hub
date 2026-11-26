@@ -581,7 +581,11 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const profile = `bunny-worker-${randomUUID()}`;
       let toolchain: CodexToolchain;
       try {toolchain = await (options.toolchain ?? verifyCodexToolchain)(configuration.executable, cwd, profile, home, environment, protection, signal, undefined, options.host);}
-      catch {return signal.aborted ? {reason: 'cancelled'} : {reason: 'refused', summary: options.host === 'linux' ? WSL_BOUNDARY_REFUSAL : CODEX_TOOLCHAIN_REFUSAL};}
+      catch {
+        if (signal.aborted) return {reason: 'cancelled'};
+        if (options.host === 'linux') linuxQualified = false;
+        return {reason: 'refused', summary: options.host === 'linux' ? WSL_BOUNDARY_REFUSAL : CODEX_TOOLCHAIN_REFUSAL};
+      }
       if (signal.aborted) {await releaseCodexToolchain(toolchain); return {reason: 'cancelled'};}
       const command = prepare(home, cwd, signal, profile, protection, toolchain);
       const wire = transport({...command, event: (method, value) => {

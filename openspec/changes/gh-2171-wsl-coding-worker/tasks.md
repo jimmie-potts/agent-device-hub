@@ -5,7 +5,7 @@
   and per-attempt sandbox proof.
 - [x] Exercise the real CLI's fail-closed Linux namespace path and the existing
   Mac adapter tests.
-- [ ] Verify Jobs steering, named stop and native-unavailable readback on the
+- [x] Verify Jobs steering, named stop and native-unavailable readback on the
   exact integrated destination routing.
 - [ ] Run the signed-out confinement proof on a WSL2 kernel that supports the
   official Codex sandbox.

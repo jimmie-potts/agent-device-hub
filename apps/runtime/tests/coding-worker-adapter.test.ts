@@ -268,9 +268,10 @@ void test('the Linux worktree profile retains subscription routing and fences WS
   const args = codexArguments('/home/synthetic/worktree', 'bunny-fixture', '/home/synthetic/profile', undefined,
     {linux: true, bin: '/home/synthetic/shim', readable: ['/opt/synthetic/codex', '/usr/bin/bwrap']});
   const rules = args.find(value => value.startsWith('permissions.bunny-fixture.filesystem='));
-  for (const path of ['/mnt', '/init', '/run/WSL', '/home/synthetic/profile/auth.json']) assert.ok(rules?.includes(`"${path}"="deny"`), path);
-  assert.ok(rules?.includes('"/home/synthetic/worktree"="write"'));
-  assert.ok(rules?.includes('"/usr/bin/bwrap"="read"'));
+  assert.ok(rules !== undefined);
+  for (const path of ['/mnt', '/init', '/run/WSL', '/home/synthetic/profile/auth.json']) assert.ok(rules.includes(`"${path}"="deny"`), path);
+  assert.ok(rules.includes('"/home/synthetic/worktree"="write"'));
+  assert.ok(rules.includes('"/usr/bin/bwrap"="read"'));
   assert.ok(args.includes('permissions.bunny-fixture.network.enabled=false'));
   assert.ok(args.includes('features.use_legacy_landlock=false'));
   assert.ok(args.includes('openai_base_url="https://chatgpt.com/backend-api/codex"'));
