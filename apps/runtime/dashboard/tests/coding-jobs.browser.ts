@@ -225,7 +225,7 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     assert.equal(await proposed.getByRole('combobox', {name: 'Execution destination'}).inputValue(), 'cloud');
     assert.equal(commands.length, 8, 'a request originating in Jobs still waits for owner approval');
     await proposed.getByRole('button', {name: 'Approve proposal'}).click();
-    await reachy.getByText(/refused: unavailable.*cloud.*eligible alternatives: mac/i).waitFor();
+    await reachy.getByText(/refused: unavailable.*cloud coding is disabled.*eligible alternatives: mac/i).waitFor();
     assert.equal(commands.length, 8, 'an unavailable explicit Cloud request sends nothing to the Mac');
     await page.goto(`${world.url}/#/module/companions/assistant`);
     await page.locator('.rail-conversations').getByRole('link', {name: /B\.U\.N\.N\.Y\./u}).click();

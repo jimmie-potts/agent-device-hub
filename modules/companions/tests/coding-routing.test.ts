@@ -46,7 +46,10 @@ void test('route a test by destination grant, exact revision, platform, test slo
   const conflict = selectCodingWorker([mac, pc], {...request, destination: 'pc', allowed: worker => worker === 'mac'});
   assert.equal(conflict.worker, undefined);
   assert.match(conflict.reason, /permission.*mac/iu);
-  assert.equal(selectCodingWorker([mac, pc], {...request, destination: 'cloud'}).worker, undefined);
+  const disabled = selectCodingWorker([mac, pc], {...request, destination: 'cloud'});
+  assert.equal(disabled.worker, undefined);
+  assert.match(disabled.reason, /^Cloud coding is disabled\..*Eligible alternatives/);
+  assert.match(selectCodingWorker([], {...request, destination: 'cloud', cloudAllowed: () => false}).reason, /No connected cloud worker/);
   assert.equal(selectCodingWorker([mac, pc], {...request, requirements: {revision: 'b'.repeat(40)}}).worker, undefined);
   const otherRevision = {...pc, declaration: {...pc.declaration, repositories:[{name:'sample', revision:'b'.repeat(40)}]}};
   assert.match(selectCodingWorker([mac,otherRevision],{...request,requirements:{}}).reason,/different repository revisions/);
@@ -72,11 +75,11 @@ void test('resource eligibility comes from exact trusted step policy and preserv
   assert.equal(select('device-proximity','fixture-display').worker?.destination,'pc');
   assert.equal(select('device-route','fixture-display').worker?.destination,'mac');
   assert.equal(select('device-route','unknown-target').worker,undefined);
-  assert.equal(selectCodingWorker(workers,{...request,destination:'cloud'}).worker?.destination,'cloud-fixture');
+  assert.equal(selectCodingWorker(workers,{...request,destination:'cloud'}).worker,undefined);
   assert.equal(selectCodingWorker(workers,{...request,now:now+CODING_DECLARATION_TTL_MS+1}).worker,undefined);
   assert.equal(selectCodingWorker(workers.map(worker=>({...worker,declaration:{...worker.declaration,testSlots:null}})),
     {...request,requirements:{testSlots:1}}).worker,undefined);
-  assert.equal(selectCodingWorker(workers.map(worker=>({...worker,running:1000})),request).worker?.destination,'cloud-fixture');
+  assert.equal(selectCodingWorker(workers.map(worker=>({...worker,running:1000})),request).worker?.destination,'mac');
 });
 
 void test('only an owner execution clause binds a known operation or asks to clarify its missing route', async () => {

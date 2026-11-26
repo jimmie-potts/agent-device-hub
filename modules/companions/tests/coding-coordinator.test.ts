@@ -767,3 +767,89 @@ void test('a refused or unanswered worker start retains selection without claimi
     assert.equal(w.work.length, 1);
   }
 });
+
+void test('a declared cloud worker needs scoped workspace authority at admission and before tracked start', async t => {
+  const {CloudQualification} = await import('../src/coding/cloud-qualification.js');
+  let qualification: InstanceType<typeof CloudQualification> | undefined;
+  let sharing = true, steeringAllowed = true;
+  const w = await world(t, undefined, undefined, {
+    allowDestination: () => sharing, allowResource: () => true, allowMessage: () => steeringAllowed,
+    allowCloud: (scope, now) => qualification?.allows(scope, now) === true,
+  });
+  const destination = 'cloud-fixture', endpointId = 'fixture-cloud', revision = 'd'.repeat(40);
+  const edge = w.bus.connect(`${CODING_WORKER_SOURCE}-${destination}`);
+  t.after(() => edge.close());
+  const codex: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', signedIn: 'yes', plan: 'plus', version: '1',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: w.clock.now(), capabilities: {steering: 'live', resume: 'saved-session', review: true}};
+  assert.equal((await edge.request(`bunny.cmd.coding-endpoint.${endpointId}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpointId,
+    dataschema: 'https://bunny.invalid/events/coding-endpoint/2.5', data: {requestId: 'register-cloud', action: 'enable', capacity: 'uncapped',
+      harnesses: [{...codex, harness: 'claude-code'}, codex], worker: {os: 'linux', toolchains: ['node24'],
+        repositories: [{name: 'agent-device-hub', revision}], pressure: 'normal', testSlots: 2}}}, {timeoutMs: 5000})).status, 'accepted');
+  const selectionId = w.owner().inspect().workers?.find(worker => worker.endpointId === endpointId)?.selectionId;
+  assert.ok(selectionId !== undefined && selectionId.length > 0);
+  const operation = {destination, repository: 'agent-device-hub', revision, harness: 'codex' as const} as const;
+  const admit = (requestId: string, requested: CodingDestination | 'cloud' | 'auto', requirements?: {resource: {kind: 'installation' | 'device-proximity'; id: string}}) =>
+    w.owner().handOff({requestId, taskId: requestId, conversationId: 'synthetic-room', companion: 'bunny', repository: operation.repository,
+      brief: 'Run a fixture check.', expectedRevision: w.owner().endpoint().revision, destination: requested, requirements: {revision, ...requirements}}, parent);
+  assert.equal((await admit('no-lease', 'auto')).status, 'rejected');
+  const unavailable = await admit('no-lease', 'cloud');
+  assert.equal(unavailable.status, 'rejected');
+  assert.match(unavailable.status === 'rejected' ? unavailable.error.error.detail ?? '' : '', /unavailable or expired/);
+  assert.deepEqual(w.dispatched, []);
+  const qualify = async (operationId: string) => {
+    const subject = {...operation, operationId};
+    const allowance = {computeMs: 30_000, storageBytes: 1_000_000, chargeMicros: 0, expiresAtMs: w.clock.now() + 1000};
+    qualification = new CloudQualification({
+      accepts: () => true,
+      launch: () => Promise.resolve({...subject, endpointId, selectionId, workspaceId: 'workspace', enforced: allowance}),
+      teardown: (workspaceId, owner) => Promise.resolve({workspaceId, operationId: owner, workspaceRemoved: true, writerStopped: true, chargeMicros: 0}),
+    }, w.clock.now);
+    assert.equal(await qualification.launch(subject, {...subject, ...allowance}), true);
+  };
+  await qualify('expires-in-flight');
+  w.core('held-forward');
+  assert.equal((await admit('expires-in-flight', 'cloud')).status, 'queued');
+  await until(() => w.dispatched.includes('expires-in-flight'));
+  try {
+    await w.advance(1000);
+  } finally {w.release();}
+  await until(() => w.owner().jobDetail('expires-in-flight-job')?.attempts[0]?.status === 'failed');
+  assert.equal(w.work.length, 0, 'a lease that expired after tracked dispatch cannot disclose a brief');
+  assert.equal(await qualification?.cleanup(), true);
+  w.core('forward');
+  await qualify('exact');
+  sharing = false;
+  assert.equal((await admit('exact', destination)).status, 'rejected');
+  sharing = true;
+  assert.equal((await admit('exact', destination, {resource: {kind: 'installation', id: 'mac-runtime'}})).status, 'rejected');
+  assert.equal((await admit('exact', 'auto', {resource: {kind: 'device-proximity', id: 'fixture-display'}})).status, 'rejected');
+  assert.equal((await admit('different-job', 'cloud')).status, 'rejected');
+  assert.equal(w.work.length, 0);
+  assert.equal((await admit('exact', 'auto')).status, 'queued');
+  await until(() => w.work.length === 1);
+  const start = w.work[0]?.data;
+  assert.ok(start?.action === 'start');
+  assert.equal(start.harness, 'codex', 'Auto must choose the authorized harness even when Claude is fresh');
+  assert.equal(start.revision, revision);
+  await edge.publish('bunny.event.coding-progress.fixture-cloud', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpointId,
+    dataschema: 'https://bunny.invalid/events/coding-progress/2.3', data: {operationId: 'exact', status: 'started', harness: 'codex',
+      sessionId: 'session-exact', setup: 'ready'}}, {parent});
+  await until(() => w.owner().jobDetail('exact-job')?.attempts[0]?.status === 'started');
+  const message = (requestId: string) => w.owner().prepareMessage({jobId: 'exact-job', operationId: 'exact', requestId, text: 'Synthetic steer.'}, parent);
+  steeringAllowed = false;
+  assert.deepEqual(message('steer-denied'), {code: 'forbidden'});
+  steeringAllowed = true;
+  const steering = message('steer-in-scope');
+  assert.ok('committed' in steering);
+  await steering.committed();
+  assert.equal(w.work.at(-1)?.data.action, 'message');
+  const delayed = message('steer-delayed');
+  assert.ok('committed' in delayed);
+  await w.advance(1000);
+  await delayed.committed();
+  assert.equal(w.work.filter(command => command.data.action === 'message').length, 1);
+  await w.lost(endpointId);
+  await until(() => w.owner().jobDetail('exact-job')?.attempts[0]?.status === 'uncertain');
+  assert.equal(w.work.filter(command => command.data.action === 'start').length, 1);
+  assert.equal(await qualification?.cleanup(), true);
+});

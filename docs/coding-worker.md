@@ -605,3 +605,24 @@ against the installed core with a real `claude` is the installed check the
 owner records under the running checklist. The handoff between two supervised
 workers, and the interval launchd actually takes, is an installed check on
 [#508](https://github.com/jimmie-potts/agent-device-hub/issues/508).
+
+## Cloud workspace qualification
+
+The installed module supplies no cloud workspace authority. Enrollment and
+a sharing grant alone do not make a cloud worker eligible for Auto or a pinned
+request. A qualified workspace must bind the approved operation, repository
+commit, harness and worker connection. The Hub checks that authority again
+before sending the brief. Installed and local device operations remain
+ineligible for cloud. Live steering also requires a current workspace and
+sharing permission for the message. A successor needs its own operation
+authority and the existing verified writer handoff.
+
+The disposable test provider uses zero infrastructure spend and exercises
+provider enforcement evidence for compute, storage, cost and an absolute
+workspace removal deadline. A positively identified workspace that exceeds its
+allowance is torn down without authorizing work. Loss of launch, writer or
+cleanup evidence keeps the qualification held. Disposable qualification instances
+share the one-shot claim for each operation on their provider instance. Live activation requires an owner-selected provider,
+account, authentication and allowance, plus verified provider-side limits,
+durable workspace claims and reconciliation. The supervisor model budget is
+separate from cloud infrastructure allowance.

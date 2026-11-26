@@ -1,5 +1,5 @@
 import {statusQuestion, type CodingJobEntry} from '../coding/job-page.js';
-import {codingChoice, codingDestinationChoice, type CodingChoice, type CodingRequirements} from '../coding/routing.js';
+import {CLOUD_DISABLED, codingChoice, codingDestinationChoice, isCloudChoice, type CodingChoice, type CodingRequirements} from '../coding/routing.js';
 import type {CodingDestination} from '@jimmie-potts/event-contracts/v2/coding';
 import {catalogRoute, SHOW_SAVE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {createHash, randomUUID} from 'node:crypto';
@@ -72,7 +72,7 @@ export type AssistantOptions = {
    * Whether a coding worker is connected and the revision a delegation proposal binds to (Hub #502), which moves only
    * when the worker's endpoint does (Hub #2028). The profile names the companion whose slot the hand-off would use.
    */
-  coding?: (profile: AssistantProfile) => {available: boolean; endpointId: string | null; revision: number};
+  coding?: (profile: AssistantProfile) => ReturnType<CodingCoordinator['endpoint']>;
   codingRequirements?: (ownerRequest: string) => CodingRequirements | undefined;
   /** Hands an approved delegation to the core's tracked dispatcher; the worker's result comes back through `deliver`. */
   delegate?: Delegate;
@@ -2071,7 +2071,7 @@ export class AssistantEngine {
     return {requestId: `${task.id}-step-${String(ordinal)}`, ownerMessageIds, proposal, text, call: call.id, ...(draftRevision === undefined ? {} : {draftRevision})};
   }
   /** Why a command call was refused instead of proposed. */
-  #proposalRefusal(call: ToolCall): string {
+  #proposalRefusal(call: ToolCall, task: Task): string {
     const copy = this.#core();
     if (call.name === DELEGATE_CODING) {
       const {repository, brief, harness, destination, os} = call.input;
@@ -2080,6 +2080,11 @@ export class AssistantEngine {
       if (harness !== undefined && !codingChoice(harness) || destination !== undefined && !codingDestinationChoice(destination) ||
         os !== undefined && !codingOS(os) || Object.keys(call.input).some(key => !['repository', 'brief', 'harness', 'destination', 'os'].includes(key))) {
         return 'The coding proposal has an invalid harness, destination or requirement.';
+      }
+      const execution = task.codingPreference?.destination ?? ownerCodingRoute(task.prompt).destination ?? destination;
+      if (codingDestinationChoice(execution) && isCloudChoice(execution)) {
+        const coding = this.options.coding?.(task.profile);
+        return coding?.cloudDisabled === true ? CLOUD_DISABLED : 'No eligible cloud worker is connected right now.';
       }
       return 'No coding worker is connected right now, so nothing was proposed; the owner can start the worker on their computer.';
     }
@@ -2123,7 +2128,7 @@ export class AssistantEngine {
     const id = `${state.taskId}-step-${String(state.step)}`;
     if (tool === undefined || !permitted || (tool.effect !== 'read' && tool.effect !== 'draft')) {
       const reason = tool !== undefined && permitted && tool.effect === 'command'
-        ? state.result === '' ? this.#proposalRefusal(call) : state.result : 'This tool is not permitted.';
+        ? state.result === '' ? this.#proposalRefusal(call, task) : state.result : 'This tool is not permitted.';
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result: reason, ok: false, effect: `${id}-refused`}, active.span.context,
         current => {this.store.message(current, `${id}-refused`, 'tool', reason, this.context.clock.now());});
