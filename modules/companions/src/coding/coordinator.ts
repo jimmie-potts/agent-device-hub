@@ -1,7 +1,7 @@
 import type {CloudScope} from './cloud-qualification.js';
 import type {OpenNativeClientInput} from '../assistant/history-contract.js';
 import type {ContinueCodingControl} from '@jimmie-potts/event-contracts/v2/assistant';
-import {chooseCodingHarness, codingHarness, selectCodingWorker, type CodingCandidate, type CodingChoice, type CodingDestinationChoice, type CodingRequirements, type CodingResource} from './routing.js';
+import {chooseCodingHarness, codingHarness, isCloudChoice, selectCodingWorker, type CodingCandidate, type CodingChoice, type CodingDestinationChoice, type CodingRequirements, type CodingResource} from './routing.js';
 import {createHash, randomUUID} from 'node:crypto';
 import type {ActionEvidence} from '../assistant/closing-reply.js';
 // One coding worker endpoint with one slot per companion (Hub #502, #2028). The core's tracked dispatcher hands the
@@ -339,8 +339,9 @@ export class CodingCoordinator {
    * endpoint or its availability (Hub #2028). Runs starting and ending leave it, so another companion's run never
    * refuses an approval; a readiness report leaves it too.
    */
-  endpoint(): {available: boolean; endpointId: string | null; revision: number} {
-    return {available: this.#connected(), endpointId: this.#state.endpointId, revision: this.#bound};
+  endpoint(): {available: boolean; endpointId: string | null; revision: number; cloudDisabled?: true} {
+    return {available: this.#connected(), endpointId: this.#state.endpointId, revision: this.#bound,
+      ...(this.#seams.allowCloud === undefined ? {cloudDisabled: true} : {})};
   }
   async start(): Promise<void> {
     this.#starting = true;
@@ -398,10 +399,11 @@ export class CodingCoordinator {
         if (existing !== undefined && ((data.choice !== undefined && this.#store.attempt(operationId)?.choice !== data.choice) || (previous?.binding?.requested ?? 'auto') !== (data.destination ?? 'auto') || JSON.stringify(previous?.binding?.requirements) !== JSON.stringify(data.requirements) || existing.conversationId !== conversationId || existing.taskId !== taskId ||
           existing.repository !== repository || existing.brief !== brief)) return refused('revision-conflict', 'the request ID names another coding job');
         if (existing === undefined) {
-          if (!this.#connected()) return refused('unavailable', 'no coding worker is connected');
-          if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
           const choice = data.choice ?? 'auto';
           const requested = data.destination ?? 'auto';
+          if (!this.#connected()) return refused('unavailable', isCloudChoice(requested) ?
+            this.#route(data, choice, requested, data.requirements, []).reason : 'no coding worker is connected');
+          if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
           const mac = this.#workers.get('mac');
           const implicitLegacy = data.choice === undefined && data.destination === undefined && data.requirements === undefined &&
             this.#workers.size === 1 && mac !== undefined && mac.declaration === undefined && mac.capacity !== 'uncapped';

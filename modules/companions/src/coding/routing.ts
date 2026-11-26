@@ -47,6 +47,11 @@ export const CODING_DECLARATION_TTL_MS = 120_000;
 type Destination = import('@jimmie-potts/event-contracts/v2/coding').CodingDestination;
 type Declaration = import('@jimmie-potts/event-contracts/v2/coding').CodingWorkerDeclaration;
 export type CodingDestinationChoice = 'auto' | 'cloud' | Destination;
+export function isCloudChoice(choice: CodingDestinationChoice): choice is 'cloud' | Extract<Destination, `cloud-${string}`> {
+  return choice !== 'auto' && choice !== 'mac' && choice !== 'pc';
+}
+export const CLOUD_DISABLED = 'Cloud coding is disabled.';
+
 export function codingDestinationChoice(value: unknown): value is CodingDestinationChoice {
   return value === 'auto' || value === 'mac' || value === 'pc' || value === 'cloud' ||
     typeof value === 'string' && /^cloud-(?=[a-z0-9-]{1,32}$)[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -74,8 +79,9 @@ function rankingFact(selected: Eligible, other: Eligible): string {
 function evaluateWorker(worker: CodingCandidate, request: Request): Eligible | string {
   const {destination, declaration} = worker;
   const requirements = request.requirements ?? {};
-  if (!request.allowed(destination)) return 'sharing permission is unavailable';
   const cloud = destination !== 'mac' && destination !== 'pc';
+  if (cloud && request.cloudAllowed === undefined) return CLOUD_DISABLED;
+  if (!request.allowed(destination)) return 'sharing permission is unavailable';
   if (cloud && requirements.resource !== undefined) return 'cloud cannot perform a local device or installed operation';
   if (requirements.resource !== undefined && request.resourceAllowed?.(requirements.resource, destination) !== true) return 'required resource authority is unavailable';
   const revision = declaration?.repositories.find(repository => repository.name === request.repository)?.revision;
@@ -97,12 +103,12 @@ function evaluateWorker(worker: CodingCandidate, request: Request): Eligible | s
     const {operationId, cloudAllowed} = request;
     const {endpointId, selectionId} = worker;
     if (operationId === undefined || cloudAllowed === undefined || revision === undefined || selectionId === undefined) {
-      return 'cloud qualification is unavailable';
+      return 'cloud workspace qualification is unavailable';
     }
     harnesses = harnesses?.filter(({harness}) => codingHarness(harness) && cloudAllowed({operationId, destination, endpointId, selectionId,
       repository: request.repository, revision, harness}, request.now));
     if (harnesses?.some(({harness}) => request.choice === 'auto' || harness === request.choice) !== true) {
-      return 'the requested harness has no current cloud workspace authority';
+      return 'cloud workspace authority for the requested harness is unavailable or expired';
     }
   }
   const legacy = declaration === undefined && worker.legacyDefault === true && request.choice === 'auto';
@@ -153,7 +159,12 @@ export function selectCodingWorker(workers: readonly CodingCandidate[], request:
     return a.worker.destination < b.worker.destination ? -1 : a.worker.destination === b.worker.destination ? 0 : 1;
   });
   const selected = eligible[0];
-  if (selected === undefined) return {...(permissionDenials > 0 && permissionDenials === reasons.length ? {forbidden: true} : {}), reason: `${reasons.length > 0 ? reasons.sort().join(' ') : `No connected ${request.destination} worker is eligible.`}${alternatives.length === 0 ? '' : ` Eligible alternatives: ${alternatives.sort().join(', ')}.`}`};
+  if (selected === undefined) {
+    const unavailable = isCloudChoice(request.destination) && request.cloudAllowed === undefined ? CLOUD_DISABLED :
+      `No connected ${request.destination} worker is eligible.`;
+    return {...(permissionDenials > 0 && permissionDenials === reasons.length ? {forbidden: true} : {}),
+      reason: `${reasons.length > 0 ? reasons.sort().join(' ') : unavailable}${alternatives.length === 0 ? '' : ` Eligible alternatives: ${alternatives.sort().join(', ')}.`}`};
+  }
   const runnerUp = eligible[1];
   const deciding = runnerUp === undefined ? request.destination === 'auto' ? 'only eligible destination' : 'requested destination' :
     rankingFact(selected, runnerUp);

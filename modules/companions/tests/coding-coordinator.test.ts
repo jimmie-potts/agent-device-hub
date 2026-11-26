@@ -792,7 +792,9 @@ void test('a declared cloud worker needs scoped workspace authority at admission
     w.owner().handOff({requestId, taskId: requestId, conversationId: 'synthetic-room', companion: 'bunny', repository: operation.repository,
       brief: 'Run a fixture check.', expectedRevision: w.owner().endpoint().revision, destination: requested, requirements: {revision, ...requirements}}, parent);
   assert.equal((await admit('no-lease', 'auto')).status, 'rejected');
-  assert.equal((await admit('no-lease', 'cloud')).status, 'rejected');
+  const unavailable = await admit('no-lease', 'cloud');
+  assert.equal(unavailable.status, 'rejected');
+  assert.match(unavailable.status === 'rejected' ? unavailable.error.error.detail ?? '' : '', /unavailable or expired/);
   assert.deepEqual(w.dispatched, []);
   const qualify = async (operationId: string) => {
     const subject = {...operation, operationId};

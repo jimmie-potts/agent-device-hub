@@ -46,7 +46,10 @@ void test('route a test by destination grant, exact revision, platform, test slo
   const conflict = selectCodingWorker([mac, pc], {...request, destination: 'pc', allowed: worker => worker === 'mac'});
   assert.equal(conflict.worker, undefined);
   assert.match(conflict.reason, /permission.*mac/iu);
-  assert.equal(selectCodingWorker([mac, pc], {...request, destination: 'cloud'}).worker, undefined);
+  const disabled = selectCodingWorker([mac, pc], {...request, destination: 'cloud'});
+  assert.equal(disabled.worker, undefined);
+  assert.match(disabled.reason, /^Cloud coding is disabled\..*Eligible alternatives/);
+  assert.match(selectCodingWorker([], {...request, destination: 'cloud', cloudAllowed: () => false}).reason, /No connected cloud worker/);
   assert.equal(selectCodingWorker([mac, pc], {...request, requirements: {revision: 'b'.repeat(40)}}).worker, undefined);
   const otherRevision = {...pc, declaration: {...pc.declaration, repositories:[{name:'sample', revision:'b'.repeat(40)}]}};
   assert.match(selectCodingWorker([mac,otherRevision],{...request,requirements:{}}).reason,/different repository revisions/);

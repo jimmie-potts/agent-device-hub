@@ -1878,6 +1878,11 @@ void test('an approved delegation is handed to the worker once, the turn finishe
   assert.equal((await input(w.core, w.module(), 'Please delegate: add a test')).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.match(JSON.stringify((await page(w)).messages), /No coding worker is connected right now/);
+  turn = 0;
+  assert.equal((await input(w.core, w.module(), 'Run a test on cloud.')).status, 'accepted');
+  await until(() => status(w) === 'succeeded' && provider.calls() >= 4);
+  assert.match(JSON.stringify((await page(w)).messages), /Cloud coding is disabled/);
+  assert.equal(work.length, 0);
   assert.equal((await workerPart.request(`bunny.cmd.coding-endpoint.${endpointId}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0', data: {requestId: 'enable-1', action: 'enable'}}, {timeoutMs: 5000})).status, 'accepted');
   await until(() => w.module().inspectCoding()?.availability === 'available');
   turn = 0;
