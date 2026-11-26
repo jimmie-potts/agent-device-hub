@@ -1017,6 +1017,7 @@ For an explicit request by the authorized owner in private Conversation, each co
 
 - **WHEN** the owner names `id:<device-id>` in the brightness instruction or in an answer to its clarification
 - **THEN** Conversation resolves the literal ID against the matching devices, ignoring display labels for that selection
+- **AND** before dispatch, Conversation checks the current access to the original request and any exact clarification
 - **AND** an unresolved or no longer permitted ID sends no command
 
 #### Scenario: A direct brightness command has a saved acceptance
@@ -1025,6 +1026,7 @@ For an explicit request by the authorized owner in private Conversation, each co
 - **THEN** Conversation completes locally from the receipt and distinguishes acceptance from correlated confirmation
 - **AND** reconciliation after restart sends no new command and makes no supervisor replay for that request
 - **AND** if current read or sharing authority no longer permits the receipt details, Conversation shows a neutral completion
+- **AND** Read aloud requires current access to the receipt at both the private Conversation and speech destinations
 
 #### Scenario: A display alias matches multiple eligible targets
 

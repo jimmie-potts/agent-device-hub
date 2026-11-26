@@ -118,6 +118,13 @@ export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSig
 /** An engine refusal; `closingReason` is fixed text for the owner, such as the spend limit a new turn met. */
 class Fault extends Error {constructor(readonly code: ErrorCode, readonly closingReason?: string) {super(code);}}
 /** What one call answered: its text, its reported usage total, and a paid provider's usage by price class. */
+const BRIGHTNESS_REQUEST_UNAVAILABLE = 'refused: the original brightness request is no longer available.';
+const BRIGHTNESS_ANSWER_UNAVAILABLE = 'refused: the owner’s exact brightness clarification is no longer available.';
+const BRIGHTNESS_DETAILS_UNAVAILABLE = 'The request finished. Details are unavailable.';
+const BRIGHTNESS_NOT_SENT = 'The brightness request is no longer available. No command was sent.';
+const stoppedBeforeBrightness = (text: string | null): boolean =>
+  text === BRIGHTNESS_REQUEST_UNAVAILABLE || text === BRIGHTNESS_ANSWER_UNAVAILABLE;
+
 type Answer = {text: string; units: number | null; usage?: TokenUsage | null; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[];
   disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true};
 /** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
@@ -555,8 +562,8 @@ export class AssistantEngine {
     return Math.max(0, Math.min(calls, time, units));
   }
   /** Records which result was visible when the reply committed, in the same transaction. */
-  #confirmationReply(taskId: string, messageId: string, reply: string): string {
-    const watches = this.store.confirmations(taskId);
+  #confirmationReply(taskId: string, messageId: string, reply: string, requestId?: string): string {
+    const watches = this.store.confirmations(taskId).filter(watch => requestId === undefined || watch.requestId === requestId);
     const updates: string[] = [];
     for (const watch of watches) {
       const update = watch.result ?? pending(watch);
@@ -586,9 +593,9 @@ export class AssistantEngine {
         if (current === undefined || current.result !== undefined) return;
         if (evidence.result !== undefined && current.follows !== undefined) {
           const task = this.#task(current.taskId);
-          const receipt = this.#brightnessReceipt(task);
+          const receipt = this.store.call(current.requestId);
           if (this.store.savedMessage(task.id, current.follows) !== undefined &&
-              (receipt?.id !== current.requestId || this.#canReadBrightnessReceipt(task, receipt))) {
+              (receipt?.directBrightness !== true || this.#canReadBrightnessReceipt(task, receipt))) {
             this.store.message(task, `${current.requestId}-confirmation`, 'assistant', evidence.result, this.context.clock.now(), current.follows);
             this.store.touch(task.conversationId);
             this.#publish(add, {traceparent: current.traceparent});
@@ -652,6 +659,9 @@ export class AssistantEngine {
     if (task === undefined || task.localJobStatus !== undefined || message?.role !== 'assistant' || !spokenAloud(task.profile)) return false;
     const read = this.#fields(task.profile, 'read', 'private-conversation'), speech = this.#fields(task.profile, 'read', 'conversation-speech');
     const allowed: FieldAccess = (source, field, record) => read(source, field, record) && speech(source, field, record);
+    const receipt = this.#brightnessMessage({...message, taskId});
+    if (receipt !== undefined && (!this.#canReadBrightnessReceipt(task, receipt.call) ||
+        !speech('operations', 'details', receipt.call.id))) return false;
     return allowed('conversation', 'text', task.conversationId) && allowed('conversation', 'text', messageId) &&
       this.#jobMessageAllowed({...message, taskId}, allowed) && this.#replayable(taskId, allowed);
   }
@@ -1199,8 +1209,8 @@ export class AssistantEngine {
       const visibility = {
         privateText: (message: MessageSource) => {
           const receipt = this.#brightnessMessage(message);
-          return receipt !== undefined && !this.#canReadBrightnessReceipt(receipt.task, receipt.call)
-            ? 'The request finished. Details are unavailable.' : this.#privateJobText(selected, conversationId, message);
+          return receipt !== undefined && !stoppedBeforeBrightness(receipt.call.result) && !this.#canReadBrightnessReceipt(receipt.task, receipt.call)
+            ? BRIGHTNESS_DETAILS_UNAVAILABLE : this.#privateJobText(selected, conversationId, message);
         },
         shows: (message: MessageSource) => fields('conversation', 'text', message.id) &&
           (message.role === 'owner' || this.#brightnessMessage(message) !== undefined ||
@@ -1221,15 +1231,22 @@ export class AssistantEngine {
   }
   #config(taskId: string) {return {configurable: {thread_id: taskId}, durability: 'sync' as const, recursionLimit: 4 * LIMITS.modelCalls + 4, callbacks: []};}
   #brightnessReceipt(task: Task): Call | undefined {
-    return this.store.calls(task.id).filter(call => call.directBrightness === true && call.status === 'succeeded' && call.result?.startsWith('accepted: ')).at(-1);
+    return this.store.calls(task.id).filter(call => call.directBrightness === true && call.status === 'succeeded' &&
+      (call.result?.startsWith('accepted: ') === true || stoppedBeforeBrightness(call.result))).at(-1);
   }
 
   #brightnessMessage(message: MessageSource): {task: Task; call: Call} | undefined {
     if (message.role !== 'assistant' || message.id !== `${message.taskId}-result` && !message.id.endsWith('-confirmation')) return undefined;
     const task = this.store.task(message.taskId);
-    const call = task === undefined ? undefined : this.#brightnessReceipt(task);
-    return task !== undefined && call !== undefined && (message.id === `${task.id}-result` || message.id === `${call.id}-confirmation`)
-      ? {task, call} : undefined;
+    if (task === undefined) return undefined;
+    const call = message.id === `${task.id}-result` ? this.#brightnessReceipt(task) : this.store.call(message.id.slice(0, -'-confirmation'.length));
+    return call?.directBrightness === true && call.taskId === task.id ? {task, call} : undefined;
+  }
+
+  #canReadControlSource(task: Task, messageId: string): boolean {
+    const read = this.#fields(task.profile, 'read', 'private-conversation');
+    return read('conversation', 'text', task.conversationId) && read('conversation', 'text', messageId) &&
+      this.store.messages.removal(messageId) === undefined && this.store.savedMessage(task.id, messageId)?.role === 'owner';
   }
 
   #canReadBrightnessReceipt(task: Task, call: Call): boolean {
@@ -1238,8 +1255,7 @@ export class AssistantEngine {
     const target = control.proposal.target;
     const read = this.#fields(task.profile, 'read', 'private-conversation');
     const scope = this.#openAIScope(task, 'supervisor', target).fields;
-    return read('conversation', 'text', task.conversationId) && read('operations', 'details', call.id) &&
-      control.ownerMessageIds.every(id => this.store.messages.removal(id) === undefined && read('conversation', 'text', id)) &&
+    return read('operations', 'details', call.id) && control.ownerMessageIds.every(id => this.#canReadControlSource(task, id)) &&
       scope('devices', 'label', target) && scope('devices', 'status', target);
   }
 
@@ -1271,11 +1287,14 @@ export class AssistantEngine {
       else if (brightness !== undefined) {
         task.status = 'succeeded'; task.code = null;
         const messageId = `${task.id}-result`;
-        if (!this.#canReadBrightnessReceipt(task, brightness)) {
+        if (stoppedBeforeBrightness(brightness.result)) {
+          result = BRIGHTNESS_NOT_SENT;
+        } else if (!this.#canReadBrightnessReceipt(task, brightness)) {
           this.store.dropConfirmation(brightness.id);
-          result = 'The request finished. Details are unavailable.';
+          result = BRIGHTNESS_DETAILS_UNAVAILABLE;
         } else {
-          result = this.#confirmationReply(task.id, messageId, '') || 'The brightness request was accepted. Its effect is unconfirmed.';
+          const confirmation = this.#confirmationReply(task.id, messageId, '', brightness.id);
+          result = confirmation === '' ? 'The brightness request was accepted. Its effect is unconfirmed.' : confirmation;
         }
         this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
       } else if (snapshot?.next.length === 0 && typeof values?.result === 'string') {
@@ -1283,7 +1302,7 @@ export class AssistantEngine {
         const messageId = `${task.id}-result`;
         result = this.#confirmationReply(task.id, messageId, values.result);
         this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
-      } else if (snapshot?.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0)) {
+      } else if (snapshot?.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0) === true) {
         // The turn that decided to ask saved the question before the interrupt; an interrupt without one is not evidence of a saved question.
         if (task.question === null) {task.status = 'uncertain'; task.code = 'uncertain-result';}
         else {task.status = task.question.answer === null ? 'waiting' : 'paused'; task.code = null;}
@@ -2147,14 +2166,15 @@ export class AssistantEngine {
       return refuse('superseded', 'The owner sent new input before dispatch. The earlier control request was not sent.');
     }
     if (!this.#toolsFor(task).some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
-    let scopedBrightness: {subject: string; owner: string; access: FieldAccess; answerId?: string} | undefined;
+    let scopedBrightness: {subject: string; owner: string; access: FieldAccess; requestId: string; answerId?: string} | undefined;
     if (openai && proposal.family !== 'coding-dispatch') {
       const boundDevice = direct === undefined ? undefined : proposal.target;
       const scope = this.#openAIScope(task, 'supervisor', boundDevice);
       if (scope.brightnessTarget !== undefined && direct !== undefined &&
         (proposal.family === 'brightness-set' || proposal.family === 'catalog-action' && proposal.command === 'brightness-set')) {
-        const answerId = direct.ownerMessageIds[1];
-        scopedBrightness = {subject: scope.brightnessTarget, access: scope.fields,
+        const [requestId, answerId] = direct.ownerMessageIds;
+        if (requestId !== scope.requestId) return refuse('refused', 'The original brightness request is no longer available.');
+        scopedBrightness = {subject: scope.brightnessTarget, access: scope.fields, requestId,
           owner: proposal.family === 'brightness-set' ? ASSISTANT_LIGHT_OWNER : proposal.binding.owner,
           ...(answerId === undefined ? {} : {answerId})};
       }
@@ -2196,13 +2216,15 @@ export class AssistantEngine {
       };
       result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
         if (scopedBrightness !== undefined) {
-          const {subject, owner, access, answerId} = scopedBrightness;
+          const {subject, owner, access, requestId, answerId} = scopedBrightness;
           const matches = await this.#catalog().deviceSubjectMatches(subject, parent);
           this.#fence(active);
+          if (!this.#canReadControlSource(task, requestId) || !access('conversation', 'request', requestId)) {
+            return {text: BRIGHTNESS_REQUEST_UNAVAILABLE, units: 0};
+          }
           const answer = answerId === undefined ? undefined : this.store.savedMessage(task.id, answerId);
-          if (answerId !== undefined && (answer?.role !== 'owner' || this.store.messages.removal(answerId) !== undefined ||
-            !this.#fields(task.profile, 'read', 'private-conversation')('conversation', 'text', answerId))) {
-            return {text: 'refused: the owner’s exact brightness clarification is no longer available.', units: 0};
+          if (answerId !== undefined && (!this.#canReadControlSource(task, answerId) || !access('conversation', 'excerpt', answerId))) {
+            return {text: BRIGHTNESS_ANSWER_UNAVAILABLE, units: 0};
           }
           const match = chooseBrightnessSubject(matches, answer?.text);
           if (match?.owner !== owner || match.device.id !== proposal.target ||
@@ -2298,7 +2320,9 @@ export class AssistantEngine {
           recorded.result.startsWith('applied') ? 'The applied effect was confirmed.' : 'The command has a result. Its effect is unconfirmed.';
       } else result = recorded.result ?? pending(recorded);
     }
-    if (scopedBrightness !== undefined && accepted) return {step: state.step + 1, next: 'end', result: ''};
+    if (scopedBrightness !== undefined && (accepted || stoppedBeforeBrightness(result))) {
+      return {step: state.step + 1, next: 'end', result: ''};
+    }
     let handedOff = false;
     // A hand-off waiting for its companion's busy slot has not been sent: the conversation says it waits, and says
     // "delegated" once the coordinator reports it sent (Hub #2028).

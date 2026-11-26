@@ -3166,9 +3166,13 @@ void test('Responses resolves an exact brightness instruction before sending one
   let active = {id: target, attempt: true, repeat: false, wrongAmount: false, bypassLookup: false};
   let denied: 'private-conversation' | 'openai-supervisor' | undefined;
   let outcome: 'accepted' | 'revoke-after-acceptance' | 'uncertain' = 'accepted';
+  let deniedReceipt: {destination: 'private-conversation' | 'conversation-speech'; requestId: string} | undefined;
+  const spoken: string[] = [];
   const standard = sharing();
   const share = (grant: ShareQuery) => standard(grant) && !(grant.destination === denied &&
-    grant.source === 'devices' && grant.record === target && (grant.field === 'status' || grant.field === 'label'));
+    grant.source === 'devices' && grant.record === target && (grant.field === 'status' || grant.field === 'label')) &&
+    !(deniedReceipt !== undefined && grant.destination === deniedReceipt.destination && grant.source === 'operations' &&
+      grant.field === 'details' && grant.record === deniedReceipt.requestId);
   const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
     modelCalls += 1;
     const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
@@ -3189,6 +3193,7 @@ void test('Responses resolves an exact brightness instruction before sending one
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
   }});
   const w = await world(context, {provider, share, tools: ['read_devices', 'control_brightness_set'],
+    speak: reply => {spoken.push(reply.text);},
     dispatch: data => {
       requests.push(data);
       if (outcome === 'revoke-after-acceptance') denied = 'openai-supervisor';
@@ -3293,6 +3298,21 @@ void test('Responses resolves an exact brightness instruction before sending one
   const resultId = `${reachy()?.taskId}-result`;
   const result = () => page(w, 'reachy', 'recent').then(value => value.messages.filter(message => message.id === resultId));
   assert.equal((await result()).length, 1);
+  const reachyTaskId = reachy()?.taskId ?? assert.fail('Reachy saved the task');
+  const requestId = requests[3]?.requestId ?? assert.fail('Reachy saved the receipt');
+  const speakResult = () => control(w.core, w.module(), 'speak', reachyTaskId, randomUUID(), {messageId: resultId});
+  assert.equal((await speakResult()).status, 'accepted');
+  assert.match(spoken.at(-1) ?? '', /brightness request accepted/i);
+  const offered = spoken.length;
+  for (const destination of ['private-conversation', 'conversation-speech'] as const) {
+    deniedReceipt = {destination, requestId};
+    assert.equal((await result())[0]?.text === 'The request finished. Details are unavailable.', destination === 'private-conversation');
+    const refused = await speakResult();
+    assert.equal(refused.status, 'rejected');
+    if (refused.status === 'rejected') assert.equal(refused.error.error.code, 'forbidden');
+    assert.equal(spoken.length, offered, 'receipt details cannot reach the spoken sink after either grant is revoked');
+  }
+  deniedReceipt = undefined;
   denied = 'private-conversation';
   assert.deepEqual((await result()).map(message => message.text), ['The request finished. Details are unavailable.']);
   denied = undefined;
@@ -3336,6 +3356,11 @@ void test('a scoped brightness lookup supports the typed LIFX tool and refuses a
   const exact = light('fixture-lifx', 'Fixture LIFX');
   const requests: AssistantDispatch[] = [], evidence: string[] = [];
   let alias = false, pixooReads = 0, aliasAtRead = Number.POSITIVE_INFINITY;
+  let revokeAtRead = Number.POSITIVE_INFINITY;
+  const standard = sharing();
+  const share = (grant: ShareQuery) => standard(grant) && !(pixooReads >= revokeAtRead &&
+    grant.destination === 'private-conversation' && grant.source === 'conversation' && grant.field === 'text' &&
+    grant.record?.endsWith('-prompt') === true);
   const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
     const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
     const results = body.input.filter(item => item.type === 'function_call_output');
@@ -3348,7 +3373,7 @@ void test('a scoped brightness lookup supports the typed LIFX tool and refuses a
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic result.', annotations: []}]}];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
   }});
-  const w = await world(context, {provider, tools: ['read_devices', 'set_lifx_brightness'],
+  const w = await world(context, {provider, share, tools: ['read_devices', 'set_lifx_brightness'],
     devices: owner => owner === lifx ? [exact] : [],
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   const register = async (source: string, rows: () => DeviceRecord[]) => {
@@ -3377,6 +3402,15 @@ void test('a scoped brightness lookup supports the typed LIFX tool and refuses a
   await until(() => task(w)?.taskId !== beforeLateAlias && status(w) === 'succeeded');
   assert.match(evidence.at(-1) ?? '', /"controls":\["set_lifx_brightness"\]/u);
   assert.equal(requests.length, 1, 'a new alias before dispatch must remain blocked');
+  aliasAtRead = Number.POSITIVE_INFINITY;
+  revokeAtRead = pixooReads + 3;
+  const beforeRevoke = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+  await until(() => task(w)?.taskId !== beforeRevoke && status(w) === 'succeeded');
+  assert.ok(pixooReads >= revokeAtRead);
+  assert.equal(requests.length, 1, 'revoking the original message during the final lookup blocks dispatch');
+  assert.match(JSON.stringify(await page(w, 'bunny', 'recent')), /No command was sent/u);
+  revokeAtRead = Number.POSITIVE_INFINITY;
   alias = true;
   const prior = task(w)?.taskId;
   assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
