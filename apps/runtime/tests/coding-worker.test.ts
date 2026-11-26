@@ -79,7 +79,7 @@ function fakeEdge() {
 
 void test('the configuration names an origin, a token file, allowlisted repositories and a bounded harness', () => {
   const good = parseConfiguration(configuration('/tmp/repo'));
-  assert.equal(good.edge, 'http://127.0.0.1:18788'); assert.deepEqual(good.repositories, [{name: 'agent-device-hub', path: '/tmp/repo'}]); assert.equal(good.claude.permissionMode, 'acceptEdits');
+  assert.equal(good.edge, 'http://127.0.0.1:18788'); assert.deepEqual(good.repositories, [{name: 'agent-device-hub', path: '/tmp/repo'}]); assert.equal(good.claude?.permissionMode, 'acceptEdits');
   for (const [changed, reason] of [[{schema: 'other'}, /not a coding-worker/], [{edge: 'http://127.0.0.1:18788/path'}, /origin/], [{tokenFile: 'relative'}, /absolute/],
     [{repositories: []}, /one to sixteen/], [{repositories: [{name: 'Bad Name', path: '/tmp/x'}]}, /distinct lowercase name/], [{claude: {executable: 'claude'}}, /absolute path/],
     [{claude: {executable: '/x/claude', permissionMode: 'bypassPermissions'}}, /permissionMode/], [{claude: {executable: '/x/claude', allowedTools: ['Bash(git push*)']}}, /without push/],

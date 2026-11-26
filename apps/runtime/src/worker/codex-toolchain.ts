@@ -6,11 +6,15 @@ import {promisify} from 'node:util';
 import {prepareStateDirectory} from '../state.js';
 import {checkoutIdentity, sameCheckout} from './writer-proof.js';
 
-const GIT = '/Library/Developer/CommandLineTools/usr/bin/git';
-const OPENSSL = '/System/Library/OpenSSL/openssl.cnf';
+const MAC_GIT = '/Library/Developer/CommandLineTools/usr/bin/git';
+const LINUX_GIT = '/usr/bin/git';
+const LINUX_BWRAP = '/usr/bin/bwrap';
+const MAC_OPENSSL = '/System/Library/OpenSSL/openssl.cnf';
+const LINUX_OPENSSL = '/etc/ssl/openssl.cnf';
 
 type GitView = {root: string; bin: string; common: string; readable: readonly string[]};
-export type CodexToolchain = {bin: string; readable: readonly string[]; gitView?: GitView; protectedGit?: string};
+export type CodexToolchain = {bin: string; readable: readonly string[]; gitView?: GitView; protectedGit?: string; linux?: true};
+export type CodexToolchainHost = 'darwin' | 'linux';
 
 export const codexToolchainVariables = (bin: string): Record<string, string> => ({
   GIT_CONFIG_NOSYSTEM: '1',
@@ -37,8 +41,12 @@ async function trustedFile(path: string, executable: boolean): Promise<void> {
 }
 
 /** Resolve the host Node distribution and stage only the reviewed command names in the private worker profile. */
-export async function prepareCodexToolchain(home: string): Promise<CodexToolchain> {
-  if (process.platform !== 'darwin' || !process.versions.node.startsWith('24.')) throw new Error('unsupported Codex toolchain');
+export async function prepareCodexToolchain(home: string, host: CodexToolchainHost = 'darwin', executable?: string): Promise<CodexToolchain> {
+  if (process.platform !== host || !process.versions.node.startsWith('24.')) throw new Error('unsupported Codex toolchain');
+  const git = host === 'darwin' ? MAC_GIT : LINUX_GIT;
+  const openssl = host === 'darwin' ? MAC_OPENSSL : LINUX_OPENSSL;
+  const extra = host === 'linux' && executable !== undefined ? [await realpath(executable), LINUX_BWRAP] : [];
+  if (host === 'linux' && (executable === undefined || extra[0] !== executable)) throw new Error('the Linux Codex executable must be canonical');
   const node = await realpath(process.execPath);
   const npmRoot = join(dirname(dirname(node)), 'lib/node_modules/npm');
   const npm = join(npmRoot, 'bin/npm-cli.js');
@@ -47,8 +55,9 @@ export async function prepareCodexToolchain(home: string): Promise<CodexToolchai
   const npmInfo = await lstat(npmRoot);
   if (!npmInfo.isDirectory() || await realpath(npmRoot) !== npmRoot ||
     (npmInfo.uid !== 0 && npmInfo.uid !== process.getuid?.()) || (npmInfo.mode & 0o022) !== 0) throw new Error('unsafe npm installation');
-  await Promise.all([trustedFile(node, true), trustedFile(npm, true), trustedFile(GIT, true), trustedFile(OPENSSL, false)]);
-  const entries = {node, npm, git: GIT};
+  await Promise.all([trustedFile(node, true), trustedFile(npm, true), trustedFile(git, true), trustedFile(openssl, false),
+    ...extra.map(path => trustedFile(path, true))]);
+  const entries = {node, npm, git};
   const identity = createHash('sha256').update(JSON.stringify(entries)).digest('hex').slice(0, 24);
   const bin = await prepareStateDirectory(join(home, 'toolchain', identity));
   await Promise.all(Object.entries(entries).map(async ([name, target]) => {
@@ -68,13 +77,15 @@ export async function prepareCodexToolchain(home: string): Promise<CodexToolchai
     if ((await lstat(file)).size !== 0) throw new Error('unexpected npm configuration');
   }
   if ((await readdir(bin)).sort().join(',') !== 'git,global.npmrc,node,npm,user.npmrc') throw new Error('unexpected Codex toolchain entry');
-  return {bin, readable: [node, npmRoot, GIT, OPENSSL]};
+  return {bin, readable: [node, npmRoot, git, openssl, ...extra], ...(host === 'linux' ? {linux: true} : {})};
 }
 
-const GIT_ENV = {PATH: '/Library/Developer/CommandLineTools/usr/bin:/usr/bin:/bin',
-  GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_OPTIONAL_LOCKS: '0'};
+const gitEnvironment = (host: CodexToolchainHost) => ({
+  PATH: host === 'darwin' ? '/Library/Developer/CommandLineTools/usr/bin:/usr/bin:/bin' : '/usr/bin:/bin',
+  GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_OPTIONAL_LOCKS: '0',
+});
 
-function gitLauncher(cwd: string, metadata: string, index: string, headFile: string, head: string): string {
+function gitLauncher(cwd: string, metadata: string, index: string, headFile: string, head: string, host: CodexToolchainHost): string {
   return `#!/usr/bin/env node
 const {spawnSync} = require('node:child_process');
 const {readFileSync} = require('node:fs');
@@ -93,8 +104,8 @@ const options = [
   '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
   ${JSON.stringify(`--git-dir=${metadata}`)}, ${JSON.stringify(`--work-tree=${cwd}`)},
 ];
-const environment = {cwd: ${JSON.stringify(cwd)}, env: ${JSON.stringify({...GIT_ENV, GIT_INDEX_FILE: index})}, stdio: 'inherit'};
-const git = args => spawnSync(${JSON.stringify(GIT)}, [...options, ...args], environment);
+const environment = {cwd: ${JSON.stringify(cwd)}, env: ${JSON.stringify({...gitEnvironment(host), GIT_INDEX_FILE: index})}, stdio: 'inherit'};
+const git = args => spawnSync(${JSON.stringify(host === 'darwin' ? MAC_GIT : LINUX_GIT)}, [...options, ...args], environment);
 function finish(result) {
   if (result.signal !== null) process.kill(process.pid, result.signal);
   process.exit(result.status ?? 1);
@@ -117,10 +128,10 @@ finish(result);
  * The linked checkout's live index and files remain authoritative. Its shallow HEAD objects and neutral config live in
  * a separate read-only directory because granting the common Git directory would disclose other refs and local config.
  */
-export async function prepareLinkedGitView(cwd: string, home: string, signal?: AbortSignal): Promise<GitView | undefined> {
+export async function prepareLinkedGitView(cwd: string, home: string, signal?: AbortSignal, host: CodexToolchainHost = 'darwin'): Promise<GitView | undefined> {
   if ((await lstat(join(cwd, '.git'))).isDirectory()) return undefined;
-  const git = async (directory: string, args: string[]) => (await execute(GIT, ['-c', 'core.hooksPath=/dev/null',
-    '-c', 'core.fsmonitor=false', ...args], {cwd: directory, env: GIT_ENV, signal, timeout: 15_000, maxBuffer: 8192})).stdout.trim();
+  const git = async (directory: string, args: string[]) => (await execute(host === 'darwin' ? MAC_GIT : LINUX_GIT, ['-c', 'core.hooksPath=/dev/null',
+    '-c', 'core.fsmonitor=false', ...args], {cwd: directory, env: gitEnvironment(host), signal, timeout: 15_000, maxBuffer: 8192})).stdout.trim();
   const identity = await checkoutIdentity(cwd, git);
   const head = await git(cwd, ['rev-parse', 'HEAD']);
   if (!/^[a-f0-9]{40}$/u.test(head)) throw new Error('unsafe Codex checkout revision');
@@ -139,7 +150,7 @@ export async function prepareLinkedGitView(cwd: string, home: string, signal?: A
       !sameCheckout(await checkoutIdentity(cwd, git), identity) || await git(cwd, ['rev-parse', 'HEAD']) !== head) {
       throw new Error('Codex checkout changed while preparing its Git view');
     }
-    await writeFile(join(bin, 'git'), gitLauncher(cwd, metadata, index, headFile, head), {flag: 'wx', mode: 0o500});
+    await writeFile(join(bin, 'git'), gitLauncher(cwd, metadata, index, headFile, head, host), {flag: 'wx', mode: 0o500});
     return {root, bin, common: identity.common, readable: [metadata, index, headFile]};
   } catch (error) {
     await rm(root, {recursive: true, force: true}).catch(() => {});

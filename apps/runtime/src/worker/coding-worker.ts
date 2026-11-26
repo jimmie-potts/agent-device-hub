@@ -22,7 +22,7 @@ import {readPrivateFile} from '../state.js';
 import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
 import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type AdapterSteer, type CodingAdapter} from './adapter.js';
-import {codexAdapter, codexArguments, codexEnvironment, verifyCodexNativeResume, verifyCodexToolchain, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
+import {codexAdapter, codexArguments, codexEnvironment, isWsl2Host, qualifyWslCodex, verifyCodexNativeResume, verifyCodexToolchain, verifyCodexWriterBoundary, workerHome, wslCheckoutPath, type CodexConfiguration} from './codex-adapter.js';
 import {CODEX_TOOLCHAIN_REFUSAL} from './codex-toolchain.js';
 import {NATIVE_UUID, NativeClients, nativeTerminal, type NativeTerminalPlan} from './native-clients.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX, verifyClaudeWriterBoundary} from './claude-writer.js';
@@ -88,7 +88,7 @@ export type WorkerConfiguration = {
   enrollment?: {source: string; os: CodingWorkerDeclaration['os']; toolchains: string[]};
   repositories: readonly {name: string; path: string}[];
   /** `environment` names further variables the harness may inherit; a provider credential or switch is refused. */
-  claude: {executable: string; model?: string; permissionMode: string; allowedTools: readonly string[]; maxTurns?: number; environment?: readonly string[]};
+  claude?: {executable: string; model?: string; permissionMode: string; allowedTools: readonly string[]; maxTurns?: number; environment?: readonly string[]};
   codex?: CodexConfiguration;
   adapterProtocol?: true;
   nativeClients?: {socket: string; harnesses: readonly ('claude-code' | 'codex')[]; claudeDesktop?: true};
@@ -117,6 +117,8 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
     if (destination !== 'mac' && nativeClients !== undefined) return bad('native clients are configured only on the Mac worker');
     if (!Array.isArray(toolchains) || toolchains.length > 16 || new Set(toolchains).size !== toolchains.length ||
       !toolchains.every((item): item is string => typeof item === 'string' && item.length <= 80 && NAME.test(item))) return bad('invalid toolchain identifiers');
+    if (destination === 'pc' && isWsl2Host() && codex !== undefined && (!toolchains.includes('wsl2') || !toolchains.includes('node24'))) return bad('the WSL2 Codex worker must declare wsl2 and node24');
+    if ((!isWsl2Host() || destination !== 'pc') && toolchains.includes('wsl2')) return bad('the wsl2 toolchain requires the PC WSL2 host');
     enrollment = {source, os, toolchains};
   }
   let nativeConfig: WorkerConfiguration['nativeClients'];
@@ -139,6 +141,24 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
     if (!isRecord(entry) || typeof entry.name !== 'string' || !NAME.test(entry.name) || entry.name.length > 64 || typeof entry.path !== 'string' || !isAbsolute(entry.path) || names.has(entry.name)) return bad('a repository needs a distinct lowercase name and an absolute path');
     names.add(entry.name); return {name: entry.name, path: resolve(entry.path)};
   });
+  const pc = enrollment !== undefined && codingDestinationForSource(enrollment.source) === 'pc';
+  const claudeConfig = claude === undefined && pc ? undefined : parseClaudeConfiguration(claude, bad);
+  let codexConfig: CodexConfiguration | undefined;
+  if (codex !== undefined) {
+    if (!isRecord(codex) || Object.keys(codex).some(key => !['executable', 'model', 'home'].includes(key)) ||
+      typeof codex.executable !== 'string' || !isAbsolute(codex.executable) ||
+      typeof codex.home !== 'string' || !isAbsolute(codex.home)) return bad('codex needs an absolute executable path and a private worker home');
+    if (codex.model !== undefined && (typeof codex.model !== 'string' || !/^[a-z0-9.-]{1,64}$/.test(codex.model))) return bad('codex.model is not a model name');
+    codexConfig = {executable: codex.executable, home: codex.home, ...(codex.model === undefined ? {} : {model: codex.model})};
+  }
+  if (pc && codexConfig === undefined) return bad('a PC worker requires its Codex configuration');
+  return {edge: url.origin, tokenFile, repositories: list,
+    ...(nativeConfig === undefined ? {} : {nativeClients: nativeConfig}), ...(uncapped ? {uncapped: true} : {}),
+    ...(enrollment === undefined ? {} : {enrollment}), ...(value.schema !== 'coding-worker/1.0' ? {adapterProtocol: true} : {}),
+    ...(codexConfig === undefined ? {} : {codex: codexConfig}), ...(claudeConfig === undefined ? {} : {claude: claudeConfig})};
+}
+
+function parseClaudeConfiguration(claude: unknown, bad: (reason: string) => never): NonNullable<WorkerConfiguration['claude']> {
   if (!isRecord(claude) || typeof claude.executable !== 'string' || !isAbsolute(claude.executable)) return bad('claude.executable must be an absolute path');
   if (claude.model !== undefined && (typeof claude.model !== 'string' || !/^[a-z0-9.-]{1,64}$/.test(claude.model))) return bad('claude.model is not a model name');
   const permissionMode = claude.permissionMode ?? 'acceptEdits';
@@ -150,16 +170,9 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
   if (environment !== undefined && (!Array.isArray(environment) || environment.length > 32 || environment.some(name => typeof name !== 'string' || !/^[A-Z_][A-Z0-9_]{0,63}$/.test(name) || !configurableVariable(name)))) {
     return bad('claude.environment must list at most 32 variable names without credentials, provider switches or loader variables');
   }
-  let codexConfig: CodexConfiguration | undefined;
-  if (codex !== undefined) {
-    if (!isRecord(codex) || Object.keys(codex).some(key => !['executable', 'model', 'home'].includes(key)) ||
-      typeof codex.executable !== 'string' || !isAbsolute(codex.executable) ||
-      typeof codex.home !== 'string' || !isAbsolute(codex.home)) return bad('codex needs an absolute executable path and a private worker home');
-    if (codex.model !== undefined && (typeof codex.model !== 'string' || !/^[a-z0-9.-]{1,64}$/.test(codex.model))) return bad('codex.model is not a model name');
-    codexConfig = {executable: codex.executable, home: codex.home, ...(codex.model === undefined ? {} : {model: codex.model})};
-  }
-  return {edge: url.origin, tokenFile, repositories: list, ...(nativeConfig === undefined ? {} : {nativeClients: nativeConfig}), ...(uncapped ? {uncapped: true} : {}), ...(enrollment === undefined ? {} : {enrollment}), ...(value.schema !== 'coding-worker/1.0' ? {adapterProtocol: true} : {}), ...(codexConfig === undefined ? {} : {codex: codexConfig}), claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
-    ...(claude.maxTurns === undefined ? {} : {maxTurns: Number(claude.maxTurns)}), ...(environment === undefined ? {} : {environment: environment as string[]})}};
+  return {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode,
+    allowedTools: allowedTools as string[], ...(claude.maxTurns === undefined ? {} : {maxTurns: Number(claude.maxTurns)}),
+    ...(environment === undefined ? {} : {environment: environment as string[]})};
 }
 
 /** One run in one of the worker's slots, with the companion that asked and the endpoint that started it. */
@@ -403,7 +416,7 @@ export class CodingWorker {
   readonly #running = new Map<string, Running>();
   /** Each repository's git setup (fetch and worktree add), one at a time, so runs on the same repository never race git's locks. */
   readonly #gitSetup = new Map<string, Promise<void>>();
-  readonly #harness: Harness;
+  readonly #harness: Harness | undefined;
   readonly #adapters: ReadonlyMap<string, CodingAdapter>;
   readonly #adapterProtocol: boolean;
   readonly #adapterHealth = new Map<string, CodingHarnessReadiness>();
@@ -421,19 +434,23 @@ export class CodingWorker {
   /** `log` is the process's own line writer, owned by the entry point; the library writes nothing itself. */
   constructor(readonly configuration: WorkerConfiguration, readonly token: string, harness?: Harness, readonly log: (line: string) => void = () => {}, connect: typeof connectRemote = connectRemote,
     now: () => number = Date.now, runGit: GitRunner = git, timer: ProbeTimer = realTimer, adapters: readonly CodingAdapter[] = [], readonly resources: ResourceProbe = observeResources) {
-    this.#harness = harness ?? claudeHarness(configuration.claude.executable, process.env,
-      {...(configuration.claude.environment === undefined ? {} : {environment: configuration.claude.environment}), ...(configuration.repositories[0] === undefined ? {} : {probeCwd: configuration.repositories[0].path})});
+    const {claude} = configuration;
     const cwd = configuration.repositories[0]?.path;
-    // Remote enrollment alone does not qualify the built-in Mac writer adapters on another host.
-    const macAdapters = configuration.enrollment === undefined || codingDestinationForSource(configuration.enrollment.source) === 'mac';
-    const configured = !macAdapters || configuration.codex === undefined || cwd === undefined ? [] : [codexAdapter(configuration.codex, {})];
+    // Each enrolled destination admits only its supported built-in adapters.
+    const destination = configuration.enrollment === undefined ? undefined : codingDestinationForSource(configuration.enrollment.source);
+    const macAdapters = configuration.enrollment === undefined || destination === 'mac';
+    this.#harness = harness ?? (macAdapters && claude !== undefined ? claudeHarness(claude.executable, process.env,
+      {...(claude.environment === undefined ? {} : {environment: claude.environment}), ...(cwd === undefined ? {} : {probeCwd: cwd})}) : undefined);
+    const wslCodex = destination === 'pc' && isWsl2Host() && configuration.enrollment?.toolchains.includes('wsl2') === true;
+    const configured = (!macAdapters && !wslCodex) || configuration.codex === undefined || cwd === undefined ? []
+      : [codexAdapter(configuration.codex, wslCodex ? {host: 'linux'} : {})];
     const claudeAdapter: CodingAdapter = {
       id: CLAUDE,
       capabilities: CLAUDE_CAPABILITIES,
-      readiness: () => this.#harness.readiness?.() ?? Promise.resolve(UNKNOWN_READINESS),
+      readiness: () => this.#harness?.readiness?.() ?? Promise.resolve(UNKNOWN_READINESS),
       run: input => this.#runClaude(input),
     };
-    const available = new Map<string, CodingAdapter>(macAdapters ? [[CLAUDE, claudeAdapter]] : []);
+    const available = new Map<string, CodingAdapter>(macAdapters && claude !== undefined ? [[CLAUDE, claudeAdapter]] : []);
     for (const adapter of [...configured, ...adapters]) {
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(adapter.id) || adapter.id.length > 32 || adapter.id === CLAUDE || available.has(adapter.id)) {
         throw new Error('coding-worker-config: duplicate or invalid harness identity');
@@ -508,6 +525,7 @@ export class CodingWorker {
     const resourceSample = this.resources(destination).catch(() => unknownResources);
     const repositories = (await Promise.all(this.configuration.repositories.map(async ({name, path}) => {
       try {
+        if (destination === 'pc' && isWsl2Host() && !await wslCheckoutPath(path)) return [];
         const revision = await this.#git(path, ['rev-parse', '--verify', 'origin/main^{commit}'], {timeoutMs: 10_000});
         return SHA.test(revision) ? [{name, revision}] : [];
       } catch {return [];}
@@ -635,6 +653,9 @@ export class CodingWorker {
     if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
     const data = command.data;
     if (data.action === 'prepare-native-client' || data.action === 'open-native-terminal' || data.action === 'open-claude-desktop') {
+      if (this.configuration.enrollment !== undefined && codingDestinationForSource(this.configuration.enrollment.source) === 'pc') {
+        return errorBody('unsupported-capability', {detail: 'saved PC terminal access requires a qualified WSL interactive writer boundary'});
+      }
       if (this.#running.has(data.operationId)) return errorBody('invalid-state');
       const endpoint = this.#endpoint;
       const fresh = () => endpoint !== undefined && this.#endpoint === endpoint && Date.parse(command.expiresat ?? '') > this.#now();
@@ -874,14 +895,16 @@ export class CodingWorker {
 
   async #runClaude(input: AdapterRun): Promise<AdapterEvidence> {
     const {worktree, bounds, signal} = input;
+    const {claude} = this.configuration;
+    const harness = this.#harness;
+    if (claude === undefined || harness === undefined) return {reason: 'refused', summary: 'Claude Code is not configured on this worker.'};
     // Check the only project settings the child loads before admitting a run.
     const {refusal: settings, fingerprint: settingsBefore} = await readProjectSettings(worktree);
     if (settings !== undefined) return {reason: 'refused', summary: `The run was refused before the tool started: ${settings}. Workers use only the subscription sign-in.`};
-    if (await this.#harness.subscriptionRefused?.() === true) {
+    if (await harness.subscriptionRefused?.() === true) {
       return {reason: 'refused', summary: 'Claude Code is unavailable or reports a sign-in other than the Claude subscription.'};
     }
     if (signal.aborted) return {reason: 'cancelled'};
-    const {claude} = this.configuration;
     // The brief travels on stdin, never as an argument. The private turn cap can only lower the dispatch's. Only the
     // repository's own settings load, no MCP server, and the deny list applies whatever any setting allows.
     // The output is a stream of events (stream-json needs --verbose with --print), read as it arrives, so a usage limit
@@ -915,7 +938,7 @@ export class CodingWorker {
     signal.addEventListener('abort', stop, {once: true});
     let finished: Awaited<ReturnType<Harness['start']>>;
     try {
-      finished = await this.#harness.start(args, worktree, input.brief, process => {
+      finished = await harness.start(args, worktree, input.brief, process => {
         child = process;
         if (signal.aborted) stop();
       }, watch, input.continuationRoot === undefined ? undefined : {root: input.continuationRoot, signal});
@@ -992,7 +1015,7 @@ export class CodingWorker {
         return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(original.root, codex.executable, args, [proof.worktree.identity.common])};
       }
       const {claude} = this.configuration;
-      if (process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined || await projectSettingsRefusal(original.root) !== undefined) return undefined;
+      if (claude === undefined || process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined || await projectSettingsRefusal(original.root) !== undefined) return undefined;
       const env = harnessEnvironment(process.env);
       if (client === 'claude-desktop') {
         if (!supportsClaudeDesktop(readiness.version)) return undefined;
@@ -1089,15 +1112,25 @@ export class CodingWorker {
 /** Reads the private configuration and token files and runs the worker until the process is signalled. */
 export async function main(argv: readonly string[], log: (line: string) => void, foreground = false): Promise<void> {
   const [first, second, attempt] = argv;
-  const configPath = first === 'native' ? second : first;
+  const configPath = first === 'native' || first === 'verify-wsl' ? second : first;
   if (configPath === undefined || !isAbsolute(configPath)) throw new Error('usage: coding-worker.mjs /absolute/private/coding-worker.json');
   const raw = await readPrivateJson(configPath, MAX_CONFIG_BYTES);
   const configuration = parseConfiguration(raw);
+  const pc = configuration.enrollment !== undefined && codingDestinationForSource(configuration.enrollment.source) === 'pc';
+  if (pc && !isWsl2Host()) throw new Error('coding-worker: the PC Codex worker requires WSL2');
+  if (pc && !await wslCheckoutPath(configPath)) throw new Error('coding-worker: the WSL2 configuration must be on the distro filesystem');
+  if (first === 'verify-wsl') {
+    if (attempt !== undefined || !pc || configuration.codex === undefined ||
+      !await qualifyWslCodex(configuration.codex)) throw new Error('coding-worker: WSL2 Codex sandbox qualification failed');
+    log('coding-worker: WSL2 Codex sandbox and toolchain verified without an account or a model turn');
+    return;
+  }
   if (first === 'native') {
     if (attempt === undefined || configuration.nativeClients === undefined) throw new Error('coding-worker-native: terminal access is not configured or an attempt is missing');
     await nativeTerminal(configuration.nativeClients.socket, attempt, foreground, log);
     return;
   }
+  if (pc && !await wslCheckoutPath(configuration.tokenFile)) throw new Error('coding-worker: the WSL2 token must be on the distro filesystem');
   const token = (await readPrivateFile(configuration.tokenFile, 1024)).toString('utf8').replace(/[\r\n]+$/, '');
   if (!TOKEN.test(token)) throw new Error('coding-worker-token: the token file does not hold one bearer token');
   const worker = new CodingWorker(configuration, token, undefined, log);
