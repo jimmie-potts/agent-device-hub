@@ -55,7 +55,8 @@ export const isCatalogSelectorKind = (role: CatalogReferenceRole): role is Catal
 export function readCatalogReferences(value: unknown, scope: ModelControlScope): readonly CatalogReference[] | undefined {
   if (!Array.isArray(value) || value.length > 8) return undefined;
   const refs: CatalogReference[] = [];
-  for (const item of value) {
+  const input: readonly unknown[] = value;
+  for (const item of input) {
     if (typeof item !== 'object' || item === null || Array.isArray(item) || Object.keys(item).length !== 4) return undefined;
     const {role, kind, source, quote} = item as Record<string, unknown>;
     if (typeof role !== 'string' || !referenceRoles.has(role) || kind !== 'named' && kind !== 'prior' ||
@@ -78,14 +79,24 @@ function containsControlQuote(body: string, quote: string, prior: boolean): bool
   if (!prior) return true;
   // A reference in a second instruction cannot identify the target of the first.
   const before = body.slice(0, index).trim();
-  return /^(?:it|them|(?:this|that|the same|the previous|the first|the second|the last)(?: [\p{L}\p{N}]+){0,2})$/iu
-    .test(normalizedControlText(quote)) && !/[.!?;]|\b(?:and|then|but|or)\b/iu.test(before);
+  const reference = /^(?:it|them|(?:this|that|the same|the previous|the first|the second|the last)(?: (?:one|asset|original|image|artwork|animation|draft|cue|scene|playlist|rendition|speaker|screen|panel|display|light|device|record|item|notice|preset|session))?)$/iu;
+  return reference.test(normalizedControlText(quote)) &&
+    !/[.!?;]|\b(?:and|then|but|or)\b|\b(?:like|as)$/iu.test(before);
 }
 
 export function catalogQuoteNames(quote: string, id: string, label = id): boolean {
   if (quote.startsWith('id:')) return quote.slice(3) === id;
   const name = normalizedControlText(quote).replace(/^(?:the|my) /u, '');
   return name !== '' && (name === normalizedControlText(label) || name === normalizedControlText(id));
+}
+
+/** A shorter label inside the cited name is harmless. A separate or enclosing label needs clarification. */
+export function catalogReferenceConflict(body: string, quote: string, id: string, label: string): boolean {
+  const index = body.indexOf(quote);
+  if (index < 0) return true;
+  const before = body.slice(0, index), after = body.slice(index + quote.length);
+  return [id, label].some(value => containsControlValue(before, value) || containsControlValue(after, value) ||
+    containsControlValue(body, value) && !containsControlValue(quote, value));
 }
 
 export function catalogReferencesFor(refs: readonly CatalogReference[], role: CatalogReferenceRole): readonly CatalogReference[] {

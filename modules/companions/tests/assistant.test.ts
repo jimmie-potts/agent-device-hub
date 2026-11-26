@@ -4728,7 +4728,7 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
       dispatch: request => {calls.push(request); return Promise.resolve(accepted(request.requestId));}});
     const owner = w.bus.connect('bunny/modules/playback');
     context.after(() => owner.close());
-    await owner.serveSync(['playback'], () => ({revision: 7, states: (extraSpeaker ? ['desk-speaker', 'hall-speaker'] : ['desk-speaker']).map(id => ({
+    await owner.serveSync(['playback'], () => ({revision: 7, states: (extraSpeaker ? ['desk-speaker', 'hall-speaker', 'north-hall-speaker'] : ['desk-speaker']).map(id => ({
       type: 'org.bunny.playback.updated', subject: id, dataschema: 'https://bunny.invalid/events/playback/2.0',
       data: {id, revision: 7, availability: 'available', playback: {status: 'known', player: 'playing', controls: ['pause', 'play'], title: 'PRIVATE_PLAYBACK_TITLE'}},
     }))}));
@@ -4744,7 +4744,7 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     assert.deepEqual(drafts.edit(stale), {code: 'revision-conflict'});
 
     await control(w.core, w.module(), 'enable');
-    const ask = async (text: string, next: NonNullable<typeof proposal>) => {
+    const ask = async (text: string, next: NonNullable<typeof proposal>, claimed?: ReturnType<typeof ownerReference>) => {
       const previous = task(w)?.taskId;
       const draftReference = ['Desk show', 'Red Dawn', `id:${summary.id}`].find(value => text.includes(value));
       const subject = ['hall-speaker', 'missing-speaker', 'desk speaker', 'music', 'a different speaker'].find(value => text.includes(value));
@@ -4752,7 +4752,7 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
       const references = next.name === edit ? [ownerReference('draft', draftReference ?? 'unavailable'), ownerReference('cue', 'first cue')]
         : next.name !== playback ? [] : subject !== undefined || exact !== undefined ? [ownerReference('primary', exact ?? subject ?? '')]
           : [ownerReference('primary', 'it', 'prior')];
-      proposal = next.name === edit || next.name === playback ? {...next, input: {...next.input, references}} : next;
+      proposal = next.name === edit || next.name === playback ? {...next, input: {...next.input, references: claimed === undefined ? references : [claimed]}} : next;
       assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
       await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
       assert.equal(proposal, undefined, 'the fake transport received the owner turn');
@@ -4797,6 +4797,21 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     await ask('Pause id:desk-speaker.', {name: playback,
       input: {owner: 'bunny/modules/playback', target: 'hall-speaker', arguments: '{"action":"pause"}'}});
     assert.equal(calls.length, 2, 'a different existing playback record never enters dispatch');
+    const pause = (target: string) => ({name: playback,
+      input: {owner: 'bunny/modules/playback', target, arguments: '{"action":"pause"}'}});
+    const misleading = [
+      ['Pause that Missing Speaker.', 'desk-speaker', ownerReference('primary', 'that Missing Speaker', 'prior')],
+      ['Pause North Hall Speaker.', 'hall-speaker', ownerReference('primary', 'Hall Speaker')],
+      ['Instead of Desk Speaker, pause Hall Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker')],
+      ['Pause the other speaker like that one.', 'desk-speaker', ownerReference('primary', 'that one', 'prior')],
+    ] as const;
+    const substitutions: string[] = [];
+    for (const [utterance, target, reference] of misleading) {
+      const before = calls.length;
+      await ask(utterance, pause(target), reference);
+      if (calls.length !== before) substitutions.push(utterance);
+    }
+    assert.deepEqual(substitutions, [], 'misclassified names, partial names and unrelated references never select the prior speaker');
     deniedSpeaker = true;
     for (const speaker of ['hall-speaker', 'missing-speaker']) {
       await ask(`Pause ${speaker}.`, {name: playback,
@@ -4815,6 +4830,10 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     assert.ok((await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
     deniedDraft = true;
     assert.ok(!(await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
+    deniedSpeaker = false;
+    await ask('Pause North Hall Speaker.', pause('north-hall-speaker'), ownerReference('primary', 'North Hall Speaker'));
+    assert.equal(calls.length, 3);
+    assert.equal(calls.at(-1)?.target, 'north-hall-speaker', 'the complete longer name still selects its own record');
   });
 }
 

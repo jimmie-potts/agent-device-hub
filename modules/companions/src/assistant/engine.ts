@@ -34,7 +34,7 @@ import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {chooseBrightnessSubject, ConversationActions, deviceClarification, type CatalogAdmission, type CatalogIdentityRead, type RetainedArtworkRead} from './catalog-actions.js';
 import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import {catalogQuoteNames, catalogReferencesFor, catalogSelectorSelected, isCatalogSelectorKind, readCatalogReferences} from './catalog-grounding.js';
+import {catalogQuoteNames, catalogReferenceConflict, catalogReferencesFor, catalogSelectorSelected, isCatalogSelectorKind, readCatalogReferences} from './catalog-grounding.js';
 import {catalogCommand, catalogTool, catalogToolReferenceRoles, catalogToolWithReferences, draftMutation, isCatalogTool, modelCatalogCommand, modelCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
 import {DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
 import {SyntheticProvider} from './synthetic.js';
@@ -2683,7 +2683,9 @@ export class AssistantEngine {
             if (matches[0]?.id !== id && !(implicit && source === 'playback' && alternatives.length === 1 &&
               ['music', 'playback'].some(label => catalogQuoteNames(ref.quote, label)))) return 'not-found';
             if (exact.some(value => value !== id)) return 'not-found';
-            return undefined;
+            const body = ref.source === 'answer' ? scope.answer?.text ?? '' : scope.request.text;
+            return references.some(candidate => candidate.id !== id && candidate.allowed &&
+              catalogReferenceConflict(body, ref.quote, candidate.id, candidate.label)) ? 'not-found' : undefined;
           }
           if (addressed.size > 0 || exact.length > 0) return 'not-found';
           const prior = new Set(texts.slice(2).flatMap(text => controlReferenceIds(references, text)));
