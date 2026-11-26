@@ -1290,6 +1290,13 @@ The runtime SHALL normalize existing model grants into the common policy without
 
 The selected Conversation supervisor SHALL interpret the current authenticated owner request using the common context and grants. It SHALL distinguish a question, a request needing clarification and a power action for one or two configured Wemo plugs. The Hub SHALL bind a typed action to the current request, any eligible clarification and the eligible target references. The Hub SHALL validate the whole selection, current access, registered ownership, power capability and target guards before dispatch. It SHALL use the existing tracked generic power dispatch and the designated Wemo writer with its hold and maximum-on policy. Permitted conversation facts and a scoped lookup of configured Wemo IDs and labels MAY identify a referenced device. The current owner request supplies authorization.
 
+#### Scenario: Read before applying exact Wemo power
+
+- **WHEN** the current owner directs a power change using one complete Wemo ID and the supervisor looks up the device first
+- **THEN** the scoped lookup SHALL preserve that literal ID, including when followed by sentence punctuation, and return only its uniquely matched permitted device
+- **AND** an unknown or malformed explicit ID SHALL return no scoped device facts or dispatch, and ambiguous names SHALL require clarification before dispatch
+- **AND** a generic lookup SHALL return no device for an ambiguous name, while the typed Wemo finder MAY return matching permitted candidates for clarification and MAY discover permitted candidates for an open request with no recognized device name
+
 #### Scenario: Two plugs followed by one reference
 
 - **WHEN** the owner asks any companion to operate two named Wemo plugs and then asks to operate just one using the previous exchange
