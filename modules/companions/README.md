@@ -894,7 +894,11 @@ message. It can look up the permitted labels and IDs of the configured
 plugs when a target needs resolution. This lookup is part of
 `set_wemo_power` and supplies no power status. An owner can name a plug,
 ask for all configured Wemo plugs, or refer to one identified in the
-conversation. Duplicate labels need an exact choice. Conversation validates
+conversation. Duplicate labels need an exact choice. If the request or
+clarification uses `id:`, every write must target one of the complete IDs
+supplied. A malformed or unknown ID stops the proposal. If another target
+is implicit, Conversation asks for its exact ID before sending any command.
+Conversation validates
 the typed proposal and saves a separate operation for each plug before
 dispatch. The exchange shows each receipt even when the outcomes differ.
 

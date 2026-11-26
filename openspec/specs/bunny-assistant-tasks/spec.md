@@ -1302,6 +1302,13 @@ The selected Conversation supervisor SHALL interpret the current authenticated o
 - **THEN** the supervisor can resolve the request using the permitted target lookup and prior Conversation facts
 - **AND** the Hub checks the chosen ID against the disclosed records and their current guards
 
+#### Scenario: Exact IDs constrain all writes
+
+- **WHEN** the current request or scoped answer supplies an `id:` selector
+- **THEN** only those complete, registered IDs can be write targets
+- **AND** an unknown or malformed selector prevents every write in the proposal, including when the model marks it as context
+- **AND** a group proposal or an additional implicit target requires clarification before the Hub sends a command
+
 #### Scenario: A request mentions two exact IDs
 
 - **WHEN** a power request explicitly contains two registered ID references

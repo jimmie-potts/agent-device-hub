@@ -1181,7 +1181,7 @@ void test('an explicit Wemo Answer prevents both group and list expansion', asyn
   await until(() => commands.length === 1 || status(w) === 'waiting' || status(w) === 'succeeded');
   assert.deepEqual(commands.map(command => command.target), ['table-plug']);
   await finishWemoConfirmationWindow(w);
-  assert.equal((await page(w)).messages.filter(message => message.text.includes('refused: invalid-request')).length, 2);
+  assert.equal((await page(w)).messages.filter(message => message.text.includes('refused: the plug selection is still unclear')).length, 2);
 });
 
 void test('a context-only tag cannot swap the only current Wemo target for an earlier one', async context => {
@@ -1193,7 +1193,6 @@ void test('a context-only tag cannot swap the only current Wemo target for an ea
   const provider = counted((_request, turn) => {
     if (turn === 1) return reply('The previous subject was Kitchen shelf (shelf-plug).');
     if (turn === 2) return wemoPower(['id:shelf-plug'], false, ['id:table-plug']);
-    if (turn === 3) return reply('I could not resolve that request safely.');
     return wemoPower(['id:table-plug'], false, ['id:shelf-plug']);
   });
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
@@ -1202,15 +1201,81 @@ void test('a context-only tag cannot swap the only current Wemo target for an ea
   await input(w.core, w.module(), 'What is the status of the kitchen shelf?');
   await until(() => status(w) === 'succeeded');
   await input(w.core, w.module(), 'Turn off id:table-plug.');
-  await until(() => status(w) === 'succeeded');
+  await until(() => status(w) === 'waiting');
   assert.equal(commands.length, 0);
-  await input(w.core, w.module(), 'Leave id:shelf-plug alone. Turn off Reading nook.');
+  await control(w.core, w.module(), 'cancel', task(w)?.taskId);
+  await input(w.core, w.module(), 'Leave id:shelf-plug alone. Turn off id:table-plug.');
   await until(() => commands.length === 1 || status(w) === 'succeeded');
   assert.deepEqual(commands.map(command => command.target), ['table-plug']);
   await finishWemoConfirmationWindow(w);
   await until(() => status(w) === 'succeeded');
   const result = (await page(w)).messages.filter(message => message.role === 'assistant').at(-1)?.text ?? '';
   assert.match(result, /shelf-plug: No power command was sent/);
+});
+
+void test('a current Wemo ID cannot inherit a second target from earlier history', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? reply('We were discussing shelf-plug.')
+    : turn === 2 ? wemoPower(['table-plug', 'shelf-plug'], false) : reply('The proposal was refused.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Which one is shelf-plug?');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'Switch off only id:table-plug.');
+  await until(() => commands.length > 0 || status(w) === 'waiting' || status(w) === 'succeeded');
+  assert.deepEqual(commands, []);
+});
+
+for (const suffix of ['_other', '.extra']) {
+  void test(`a Wemo Answer refuses an unregistered ID with the suffix ${suffix}`, async context => {
+    const plug = {...light('table-plug'), kind: 'wemo' as const};
+    const commands: AssistantDispatch[] = [];
+    const provider = counted((_request, turn) => turn === 1 ? call('ask_owner', {text: 'Which Wemo plug?'})
+      : turn === 2 ? wemoPower(['id:table-plug'], false) : reply('The proposal was refused.'));
+    const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
+      dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+    await control(w.core, w.module(), 'enable');
+    await input(w.core, w.module(), 'Could you switch one Wemo plug off?');
+    await until(() => status(w) === 'waiting');
+    await input(w.core, w.module(), `id:table-plug${suffix}`, true);
+    await until(() => commands.length > 0 || status(w) === 'succeeded');
+    assert.deepEqual(commands, []);
+  });
+}
+
+void test('a mixed Wemo request needs each target ID before sending either command', async context => {
+  const plugs = [
+    {...light('table-plug', 'Reading nook'), kind: 'wemo' as const},
+    {...light('shelf-plug', 'Kitchen shelf'), kind: 'wemo' as const},
+  ];
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['table-plug'], false)
+    : wemoPower(['table-plug', 'shelf-plug'], false));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Switch off id:table-plug and Kitchen shelf.');
+  await until(() => status(w) === 'waiting');
+  assert.equal(commands.length, 0);
+  assert.match(JSON.stringify((await page(w)).currentTask?.question), /id:<device-id>/u);
+  await input(w.core, w.module(), 'id:table-plug and id:shelf-plug.', true);
+  await until(() => commands.length === 2);
+  assert.deepEqual(commands.map(command => command.target), ['table-plug', 'shelf-plug']);
+  await finishWemoConfirmationWindow(w);
+});
+
+void test('an unknown context-only Wemo ID blocks the whole proposal', async context => {
+  const plug = {...light('table-plug'), kind: 'wemo' as const};
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['table-plug'], false, ['id:missing-plug'])
+    : reply('The proposal was refused.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
+    dispatch: () => assert.fail('an unknown explicit ID prevents dispatch')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Switch off id:table-plug. Leave id:missing-plug alone.');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: not-found')));
 });
 
 void test('synthetic Wemo follow-up can refer to a plug first named in an earlier assistant reply', async context => {

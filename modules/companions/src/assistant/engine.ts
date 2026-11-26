@@ -2302,7 +2302,8 @@ export class AssistantEngine {
       } else if (bound.kind === 'clarify') {
         const questionId = `${state.taskId}-q${String(currentTask.questions + 1)}`;
         const access = paid ? this.#supervisorScope(currentTask, 'supervisor', bound.targets).fields : modelFields;
-        const text = deviceClarification('plug', bound.targets, target => canNameDevice(target, access));
+        const text = bound.exactIds === true ? 'Which plugs should I control? Give each exact ID in the form id:<device-id>.'
+          : deviceClarification('plug', bound.targets, target => canNameDevice(target, access));
         question = {id: questionId, kind: 'clarification', text, answer: null, call: call.id, proposal: null};
       } else {
         direct = bound.control;
@@ -2505,7 +2506,7 @@ export class AssistantEngine {
       references: references.map(reference => ({...reference, eligible: related.has(reference.id)}))};
   }
   #bindWemoControl(task: Task, call: ToolCall, modelCallId: string, step: number):
-    string | {kind: 'clarify'; targets: readonly string[]} | {kind: 'bound'; control: BoundControl} {
+    string | {kind: 'clarify'; targets: readonly string[]; exactIds?: true} | {kind: 'bound'; control: BoundControl} {
     const saved = this.store.call(modelCallId)?.modelControlProof;
     if (saved === undefined || saved.request.revision === 0 || this.store.queue.steers(task.id).length > 0) return 'refused: invalid-state';
     const scope = this.#modelControlScope(task, saved.history);

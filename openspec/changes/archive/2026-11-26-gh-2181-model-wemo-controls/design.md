@@ -15,3 +15,9 @@ Save one operation identity and dispatch state per target before sending. A rest
 The selected supervisor can misinterpret language. The tool instructions identify questions, quoted examples, hypothetical actions, negation, corrections and device labels as distinct from the current request for action. The Hub makes reference and authority checks independently. Scripted transport tests establish the tool boundaries. The separate bounded hosted evaluation exercises model interpretation.
 
 A change of grants, configured identity or guard between interpretation and dispatch can stale a proposal. Recheck against current records before sending. If a steer arrives between per-target sends, retain earlier receipts and stop the remaining sends from the superseded request.
+
+When the current request or scoped answer supplies an `id:` selector, the
+complete registered selectors bound every write. A malformed or unknown
+selector stops the whole proposal. An additional implicit target needs a
+clarification before dispatch. Ordinary requests continue to use permitted
+Conversation context and scoped device discovery.
