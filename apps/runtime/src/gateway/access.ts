@@ -11,7 +11,7 @@ import type {Call, Cancel, Clock, EdgePrincipal, Scheduler} from '@jimmie-potts/
 import {DIRECT_COMMANDS} from '../core/tracker.js';
 import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {MUSIC_PLAYBACK_SOURCE} from '@jimmie-potts/event-contracts/v2/music-playback';
-import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
+import {codingDestinationForSource} from '@jimmie-potts/event-contracts/v2/coding';
 import {DASHBOARD_SOURCE, tokenMatches, type EdgeCredential, type Scope} from '../credentials.js';
 
 /** The source every browser session acts as: the dashboard's grant (Hub #835, #922), which no credential may take. */
@@ -76,7 +76,7 @@ export function edgePermissions(principal: Principal): EdgePrincipal {
   }
   // The coding worker (Hub #502) gets one connection-bound endpoint and nothing else: it answers the module's work
   // commands, reports progress and declares its availability; it reads no state and requests no operator command.
-  if (principal.kind === 'credential' && principal.role === 'coding-worker' && principal.source === CODING_WORKER_SOURCE && principal.scopes.size === 0) {
+  if (principal.kind === 'credential' && principal.role === 'coding-worker' && codingDestinationForSource(principal.source) !== undefined && principal.scopes.size === 0) {
     return {id: principal.id, source: principal.source, calls: [], keys: [], publishes: [],
       endpoint: {respond: ['coding-work'], publish: ['coding-progress'], request: ['coding-endpoint']}};
   }

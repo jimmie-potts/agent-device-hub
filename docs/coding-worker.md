@@ -278,6 +278,31 @@ run under the narrowed environment: a variable a check needs beyond the
 allowlist must be listed in `claude.environment`, and proxy variables cannot
 be listed.
 
+## Enrolled worker declarations
+
+A worker enrolled for destination routing uses private configuration
+`coding-worker/1.3`. Its `source` must match its coding-worker credential.
+The established Mac source is `bunny/parts/coding-worker`, the PC source is
+`bunny/parts/coding-worker-pc`, and each cloud enrollment uses
+`bunny/parts/coding-worker-cloud-<slug>`. The owner assigns a separate credential
+with zero ordinary scopes to each source. Only the enrolled non-Mac workers can
+use the worker SDK endpoint calls through the authenticated private proxy.
+The credential has no state read, dashboard, device, terminal sign-in or
+installation authority.
+
+On startup and every 45 seconds, the worker sends the Hub its operating system,
+configured `toolchains` names, the exact local `origin/main` commit for each
+available allowlisted repository and the harness readiness it can establish.
+It reports unknown resource pressure and test capacity when it has no sampler.
+The declaration includes repository names and revisions. Token and worktree
+paths stay on the worker. A revision-pinned start requires the exact declared
+commit and creates the worktree at that commit without fetching a newer one.
+
+Existing Mac configurations and credential paths continue to work. A routing
+declaration does not qualify a new host or harness. The bundled Mac adapters
+remain Mac-only for enrolled workers. The PC and cloud delivery tasks own
+their adapters, qualification and any installed changes.
+
 ## Readiness
 
 Workers declare each configured adapter through `coding-endpoint/2.4`
@@ -431,7 +456,7 @@ needed in the current contract.
    installation's private `edge-credentials/1.0` file, bound to the source
    `bunny/parts/coding-worker` with no scopes; the digest is the SHA-256 of a
    token you generate and keep in an owner-only file. The runtime reads the
-   credentials file at start and on reload. Any other source, a scope, or a
+   credentials file at start and on reload. An unrecognized coding-worker source, a scope, or a
    robot ID on that role refuses the file. The Mac container admits this role
    on its private-proxy and production profiles; its host-local profile, and
    images from before Hub #1350, refuse the whole file, so grant it only on an
@@ -493,12 +518,12 @@ needed in the current contract.
 
 ## One credential, one endpoint
 
-Run one worker at a time. The core selects one worker endpoint and refuses
-another while that endpoint is selected, so stop the old worker before you
-start a new one. That includes handing over to launchd: stop a worker you
+Run one worker per enrolled source. The core selects one endpoint for that source
+and refuses another while its endpoint is selected, so stop the old worker
+before you start its replacement. That includes handing over to launchd: stop a worker you
 started by hand before loading the agent.
 
-A second worker started while the first is still declared connects, opens its
+A second worker using the same credential while the first is still declared connects, opens its
 own endpoint and has its `enable` refused with `invalid-state`. It closes that
 endpoint and its connection, writes the line below to standard error and exits
 with status 1, at once when refused and within about eleven seconds if the core

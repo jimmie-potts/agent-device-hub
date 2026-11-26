@@ -97,10 +97,13 @@ export class CompanionPart implements CorePart {
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
       const record = this.#codingFresh ? this.#coding?.get({family: CODING_STATE, id: 'coding'}) : undefined;
-      const selection = record !== undefined && validator.validate(record).ok && record.data.availability === 'available' &&
-        record.data.endpointId === command.data.endpointId ? record.data : undefined;
-      const selectionId = selection?.selectionId;
-      if (command.data.harness !== undefined && (selection === undefined || (selection.capacity === 'uncapped' && selectionId === undefined))) {
+      const state = record !== undefined && validator.validate(record).ok ? record.data : undefined;
+      const selectedWorker = state?.workers?.find(worker => worker.endpointId === command.data.endpointId);
+      const legacySelection = state?.availability === 'available' && state.endpointId === command.data.endpointId ? state : undefined;
+      const selectionId = selectedWorker?.selectionId ?? legacySelection?.selectionId;
+      if ((state?.workers !== undefined && selectedWorker === undefined && legacySelection === undefined) ||
+        (command.data.harness !== undefined && selectedWorker === undefined && (legacySelection === undefined ||
+          (legacySelection.capacity === 'uncapped' && selectionId === undefined)))) {
         return errorBody('unavailable', {detail: 'the selected worker could not be verified'});
       }
       if (command.data.continuation !== undefined && selectionId === undefined) return errorBody('unavailable');
