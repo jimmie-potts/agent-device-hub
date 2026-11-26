@@ -473,8 +473,11 @@ confirms the selected Mac batch. [Private HTTPS route](../apps/runtime/PRIVATE-A
    ```
 
    Expect `coding-worker: WSL2 Codex sandbox and toolchain verified without an account or a model turn`.
-   The preflight uses an empty child profile and a disposable Git checkout.
-   It requires a real checkout write, tests an outside file and a private
+   The preflight checks each configured checkout, its actual Git metadata
+   and its `.local/worktrees` path before testing in a disposable checkout.
+   Keep the checkout and Git metadata on the distro's root filesystem, with
+   no symlink in either worktree-parent component. It uses an empty child
+   profile and requires a real checkout write, tests an outside file and a private
    loopback listener, and checks Node, npm and Git in the same Codex profile.
    The preflight opens no worker token and sends no model request.
    A namespace or toolchain refusal leaves the worker unqualified. Keep the

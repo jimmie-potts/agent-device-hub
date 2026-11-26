@@ -1,7 +1,8 @@
 import {writerGone} from './writer-proof.js';
+import {WSL_LOCATION_REFUSAL, wslCheckoutIdentity, wslCheckoutPath, wslPath} from './wsl-storage.js';
 import {execFile, spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {lstat, mkdtemp, readFile, readdir, realpath, rm, statfs, symlink, writeFile} from 'node:fs/promises';
+import {lstat, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {release, tmpdir, userInfo} from 'node:os';
 import {createServer} from 'node:net';
 import {once} from 'node:events';
@@ -200,18 +201,7 @@ export function codexArguments(cwd: string, profile: string, home: string, prote
     ...configArg(`permissions.${profile}.network.enabled`, false)];
 }
 
-const WSL_LOCATION_REFUSAL = 'WSL Codex needs a checkout, private profile and executable on the Linux filesystem.';
 const WSL_BOUNDARY_REFUSAL = 'Codex could not verify the WSL2 bubblewrap boundary, Node 24/npm and Linux Git. Check the PC worker profile and local sandbox setup.';
-const wslPath = (path: string): boolean => isAbsolute(path) && !inside('/mnt', path) && !inside('/run/WSL', path) && path !== '/init';
-/** WSL worker state and repositories live on the distro's native filesystem, including through path aliases. */
-export async function wslCheckoutPath(path: string): Promise<boolean> {
-  try {
-    const canonicalPath = await realpath(path);
-    return wslPath(canonicalPath) && (await statfs(canonicalPath)).type === 0xef53;
-  } catch {return false;}
-}
-
-
 /** The shell must execute, write in its own checkout and fail to reach the synthetic outside file or listener. */
 async function verifyLinuxBoundary(cwd: string, home: string, runSandbox: (command: string[]) => Promise<unknown>): Promise<void> {
   const canary = randomUUID();
@@ -285,7 +275,7 @@ export async function qualifyWslCodex(configuration: CodexConfiguration, environ
   try {
     const home = await workerHome(configuration.home, environment);
     const scratch = await realpath(tmpdir());
-    if (!wslPath(scratch) || !await wslCheckoutPath(home) || !await wslCheckoutPath(configuration.executable)) return false;
+    if (!await wslCheckoutPath(scratch) || !await wslCheckoutPath(home) || !await wslCheckoutPath(configuration.executable)) return false;
     cwd = await mkdtemp(join(scratch, 'bunny-wsl-codex-'));
     probeHome = await mkdtemp(join(home, 'signed-out-probe-'));
     await execute('/usr/bin/git', ['-c', 'init.templateDir=', 'init', '--quiet'], {
@@ -554,7 +544,12 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
     async run(input: AdapterRun): Promise<AdapterEvidence> {
       const revision = quotaRevision;
       if (input.signal.aborted) return {reason: 'cancelled'};
-      if (options.host === 'linux' && (!linuxQualified || !await wslCheckoutPath(input.worktree))) return {reason: 'refused', summary: WSL_BOUNDARY_REFUSAL};
+      if (options.host === 'linux') {
+        if (!linuxQualified) return {reason: 'refused', summary: WSL_BOUNDARY_REFUSAL};
+        try {
+          await wslCheckoutIdentity(input.worktree);
+        } catch {return {reason: 'refused', summary: WSL_LOCATION_REFUSAL};}
+      }
       let home: string;
       try {home = await workerHome(configuration.home, environment);}
       catch {return {reason: 'refused', summary: 'Codex needs a separate private worker profile with no user configuration.'};}
