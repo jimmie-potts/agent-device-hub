@@ -1570,7 +1570,7 @@ for (const revoked of ['model input', 'derived input', 'private read'] as const)
 void test('local clarification choices do not become prior supervisor disclosures on an approved Responses hand-off', {timeout: 30_000}, async context => {
   const bodies: string[] = [];
   const replies = [
-    {name: 'set_wemo_power', args: {device: 'Fixture plug', on: false}},
+    {name: 'set_wemo_power', args: {selection: 'references', targets: ['Fixture plug'], contextTargets: [], on: false}},
     {name: 'delegate_coding', args: {repository: 'agent-device-hub', brief: 'Add a synthetic fixture.'}},
   ];
   const provider = new OpenAIProvider({model: OPENAI_MODEL, effort: 'medium', key: 'synthetic', transport: (_url, init) => {
@@ -1593,11 +1593,11 @@ void test('local clarification choices do not become prior supervisor disclosure
     devices: owner => owner === 'bunny/modules/wemo' ? plugs : []});
   assert.equal((await w.control('enable')).status, 'accepted');
   assert.equal((await w.enable('uncapped')).status, 'accepted');
-  assert.equal((await w.send('bunny', 'List all Wemo plugs.')).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Turn off Fixture plug.')).status, 'accepted');
   const store = new AssistantStore(w.database());
   const id = w.task('bunny')?.taskId ?? assert.fail('saved task');
   await settle(() => store.task(id)?.question?.kind === 'clarification');
-  assert.deepEqual(store.task(id)?.clarificationDevices, ids);
+  for (const device of ids) assert.equal(store.task(id)?.question?.text.includes(device), true);
   assert.equal((await w.send('bunny', 'Instead, delegate a synthetic coding fixture.', true)).status, 'accepted');
   await settle(() => store.task(id)?.question?.kind === 'approval');
   await w.approved('bunny');

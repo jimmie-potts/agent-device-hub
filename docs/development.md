@@ -3161,6 +3161,12 @@ summary scope, mismatched queries, title isolation and revocation before the
 next provider call. Their existing CI commands discover these files.
 The fixture writes only its disposable store and uses no device or hosted model.
 
+For model-interpreted Wemo control, run the root build, typecheck, lint and
+workflow checks, then run the Companions suite. Its existing CI module job
+exercises the typed proposal through the Companions engine at the dispatch
+boundary with synthetic plugs. The runtime suite and Wemo suite cover the
+tracked dispatcher and its writer. No hosted model or physical plug is needed.
+
 The Conversation maximum-on read uses a disposable Companions engine with
 synthetic Wemo and core SDK records. After the root build, the
 `assistant.test.js` cases exercise both named device reads, every limit status,

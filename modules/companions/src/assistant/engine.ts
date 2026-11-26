@@ -15,7 +15,7 @@ import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type Mo
 import {codingUpdateMessageId, type CodingJob, type CodingJobRead, type CodingUpdateKind} from '../coding/store.js';
 import type {CodingBrief, CodingBriefRefusal, CodingCoordinator, HandOffAnswer} from '../coding/coordinator.js';
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
-import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
+import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, confirmationText, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, RESPONSES_GRAPH_VERSION, terminal, unresolved, type Appended, type Call, type MessageSource, type Question, type Stage, type StagedInput, type Task, type HostedHistoryMessage, type ContextSourceVersion, type HistoryCompaction} from './store.js';
 import {hasSavedDisclosureProof, savedDisclosureProof, saveFinalDisclosureProofs} from './disclosure-proof.js';
@@ -23,7 +23,9 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {ALL_WEMO_PLUGS, authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, literalDeviceSubject, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
+import {authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, literalDeviceSubject, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
+import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
+import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
 import {fitConversationHistory, type HostedWindow} from './conversation-window.js';
 import {buildConversationCompactionInput, COMPACTION_OUTPUT_TOKENS, readConversationCompactionReply} from './conversation-compaction.js';
@@ -40,7 +42,7 @@ import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} fro
 import {describePowerLimit, followPowerLimits, localInstant} from './power-limits.js';
 import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices, type DeviceReadDisplay} from './devices.js';
 import {bindCodingRequirements, codingOS, codingRequirements, ownerCodingRoute} from './coding-request.js';
-import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_WEMO, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
+import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_WEMO, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, WEMO_TARGETS, summarizeSessions, type CoreCopy} from './tools.js';
 
 export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provider.js';
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
@@ -132,7 +134,7 @@ const stoppedBeforeBrightness = (text: string | null): boolean =>
   text === BRIGHTNESS_REQUEST_UNAVAILABLE || text === BRIGHTNESS_ANSWER_UNAVAILABLE;
 
 type Answer = {text: string; units: number | null; usage?: TokenUsage | null; historySources?: Call['historySources']; inputVersions?: Call['inputVersions']; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[];
-  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true};
+  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true; wemoFacts?: Call['wemoFacts']};
 /** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
 type Budget = {units: number; unit: string; spend?: {model: string; inputUnits: number; outputUnits: number; pricing?: NonNullable<SupervisorIdentity['pricing']>}};
 function fail(code: ErrorCode): never {throw new Fault(code);}
@@ -201,6 +203,8 @@ export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as 
   dataschema: `https://bunny.invalid/events/assistant-state/${data.providers !== undefined ? '2.4' : data.queues?.some(queue => queue.messages > LIMITS.queuedMessages) === true ? '2.3'
     : data.queues !== undefined ? '2.2' : data.tools.length > ASSISTANT_LEGACY_TOOL_LIMIT ? '2.1' : '2.0'}`, data});
 export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the evidence the tools return.';
+const controlInstructions = (tools: TurnInput['tools']): string => tools.some(tool => tool.name === SET_WEMO_POWER)
+  ? `${INSTRUCTIONS} ${CONTROL_INSTRUCTIONS}` : INSTRUCTIONS;
 /** The start of the tool result for a hand-off that waits for its companion's busy slot (Hub #2028). */
 export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this hand-off waits for';
 /** How a waiting hand-off is worded in the conversation until it is sent; "Delegated to ..." replaces it then. */
@@ -428,7 +432,8 @@ export class AssistantEngine {
     try {
       for (const task of this.store.unfinished()) {
         try {
-          if (this.#brightnessReceipt(task) === undefined && (!this.available() || !this.#canUseTaskProvider(task))) await this.#recoverUnavailable(task.id);
+          const wemoReceipt = this.store.confirmations(task.id).some(watch => watch.dispatchState !== undefined);
+          if (!wemoReceipt && this.#brightnessReceipt(task) === undefined && (!this.available() || !this.#canUseTaskProvider(task))) await this.#recoverUnavailable(task.id);
           else await this.#reconcile(task.id, true);
         } catch (error) {
           this.#unrecovered.add(task.conversationId);
@@ -529,7 +534,12 @@ export class AssistantEngine {
     }).then(() => {
       // A finished task asks the title model to check the conversation's title (Hub #2075), once its result is saved. The
       // queued message that started after it starts no check of its own.
-      if (finished !== undefined) this.#checkTitle(finished, {kind: 'task', result: finished.status as 'succeeded' | 'failed' | 'cancelled'});
+      if (finished !== undefined) {
+        for (const watch of this.store.confirmations(finished.id)) {
+          if (watch.dispatchState !== undefined) void this.#followConfirmation(watch);
+        }
+        this.#checkTitle(finished, {kind: 'task', result: finished.status as 'succeeded' | 'failed' | 'cancelled'});
+      }
       if (next !== undefined && !this.#closed && !this.context.signal.aborted) this.#launch(next);
     });
   }
@@ -580,12 +590,13 @@ export class AssistantEngine {
     return Math.max(0, Math.min(calls, time, units));
   }
   /** Records which result was visible when the reply committed, in the same transaction. */
-  #confirmationReply(taskId: string, messageId: string, reply: string, requestId?: string): string {
-    const watches = this.store.confirmations(taskId).filter(watch => requestId === undefined || watch.requestId === requestId);
+  #confirmationReply(taskId: string, messageId: string, reply: string, selected?: (watch: Confirmation) => boolean): string {
+    const all = this.store.confirmations(taskId);
+    const watches = selected === undefined ? all : all.filter(selected);
     const updates: string[] = [];
     for (const watch of watches) {
-      const update = watch.result ?? pending(watch);
-      if (watch.result !== undefined) {
+      const update = confirmationText(watch);
+      if (watch.result !== undefined || watch.dispatchState === 'reserved') {
         for (const earlier of [pending(watch), pending({...watch, sent: true})]) {
           if (earlier !== update) reply = reply.replace(earlier, update);
         }
@@ -593,11 +604,17 @@ export class AssistantEngine {
       } else this.store.saveConfirmation({...watch, follows: watch.follows ?? messageId});
       if (!reply.includes(update)) updates.push(update);
     }
+    const operations = new Set(watches.filter(watch => watch.dispatchState !== undefined).map(watch => watch.questionId));
+    const skipped = new Set([...operations].flatMap(id => this.store.call(id)?.action?.control?.contextTargets ?? []));
+    for (const target of skipped) {
+      const text = `${target}: No power command was sent.`;
+      if (!reply.includes(text)) updates.push(text);
+    }
     return [reply, ...updates].filter(Boolean).join('\n\n');
   }
 
   #followConfirmation(watch: Confirmation): Promise<void> {
-    if (this.#closed) return Promise.resolve();
+    if (this.#closed || watch.result !== undefined || watch.dispatchState === 'reserved') return Promise.resolve();
     const existing = this.#confirmationWatches.get(watch.requestId);
     if (existing !== undefined) return existing;
     const signal = this.#confirmationsStopped.signal;
@@ -614,7 +631,7 @@ export class AssistantEngine {
           const receipt = this.store.call(current.requestId);
           if (this.store.savedMessage(task.id, current.follows) !== undefined &&
               (receipt?.directBrightness !== true || this.#canReadBrightnessReceipt(task, receipt))) {
-            this.store.message(task, `${current.requestId}-confirmation`, 'assistant', evidence.result, this.context.clock.now(), current.follows);
+            this.store.message(task, `${current.requestId}-confirmation`, 'assistant', confirmationText(current, evidence.result), this.context.clock.now(), current.follows);
             this.store.touch(task.conversationId);
             this.#publish(add, {traceparent: current.traceparent});
           }
@@ -629,8 +646,8 @@ export class AssistantEngine {
     return run;
   }
 
-  async #waitForConfirmation(watch: Confirmation, ms: number, signal: AbortSignal): Promise<void> {
-    const following = this.#followConfirmation(watch);
+  async #waitForConfirmations(watches: readonly Confirmation[], ms: number, signal: AbortSignal): Promise<void> {
+    const following = Promise.all(watches.map(watch => this.#followConfirmation(watch)));
     if (ms <= 0 || signal.aborted) return;
     let cancel: Cancel | undefined;
     let abort: (() => void) | undefined;
@@ -835,9 +852,13 @@ export class AssistantEngine {
         this.#returnSteers(task);
         // Stop ends the task and holds the conversation's queue until the owner resumes it (Hub #2030, owner decision 5).
         if (this.store.queue.count(task.conversationId) > 0) this.store.queue.setHold(task.conversationId, {reason: 'stop', code: null, detail: null});
-        for (const watch of this.store.confirmations(task.id)) {
-          if (watch.follows === undefined) this.store.dropConfirmation(watch.requestId);
+        const watches = this.store.confirmations(task.id);
+        for (const watch of watches) {
+          if (watch.dispatchState === undefined && watch.follows === undefined) this.store.dropConfirmation(watch.requestId);
         }
+        const messageId = `${task.id}-closing-${String(task.generation)}`;
+        const receipt = this.#confirmationReply(task.id, messageId, '', watch => watch.dispatchState !== undefined);
+        if (receipt !== '') this.store.message(task, messageId, 'assistant', receipt, this.context.clock.now());
         return undefined;
       }
       if (!['paused', 'uncertain', 'waiting'].includes(task.status) || (task.question !== null && task.question.answer === null)) fail('invalid-state');
@@ -847,7 +868,12 @@ export class AssistantEngine {
       const active = [...this.#active.values()].find(run => run.taskId === command.data.taskId);
       if (command.data.action === 'cancel' && !('error' in reply) && active !== undefined) active.controller.abort();
       // A cancelled task has finished, so the title model checks the conversation's title (Hub #2075).
-      if (cancelled !== undefined && !('error' in reply)) this.#checkTitle(cancelled, {kind: 'task', result: 'cancelled'});
+      if (cancelled !== undefined && !('error' in reply)) {
+        for (const watch of this.store.confirmations(cancelled.id)) {
+          if (watch.dispatchState !== undefined) void this.#followConfirmation(watch);
+        }
+        this.#checkTitle(cancelled, {kind: 'task', result: 'cancelled'});
+      }
       if (command.data.action === 'cancel' && !('error' in reply) && delegated && command.data.taskId !== undefined) {try {this.options.onCancelled?.(command.data.taskId);} catch { /* the worker's own report settles it */ }}
       if (spoken !== undefined && !('error' in reply) && command.data.taskId !== undefined) this.#speak(command.data.taskId, spoken.id, spoken.text, command, `${spoken.id}:${command.data.requestId}`);
       return reply;
@@ -1324,6 +1350,11 @@ export class AssistantEngine {
       if (terminal(task.status)) return;
       if (startup) this.#restoreCodingReceipts(task);
       const brightness = this.#brightnessReceipt(task);
+      // Only close a dispatch whose own checkpoint was interrupted after settlement. Older watches can outlive a steer.
+      const wemoReceipt = startup && snapshot?.next.length === 1 && snapshot.next[0] === 'act' &&
+        this.store.queue.steers(task.id).length === 0 && values?.step !== undefined &&
+        this.store.confirmations(task.id).some(watch => watch.dispatchState !== undefined &&
+          watch.questionId === `${task.id}-step-${String(values.step)}`);
       if (unresolved(this.store.calls(taskId))) {task.status = 'uncertain'; task.code = 'uncertain-result';}
       else if (brightness !== undefined) {
         task.status = 'succeeded'; task.code = null;
@@ -1334,14 +1365,14 @@ export class AssistantEngine {
           this.store.dropConfirmation(brightness.id);
           result = BRIGHTNESS_DETAILS_UNAVAILABLE;
         } else {
-          const confirmation = this.#confirmationReply(task.id, messageId, '', brightness.id);
+          const confirmation = this.#confirmationReply(task.id, messageId, '', watch => watch.requestId === brightness.id);
           result = confirmation === '' ? 'The brightness request was accepted. Its effect is unconfirmed.' : confirmation;
         }
         this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
-      } else if (snapshot?.next.length === 0 && typeof values?.result === 'string') {
+      } else if (wemoReceipt || snapshot?.next.length === 0 && typeof values?.result === 'string') {
         task.status = 'succeeded'; task.code = null;
         const messageId = `${task.id}-result`;
-        result = this.#confirmationReply(task.id, messageId, values.result);
+        result = this.#confirmationReply(task.id, messageId, wemoReceipt ? '' : values?.result ?? '');
         this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
       } else if (snapshot?.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0) === true) {
         // The turn that decided to ask saved the question before the interrupt; an interrupt without one is not evidence of a saved question.
@@ -1543,11 +1574,11 @@ export class AssistantEngine {
     return tools.filter(tool => {
       const family = catalogCommand(tool.name);
       return tool.name === ASK_OWNER || tool.name === SET_MODE || tool.name === DELEGATE_CODING ||
-        tool.name === READ_DEVICES || tool.name === READ_HUB_GUIDE ||
+        tool.name === READ_DEVICES || tool.name === READ_HUB_GUIDE || tool.name === WEMO_TARGETS ||
         deviceToolOwner(tool.name) !== undefined || family === 'art-request' || family !== undefined && catalogRoute(family).binding === 'device';
     });
   }
-  #supervisorScope(task: Task, purpose: 'supervisor' | 'title' = 'supervisor', boundDevice?: string,
+  #supervisorScope(task: Task, purpose: 'supervisor' | 'title' = 'supervisor', boundDevice?: string | readonly string[],
     hostedHistory: ReadonlyMap<string, HostedHistoryMessage> = new Map()) {
     const latest = task.transcript.filter(item => item.role === 'owner').at(-1);
     const marker = task.ownerInputStart;
@@ -1561,11 +1592,22 @@ export class AssistantEngine {
     const effects = new Set(transcript.flatMap(item => 'effect' in item && typeof item.effect === 'string' ? [item.effect] : []));
     const request = latest?.text ?? task.prompt;
     const requestId = latest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, latest) ?? fail('invalid-state');
-    const devices = new Set<string>(boundDevice === undefined ? [] : [boundDevice]);
+    const devices = new Set<string>(typeof boundDevice === 'string' ? [boundDevice] : boundDevice);
+    if (purpose === 'supervisor' && task.question?.kind === 'clarification' &&
+      transcript.some(item => item.role === 'assistant' && item.calls.some(call => call.name === SET_WEMO_POWER && call.id === task.question?.call))) {
+      for (const id of task.clarificationDevices ?? []) devices.add(id);
+    }
+    // Results of an admitted model control remain scoped to that turn's guarded targets.
+    const control = task.control;
+    if (control?.modelCallId !== undefined && this.store.call(control.requestId)?.action?.control?.modelCallId === control.modelCallId &&
+      control.ownerMessageIds[0] === requestId) {
+      for (const target of [control.proposal, ...(control.additional ?? [])]) devices.add(target.target);
+    }
     const local = this.#fields(task.profile, 'read', 'private-conversation');
     const discover = this.#fields(task.profile, 'discovery', 'private-conversation');
     const messages = new Map<string, {conversationId: string}>();
     const configured = purpose === 'supervisor' ? this.#historyDevices() : [];
+    if (purpose === 'supervisor') for (const id of this.#disclosedWemoTargets(task, effects)) devices.add(id);
     const history = purpose === 'supervisor' ? this.#historyBinding(task, configured) : undefined;
     if (history?.history !== undefined) devices.add(history.history.query.target);
 
@@ -1674,6 +1716,7 @@ export class AssistantEngine {
       const origin = this.store.task(message.taskId);
       if (origin === undefined || origin.profile !== task.profile || origin.conversationId !== task.conversationId ||
         origin.status !== 'succeeded' || origin.supervisor === undefined || origin.supervisor.provider === 'synthetic') continue;
+      if (origin.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) continue;
       const calls = this.store.calls(origin.id);
       if (!calls.some(call => call.kind === 'model' && call.status === 'succeeded')) continue;
       const unchangedLegacyInput = (call: Call) => call.inputVersions !== undefined || call.disclosures?.every(field =>
@@ -1683,7 +1726,7 @@ export class AssistantEngine {
         const source = calls.find(call => call.id === message.id && call.kind === 'tool' && call.status === 'succeeded');
         const item = origin.transcript.find(item => item.role === 'tool' && 'effect' in item && item.effect === message.id);
         if (source === undefined || item?.role !== 'tool' || !read('conversation', 'details', message.id) ||
-          !(item.name === READ_DEVICES || item.name === READ_DEVICE_HISTORY || deviceToolOwner(item.name) !== undefined) ||
+          !(item.name === READ_DEVICES || item.name === READ_DEVICE_HISTORY || item.name === WEMO_TARGETS || deviceToolOwner(item.name) !== undefined) ||
           source.action !== undefined || source.result !== message.text || source.disclosures?.some(field => field.source === 'devices') !== true ||
           source.disclosures.some(field => field.source !== 'devices' || field.field === 'details')) continue;
         if (hasSavedDisclosureProof(this.store, origin.id, calls, source.ordinal) &&
@@ -1781,7 +1824,7 @@ export class AssistantEngine {
     });
     const mode = deviceMode !== undefined && access('devices', 'status', 'hub')
       ? {mode: deviceMode.mode, revision: deviceMode.revision} : null;
-    return {instructions: INSTRUCTIONS, context, transcript: visible, tools, mode};
+    return {instructions: controlInstructions(tools), context, transcript: visible, tools, mode};
   }
   async #prepareHistoryCompaction(task: Task, provider: ModelProvider, active: Active, protect: (release: () => void) => void): Promise<void> {
     const pin = task.supervisor;
@@ -2087,6 +2130,7 @@ export class AssistantEngine {
     let history: DeviceHistoryBinding | undefined;
     let historySources: readonly ContextSourceVersion[] = [];
     let inputVersions: NonNullable<Call['inputVersions']> = [];
+    let controlScope: ModelControlScope | undefined;
     // The task's unread steers are taken into its transcript in the call's own admission (Hub #2031), after the last
     // call's tool results, and the request is built from that transcript: a limit that refuses the call leaves them
     // unread, and a replayed node whose call was admitted takes none again.
@@ -2127,7 +2171,9 @@ export class AssistantEngine {
         .then((reply): Answer => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null, disclosures: ledger.fields,
           ...(paid ? {historySources, inputVersions} : {}),
           ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})}));
-    }, undefined, current => {
+    }, (_current, saved) => {
+      if (controlScope !== undefined) saved.modelControlProof = modelControlProof(controlScope);
+    }, current => {
       releaseSpend?.();
       this.#drain(current);
       tools = this.#toolsFor(current);
@@ -2158,6 +2204,9 @@ export class AssistantEngine {
         }
         const fitted = this.#fitHostedHistory(current, provider, base, [...eligible.values()]);
         historySources = fitted.sources;
+        if (tools.some(tool => tool.name === SET_WEMO_POWER)) {
+          controlScope = this.#modelControlScope(current, fitted.sources, eligible);
+        }
         inputVersions = ledger.fields.flatMap(field => {
           const version = this.#disclosureVersion(field);
           return version === undefined ? [] : [{field, version}];
@@ -2177,7 +2226,13 @@ export class AssistantEngine {
         const transcript = includesReplay ? current.transcript : current.transcript.filter(item => item.role === 'owner' && allows(item));
         for (const item of transcript) if (!visible(item, fields, replayFields)) fail('forbidden');
         const mode = proposalCopy.mode;
-        request = {instructions: INSTRUCTIONS, context: this.#context(current, undefined, {prompt: fields, model: modelAccess}), transcript, tools,
+        const context = this.#context(current, undefined, {prompt: fields, model: modelAccess});
+        if (tools.some(tool => tool.name === SET_WEMO_POWER)) {
+          const history = ledger.fields.flatMap(field => field.source !== 'conversation' || field.field !== 'text' || field.record === undefined
+            ? [] : [{id: field.record, revision: this.store.messages.get(field.record)?.revision ?? 0}]);
+          controlScope = this.#modelControlScope(current, history);
+        }
+        request = {instructions: controlInstructions(tools), context, transcript, tools,
           mode: mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: mode.mode, revision: mode.revision}};
       }
       if (!paid) request = {...request, transcript: request.transcript.map(item => {
@@ -2218,9 +2273,9 @@ export class AssistantEngine {
     const currentTask = this.#task(state.taskId);
     const clarificationAccess = paid ? this.#supervisorScope(currentTask).fields : modelFields;
     const discover = this.#fields(task.profile, 'discovery', 'private-conversation'), read = this.#fields(task.profile, 'read', 'private-conversation');
-    const canNameDevice = (id: string): boolean => {
+    const canNameDevice = (id: string, access = clarificationAccess): boolean => {
       const allowed = discover('devices', 'index', id) && read('devices', 'index', id) && read('devices', 'label', id)
-        && clarificationAccess('devices', 'index', id) && clarificationAccess('devices', 'label', id);
+        && access('devices', 'index', id) && access('devices', 'label', id);
       if (allowed) clarificationDevices.add(id);
       return allowed;
     };
@@ -2232,8 +2287,6 @@ export class AssistantEngine {
     const brightnessMatches = brightnessTarget === undefined ? [] : await this.#catalog().deviceSubjectMatches(brightnessTarget, active.span.context);
     const brightnessAnswer = this.#controlClarification(currentTask)?.answer ?? undefined;
     const savedControl = task.control?.requestId === `${task.id}-step-${String(state.step + 1)}` ? task.control : undefined;
-    const group = next === 'approve' && call?.name === SET_WEMO_POWER && typeof call.input.device === 'string'
-      && normalizedControlText(call.input.device) === ALL_WEMO_PLUGS;
     if (savedControl !== undefined) {
       direct = savedControl;
       next = 'act';
@@ -2241,19 +2294,21 @@ export class AssistantEngine {
       const id = `${state.taskId}-q${String(currentTask.questions + 1)}`;
       question = {id, kind: 'clarification', text: deviceClarification('device', brightnessMatches.map(({device}) => device.id), canNameDevice),
         answer: null, call: call.id, proposal: null};
-    } else if (group && call !== undefined) {
-      const devices = this.options.devices?.(ASSISTANT_WEMO_OWNER);
-      const proposals = devices?.map(device => deviceProposal(call, device));
-      const refused = proposals?.find(selection => 'code' in selection);
-      const [first, ...rest] = proposals?.flatMap(selection => 'proposal' in selection ? [selection.proposal] : []) ?? [];
-      const targets = devices?.map(device => [device.id, deviceLabel(device)]);
-      if (refused !== undefined && 'code' in refused) result = `refused: ${refused.code}`;
-      else if (first !== undefined && rest.length < 16) {
-        const prepared = this.#bindControl(task, first, call, `Set power on ${ALL_WEMO_PLUGS}?`, state.step + 1, targets, undefined, true);
-        if (prepared !== undefined) direct = {...prepared, additional: rest};
-        else result = 'refused: the owner did not explicitly request this group and setting.';
-      } else result = first === undefined ? 'refused: no plug is available.' : 'refused: capacity';
-      next = direct === undefined ? 'tool' : 'act';
+    } else if (next === 'approve' && call?.name === SET_WEMO_POWER) {
+      const bound = this.#bindWemoControl(currentTask, call, id, state.step + 1);
+      if (typeof bound === 'string') {
+        result = bound;
+        next = 'tool';
+      } else if (bound.kind === 'clarify') {
+        const questionId = `${state.taskId}-q${String(currentTask.questions + 1)}`;
+        const access = paid ? this.#supervisorScope(currentTask, 'supervisor', bound.targets).fields : modelFields;
+        const text = bound.exactIds === true ? 'Which plugs should I control? Give each exact ID in the form id:<device-id>.'
+          : deviceClarification('plug', bound.targets, target => canNameDevice(target, access));
+        question = {id: questionId, kind: 'clarification', text, answer: null, call: call.id, proposal: null};
+      } else {
+        direct = bound.control;
+        next = 'act';
+      }
     } else if (next === 'approve' && command !== undefined && call !== undefined) {
       const selected = command === 'art-request' && this.store.hasArtReply(task.id)
         ? {code: 'invalid-state'} : await this.#catalog().propose(command, call, active.span.context, {
@@ -2282,7 +2337,7 @@ export class AssistantEngine {
     }
     const proposal = question?.proposal;
     if (call !== undefined && question !== undefined && proposal != null && proposal.family !== 'coding-dispatch' && command !== 'art-request') {
-      direct = this.#bindControl(task, proposal, call, question.text, state.step + 1, targets, artworkRequestId, false, knownTargets, draftRevision, artRecipientsBound);
+      direct = this.#bindControl(task, proposal, call, question.text, state.step + 1, targets, artworkRequestId, knownTargets, draftRevision, artRecipientsBound);
       next = direct === undefined ? 'tool' : 'act';
       const detail = direct === undefined && command !== undefined && this.#controlClarification(task)?.answer == null
         ? missingCatalogDetail(command, task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt) : undefined;
@@ -2355,7 +2410,7 @@ export class AssistantEngine {
       return {id, text: `Delegate to the coding worker in ${repository}: ${proposal.data.brief}`.slice(0, 1024), answer: null, kind: 'approval', call: call.id, proposal};
     }
     const owner = deviceToolOwner(call.name);
-    if (owner !== undefined) {
+    if (owner === ASSISTANT_LIGHT_OWNER) {
       const devices = this.options.devices?.(owner);
       const task = this.#task(taskId);
       const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
@@ -2368,7 +2423,7 @@ export class AssistantEngine {
         subject === normalizedControlText(device.id) || subject === normalizedControlText(deviceLabel(device))) : undefined;
       const selected = addressed !== undefined && addressed.length > 1 ? {matches: addressed} : chooseDevice(devices, call.input.device, call.name === SET_LIFX_BRIGHTNESS);
       if ('matches' in selected) {
-        const text = deviceClarification(owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light', selected.matches.map(device => device.id), canNameDevice);
+        const text = deviceClarification('light', selected.matches.map(device => device.id), canNameDevice);
         return {id, text, answer: null, kind: 'clarification', call: call.id, proposal: null};
       }
       if ('code' in selected) return undefined;
@@ -2392,8 +2447,111 @@ export class AssistantEngine {
     return task.question?.kind === 'clarification' && afterInstruction.some(item =>
       item.role === 'tool' && 'effect' in item && item.effect === `${task.question?.id}-answer`) ? task.question : undefined;
   }
+  #disclosedWemoTargets(task: Task, effects?: ReadonlySet<string>): string[] {
+    const configured = this.options.devices?.(ASSISTANT_WEMO_OWNER) ?? [];
+    return task.transcript.flatMap(item => {
+      if (item.role !== 'tool' || item.name !== WEMO_TARGETS && item.name !== READ_WEMO ||
+          !('effect' in item) || typeof item.effect !== 'string' || effects?.has(item.effect) === false) return [];
+      const call = this.store.call(item.effect);
+      if (call?.status !== 'succeeded' || call.result !== item.result) return [];
+      return call.wemoFacts?.flatMap(fact => {
+        const device = configured.find(candidate => candidate.id === fact.id);
+        return device !== undefined && controlReferenceSnapshot(wemoControlReference(device, true)) === fact.revision ? [fact.id] : [];
+      }) ?? [];
+    });
+  }
+  #modelControlScope(task: Task, historySources: readonly ContextSourceVersion[] = [],
+    eligibleHistory?: ReadonlyMap<string, HostedHistoryMessage>): ModelControlScope {
+    const read = this.#fields(task.profile, 'read', 'private-conversation');
+    const discover = this.#fields(task.profile, 'discovery', 'private-conversation');
+    const hosted = this.#taskProvider(task).name !== 'synthetic';
+    const fields = this.#modelFields(task.profile);
+    const permitted = (source: ShareQuery['source'], field: ShareQuery['field'], id: string) => hosted
+      ? recordedSupervisorField(this.options.share, task.profile, 'supervisor', source, field, id) : fields(source, field, id);
+    const savedSource = (id: string, field: 'request' | 'excerpt', ownerOnly = true): ControlSource | undefined => {
+      const message = this.store.messages.get(id);
+      if (message === undefined || ownerOnly && message.speakerId !== 'owner' || message.conversationId !== task.conversationId ||
+        this.store.messages.removal(id) !== undefined || !read('conversation', 'text', task.conversationId) || !read('conversation', 'text', id) ||
+        !permitted('conversation', hosted ? field : 'text', task.conversationId) || !permitted('conversation', hosted ? field : 'text', id)) return undefined;
+      if (message.speakerId !== 'owner' && (message.taskId === null ||
+        !this.#replayable(message.taskId, fields) || !this.#savedDisclosureAllowed(message.taskId, read))) return undefined;
+      return message.meaning.kind === 'literal' ? {id, revision: message.revision, text: message.meaning.text} : undefined;
+    };
+    const inputs = task.transcript.filter(item => item.role === 'owner');
+    const newest = inputs.at(-1);
+    const requestId = newest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, newest) ?? fail('invalid-state');
+    const saved = savedSource(requestId, 'request');
+    const question = this.#controlClarification(task);
+    const savedAnswer = question?.answer == null ? undefined : savedSource(`${question.id}-answer`, 'excerpt');
+    const answer = savedAnswer?.text === question?.answer ? savedAnswer : undefined;
+    const request = saved !== undefined && saved.text === (newest?.text ?? task.prompt) &&
+      (question?.answer == null || answer !== undefined) ? saved : {id: requestId, revision: 0, text: ''};
+    const history = hosted ? eligibleHistory ?? this.#hostedHistory(task) : undefined;
+    const references = (this.options.devices?.(ASSISTANT_WEMO_OWNER) ?? []).map(device => wemoControlReference(device,
+      discover('devices', 'index', device.id) && (['index', 'label', 'status'] as const).every(field =>
+        read('devices', field, device.id) && permitted('devices', field, device.id))));
+    const related = new Set(this.#disclosedWemoTargets(task, hosted ? this.#supervisorScope(task).effects : undefined));
+    for (const text of [request.text, answer?.text ?? '']) for (const id of controlReferenceIds(references, text)) related.add(id);
+    const usedHistory = historySources.filter(source => {
+      const message = hosted ? history?.get(source.id) : savedSource(source.id, 'excerpt', false);
+      if (message?.revision !== source.revision) return false;
+      const ids = controlReferenceIds(references, message.text);
+      for (const id of ids) related.add(id);
+      return ids.length > 0;
+    });
+    const exactTargets = exactControlIds(`${request.text} ${answer?.text ?? ''}`);
+    const core = this.#core();
+    const modeRevision = core.synced ? core.mode?.revision ?? null : null;
+    return {request, modeRevision, ...(answer === undefined ? {} : {answer}), history: usedHistory, exactTargets,
+      references: references.map(reference => ({...reference, eligible: related.has(reference.id)}))};
+  }
+  #bindWemoControl(task: Task, call: ToolCall, modelCallId: string, step: number):
+    string | {kind: 'clarify'; targets: readonly string[]; exactIds?: true} | {kind: 'bound'; control: BoundControl} {
+    const saved = this.store.call(modelCallId)?.modelControlProof;
+    if (saved === undefined || saved.request.revision === 0 || this.store.queue.steers(task.id).length > 0) return 'refused: invalid-state';
+    const scope = this.#modelControlScope(task, saved.history);
+    if (!this.#sameControlSources(saved, scope) || saved.modeRevision !== scope.modeRevision) return 'refused: revision-conflict';
+    if (!isDeepStrictEqual(saved.references, modelControlProof(scope).references)) return 'refused: revision-conflict';
+    const ownerMessageIds = scope.answer === undefined ? [scope.request.id] : [scope.request.id, scope.answer.id];
+    if (this.store.calls(task.id).some(receipt => receipt.action?.control?.ownerMessageIds[0] === scope.request.id &&
+      proposalTool(receipt.action.control.proposal) === SET_WEMO_POWER)) return 'refused: this request already has Wemo receipts.';
+    const result = resolveWemoControl(scope, call.input);
+    if (result.kind === 'refused') return `refused: ${result.code}`;
+    if (result.kind === 'clarify') return this.#controlClarification(task)?.answer != null
+      ? 'refused: the plug selection is still unclear.' : result;
+    const devices = this.options.devices?.(ASSISTANT_WEMO_OWNER) ?? [];
+    const selected = result.targets.map(id => devices.find(device => device.id === id) ?? fail('invalid-state'));
+    const [proposal, ...additional] = selected.map(device => planWemoPower(device, result.settings));
+    if (proposal === undefined) return 'refused: invalid-request';
+    const first = selected[0];
+    const text = additional.length === 0 && first !== undefined ? deviceProposalText(proposal, deviceLabel(first))
+      : `Turn ${result.settings ? 'on' : 'off'} the selected Wemo plugs?`;
+    return {kind: 'bound', control: {requestId: `${task.id}-step-${String(step)}`, ownerMessageIds, proposal, additional, modelCallId, text, call: call.id,
+      ...(result.contextTargets.length === 0 ? {} : {contextTargets: result.contextTargets})}};
+  }
+  #sameControlSources(saved: ModelControlProof, current: ModelControlScope): boolean {
+    return saved.request.id === current.request.id && saved.request.revision === current.request.revision &&
+      saved.answer?.id === current.answer?.id && saved.answer?.revision === current.answer?.revision &&
+      isDeepStrictEqual(saved.history, current.history);
+  }
+  #wemoTargetRefusal(task: Task, control: BoundControl, proposal: Proposal): ErrorCode | undefined {
+    const saved = control.modelCallId === undefined ? undefined : this.store.call(control.modelCallId)?.modelControlProof;
+    if (saved === undefined) return 'invalid-state';
+    const scope = this.#modelControlScope(task, saved.history);
+    if (!this.#sameControlSources(saved, scope)) return 'forbidden';
+    if (saved.modeRevision !== scope.modeRevision) return 'revision-conflict';
+    const original = saved.references.find(reference => reference.id === proposal.target);
+    const current = scope.references.find(reference => reference.id === proposal.target);
+    if (current?.allowed !== true) return 'forbidden';
+    if (original?.snapshot !== controlReferenceSnapshot(current)) return 'revision-conflict';
+    const device = this.options.devices?.(ASSISTANT_WEMO_OWNER)?.find(device => device.id === proposal.target);
+    if (device?.availability !== 'available' || device.held !== undefined) return 'unavailable';
+    if (!device.capabilities.power.supported) return 'unsupported-capability';
+    if (this.store.queue.steers(task.id).length > 0) return 'cancelled';
+    return undefined;
+  }
   #bindControl(task: Task, proposal: BoundControl['proposal'], call: ToolCall, text: string, ordinal: number,
-    targets: readonly (readonly string[])[] | undefined, artworkRequestId?: string, explicitGroup = false,
+    targets: readonly (readonly string[])[] | undefined, artworkRequestId?: string,
     knownTargets: readonly (readonly string[])[] = [], draftRevision?: number, artRecipientsBound = false): BoundControl | undefined {
     if (this.store.queue.steers(task.id).length > 0) return undefined;
     const inputs = task.transcript.filter(item => item.role === 'owner');
@@ -2406,7 +2564,7 @@ export class AssistantEngine {
     if (this.store.calls(task.id).some(receipt => {
       const control = receipt.action?.control;
       return control?.ownerMessageIds.join() === ownerMessageIds.join() &&
-        (control.proposal.target === proposal.target || explicitGroup && control.additional !== undefined);
+        control.proposal.target === proposal.target;
     })) return undefined;
     const hosted = this.#taskProvider(task).name !== 'synthetic';
     const recent = hosted ? this.#supervisorScope(task).recent
@@ -2425,12 +2583,13 @@ export class AssistantEngine {
     if (targets === undefined && proposal.family === 'catalog-action') {
       targets = [[proposal.target]];
     }
-    if (!authorizesControl(proposal, instruction, answer, targets ?? [], preceding, knownTargets, knownArtwork, explicitGroup, draftRevision, artRecipientsBound)) return undefined;
+    if (!authorizesControl(proposal, instruction, answer, targets ?? [], preceding, knownTargets, knownArtwork, draftRevision, artRecipientsBound)) return undefined;
     return {requestId: `${task.id}-step-${String(ordinal)}`, ownerMessageIds, proposal, text, call: call.id, ...(draftRevision === undefined ? {} : {draftRevision})};
   }
   /** Why a command call was refused instead of proposed. */
   #proposalRefusal(call: ToolCall, task: Task): string {
     const copy = this.#core();
+    if (call.name === SET_WEMO_POWER) return 'refused: the Wemo call needs a current typed proposal.';
     if (call.name === DELEGATE_CODING) {
       const {repository, brief, harness, destination, os} = call.input;
       if (typeof repository !== 'string' || !REPOSITORY.test(repository) || repository.length > 64 || typeof brief !== 'string' ||
@@ -2451,7 +2610,7 @@ export class AssistantEngine {
       const selected = chooseDevice(this.options.devices?.(owner), call.input.device, call.name === SET_LIFX_BRIGHTNESS);
       if ('matches' in selected) return 'Multiple devices match. Ask the owner for an exact device ID.';
       const result = 'code' in selected ? selected : deviceProposal(call, selected.device);
-      return 'code' in result ? `refused: ${result.code}; no ${owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light'} change was proposed.` : 'This tool is not permitted.';
+      return 'code' in result ? `refused: ${result.code}; no light change was proposed.` : 'This tool is not permitted.';
     }
     if (MODES.find(value => value === call.input.mode) === undefined) return 'The requested mode is not work, free or quiet; nothing was proposed.';
     if (copy.mode === undefined || !copy.synced) return 'The Hub mode is not synced with the core right now, so a proposal cannot be bound to its revision; nothing was proposed.';
@@ -2501,6 +2660,7 @@ export class AssistantEngine {
       if (scope !== undefined && !modelFields('conversation', 'request', scope.requestId)) throw new ProviderFault('forbidden');
       const access = recordDisclosures(modelFields, ledger);
       let text: string;
+      let wemoFactsFrom: readonly DeviceRecord[] | undefined;
       if (call.name === READ_HUB_GUIDE) {
         text = deviceHistoryGuide(new Set(tools.map(tool => tool.name)));
       } else if (call.name === READ_DEVICE_HISTORY) {
@@ -2523,11 +2683,19 @@ export class AssistantEngine {
             text = this.#history.summary(call.input, expected === undefined ? undefined : requested, access);
           }
         }
+      } else if (call.name === WEMO_TARGETS) {
+        const records = this.options.devices?.(ASSISTANT_WEMO_OWNER)?.filter(device => {
+          scope?.resolvedCatalogDevice(device.id);
+          return access('devices', 'index', device.id) && access('devices', 'label', device.id);
+        });
+        wemoFactsFrom = records;
+        text = readDevices(records, '', now, ASSISTANT_WEMO_OWNER);
       } else if (owner !== undefined) {
         const name = call.input.device;
         const records = this.options.devices?.(owner)?.filter(device => (scope === undefined || scope.selectedDevice(owner, device.id)) &&
           access('devices', 'index', device.id) && access('devices', 'label', device.id) &&
           (name === '' || access('devices', 'status', device.id) && (scope !== undefined || access('devices', 'details', device.id))));
+        if (owner === ASSISTANT_WEMO_OWNER) wemoFactsFrom = records;
         const selected = chooseDevice(records, name, true);
         const fresh = 'device' in selected ? await this.options.readDevice?.(owner, selected.device.id, signal, parent, this.#deviceDisplay) : undefined;
         text = fresh ?? readDevices(records, 'device' in selected && typeof name === 'string' ? selected.device.id : name, now, owner, this.#deviceDisplay);
@@ -2540,6 +2708,11 @@ export class AssistantEngine {
         text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now, access) : fail('invalid-state');
       }
       const answer: Answer = {text, units: 0, disclosures: ledger.fields};
+      if (call.name === WEMO_TARGETS || call.name === READ_WEMO) {
+        const disclosed = new Set(ledger.fields.flatMap(field => field.source === 'devices' && field.field === 'label' ? [field.record] : []));
+        answer.wemoFacts = (wemoFactsFrom ?? []).flatMap(device => disclosed.has(device.id) && text.includes(`(${device.id})`)
+          ? [{id: device.id, revision: controlReferenceSnapshot(wemoControlReference(device, true))}] : []);
+      }
       if (ledger.incompleteDisclosures === true) answer.incompleteDisclosures = true;
       return answer;
     });
@@ -2568,7 +2741,7 @@ export class AssistantEngine {
     const artRequest = proposal.family === 'catalog-action' && proposal.command === 'art-request';
     let scopedBrightness: {subject: string; owner: string; access: FieldAccess; requestId: string; answerId?: string} | undefined;
     if (hosted && proposal.family !== 'coding-dispatch') {
-      const boundDevice = direct === undefined ? undefined : proposal.target;
+      const boundDevice = direct === undefined ? undefined : [proposal.target, ...(direct.additional ?? []).map(item => item.target)];
       const scope = this.#supervisorScope(task, 'supervisor', boundDevice);
       if (scope.brightnessTarget !== undefined && direct !== undefined &&
         (proposal.family === 'brightness-set' || proposal.family === 'catalog-action' && proposal.command === 'brightness-set')) {
@@ -2580,9 +2753,21 @@ export class AssistantEngine {
       }
       const access = scope.fields;
       if (!access('conversation', 'request', scope.requestId)) return refuse('refused', 'The owner request is private under the configured model sharing policy.');
-      if (!artRequest && [proposal, ...(direct?.additional ?? [])].some(item => !access('devices', 'label', item.target) || !access('devices', 'status', item.target))) {
+      if (direct?.modelCallId === undefined && !artRequest && [proposal, ...(direct?.additional ?? [])].some(item => !access('devices', 'label', item.target) || !access('devices', 'status', item.target))) {
         return refuse('refused', 'The requested device is outside the allowed scope.');
       }
+    }
+    const group = direct?.additional === undefined ? undefined
+      : [proposal, ...direct.additional].flatMap((item, index) => {
+        if (item.family !== 'power-set' || !('owner' in item)) return [];
+        const single = direct.additional?.length === 0;
+        const target = confirmationTarget(item, single ? direct.text : '');
+        const requestId = single ? id : `${id}-group-${String(index)}`;
+        return target === undefined ? [] : [{target, item, command: {requestId, ...item}}];
+      });
+    if (group !== undefined && (group.length !== 1 + (direct?.additional?.length ?? 0) || group.length > 2 ||
+        new Set(group.map(({command}) => command.target)).size !== group.length)) {
+      return refuse('refused', 'The Wemo target set is invalid. No power command was sent.');
     }
     const settle = (answer: RequestResult, accepted: string): {text: string; units: number} => {
       // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
@@ -2649,21 +2834,50 @@ export class AssistantEngine {
           const refused = this.#catalog().beforeDispatch(proposal, id, admitByMs, direct?.draftRevision);
           if (refused !== undefined) return {text: `refused: ${refused}`, units: 0};
         }
-        if (direct?.additional !== undefined) {
-          const commands = [proposal, ...direct.additional];
-          const receipts: string[] = [];
-          const confirmations: Confirmation[] = [];
-          for (const [index, item] of commands.entries()) {
-            if (item.family !== 'power-set' || !('owner' in item)) return {text: 'refused: invalid-state', units: 0};
+        if (group !== undefined) {
+          for (const {command, item} of group) {
+            const {requestId} = command;
+            const watch = await this.outbox.transaction(() => {
+              this.#fence(active);
+              const current = this.store.confirmation(requestId);
+              if (current?.dispatchState !== 'reserved') return undefined;
+              if (this.store.queue.steers(task.id).length > 0) {
+                this.store.saveConfirmation({...current, result: 'New owner input arrived. No power command was sent.'});
+                return undefined;
+              }
+              const sending = {...current, dispatchState: 'sending' as const};
+              this.store.saveConfirmation(sending);
+              return sending;
+            });
+            if (watch === undefined) continue;
             this.#fence(active);
-            const requestId = `${id}-group-${String(index)}`;
-            const answer = await dispatch({requestId, ...item}, parent, signal);
-            const evidence = settle(answer, `accepted: ${item.target} as operation ${requestId}`);
-            receipts.push(evidence.text);
-            const target = confirmationTarget(item, '');
-            if (answer.status === 'accepted' && target !== undefined) confirmations.push(confirmationOf(target, requestId, parent));
+            let reply: RequestResult | {status: 'uncertain'} | undefined;
+            const before = direct?.modelCallId === undefined ? undefined : this.#wemoTargetRefusal(this.#task(task.id), direct, item);
+            if (this.store.queue.steers(task.id).length === 0 && before === undefined) {
+              try {reply = await dispatch(command, parent, signal);}
+              catch {reply = {status: 'uncertain'};}
+            }
+            const settled = await this.outbox.transaction(() => {
+              const current = this.store.confirmation(requestId);
+              if (current === undefined || current.follows !== undefined || current.result !== undefined) return current;
+              if (this.store.queue.steers(task.id).length > 0 && reply === undefined) {
+                current.result = 'New owner input arrived. No power command was sent.';
+              } else if (before !== undefined) current.result = `The power request was refused: ${before}.`;
+              else if (reply === undefined) current.result = 'No power command was sent.';
+              else if (reply.status === 'accepted') current.dispatchState = 'accepted';
+              else if (reply.status === 'rejected' && reply.error.error.code !== 'uncertain-result') {
+                current.result = reply.error.error.code === 'expired' ? 'The power request expired.'
+                  : `The power request was refused (${reply.error.error.code}).`;
+              }
+              this.store.saveConfirmation(current);
+              return current;
+            });
+            if (settled !== undefined) void this.#followConfirmation(settled);
           }
-          return {text: receipts.join('\n'), units: 0, confirmations};
+          const receipts = this.store.confirmations(task.id).filter(watch => watch.questionId === question.id);
+          const text = receipts.length === 1 && receipts[0]?.dispatchState === 'accepted' ? receipt
+            : receipts.map(watch => confirmationText(watch)).join('\n');
+          return {text, units: 0};
         }
         const answer = await dispatch(data.family === 'catalog-action' && data.command === 'nanoleaf-show-save'
           ? {...data, admitByMs} : data, parent, signal);
@@ -2675,6 +2889,10 @@ export class AssistantEngine {
         return {...settled, confirmations: [confirmationOf(target, id, parent)]};
       }, (current, call) => {
         call.action = action;
+        for (const {target, command} of group ?? []) {
+          this.store.saveConfirmation({...confirmationOf(target, command.requestId, {traceparent: call.traceparent}),
+            dispatchState: 'reserved', ...(group?.length === 1 ? {} : {grouped: true})});
+        }
         if (scopedBrightness !== undefined) call.directBrightness = true;
         const targets = [proposal, ...(direct?.additional ?? [])];
         call.disclosures = hosted && artRequest ? [] : [...(hosted ? [] : [{source: 'operations', field: 'details', record: id} satisfies DisclosedField]), ...targets.flatMap<DisclosedField>(item => [
@@ -2724,17 +2942,23 @@ export class AssistantEngine {
       }
 
     }
-    const accepted = result.startsWith('accepted');
-    const confirmation = this.store.confirmation(id);
-    if (confirmation !== undefined) {
+    const accepted = group === undefined ? result.startsWith('accepted') :
+      group.some(({command}) => this.store.confirmation(command.requestId)?.dispatchState === 'accepted');
+    const requestIds = group === undefined ? [id] : group.map(({command}) => command.requestId);
+    const confirmations = requestIds.flatMap(requestId => this.store.confirmation(requestId) ?? []);
+    if (confirmations.length > 0) {
       const remaining = Math.min(IN_TURN_CONFIRMATION_MS, LIMITS.toolMs - (this.context.clock.now() - startedAtMs));
-      await this.#waitForConfirmation(confirmation, remaining, active.controller.signal);
+      await this.#waitForConfirmations(confirmations, remaining, active.controller.signal);
       this.#fence(active);
-      const recorded = this.store.confirmation(id) ?? confirmation;
-      if (hosted) {
-        result = recorded.result === undefined ? 'The command was accepted. Its effect is unconfirmed.' :
-          recorded.result.startsWith('applied') ? 'The applied effect was confirmed.' : 'The command has a result. Its effect is unconfirmed.';
-      } else result = recorded.result ?? pending(recorded);
+      const recorded = confirmations.map(watch => this.store.confirmation(watch.requestId) ?? watch);
+      if (group !== undefined) result = recorded.map(watch => confirmationText(watch)).join('\n');
+      else if (recorded[0] !== undefined) {
+        const [watch] = recorded;
+        if (hosted) {
+          result = watch.result === undefined ? 'The command was accepted. Its effect is unconfirmed.' :
+            watch.result.startsWith('applied') ? 'The applied effect was confirmed.' : 'The command has a result. Its effect is unconfirmed.';
+        } else result = watch.result ?? pending(watch);
+      }
     }
     if (scopedBrightness !== undefined && (accepted || stoppedBeforeBrightness(result))) {
       return {step: state.step + 1, next: 'end', result: ''};
@@ -2763,6 +2987,8 @@ export class AssistantEngine {
     // and stays out of the check; the check runs beside the task and never delays it.
     if (handedOff) this.#checkTitle(task, {kind: 'hand-off'});
     else if (accepted && proposal.family !== 'coding-dispatch') this.#checkTitle(task, {kind: 'tool', tool: name});
+    if (group !== undefined) return this.store.queue.steers(task.id).length > 0
+      ? {step: state.step + 1, next: 'turn', result: ''} : {step: state.step + 1, next: 'end', result: ''};
     if (this.#taskProvider(task).name !== 'synthetic' && job !== undefined && this.store.queue.steers(task.id).length === 0) {
       return {step: state.step + 1, next: 'end', result: 'The coding job will post updates in this conversation.'};
     }
@@ -2922,6 +3148,7 @@ export class AssistantEngine {
         if (reply.disclosures !== undefined) call.disclosures = reply.disclosures;
         if (reply.historySources !== undefined) call.historySources = reply.historySources;
         if (reply.inputVersions !== undefined) call.inputVersions = reply.inputVersions;
+        if (reply.wemoFacts !== undefined) call.wemoFacts = reply.wemoFacts;
         if (reply.incompleteDisclosures === true) call.incompleteDisclosures = true;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
         for (const confirmation of reply.confirmations ?? []) this.store.saveConfirmation(confirmation);

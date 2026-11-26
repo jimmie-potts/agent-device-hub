@@ -10,13 +10,13 @@ export type BoundControl = {
   readonly text: string;
   readonly call: string;
   readonly draftRevision?: number;
+  readonly modelCallId?: string;
+  readonly contextTargets?: readonly string[];
 };
 
 export const normalizedControlText = (value: string): string => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 export const containsControlValue = (input: string, value: string): boolean =>
   normalizedControlText(value) !== '' && ` ${normalizedControlText(input)} `.includes(` ${normalizedControlText(value)} `);
-
-export const ALL_WEMO_PLUGS = 'all wemo plugs';
 
 function explicitWords(text: string): string | undefined {
   const addressed = normalizedControlText(text).replace(/^(?:hey )?(?:b u n n y|bunny|reachy|microduck) /u, '');
@@ -414,7 +414,7 @@ export function namedControlTargets(proposal: BoundControl['proposal'], instruct
 
 /** The current owner supplies the action and setting. A clarification can resolve a detail in that request. */
 export function authorizesControl(proposal: BoundControl['proposal'], instruction: string, answer: string,
-  targets: readonly (readonly string[])[], precedingOwnerText: string, knownTargets: readonly (readonly string[])[] = [], knownArtwork = false, explicitGroup = false, draftRevision?: number, artRecipientsBound = false): boolean {
+  targets: readonly (readonly string[])[], precedingOwnerText: string, knownTargets: readonly (readonly string[])[] = [], knownArtwork = false, draftRevision?: number, artRecipientsBound = false): boolean {
   if (exactCatalogRequest(proposal, instruction)) return true;
   const seek = proposal.family === 'catalog-action' && proposal.command === 'music-lighting-control' &&
     proposal.data.action === 'seek-show' && lightShowSeekRequest(instruction) !== undefined;
@@ -442,7 +442,6 @@ export function authorizesControl(proposal: BoundControl['proposal'], instructio
     return names.every(requestedName => targets.filter(aliases => aliases.some(name => normalizedControlText(name) === requestedName)).length === 1)
       && targets.every(aliases => aliases.some(name => names.includes(normalizedControlText(name))));
   }
-  if (selected.subject === ALL_WEMO_PLUGS) return explicitGroup && proposal.family === 'power-set' && 'owner' in proposal;
   const namesTarget = (name: string): boolean => selected.subject === undefined ? containsControlValue(words, name) : selected.subject === normalizedControlText(name);
   if (targets.every(names => names.some(name => namesTarget(name) || containsControlValue(choice, name)))) {
     const named = knownTargets.filter(names => names.some(namesTarget));

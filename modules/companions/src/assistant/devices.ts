@@ -3,7 +3,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {Cancel, ModuleContext, SyncedCopy, TraceContext} from '@jimmie-potts/sdk';
 import {literalToolDeviceId} from './control-intent.js';
 import type {ToolCall} from './provider.js';
-import {READ_BYTES, SET_LIFX_POWER, SET_WEMO_POWER} from './tools.js';
+import {READ_BYTES, SET_LIFX_POWER} from './tools.js';
 
 export type DeviceReadDisplay = {
   instant: (ms: number) => string;
@@ -143,11 +143,10 @@ export function deviceProposal(call: ToolCall, device: DeviceRecord): {proposal:
   if (Object.keys(call.input).length !== 2) return {code: 'invalid-request'};
   const guards = {expectedConfigurationRevision: device.configurationRevision, expectedGeneration: device.generation};
   const {on, percent} = call.input;
-  if (call.name === SET_LIFX_POWER || call.name === SET_WEMO_POWER) {
+  if (call.name === SET_LIFX_POWER) {
     if (typeof on !== 'boolean') return {code: 'invalid-request'};
     if (!device.capabilities.power.supported) return {code: 'unsupported-capability'};
-    const action = {family: 'power-set', target: device.id, data: {...guards, on}} as const;
-    return {proposal: call.name === SET_WEMO_POWER ? {...action, owner: ASSISTANT_WEMO_OWNER} : action};
+    return {proposal: {family: 'power-set', target: device.id, data: {...guards, on}}};
   }
   if (typeof percent !== 'number' || !Number.isInteger(percent) || percent < 0 || percent > 100) return {code: 'invalid-request'};
   if (!device.capabilities.brightness.supported) return {code: 'unsupported-capability'};
