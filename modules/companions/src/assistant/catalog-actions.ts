@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
+import {literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -88,7 +88,8 @@ export class ConversationActions {
 
   async deviceSubjectMatches(subject: string, parent: TraceContext): Promise<Match[]> {
     const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
-    return rows.filter(({device}) => [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject));
+    const id = literalDeviceId(subject);
+    return rows.filter(({device}) => id === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === id);
   }
 
   async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {

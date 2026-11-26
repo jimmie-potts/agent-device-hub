@@ -21,7 +21,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {ALL_WEMO_PLUGS, authorizesControl, brightnessSubject, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
+import {ALL_WEMO_PLUGS, authorizesControl, brightnessSubject, literalDeviceId, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
@@ -409,7 +409,7 @@ export class AssistantEngine {
     try {
       for (const task of this.store.unfinished()) {
         try {
-          if (!this.available() || !this.#canUseTaskProvider(task)) await this.#recoverUnavailable(task.id);
+          if (this.#brightnessReceipt(task) === undefined && (!this.available() || !this.#canUseTaskProvider(task))) await this.#recoverUnavailable(task.id);
           else await this.#reconcile(task.id, true);
         } catch (error) {
           this.#unrecovered.add(task.conversationId);
@@ -586,7 +586,9 @@ export class AssistantEngine {
         if (current === undefined || current.result !== undefined) return;
         if (evidence.result !== undefined && current.follows !== undefined) {
           const task = this.#task(current.taskId);
-          if (this.store.savedMessage(task.id, current.follows) !== undefined) {
+          const receipt = this.#brightnessReceipt(task);
+          if (this.store.savedMessage(task.id, current.follows) !== undefined &&
+              (receipt?.id !== current.requestId || this.#canReadBrightnessReceipt(task, receipt))) {
             this.store.message(task, `${current.requestId}-confirmation`, 'assistant', evidence.result, this.context.clock.now(), current.follows);
             this.store.touch(task.conversationId);
             this.#publish(add, {traceparent: current.traceparent});
@@ -1195,9 +1197,14 @@ export class AssistantEngine {
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify({...queue, held, messages, steers}))};
       }
       const visibility = {
-        privateText: (message: MessageSource) => this.#privateJobText(selected, conversationId, message),
+        privateText: (message: MessageSource) => {
+          const receipt = this.#brightnessMessage(message);
+          return receipt !== undefined && !this.#canReadBrightnessReceipt(receipt.task, receipt.call)
+            ? 'The request finished. Details are unavailable.' : this.#privateJobText(selected, conversationId, message);
+        },
         shows: (message: MessageSource) => fields('conversation', 'text', message.id) &&
-          (message.role === 'owner' || this.#jobMessageAllowed(message, fields) && this.#replayable(message.taskId, fields)),
+          (message.role === 'owner' || this.#brightnessMessage(message) !== undefined ||
+            this.#jobMessageAllowed(message, fields) && this.#replayable(message.taskId, fields)),
         attachment: (requestId: string) => fields('artwork', 'attachment', requestId),
         task: (taskId: string) => conversationId !== undefined && task(conversationId, taskId),
       };
@@ -1213,6 +1220,29 @@ export class AssistantEngine {
     } catch {return errorBody('unavailable');}
   }
   #config(taskId: string) {return {configurable: {thread_id: taskId}, durability: 'sync' as const, recursionLimit: 4 * LIMITS.modelCalls + 4, callbacks: []};}
+  #brightnessReceipt(task: Task): Call | undefined {
+    return this.store.calls(task.id).filter(call => call.directBrightness === true && call.status === 'succeeded' && call.result?.startsWith('accepted: ')).at(-1);
+  }
+
+  #brightnessMessage(message: MessageSource): {task: Task; call: Call} | undefined {
+    if (message.role !== 'assistant' || message.id !== `${message.taskId}-result` && !message.id.endsWith('-confirmation')) return undefined;
+    const task = this.store.task(message.taskId);
+    const call = task === undefined ? undefined : this.#brightnessReceipt(task);
+    return task !== undefined && call !== undefined && (message.id === `${task.id}-result` || message.id === `${call.id}-confirmation`)
+      ? {task, call} : undefined;
+  }
+
+  #canReadBrightnessReceipt(task: Task, call: Call): boolean {
+    const control = call.action?.control;
+    if (control === undefined) return false;
+    const target = control.proposal.target;
+    const read = this.#fields(task.profile, 'read', 'private-conversation');
+    const scope = this.#openAIScope(task, 'supervisor', target).fields;
+    return read('conversation', 'text', task.conversationId) && read('operations', 'details', call.id) &&
+      control.ownerMessageIds.every(id => this.store.messages.removal(id) === undefined && read('conversation', 'text', id)) &&
+      scope('devices', 'label', target) && scope('devices', 'status', target);
+  }
+
   #finishRecoveredRun(task: Task): void {
     const run = task.runId === null ? undefined : this.store.run(task.runId);
     if (run !== undefined && run.endedAtMs === null) {run.status = task.status; run.endedAtMs = this.context.clock.now(); this.store.saveRun(run);}
@@ -1229,20 +1259,31 @@ export class AssistantEngine {
     }, traceparent === null ? undefined : {traceparent}, reason);
   }
   async #reconcile(taskId: string, startup: boolean, active?: Active): Promise<void> {
-    const snapshot = await this.#graph.getState(this.#config(taskId));
-    const values = snapshot.values as Partial<GraphState>;
+    const snapshot = this.#brightnessReceipt(this.#task(taskId)) === undefined ? await this.#graph.getState(this.#config(taskId)) : undefined;
+    const values = snapshot?.values as Partial<GraphState> | undefined;
     const traceparent = this.#task(taskId).traceparent;
     let result: string | undefined;
     const publication = this.#change(taskId, task => {
       if (terminal(task.status)) return;
       if (startup) this.#restoreCodingReceipts(task);
+      const brightness = this.#brightnessReceipt(task);
       if (unresolved(this.store.calls(taskId))) {task.status = 'uncertain'; task.code = 'uncertain-result';}
-      else if (snapshot.next.length === 0 && typeof values.result === 'string') {
+      else if (brightness !== undefined) {
+        task.status = 'succeeded'; task.code = null;
+        const messageId = `${task.id}-result`;
+        if (!this.#canReadBrightnessReceipt(task, brightness)) {
+          this.store.dropConfirmation(brightness.id);
+          result = 'The request finished. Details are unavailable.';
+        } else {
+          result = this.#confirmationReply(task.id, messageId, '') || 'The brightness request was accepted. Its effect is unconfirmed.';
+        }
+        this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
+      } else if (snapshot?.next.length === 0 && typeof values?.result === 'string') {
         task.status = 'succeeded'; task.code = null;
         const messageId = `${task.id}-result`;
         result = this.#confirmationReply(task.id, messageId, values.result);
         this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
-      } else if (snapshot.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0)) {
+      } else if (snapshot?.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0)) {
         // The turn that decided to ask saved the question before the interrupt; an interrupt without one is not evidence of a saved question.
         if (task.question === null) {task.status = 'uncertain'; task.code = 'uncertain-result';}
         else {task.status = task.question.answer === null ? 'waiting' : 'paused'; task.code = null;}
@@ -1316,6 +1357,10 @@ export class AssistantEngine {
     } catch (error) {
       const code = this.#closed || this.context.signal.aborted ? 'cancelled' : codeOf(error);
       try {
+        if (this.#brightnessReceipt(this.#task(active.taskId)) !== undefined) {
+          await this.#reconcile(active.taskId, false, active);
+          return;
+        }
         await this.#change(active.taskId, task => {
           if (terminal(task.status)) {this.#settle(task, active); return;}
           const unknown = unresolved(this.store.calls(task.id));
@@ -1473,8 +1518,10 @@ export class AssistantEngine {
     const subjectForRead = brightnessTarget ?? (purpose === 'supervisor' ? deviceRequestSubject(request) : undefined);
     const group = brightnessTarget === undefined ? deviceGroup(subjectForRead) : undefined;
     const configured = purpose === 'supervisor' ? this.#historyDevices() : [];
-    const named = (subject: string | undefined, device: DeviceRecord): boolean =>
-      [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject);
+    const named = (subject: string | undefined, device: DeviceRecord): boolean => {
+      const literal = subject === undefined ? undefined : literalDeviceId(subject);
+      return literal === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === literal;
+    };
     const historySummary = purpose === 'supervisor' ? this.#historyBinding(task, configured)?.history : undefined;
     if (historySummary !== undefined) devices.add(historySummary.query.target);
     const matches = configured.filter(({device}) => named(subjectForRead, device));
@@ -1502,7 +1549,8 @@ export class AssistantEngine {
       if (source === 'conversation' && (record === undefined || this.store.messages.removal(record) !== undefined || !local(source, 'text', record))) return false;
       if (source === 'devices') {
         if (!local(source, field, record)) return false;
-        if (record !== undefined && matches.length === 0 && catalogSubject === normalizedControlText(record)) devices.add(record);
+        if (record !== undefined && matches.length === 0 &&
+          (catalogSubject === normalizedControlText(record) || catalogSubject !== undefined && literalDeviceId(catalogSubject) === record)) devices.add(record);
       }
       return access(source, field, record);
     };
@@ -1947,10 +1995,7 @@ export class AssistantEngine {
     const instruction = latest?.text ?? task.prompt;
     const sourceId = latest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, latest) ?? `${task.id}-prompt`;
     const clarification = this.#controlClarification(task);
-    const savedAnswer = clarification?.answer ?? '';
-    const brightness = this.#taskProvider(task).name === 'openai' && brightnessSubject(instruction) !== undefined &&
-      (proposal.family === 'brightness-set' || proposal.family === 'catalog-action' && proposal.command === 'brightness-set');
-    const answer = brightness ? savedAnswer.trim().replace(/^id:/u, '') : savedAnswer;
+    const answer = clarification?.answer ?? '';
     const ownerMessageIds = clarification !== undefined && clarification.answer !== null ? [sourceId, `${clarification.id}-answer`] : [sourceId];
     if (this.store.calls(task.id).some(receipt => {
       const control = receipt.action?.control;
@@ -2197,6 +2242,7 @@ export class AssistantEngine {
         return {...settled, confirmations: [confirmationOf(target, id, parent)]};
       }, (current, call) => {
         call.action = action;
+        if (scopedBrightness !== undefined) call.directBrightness = true;
         const targets = [proposal, ...(direct?.additional ?? [])];
         call.disclosures = [...(openai ? [] : [{source: 'operations', field: 'details', record: id} satisfies DisclosedField]), ...targets.flatMap<DisclosedField>(item => [
           {source: 'devices', field: 'label', record: item.target}, {source: 'devices', field: 'status', record: item.target},
@@ -2252,6 +2298,7 @@ export class AssistantEngine {
           recorded.result.startsWith('applied') ? 'The applied effect was confirmed.' : 'The command has a result. Its effect is unconfirmed.';
       } else result = recorded.result ?? pending(recorded);
     }
+    if (scopedBrightness !== undefined && accepted) return {step: state.step + 1, next: 'end', result: ''};
     let handedOff = false;
     // A hand-off waiting for its companion's busy slot has not been sent: the conversation says it waits, and says
     // "delegated" once the coordinator reports it sent (Hub #2028).

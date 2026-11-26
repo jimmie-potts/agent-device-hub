@@ -50,11 +50,16 @@ const brightnessAfterTarget = /^(?:set|change) (.+?) brightness (?:to|at) (\d+)(
 const brightnessBeforeTarget = /^(?:set|change) (?:the )?brightness (?:of|on|for) (.+?) (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u;
 const brightnessWithDetail = /^(?:set|change) (.+?) brightness (?:to )?(\d+)(?: percent)?$/u;
 
+export const literalDeviceId = (value: string): string | undefined => /^id:([a-z0-9-]{1,128})$/u.exec(value.trim())?.[1];
+
 export function brightnessSubject(text: string): string | undefined {
   const words = explicitWords(text);
   if (words === undefined) return undefined;
   const match = brightnessAfterTarget.exec(words) ?? brightnessBeforeTarget.exec(words) ?? brightnessWithDetail.exec(words);
-  return match?.[1] !== undefined && match[2] !== undefined && Number(match[2]) <= 100 ? optionalArticle(match[1]) : undefined;
+  if (match?.[1] === undefined || match[2] === undefined || Number(match[2]) > 100) return undefined;
+  const subject = optionalArticle(match[1]);
+  const literal = [...text.matchAll(/(?:^|\s)(id:[a-z0-9-]{1,128})(?=\s|$)/gu)].find(item => normalizedControlText(item[1] ?? '') === subject);
+  return literal?.[1] ?? subject;
 }
 
 export function missingBrightness(text: string): boolean {
@@ -389,7 +394,10 @@ type CatalogArtEffect = Readonly<Record<string, unknown>>;
 export function namedControlTargets(proposal: BoundControl['proposal'], instruction: string, targets: readonly (readonly string[])[]): readonly (readonly string[])[] {
   const words = explicitWords(instruction);
   const subject = words === undefined ? undefined : setting(words, '', instruction, '', proposal, false)?.subject;
-  return subject === undefined ? [] : targets.filter(aliases => aliases.some(name => normalizedControlText(name) === subject));
+  const brightness = proposal.family === 'brightness-set' || proposal.family === 'catalog-action' && proposal.command === 'brightness-set';
+  const literal = brightness ? literalDeviceId(brightnessSubject(instruction) ?? '') : undefined;
+  if (subject === undefined) return [];
+  return targets.filter(aliases => literal === undefined ? aliases.some(name => normalizedControlText(name) === subject) : aliases[0] === literal);
 }
 
 /** The current owner supplies the action and setting. A clarification can resolve a detail in that request. */
@@ -406,6 +414,14 @@ export function authorizesControl(proposal: BoundControl['proposal'], instructio
   if (choice === undefined) return false;
   const selected = setting(words, choice, instruction, answer, proposal, knownArtwork, draftRevision);
   if (selected === undefined) return false;
+  if (proposal.family === 'brightness-set' || proposal.family === 'catalog-action' && proposal.command === 'brightness-set') {
+    const directId = literalDeviceId(brightnessSubject(instruction) ?? ''), answerId = literalDeviceId(answer);
+    if (directId !== undefined || answerId !== undefined) {
+      return targets.length === 1 && targets[0]?.[0] === proposal.target &&
+        (directId === undefined ? targets[0].some(name => normalizedControlText(name) === selected.subject) : directId === proposal.target) &&
+        (answerId === undefined || answerId === proposal.target);
+    }
+  }
   if (selected.recipients !== undefined) {
     if (artRecipientsBound) return true;
     const names = selected.recipients;

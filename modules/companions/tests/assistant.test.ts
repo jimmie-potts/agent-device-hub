@@ -3161,16 +3161,20 @@ void test('Responses resolves an exact brightness instruction before sending one
   const devices = [display, unsupported, {...display, id: 'private-other', label: 'PRIVATE_OTHER_DISPLAY'},
     {...display, id: 'shared-a', label: 'Shared Display'}, {...display, id: 'shared-b', label: 'Shared Display'}];
   const requests: AssistantDispatch[] = [], lookup: string[] = [];
+  let modelCalls = 0, replayedReceipts = 0;
   let pixooReads = 0, staleAtRead = Number.POSITIVE_INFINITY;
   let active = {id: target, attempt: true, repeat: false, wrongAmount: false, bypassLookup: false};
   let denied: 'private-conversation' | 'openai-supervisor' | undefined;
+  let outcome: 'accepted' | 'revoke-after-acceptance' | 'uncertain' = 'accepted';
   const standard = sharing();
   const share = (grant: ShareQuery) => standard(grant) && !(grant.destination === denied &&
     grant.source === 'devices' && grant.record === target && (grant.field === 'status' || grant.field === 'label'));
   const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    modelCalls += 1;
     const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
     assert.ok(body.tools.some(tool => tool.name === 'control_brightness_set'));
     const results = body.input.filter(item => item.type === 'function_call_output').map(item => item.output ?? '');
+    if (results.some(result => /^The brightness|^accepted:/u.test(result))) replayedReceipts += 1;
     const tool = (name: string, args: Record<string, unknown>, id: string) =>
       [{type: 'function_call', id: 'fc_'+id, call_id: id, name, arguments: JSON.stringify(args)}];
     const control = (id: string) => tool('control_brightness_set', {owner, target: active.id,
@@ -3185,7 +3189,11 @@ void test('Responses resolves an exact brightness instruction before sending one
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
   }});
   const w = await world(context, {provider, share, tools: ['read_devices', 'control_brightness_set'],
-    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+    dispatch: data => {
+      requests.push(data);
+      if (outcome === 'revoke-after-acceptance') denied = 'openai-supervisor';
+      return Promise.resolve(outcome === 'uncertain' ? {status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')} : accepted(data.requestId));
+    }});
   const participant = w.bus.connect(owner);
   context.after(() => participant.close());
   await participant.serveSync(['device'], () => {
@@ -3221,7 +3229,10 @@ void test('Responses resolves an exact brightness instruction before sending one
     assert.equal(receipt?.kind, 'tool');
     assert.match(receipt?.result ?? '', /^accepted: the command entered the tracked dispatcher/u);
     assert.equal(receipt?.action?.control?.ownerMessageIds.length, 1);
-    assert.equal((await page(w, profile)).messages.some(message => message.role === 'assistant' && message.text.endsWith('?')), false);
+    const saved = (await page(w, profile)).messages.filter(message => message.id.startsWith(`${receipt?.taskId}-`) && message.role === 'assistant');
+    assert.equal(saved.length, 1);
+    assert.match(saved[0]?.text ?? '', /brightness request accepted/i);
+    assert.doesNotMatch(saved[0]?.text ?? '', /reports 37%/u);
     assert.equal(w.module().inspectAssistant()?.tasks.find(item => item.profile === profile)?.status, 'succeeded');
   }
   active = {...active, repeat: false, wrongAmount: true};
@@ -3270,6 +3281,7 @@ void test('Responses resolves an exact brightness instruction before sending one
   await until(() => reachy()?.status === 'succeeded');
   assert.equal(requests.length, 3, 'the selected ID disappeared after proposal and must not dispatch');
   staleAtRead = Number.POSITIVE_INFINITY;
+  devices.push({...display, id: 'supported-alias', label: target});
   await ask('Set fixture-display brightness to 37%', 'reachy');
   assert.equal(reachy()?.status, 'waiting');
   await resolve();
@@ -3277,12 +3289,46 @@ void test('Responses resolves an exact brightness instruction before sending one
   w.advance(1200);
   await until(() => reachy()?.status === 'succeeded');
   assert.equal(requests[3]?.target, target);
+  assert.equal(replayedReceipts, 0);
+  const resultId = `${reachy()?.taskId}-result`;
+  const result = () => page(w, 'reachy', 'recent').then(value => value.messages.filter(message => message.id === resultId));
+  assert.equal((await result()).length, 1);
+  denied = 'private-conversation';
+  assert.deepEqual((await result()).map(message => message.text), ['The request finished. Details are unavailable.']);
+  denied = undefined;
+  const priorModelCalls = modelCalls;
+  await w.restart();
+  assert.equal(requests.length, 4, 'startup must not send a second command');
+  assert.equal(modelCalls, priorModelCalls, 'startup must not replay the accepted turn to the supervisor');
+  assert.equal((await result()).length, 1);
+  await ask('Set id:fixture-display brightness to 37%', 'reachy');
+  assert.equal(requests.length, 5, 'a literal ID in the original instruction bypasses colliding labels');
+  assert.equal(requests[4]?.target, target);
+  outcome = 'revoke-after-acceptance';
+  await ask('Set id:fixture-display brightness to 37%', 'reachy');
+  assert.equal(requests.length, 6);
+  assert.equal(reachy()?.status, 'succeeded');
+  const privatePage = await page(w, 'reachy', 'recent');
+  assert.deepEqual(privatePage.messages.filter(message => message.id === `${reachy()?.taskId}-result`).map(message => message.text),
+    ['The request finished. Details are unavailable.']);
+  denied = undefined;
+  outcome = 'uncertain';
+  assert.equal((await input(w.core, w.module(), 'Set id:fixture-display brightness to 37%', false, randomUUID(), {profile: 'reachy'})).status, 'accepted');
+  await until(() => reachy()?.status === 'uncertain');
+  assert.equal(requests.length, 7);
+  const priorUnknown = modelCalls;
+  await w.restart();
+  assert.equal(requests.length, 7, 'an uncertain write must never be resent');
+  assert.equal(modelCalls, priorUnknown, 'startup does not replay an uncertain write');
+  const unknownPage = await page(w, 'reachy', 'recent');
+  assert.equal(unknownPage.messages.some(message => message.id === `${reachy()?.taskId}-result`), false);
+  outcome = 'accepted';
   active = {...active, id: 'shared-a', bypassLookup: true};
   await ask('Set Shared Display brightness to 37%');
   const question = (await page(w)).currentTask?.question;
   assert.equal(question?.kind, 'clarification');
   assert.doesNotMatch(JSON.stringify(question), /shared-a|shared-b/u);
-  assert.equal(requests.length, 4);
+  assert.equal(requests.length, 7);
 });
 
 void test('a scoped brightness lookup supports the typed LIFX tool and refuses a cross-owner alias', async context => {
