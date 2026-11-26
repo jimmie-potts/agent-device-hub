@@ -262,6 +262,10 @@ export class CodingStore {
       this.database.exec('RELEASE coding_accept');
     } catch (error) {this.database.exec('ROLLBACK TO coding_accept'); this.database.exec('RELEASE coding_accept'); throw error;}
   }
+  startSent(operationId: string): boolean {
+    const row = this.database.prepare('SELECT sent,started FROM companion_coding WHERE operation_id=?').get(operationId);
+    return row?.sent === 1 || row?.started === 1;
+  }
   markSending(operationId: string): void {
     const record = this.database.prepare("UPDATE companion_coding SET sent=1 WHERE operation_id=? AND status='pending' AND sent=0").run(operationId);
     if (record.changes !== 1) throw new Error('coding-start-already-sent');
@@ -291,8 +295,10 @@ export class CodingStore {
   sending(operationId: string): void {this.database.prepare('UPDATE companion_coding_waiting SET sending=1 WHERE operation_id=?').run(operationId);}
   /** Ends a wait without a run: cancelled, refused or of unknown fate. */
   unwait(operationId: string): void {this.database.prepare('DELETE FROM companion_coding_waiting WHERE operation_id=?').run(operationId);}
-  waitingCount(): number {
-    const row = this.database.prepare('SELECT count(*) AS total FROM companion_coding_waiting').get();
+  waitingCount(destination: CodingDestination): number {
+    const row = this.database.prepare(`SELECT count(*) AS total FROM companion_coding_waiting w
+      LEFT JOIN companion_coding_attempts a ON a.operation_id=w.operation_id
+      WHERE COALESCE(json_extract(a.destination,'$.actual'),'mac')=?`).get(destination);
     if (typeof row?.total !== 'number') throw new Error('coding-waiting-invalid');
     return row.total;
   }

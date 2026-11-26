@@ -43,6 +43,9 @@ void test('route a test by destination grant, exact revision, platform, test slo
   assert.match(conflict.reason, /permission.*mac/iu);
   assert.equal(selectCodingWorker([mac, pc], {...request, destination: 'cloud'}).worker, undefined);
   assert.equal(selectCodingWorker([mac, pc], {...request, requirements: {revision: 'b'.repeat(40)}}).worker, undefined);
+  const otherRevision = {...pc, declaration: {...pc.declaration, repositories:[{name:'sample', revision:'b'.repeat(40)}]}};
+  assert.match(selectCodingWorker([mac,otherRevision],{...request,requirements:{}}).reason,/different repository revisions/);
+  assert.equal(selectCodingWorker([mac,otherRevision],request).worker?.destination,'mac');
 });
 
 void test('resource eligibility comes from exact trusted step policy and preserves host-specific test limits', async () => {

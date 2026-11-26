@@ -303,6 +303,10 @@
   padding: 0;
 }
 
+.conversation-task-controls button {
+  scroll-margin-block: 0.25rem;
+}
+
 .conversation-task-controls:empty, .conversation-byte-feedback:empty {
   display: none;
 }

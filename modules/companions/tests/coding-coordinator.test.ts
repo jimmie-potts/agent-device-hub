@@ -708,7 +708,7 @@ void test('Mac and PC keep their own coding attempt, permission, stop and result
   const report = (edge: typeof pc, endpoint: string, operationId: string, status: 'started' | 'completed') =>
     edge.publish(`bunny.event.coding-progress.${endpoint}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpoint,
       dataschema: 'https://bunny.invalid/events/coding-progress/2.3', data: status === 'started' ? {operationId, status, harness: 'codex',
-        sessionId: `session-${operationId}`, setup: 'ready'} : {operationId, status, harness: 'codex', result: result()}}, {parent});
+        sessionId: `session-${operationId}`, setup: 'ready'} : {operationId, status, harness: 'codex', result: {...result(),base:revision}}}, {parent});
   const first = await admit('first', 'auto', true), second = await admit('second', 'mac');
   assert.equal(first.status, 'queued'); assert.equal(second.status, 'queued');
   await until(() => w.work.filter(c => c.data.action === 'start').length === 2);

@@ -201,6 +201,7 @@ function JobAttempts({jobId, operationId, revision, read, continueJob, locked}: 
     {expanded && (detail === undefined ? <p>Loading attempts…</p> : detail === null ? <p>Attempts unavailable.</p>
       : <>{detail.continuationReason !== undefined && <p>{detail.continuationReason}</p>}
         <ol>{detail.attempts.map((attempt, index) => <AttemptResults key={index} value={attempt}/>)}</ol>
+        {offer !== undefined && <p>Continuation uses the original worker. Cross-host checkout transfer is unavailable.</p>}
         {offer !== undefined && <button type="button" disabled={locked} onClick={() => {continueJob(offer);}}>
           Continue with {offer.harness === 'codex' ? 'Codex' : 'Claude Code'}
         </button>}</>)}

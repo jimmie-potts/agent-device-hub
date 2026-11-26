@@ -193,7 +193,7 @@ function TaskControls({context, command, state, profile, live, question, coding,
             {' '}Bound to Hub-mode revision {String(question.proposal.expectedRevision)}; a mode changed since then refuses it.</p>
           : question.proposal.family === 'coding-dispatch' ? <p>Delegation to the coding worker in repository <strong>{question.proposal.data.repository}</strong>, in a fresh worktree with edits, builds and tests allowed and no push.
             {' '}Brief: <span style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{question.proposal.data.brief}</span>{/[.!?]$/u.test(question.proposal.data.brief) ? '' : '.'}
-            {' '}The Hub checks current worker availability and permissions before dispatch.
+            {' '}Bound to coding worker revision {String(question.proposal.expectedRevision)}. The Hub checks current worker availability and permissions before dispatch.
             {slotBusy(coding, profile) && <> The coding worker is busy: {companionName(profile)}'s slot is taken, so if you approve, this hand-off waits and starts when the slot frees.</>}</p>
           : question.proposal.family === 'catalog-action'
             ? <details><summary>{question.proposal.command} on {question.proposal.target}</summary>

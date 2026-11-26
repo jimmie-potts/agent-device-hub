@@ -817,6 +817,25 @@ and actual destination and harness, and the Hub's selection reason when
 recorded. Readback for older jobs uses **Unknown** when the stored record has
 no destination.
 
+The Hub checks each enrolled worker's current repository revision, toolchain,
+subscription, sharing grant and pressure before ranking it. A worker reports
+resources every 45 seconds. A declaration older than two minutes cannot admit
+a new job. An explicit host or harness mismatch leaves the job unstarted and
+shows the available alternatives. A job that may have reached its worker keeps
+its attempt identity after a disconnect. Native handoff and continuation use
+the original verified checkout on that host.
+
+To route a step that requires a device or the installed runtime, the operator
+can add `codingResources` to the private Companions section. Each entry has
+`kind` (`device-route`, `device-proximity` or `installation`), the existing
+target or operation `id`, and its allowed `destinations`. For example, an
+authorized edge check and a proximity check for the same target can list
+different workers. An installation entry names only the designated Mac.
+These entries select where a step can run. The existing controller or
+installation operator still owns the operation. A request to write an installer
+can run as ordinary coding work. A request to verify the installed runtime
+requires the operator's route.
+
 To start from **Jobs**, open **New coding job**, choose a companion, harness
 and destination, then select **Continue in Conversation**. Enter a brief that
 names the repository and choose **Request coding job**. Review the proposal

@@ -199,7 +199,7 @@ export class CodingCoordinator {
         const {nativeObservation, ...context} = attempt?.context ?? {};
         const nativeView = attempt === undefined ? undefined : this.#nativeView(attempt.operationId, nativeObservation);
         const nativeClient = nativeView !== undefined && original !== undefined && this.#canUseCodingBrief(original, companion) ? nativeView : undefined;
-        jobs.push({...job, companion, status, ...(attempt?.binding === undefined ? {} : {requestedHarness: attempt.choice, requestedDestination: attempt.binding.requested, actualDestination: attempt.binding.actual, selectionReason: attempt.selectionReason}), ...(label === '' ? {} : {label}), ...(nativeClient === undefined ? {} : {nativeClient}),
+        jobs.push({...job, companion, status, ...(attempt?.binding === undefined ? {} : {requestedHarness: attempt.choice, requestedDestination: attempt.binding.requested, ...(this.#store.startSent(attempt.operationId) ? {actualDestination: attempt.binding.actual} : {}), selectionReason: attempt.selectionReason}), ...(label === '' ? {} : {label}), ...(nativeClient === undefined ? {} : {nativeClient}),
           ...(attempt?.harness == null ? {} : {harness: attempt.harness}), steering: this.#steering(active), messages: this.#store.messages(job.jobId).filter(message =>
             this.#seams.jobVisible?.({...job, operationId: message.operationId}, companion) !== false),
           ...context, ...(attempt?.sessionId == null ? {} : {sessionId: attempt.sessionId}), ...(active === undefined ? {} : this.#runContext(active))});
@@ -248,7 +248,7 @@ export class CodingCoordinator {
         const active = this.#active.get(operationId);
         const {nativeObservation, ...attemptContext} = context ?? {};
         const nativeVisible = nativeObservation !== undefined && this.#canUseCodingBrief({...job, operationId}, owner);
-        return {operationId, harness, ...(binding === undefined ? {} : {requestedHarness: choice, requestedDestination: binding.requested, actualDestination: binding.actual}), sessionId: active?.sessionId ?? sessionId, status: active?.phase ?? status, selectionReason, result,
+        return {operationId, harness, ...(binding === undefined ? {} : {requestedHarness: choice, requestedDestination: binding.requested, ...(this.#store.startSent(operationId) ? {actualDestination: binding.actual} : {})}), sessionId: active?.sessionId ?? sessionId, status: active?.phase ?? status, selectionReason, result,
           ...(context === undefined ? {} : {context: {...attemptContext, ...(nativeVisible ? {nativeObservation} : {})}})};
       });
     if (saved.length === 0) {
@@ -403,11 +403,13 @@ export class CodingCoordinator {
           const route = implicitLegacy && this.#allowed(data, 'mac') ? {worker: mac, harness: undefined, revision: undefined, forbidden: false, reason: 'The default Claude Code worker was selected.'}
             : this.#route(data, choice, requested, data.requirements);
           if (route.worker === undefined) return refused(route.forbidden === true ? 'forbidden' : 'unavailable', route.reason);
-          const worker = this.#workers.get(route.worker.destination)!;
+          const worker = this.#workers.get(route.worker.destination);
+          if (worker === undefined) return refused('unavailable', DISCONNECTED_BEFORE_START);
+          if (worker.declaration !== undefined && (worker.selectionId === undefined || route.revision === undefined)) return refused('unavailable', 'The worker revision or connection identity is unavailable.');
           const binding: AttemptDestination = {requested, actual: worker.destination,
             ...(data.requirements === undefined ? {} : {requirements: data.requirements}),
-            ...(worker.declaration === undefined ? {} : {endpointId: worker.endpointId, selectionId: worker.selectionId!, revision: route.revision!})};
-          if (worker.capacity !== 'uncapped' && this.#store.waitingCount() >= WAITING_LIMIT) return refused('capacity', 'too many coding hand-offs are waiting');
+            ...(route.revision === undefined || worker.selectionId === undefined ? {} : {endpointId: worker.endpointId, selectionId: worker.selectionId, revision: route.revision})};
+          if (worker.capacity !== 'uncapped' && this.#store.waitingCount(worker.destination) >= WAITING_LIMIT) return refused('capacity', 'too many coding hand-offs are waiting');
           await this.outbox.transaction(add => {
             const job = {jobId, operationId, conversationId, taskId, repository, brief};
             this.#store.create(job);
@@ -421,7 +423,8 @@ export class CodingCoordinator {
       } catch (error) {return refused(fullDisk(error) ? 'capacity' : 'internal', 'the coding job could not be saved');}
       return {status: 'queued', requestId: operationId, jobId};
     }
-    if (!this.#connected()) return refused('unavailable', 'no coding worker is connected');
+    const legacyWorker = this.#workers.get('mac');
+    if (!this.#connected() || legacyWorker === undefined) return refused('unavailable', 'no authorized default Mac coding worker is connected');
     if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
     const slot = this.#slotOf(data.companion);
     let waiting: CodingWaitingRecord[];
@@ -432,7 +435,7 @@ export class CodingCoordinator {
       try {return await this.#dispatch(data, parent);}
       finally {if (this.#reserved.get(slot) === data.requestId) this.#reserved.delete(slot); this.#drain();}
     }
-    if (!this.#uncapped() && waiting.length >= WAITING_LIMIT) return refused('capacity', 'too many coding hand-offs are waiting');
+    if (!this.#uncapped() && this.#store.waitingCount(legacyWorker.destination) >= WAITING_LIMIT) return refused('capacity', 'too many coding hand-offs are waiting');
     try {this.#store.wait({operationId: data.requestId, taskId: data.taskId, companion: data.companion, repository: data.repository, brief: data.brief, traceparent: parent.traceparent});}
     catch (error) {return refused(fullDisk(error) ? 'capacity' : 'internal', 'the coding hand-off could not be saved');}
     this.#changed();
@@ -813,6 +816,7 @@ export class CodingCoordinator {
       return {status: 'accepted'};
     }
     const {worker: declaration, harnesses, capacity} = command.data;
+    if (previous === undefined && this.#workers.size >= 32) return errorBody('capacity', {detail: 'the coding worker roster is full'});
     if ((destination !== 'mac' || previous?.declaration !== undefined) && declaration === undefined) return errorBody('invalid-state', {detail: 'this worker requires a current destination declaration'});
     if (previous !== undefined && previous.endpointId !== command.subject) return errorBody('invalid-state', {detail: 'another coding worker endpoint is selected'});
     if (this.#byEndpoint(command.subject)?.destination !== undefined && this.#byEndpoint(command.subject)?.destination !== destination) return errorBody('forbidden');
@@ -1023,6 +1027,13 @@ export class CodingCoordinator {
       this.#changed();
       return;
     }
+    const binding = this.#store.attempt(active.operationId)?.binding;
+    if (binding?.revision !== undefined && progress.result != null &&
+      (progress.result.repository !== this.#store.job(active.operationId)?.repository ||
+       ((progress.status === 'completed' || progress.result.base !== null) && progress.result.base !== binding.revision))) {
+      await this.#settle(active, 'uncertain', undefined, 'the worker result did not match the approved repository revision');
+      return;
+    }
     if (!active.started) {await this.#settle(active, 'uncertain', progress.status === 'completed' ? progress.result : progress.result ?? undefined, 'lost', {result: Outcome.uncertain}); return;}
     if (progress.status === 'completed') await this.#settle(active, 'completed', progress.result, undefined, undefined, false, progress.handoffToken);
     else await this.#settle(active, progress.status, progress.result ?? undefined, progress.reason, undefined, false, progress.status === 'uncertain' ? undefined : progress.handoffToken);
@@ -1030,7 +1041,7 @@ export class CodingCoordinator {
   async #observeNative(message: Message<CodingNativeClient>): Promise<void> {
     const {operationId, clients, state, observedAtMs} = message.data;
     const attempt = this.#store.attempt(operationId), worker = this.#workerFor(attempt);
-    if (worker === undefined || worker.endpointId !== message.subject || !this.#connected() ||
+    if (worker === undefined || worker.endpointId !== message.subject || !this.#store.startSent(operationId) || !this.#connected() ||
       (this.#active.get(operationId)?.worker !== worker && (attempt?.binding?.selectionId === undefined || attempt.binding.selectionId !== worker.selectionId))) return;
     const selectionId = worker.selectionId, view: NativeObservation = {clients, state, observedAtMs};
     await this.#persistObservation(`native-client:${message.id}`, message, () => this.outbox.transaction(() => {

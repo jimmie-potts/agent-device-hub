@@ -1,4 +1,4 @@
-import type {CodingRequirements, CodingResource} from '../coding/routing.js';
+import {codingDestinationChoice, type CodingDestinationChoice, type CodingChoice, type CodingRequirements, type CodingResource} from '../coding/routing.js';
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const token = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/u.test(value);
@@ -35,4 +35,20 @@ export function bindCodingRequirements(requested: CodingRequirements | undefined
   const testSlots = requested.testSlots === 2 || trusted.testSlots === 2 ? 2 : trusted.testSlots ?? requested.testSlots;
   return {...requested, ...trusted, ...(toolchains === undefined ? {} : {toolchains}),
     ...(testSlots === undefined ? {} : {testSlots}), ...(refusal === undefined ? {} : {refusal})};
+}
+
+/** Keep a clearly stated owner route when a supervisor omits or changes it in the proposed tool call. */
+export function ownerCodingRoute(text: string): {harness?: CodingChoice; destination?: CodingDestinationChoice} {
+  const route: {harness?: CodingChoice; destination?: CodingDestinationChoice} = {};
+  for (const clause of text.trim().toLowerCase().split(/[.,;!\n]|\band then\b/u)) {
+    const instruction = clause.trim().replace(/^(?:please|can you|could you)\s+/u, '');
+    if (!/^(?:(?:use|choose|ask|have|select|delegate|send|run|start|execute|launch)\b|(?:codex|claude code)\s+(?:on|for)\b)/u.test(instruction)) continue;
+    const harness = /(?:^(?:use|choose|ask|have|select)\s+|\b(?:with|using)\s+|^)(codex|claude code)\b/u.exec(instruction)?.[1];
+    if (harness !== undefined) route.harness = harness === 'codex' ? 'codex' : 'claude-code';
+    if (/\b(?:wherever it fits|any eligible (?:host|worker)|wherever (?:it is )?available)\b/u.test(instruction)) route.destination = 'auto';
+    // A target platform in source code (an installer for the Mac) does not identify an execution host.
+    const target = /\b(?:on|via|to)\s+(?:the\s+|my\s+|an enrolled\s+|a\s+)?(mac|pc|cloud(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?)\b(?!\s+(?:or|and)\b)/u.exec(instruction)?.[1];
+    if (target !== undefined && codingDestinationChoice(target)) route.destination = target;
+  }
+  return route;
 }

@@ -36,7 +36,7 @@ import {changesOf, observationDraft, observationOf, titleObservationOf} from './
 import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} from './titles.js';
 import {describePowerLimit, followPowerLimits, localInstant} from './power-limits.js';
 import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices, type DeviceReadDisplay} from './devices.js';
-import {bindCodingRequirements, codingOS, codingRequirements} from './coding-request.js';
+import {bindCodingRequirements, codingOS, codingRequirements, ownerCodingRoute} from './coding-request.js';
 import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_WEMO, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
 
 export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provider.js';
@@ -1910,8 +1910,9 @@ export class AssistantEngine {
       if (harness !== undefined && !codingChoice(harness) || destination !== undefined && !codingDestinationChoice(destination) ||
         os !== undefined && !codingOS(os) || Object.keys(call.input).some(key => !['repository', 'brief', 'harness', 'destination', 'os'].includes(key))) return undefined;
       const preference = task.codingPreference;
-      const choice = preference?.harness ?? harness;
-      const execution = preference?.destination ?? destination;
+      const ownerRoute = ownerCodingRoute(task.prompt);
+      const choice = preference?.harness ?? ownerRoute.harness ?? harness;
+      const execution = preference?.destination ?? ownerRoute.destination ?? destination;
       const requirements = bindCodingRequirements(preference?.requirements ?? (os === undefined ? undefined : {os}), this.options.codingRequirements?.(task.prompt));
       const proposal: Proposal = {family: 'coding-dispatch', target: 'assistant', expectedRevision: coding.revision,
         data: {repository, brief: brief.trim(), ...(choice === undefined ? {} : {harness: choice}),

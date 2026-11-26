@@ -57,8 +57,8 @@ export function codingRequirementsFromOwner(text: string, grants: readonly Codin
       statement.includes(`${words(grant.id)} check`) || statement.includes(`${words(grant.id)} operation`) ||
       statement.includes(`operation ${words(grant.id)}`)))) continue;
     const possible = matches.length > 0 ? matches : kind === 'installation' && named.length === 0 && !/\b(?:for|targeting|named)\s+\S/u.test(statement) ? grants.filter(grant => grant.kind === kind) : [];
-    if (possible.length !== 1) {requirements.refusal = possible.length > 1 ? 'ambiguous-resource' : 'unknown-resource'; continue;}
-    const resource = possible[0]!;
+    const resource = possible[0];
+    if (possible.length !== 1 || resource === undefined) {requirements.refusal = possible.length > 1 ? 'ambiguous-resource' : 'unknown-resource'; continue;}
     if (requirements.resource !== undefined && (requirements.resource.kind !== resource.kind || requirements.resource.id !== resource.id)) {
       requirements.refusal = 'ambiguous-resource';
     } else requirements.resource = {kind: resource.kind, id: resource.id};

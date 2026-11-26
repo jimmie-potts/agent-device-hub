@@ -59,7 +59,14 @@ type Request = {destination: CodingDestinationChoice; choice: CodingChoice; repo
 type Selection = {forbidden?: true; worker?: CodingCandidate; harness?: CodingHarness; revision?: string; reason: string};
 type Eligible = Selection & {worker: CodingCandidate; score: number[]};
 const pressureRank = {normal: 0, elevated: 1, unknown: 2, high: 3} as const;
-const factors = ['resource pressure', 'active job count', 'available test slots', 'observed harness quota'];
+function rankingFact(selected: Eligible, other: Eligible): string {
+  const target = other.worker.destination;
+  if (selected.score[0] !== other.score[0]) return `resource pressure (${selected.worker.declaration?.pressure ?? 'unknown'}; ${target}: ${other.worker.declaration?.pressure ?? 'unknown'})`;
+  if (selected.score[1] !== other.score[1]) return `active jobs (${selected.worker.running}; ${target}: ${other.worker.running})`;
+  if (selected.score[2] !== other.score[2]) return `available test slots (${selected.worker.declaration?.testSlots ?? 'unknown'}; ${target}: ${other.worker.declaration?.testSlots ?? 'unknown'})`;
+  if (selected.score[3] !== other.score[3]) return `observed available quota (${target}: unknown)`;
+  return 'stable destination identity';
+}
 
 /** Evaluate the source-bound declaration. Authorization comes from the Hub, separately from the worker's report. */
 function evaluateWorker(worker: CodingCandidate, request: Request): Eligible | string {
@@ -86,7 +93,7 @@ function evaluateWorker(worker: CodingCandidate, request: Request): Eligible | s
     chooseCodingHarness(request.choice, harnesses ?? [], request.now);
   if (!legacy && route.harness === undefined) {
     if (declaration !== undefined && worker.harnesses?.some(item => request.choice === 'auto' || request.choice === item.harness) === true &&
-      !harnesses?.some(item => request.choice === 'auto' || request.choice === item.harness)) return 'the requested harness readiness is stale';
+      harnesses?.some(item => request.choice === 'auto' || request.choice === item.harness) !== true) return 'the requested harness readiness is stale';
     return route.reason;
   }
   const health = harnesses?.find(item => item.harness === route.harness);
@@ -118,15 +125,21 @@ export function selectCodingWorker(workers: readonly CodingCandidate[], request:
     } else if (matches(worker.destination)) eligible.push(result);
     else alternatives.push(worker.destination);
   }
+  if (request.requirements?.revision === undefined && new Set(eligible.flatMap(candidate => candidate.revision === undefined ? [] : [candidate.revision])).size > 1) {
+    return {reason: 'Eligible workers report different repository revisions. Choose a destination or specify the approved commit before starting.'};
+  }
   eligible.sort((a, b) => {
-    for (let i = 0; i < a.score.length; i++) if (a.score[i] !== b.score[i]) return a.score[i]! - b.score[i]!;
+    for (const [index, value] of a.score.entries()) {
+      const difference = value - (b.score[index] ?? value);
+      if (difference !== 0) return difference;
+    }
     return a.worker.destination < b.worker.destination ? -1 : a.worker.destination === b.worker.destination ? 0 : 1;
   });
   const selected = eligible[0];
-  if (selected === undefined) return {...(permissionDenials > 0 && permissionDenials === reasons.length ? {forbidden: true} : {}), reason: `${reasons.sort().join(' ') || `No connected ${request.destination} worker is eligible.`}${alternatives.length === 0 ? '' : ` Eligible alternatives: ${alternatives.sort().join(', ')}.`}`};
+  if (selected === undefined) return {...(permissionDenials > 0 && permissionDenials === reasons.length ? {forbidden: true} : {}), reason: `${reasons.length > 0 ? reasons.sort().join(' ') : `No connected ${request.destination} worker is eligible.`}${alternatives.length === 0 ? '' : ` Eligible alternatives: ${alternatives.sort().join(', ')}.`}`};
   const runnerUp = eligible[1];
   const deciding = runnerUp === undefined ? request.destination === 'auto' ? 'only eligible destination' : 'requested destination' :
-    factors[selected.score.findIndex((value, index) => value !== runnerUp.score[index])] ?? 'stable destination identity';
+    rankingFact(selected, runnerUp);
   const {worker, harness, revision} = selected;
   return {worker, ...(harness === undefined ? {} : {harness}), ...(revision === undefined ? {} : {revision}),
     reason: `${worker.destination} selected by ${deciding}. ${selected.reason}`};
