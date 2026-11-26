@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {literalToolDeviceId, literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
+import {literalToolDeviceId, literalDeviceId, normalizedControlText} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -16,7 +16,7 @@ import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_
 import {ShowDrafts} from './show-drafts.js';
 import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
-import {catalogTool, CREATE_SHOW, EDIT_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
+import {catalogTool, CREATE_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
   READ_PLAYBACK, READ_SHOWS, READ_VACUUM, READ_VOLCANO} from './catalog-tools.js';
 
 const CORE = 'bunny/core', NANOLEAF = 'bunny/modules/nanoleaf';
@@ -36,11 +36,11 @@ function textResult(value: unknown): string {
   if (textBytes(text) <= 4000) return text;
   return new TextDecoder().decode(new TextEncoder().encode(text).slice(0, 3950)) + '… (narrow the read to one item)';
 }
-type Proposed = {proposal: CatalogProposal; text: string; targets?: readonly (readonly string[])[]; knownTargets?: readonly (readonly string[])[]; artworkRequestId?: string; artRecipientsBound?: true; draftRevision?: number}
+type Proposed = {proposal: CatalogProposal; text: string; targets?: readonly (readonly string[])[]; knownTargets?: readonly (readonly string[])[]; draftRevision?: number}
   | {question: string} | {code: ErrorCode};
-type OwnerInput = {instruction: string; answer: string; canNameDevice: (id: string) => boolean};
+type CanNameDevice = (id: string) => boolean;
 
-export function deviceClarification(noun: string, ids: readonly string[], canName: OwnerInput['canNameDevice']): string {
+export function deviceClarification(noun: string, ids: readonly string[], canName: CanNameDevice): string {
   const visible: string[] = [];
   for (const id of new Set(ids)) {
     if (canName(id)) visible.push(id);
@@ -53,6 +53,21 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
 type Refusal = {code: ErrorCode};
 type Match = {owner: string; device: DeviceRecord};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
+
+function namedRecord<T extends {id: string}>(records: readonly T[] | undefined, selector: unknown,
+  label: (record: T) => string | undefined): T | Refusal {
+  if (typeof selector !== 'string' || selector.trim() === '' || selector.length > 131) return {code: 'invalid-request'};
+  if (records === undefined) return {code: 'unavailable'};
+  const exact = literalDeviceId(selector);
+  const matches = records.filter(record => exact === undefined ? selector === record.id : exact === record.id);
+  const candidates = matches.length > 0 || exact !== undefined ? matches : records.filter(record => {
+    const name = label(record);
+    return name !== undefined && normalize(name) === normalize(selector);
+  });
+  if (candidates.length > 1) return {code: 'invalid-state'};
+  return candidates[0] ?? {code: 'not-found'};
+}
+
 export function chooseBrightnessSubject(matches: readonly Match[], answer?: string): Match | undefined {
   const selected = answer === undefined ? matches : matches.filter(({device}) => device.id === answer.trim().replace(/^id:/u, ''));
   return selected.length === 1 ? selected[0] : undefined;
@@ -102,14 +117,13 @@ export class ConversationActions {
       row.owner === 'bunny/modules/' + item.kind && row.device.id === item.target)?.device));
   }
 
-  async #artSelection(names: unknown, parent: TraceContext, owner: OwnerInput, artwork?: ArtworkSummary, requestedFormat?: 'png' | 'gif', recipients?: readonly string[]): Promise<
-    {targets: string[]; labels: string[]; guards: ArtShowGuard[]} | {question: string} | Refusal> {
+  async #artSelection(names: unknown, parent: TraceContext, canNameDevice: CanNameDevice, artwork?: ArtworkSummary, requestedFormat?: 'png' | 'gif'): Promise<
+    {targets: string[]; labels: string[]; guards: ArtShowGuard[]; known: readonly (readonly string[])[]} | {question: string} | Refusal> {
     if (!Array.isArray(names) || names.length > 3 || !names.every((value): value is string =>
       typeof value === 'string' && value.trim().length > 0 && value.length <= (value.startsWith('id:') ? 131 : 128))) return {code: 'invalid-request'};
     const targets: string[] = [], labels: string[] = [], guards: ArtShowGuard[] = [];
-    if (names.length === 0) return {targets, labels, guards};
-    let selectedNames: readonly string[] = names;
-    const devices = [...names, ...(recipients ?? [])].every(name => normalize(name) === 'browser') ? [] : await this.#artDestinations(parent);
+    if (names.length === 0) return {targets, labels, guards, known: []};
+    const devices = names.every(name => normalize(name) === 'browser') ? [] : await this.#artDestinations(parent);
     if (devices === undefined) return {code: 'unavailable'};
     const lookup = (name: string) => {
       const key = normalizedControlText(name);
@@ -123,33 +137,7 @@ export class ConversationActions {
       return {matches, eligible};
     };
     const browser = (name: string) => normalize(name) === 'browser' || normalize(name) === 'ui' && !devices.some(device => device.target === 'ui');
-    if (recipients !== undefined) {
-      const answer = owner.answer.trim().split(/\s+and\s+|\s*,\s*/iu).map(name => name.trim().replace(/^(?:the )/iu, '').replace(/[.?!]$/u, ''));
-      const expected: string[] = [], unresolved: ArtDestination[][] = [];
-      for (const name of recipients) {
-        if (browser(name)) {expected.push('browser'); continue;}
-        const candidates = lookup(name).eligible;
-        if (candidates.length === 0) return {question: 'No configured art display matches the request. Which destination would you like?'};
-        if (candidates.length > 1) unresolved.push(candidates);
-        else if (candidates[0] !== undefined) expected.push(candidates[0].target);
-      }
-      if (unresolved.length > 0) {
-        const choices = unresolved.map(candidates => candidates.filter(candidate => answer.some(name =>
-          name.replace(/^id:/iu, '').toLowerCase() === candidate.target)));
-        if (choices.some(choice => choice.length !== 1)) {
-          return {question: deviceClarification('display', unresolved.flatMap(candidates => candidates.map(candidate => candidate.target)), owner.canNameDevice)};
-        }
-        expected.push(...choices.flatMap(choice => choice.map(candidate => candidate.target)));
-      }
-      if (expected.length !== names.length || new Set(expected).size !== expected.length) return {code: 'invalid-request'};
-      selectedNames = names.map(name => !browser(name) && expected.includes(name) ? `id:${name}` : name);
-      if (!selectedNames.every(name => {
-        if (browser(name)) return expected.includes('browser');
-        const hits = lookup(name).eligible;
-        return hits.length === 1 && hits[0] !== undefined && expected.includes(hits[0].target);
-      })) return {code: 'invalid-request'};
-    }
-    for (const name of selectedNames) {
+    for (const name of names) {
       if (browser(name)) {
         if (artwork !== undefined && usableArtComposition(artwork, 'ui') === undefined) return {question: 'This artwork has no browser rendition. Which available destination would you like?'};
         if (targets.includes('browser')) return {code: 'invalid-request'};
@@ -157,7 +145,7 @@ export class ConversationActions {
         continue;
       }
       const {matches, eligible} = lookup(name);
-      if (eligible.length > 1) return {question: deviceClarification('display', eligible.map(device => device.target), owner.canNameDevice)};
+      if (eligible.length > 1) return {question: deviceClarification('display', eligible.map(device => device.target), canNameDevice)};
       const selected = eligible[0];
       if (selected?.guard === undefined) {
         if (matches.length === 0) return {question: 'No configured art display matches the request. Which destination would you like?'};
@@ -170,7 +158,7 @@ export class ConversationActions {
       labels.push(selected.label === undefined || selected.label === selected.target ? selected.target : `${selected.label} (${selected.target})`);
       guards.push(selected.guard);
     }
-    return {targets, labels, guards};
+    return {targets, labels, guards, known: devices.map(device => [device.target, device.label ?? device.target])};
   }
 
   async #operation(requestId: unknown, parent: TraceContext): Promise<OperationRecord | undefined> {
@@ -180,17 +168,20 @@ export class ConversationActions {
 
   #authoring(): ShowDrafts {return this.#drafts ??= new ShowDrafts(this.context.database());}
 
-  async #saveData(call: ToolCall, parent: TraceContext): Promise<Record<string, unknown> | Refusal> {
+  async #saveData(call: ToolCall, parent: TraceContext): Promise<{draftRevision: number; data: Record<string, unknown>} | Refusal> {
     const drafts = this.#authoring();
-    let draft = drafts.read(call.input.draftId);
-    if (draft === undefined) return {code: 'not-found'};
-    if (draft.revision !== call.input.revision) return {code: 'revision-conflict'};
+    const selected = drafts.find(call.input.draftId);
+    if ('code' in selected) return selected;
+    const revision = call.input.revision === -1 ? selected.revision : call.input.revision;
+    let draft = selected;
+    if (draft.revision !== revision) return {code: 'revision-conflict'};
     const readStarted = this.context.clock.now();
     const library = (await this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent))?.[0];
     if (library === undefined) return {code: 'unavailable'};
-    draft = drafts.read(call.input.draftId);
-    if (draft === undefined) return {code: 'not-found'};
-    if (draft.revision !== call.input.revision) return {code: 'revision-conflict'};
+    const refreshed = drafts.read(selected.value.showId);
+    if (refreshed === undefined) return {code: 'not-found'};
+    draft = refreshed;
+    if (draft.revision !== revision) return {code: 'revision-conflict'};
     const {showId, expectedVersion} = draft.value;
     const current = library.shows.find(show => show.id === showId);
     const pending = draft.pending;
@@ -204,8 +195,9 @@ export class ConversationActions {
       } else {
         return {code: 'uncertain-result'};
       }
-      draft = drafts.read(showId);
-      if (draft === undefined) return {code: 'not-found'};
+      const updated = drafts.read(showId);
+      if (updated === undefined) return {code: 'not-found'};
+      draft = updated;
     }
     const versionName = call.input.versionName;
     if (typeof versionName !== 'string') return {code: 'invalid-request'};
@@ -213,15 +205,15 @@ export class ConversationActions {
     if (head < draft.value.expectedVersion) return {code: 'revision-conflict'};
     const value = {...draft.value, expectedVersion: head, versionName};
     if (draftProblem(value) !== undefined) return {code: 'invalid-request'};
-    return value;
+    return {draftRevision: draft.revision, data: value};
   }
 
   /** The input's effect fields never supply routing or revision guards. */
-  async propose(family: CatalogFamily, call: ToolCall, parent: TraceContext, current: OwnerInput): Promise<Proposed> {
+  async propose(family: CatalogFamily, call: ToolCall, parent: TraceContext, canNameDevice: CanNameDevice): Promise<Proposed> {
     if (family === 'art-request') {
       const {format, description} = call.input;
       if (!artDescription(description) || (format !== 'gif' && format !== 'still')) return {code: 'invalid-request'};
-      const selected = await this.#artSelection(call.input.showTargets ?? [], parent, current, undefined, format === 'gif' ? 'gif' : 'png');
+      const selected = await this.#artSelection(call.input.showTargets ?? [], parent, canNameDevice, undefined, format === 'gif' ? 'gif' : 'png');
       if (!('targets' in selected)) return selected;
       const data = {format, description: description.trim(), ...(selected.targets.length > 0 ? {showTargets: selected.targets} : {})};
       const binding = {kind: 'fixed', owner: ART, target: 'art'} as const;
@@ -231,16 +223,14 @@ export class ConversationActions {
     const route = catalogRoute(family);
     const owner = family === 'nanoleaf-show-save' ? NANOLEAF : call.input.owner;
     const name = family === 'nanoleaf-show-save' ? 'shows' : call.input.target;
-    const literalId = family === 'brightness-set' ? literalToolDeviceId(name) : undefined;
+    const literalId = route.binding === 'device' ? literalToolDeviceId(name) : undefined;
     if (typeof owner !== 'string' || typeof name !== 'string' || name.length === 0 || (literalId ?? name).length > 128) return {code: 'invalid-request'};
     let data: Record<string, unknown>;
+    let draftRevision: number | undefined;
     if (family === 'nanoleaf-show-save') {
-      const revision = /^(?:please )?save draft .+? revision (\d+) as /iu.exec(current.instruction.trim())?.[1];
-      if (revision !== undefined && Number(revision) !== call.input.revision) return {code: 'revision-conflict'};
       const saved = await this.#saveData(call, parent);
-      if (typeof saved.code === 'string') return {code: saved.code === 'not-found' || saved.code === 'revision-conflict' ||
-        saved.code === 'unavailable' || saved.code === 'uncertain-result' ? saved.code : 'invalid-request'};
-      data = saved;
+      if ('code' in saved) return saved;
+      ({draftRevision, data} = saved);
     } else {
       const args = call.input.arguments;
       if (typeof args !== 'string' || textBytes(args) > MAX_CATALOG_ARGUMENTS) return {code: 'invalid-request'};
@@ -249,12 +239,9 @@ export class ConversationActions {
       if (!object(value)) return {code: 'invalid-request'};
       data = value;
     }
-    if (family === 'moment-play') {
-      const immediate = requestedMoment(current.instruction, current.answer);
-      if (immediate !== undefined) {
-        const {subject: _, ...effect} = immediate;
-        data = {...effect, momentId: randomUUID(), priorityClass: 'flourish', startAtMs: this.context.clock.now(), toleranceMs: 2000};
-      }
+    if (family === 'moment-play' && Object.keys(data).every(key => ['mood', 'palette', 'durationMs', 'coversStatus'].includes(key))) {
+      data = {...data, momentId: randomUUID(), priorityClass: 'flourish', coversStatus: data.coversStatus ?? false,
+        startAtMs: this.context.clock.now(), toleranceMs: 2000};
     }
     let binding: CatalogBinding;
     let deviceApproval: string | undefined;
@@ -266,12 +253,32 @@ export class ConversationActions {
       const {rows, unreadable} = await this.#deviceRecords(route.owners, parent);
       const found = matchingDevices(rows.filter(row => owners.some(eligible => eligible === row.owner)), name, owner, literalId);
       const selected = found[0];
-      if (found.length > 1) return {question: deviceClarification('device', found.map(({device}) => device.id), current.canNameDevice)};
+      if (found.length > 1) return {question: deviceClarification('device', found.map(({device}) => device.id), canNameDevice)};
       if (selected === undefined) return {code: unreadable.length > 0 ? 'unavailable' : 'not-found'};
       const {device} = selected;
       targets = [[device.id, deviceLabel(device)]];
       knownTargets = rows.filter(row => permitsDevice(route, row.device)).map(row => [row.device.id, deviceLabel(row.device)]);
       if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
+      if (selected.owner === 'bunny/modules/pixoo') {
+        const resolved = await this.#pixooCatalog(family, data, device, parent);
+        if ('code' in resolved) return resolved;
+        ({data} = resolved);
+      }
+      const {modes, scenes, moments, media} = device.capabilities;
+      if (family === 'device-mode-set' && (!modes.supported || !modes.values.some(value => value === data.mode)) ||
+        family === 'scene-activate' && (!scenes.supported || !scenes.sceneIds.some(id => id === data.sceneId)) ||
+        family === 'media-start' && (!media.supported || !media.playlistIds.some(id => id === data.playlistId)) ||
+        family === 'media-control' && (!media.supported || !media.actions.some(action => action === data.action)) ||
+        family === 'pixoo-media-show' && (!media.supported || !media.renditionIds.some(id => id === data.renditionId))) {
+        return {code: 'unsupported-capability'};
+      }
+      if (family === 'moment-play') {
+        if (!moments.supported || !moments.moods.some(mood => mood === data.mood) || data.coversStatus === true && !moments.coversStatus) {
+          return {code: 'unsupported-capability'};
+        }
+        if (typeof data.durationMs !== 'number' || !Number.isSafeInteger(data.durationMs) || data.durationMs <= 0 ||
+          data.durationMs > moments.maxDurationMs || typeof data.coversStatus !== 'boolean') return {code: 'invalid-request'};
+      }
       if (family === 'lifx-color-set' || family === 'lifx-temperature-set') {
         const lights = await this.#snapshot<LifxColor>(LIFX, 'lifx-light', parent);
         const light = lights?.find(candidate => candidate.id === device.id);
@@ -279,7 +286,8 @@ export class ConversationActions {
         if (!lifxSupports(family, light)) return {code: 'unsupported-capability'};
       }
       if (family === 'wemo-hold-release') {
-        if (device.held === undefined || data.heldRequestId !== device.held.requestId) return {code: 'revision-conflict'};
+        if (device.held === undefined || data.heldRequestId !== undefined && data.heldRequestId !== device.held.requestId) return {code: 'revision-conflict'};
+        data = {...data, heldRequestId: device.held.requestId};
       } else if (device.availability !== 'available' || device.held !== undefined) return {code: 'unavailable'};
       binding = {kind: 'device', target: device.id, owner: selected.owner, configurationRevision: device.configurationRevision, generation: device.generation};
       if (family === 'brightness-set' && selected.owner === 'bunny/modules/pixoo') {
@@ -299,10 +307,21 @@ export class ConversationActions {
     } else {
       if (owner !== route.owner || name !== route.target) return {code: 'forbidden'};
       binding = {kind: 'fixed', target: route.target, owner};
+      if (family === 'nanoleaf-reactive-preset-save') {
+        const library = (await this.#snapshot<{revision: number; presets: readonly {presetId: string; name: string}[]}>(
+          NANOLEAF, 'nanoleaf-reactive-presets', parent))?.[0];
+        if (library === undefined) return {code: 'unavailable'};
+        const {presetId, expectedRevision, name} = data;
+        if (expectedRevision !== undefined && expectedRevision !== library.revision) return {code: 'revision-conflict'};
+        if (presetId === undefined && typeof name === 'string') {
+          const named = library.presets.filter(preset => normalize(preset.name) === normalize(name));
+          if (named.length > 1) return {question: 'Which saved reactive preset should change?'};
+          data = {...data, presetId: named[0]?.presetId ?? `preset-${randomUUID()}`};
+        }
+        data = {...data, expectedRevision: library.revision};
+      }
     }
     let showText: string | undefined;
-    let artworkRequestId: string | undefined;
-    let artRecipientsBound: true | undefined;
     if (family === 'art-show') {
       if (typeof data.artworkId !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(data.artworkId) || !Array.isArray(data.targets) || data.targets.length === 0 || 'guards' in data) return {code: 'invalid-request'};
       const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
@@ -313,16 +332,14 @@ export class ConversationActions {
       if (retained !== undefined && 'error' in retained) return {code: retained.error.code};
       const artwork = recent ?? retained;
       if (artwork === undefined) return {code: 'not-found'};
-      const recipients = requestedArtRecipients(current.instruction, data);
-      const selected = await this.#artSelection(data.targets, parent, current, artwork, undefined, recipients);
+      const selected = await this.#artSelection(data.targets, parent, canNameDevice, artwork);
       if (!('targets' in selected)) return selected;
-      if (recipients !== undefined) artRecipientsBound = true;
       const sourceRequestId = job?.requestId ?? retained?.sourceRequestId;
-      artworkRequestId = sourceRequestId;
       const attached = sourceRequestId === undefined ? undefined : this.context.database().prepare(
         'SELECT description FROM assistant_art_attachments WHERE request_id=?').get(sourceRequestId);
       const title = typeof attached?.description === 'string' ? attached.description : 'saved artwork ' + artwork.artworkId;
       showText = 'Show ' + title + ' on ' + selected.labels.join(', ') + '?' + (data.coversStatus === false ? ' Keep status visible.' : '');
+      knownTargets = selected.known;
       targets = selected.targets.map((target, index) => [target, selected.labels[index]?.split(' (')[0] ?? target]);
       data = {...data, targets: selected.targets, guards: selected.guards};
     }
@@ -334,38 +351,75 @@ export class ConversationActions {
       : deviceApproval ?? showText ?? `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
     if (effect.length > 1024) return {code: 'capacity'};
     return {proposal, text: effect, ...(targets === undefined ? {} : {targets}), ...(knownTargets === undefined ? {} : {knownTargets}),
-      ...(artworkRequestId === undefined ? {} : {artworkRequestId}), ...(artRecipientsBound === undefined ? {} : {artRecipientsBound}),
-      ...(family === 'nanoleaf-show-save' && typeof call.input.revision === 'number' ? {draftRevision: call.input.revision} : {})};
+      ...(draftRevision === undefined ? {} : {draftRevision})};
+  }
+
+  async #pixooCatalog(family: CatalogFamily, data: Record<string, unknown>, device: DeviceRecord,
+    parent: TraceContext): Promise<{data: Record<string, unknown>} | Refusal> {
+    const {media} = device.capabilities;
+    if (family === 'media-start' || family === 'pixoo-playlist-change') {
+      const change = data.change;
+      if (family === 'pixoo-playlist-change' && (!object(change) || change.operation === 'create')) return {data};
+      const selector = family === 'media-start' ? data.playlistId : object(change) ? change.playlistId : undefined;
+      if (family === 'media-start' && media.supported && media.playlistIds.some(id => id === selector)) return {data};
+      const playlists = await this.#snapshot<{id: string; name: string; playlistRevision: number}>('bunny/modules/pixoo', 'pixoo-playlist', parent);
+      const selected = namedRecord(playlists, selector, playlist => playlist.name);
+      if ('code' in selected) return selected;
+      if (family === 'media-start') return {data: {...data, playlistId: selected.id}};
+      if (!object(change)) return {code: 'invalid-request'};
+      if (change.revision !== undefined && change.revision !== selected.playlistRevision) return {code: 'revision-conflict'};
+      return {data: {...data, change: {...change, playlistId: selected.id, revision: selected.playlistRevision}}};
+    }
+    if (family === 'pixoo-media-show' && media.supported && !media.renditionIds.some(id => id === data.renditionId)) {
+      const renditions = await this.#snapshot<{id: string; name: string; compatible: boolean}>('bunny/modules/pixoo', 'pixoo-rendition', parent);
+      const selected = namedRecord(renditions?.filter(item => item.compatible), data.renditionId, item => item.name);
+      return 'code' in selected ? selected : {data: {...data, renditionId: selected.id}};
+    }
+    if (family === 'pixoo-asset-change' && object(data.change) && data.change.operation !== 'import') {
+      const {assetId} = data.change;
+      if (typeof assetId !== 'string' || assetId.length === 0 || assetId.length > 128) return {code: 'invalid-request'};
+      const renditions = await this.#snapshot<{id: string; name: string; assetId: string}>('bunny/modules/pixoo', 'pixoo-rendition', parent);
+      if (renditions === undefined) return {code: 'unavailable'};
+      const names = [...new Set(renditions.filter(rendition => normalize(rendition.name) === normalize(assetId)).map(rendition => rendition.assetId))];
+      if (renditions.some(rendition => rendition.assetId === assetId)) return {data};
+      if (names.length > 1) return {code: 'invalid-state'};
+      // An original without a rendition has no catalog name here. The owner still accepts its exact ID.
+      if (names[0] !== undefined) return {data: {...data, change: {...data.change, assetId: names[0]}}};
+    }
+    return {data};
   }
 
   async #coreSetting(family: CatalogFamily, recordFamily: string, target: string, data: Record<string, unknown>,
     parent: TraceContext): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
     const recordId = family === 'mode-override-set' ? 'hub' : target;
-    const row = (await this.#snapshot<{id: string; revision: number}>(CORE, recordFamily, parent))?.find(item => item.id === recordId);
-    if (row === undefined) return {code: 'unavailable'};
+    const records = await this.#snapshot<{id: string; revision: number; label?: {value: string}; title?: {value: string}}>(CORE, recordFamily, parent);
+    const row = namedRecord(records, recordId, item => recordFamily === 'session' ? item.label?.value ?? item.title?.value : undefined);
+    if ('code' in row) return row;
+    if (family !== 'mode-override-set') target = row.id;
     if (family === 'mode-override-set') {
       const {rows} = await this.#deviceRecords([LIFX, NANOLEAF, 'bunny/modules/pixoo', 'bunny/modules/tidbyt'], parent);
-      const selected = matchingDevices(rows, target, 'auto');
+      const selected = matchingDevices(rows, target, 'auto', literalDeviceId(target));
       if (selected.length !== 1 || selected[0] === undefined) return {code: selected.length === 0 ? 'not-found' : 'invalid-state'};
-      if (!selected[0].device.capabilities.modes.supported) return {code: 'unsupported-capability'};
+      const modes = selected[0].device.capabilities.modes;
+      if (!modes.supported || data.mode !== null && !modes.values.some(value => value === data.mode)) return {code: 'unsupported-capability'};
       target = selected[0].device.id;
     }
     return {binding: {kind: 'record', owner: CORE, target, revision: row.revision}, data};
   }
 
   async #volcano(name: string, data: Record<string, unknown>, parent: TraceContext): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
-    const states = await this.#snapshot<{id: string; configurationRevision: number}>(VOLCANO, 'volcano-status', parent);
-    const current = states?.find(row => row.id === name);
-    if (current === undefined) return {code: 'unavailable'};
-    return {binding: {kind: 'record', owner: VOLCANO, target: name, revision: current.configurationRevision}, data};
+    const states = await this.#snapshot<{id: string; label?: string; configurationRevision: number}>(VOLCANO, 'volcano-status', parent);
+    const current = namedRecord(states, name, row => row.label);
+    if ('code' in current) return current;
+    return {binding: {kind: 'record', owner: VOLCANO, target: current.id, revision: current.configurationRevision}, data};
   }
 
   async #playback(name: string, data: Record<string, unknown>, parent: TraceContext): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
     const records = await this.#snapshot<PlaybackState>(PLAYBACK, 'playback', parent);
-    const current = records?.find(row => row.id === name);
+    const current = name === 'auto' && records?.length === 1 ? records[0] : records?.find(row => row.id === name);
     if (current === undefined || current.availability !== 'available' || current.playback.status !== 'known') return {code: 'unavailable'};
     if (!current.playback.controls.some(control => control === data.action)) return {code: 'unsupported-capability'};
-    return {binding: {kind: 'record', owner: PLAYBACK, target: name, revision: current.revision}, data};
+    return {binding: {kind: 'record', owner: PLAYBACK, target: current.id, revision: current.revision}, data};
   }
 
   async #lighting(name: string, data: Record<string, unknown>, parent: TraceContext): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
@@ -377,11 +431,17 @@ export class ConversationActions {
       if (current.session.status !== 'idle') return {code: 'invalid-state'};
       const library = (await this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent))?.[0];
       if (library === undefined) return {code: 'unavailable'};
-      if (typeof version !== 'number' || !library.shows.some(show => show.id === showId && show.versions.some(item => item.version === version))) return {code: 'not-found'};
-      data = {action, showId, version, positionMs: data.positionMs ?? 0, startDelayMs: data.startDelayMs ?? 0};
+      const show = namedRecord(library.shows, showId, record => record.name);
+      if ('code' in show) return show;
+      const selected = version === -1 ? show.version : version;
+      if (typeof selected !== 'number' || !show.versions.some(item => item.version === selected)) return {code: 'not-found'};
+      data = {action, showId: show.id, version: selected, positionMs: data.positionMs ?? 0, startDelayMs: data.startDelayMs ?? 0};
     } else {
       if (action !== 'stop' && action !== 'pause-show' && action !== 'resume-show' && action !== 'seek-show') return {code: 'invalid-request'};
       if (current.session.status === 'idle' || !('show' in current.session)) return {code: 'invalid-state'};
+      if (action === 'seek-show' && (typeof data.positionMs !== 'number' || !Number.isSafeInteger(data.positionMs) || data.positionMs < 0)) {
+        return {code: 'invalid-request'};
+      }
       data = {action, generation: current.session.generation, ...(action === 'seek-show' ? {positionMs: data.positionMs} : {})};
     }
     return {binding: {kind: 'record', owner: CORE, target: name, revision: current.revision}, data};
@@ -405,13 +465,23 @@ export class ConversationActions {
     }
   }
 
+  mutateDraft(call: ToolCall, access: FieldAccess, selects: (id: string, label: string) => boolean): {text: string; draftId: string} | Refusal {
+    const drafts = this.#authoring();
+    if (call.name === CREATE_SHOW) return access('shows', 'details') ? drafts.create(call.input) : {code: 'forbidden'};
+    const draft = drafts.find(call.input.draftId);
+    if ('code' in draft) return draft;
+    if (!access('shows', 'details', draft.value.showId)) return {code: 'forbidden'};
+    if (!selects(draft.value.showId, draft.value.name)) return {code: 'invalid-request'};
+    return drafts.edit({...call.input, draftId: draft.value.showId});
+  }
+
   async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined; brightnessControl: boolean; resolve: (id: string) => void}): Promise<string | undefined> {
     const input = call.input;
     switch (call.name) {
-      case CREATE_SHOW: case EDIT_SHOW: case PREVIEW_SHOW: {
+      case PREVIEW_SHOW: {
         if (!access('shows', 'details', typeof input.draftId === 'string' ? input.draftId : undefined)) return 'refused: forbidden';
         const drafts = this.#authoring();
-        const result = call.name === CREATE_SHOW ? drafts.create(input) : call.name === EDIT_SHOW ? drafts.edit(input) : drafts.preview(input.draftId);
+        const result = drafts.preview(input.draftId);
         return 'code' in result ? `refused: ${result.code}` : result.text;
       }
       case READ_DEVICES: return this.#readDevices(input, parent, access, scopedDeviceFacts);

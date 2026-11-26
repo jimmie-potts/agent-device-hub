@@ -36,8 +36,17 @@ export function catalogCommand(name: string): CatalogFamily | undefined {
   return catalogFamily(family) && family !== 'nanoleaf-show-save' ? family : undefined;
 }
 
-const draft = text('The exact draft ID from the authoring or preview tool.');
-const draftRevision = integer('The exact draft revision the owner requested, or the previewed revision if the owner did not specify one.');
+const lightingControls = new Set<CatalogFamily>(['power-set', 'brightness-set', 'lifx-color-set', 'lifx-temperature-set']);
+
+export const modelCatalogCommand = (family: CatalogFamily): boolean => family !== 'art-request' && !lightingControls.has(family);
+export const draftMutation = (name: string): boolean => name === CREATE_SHOW || name === EDIT_SHOW;
+export function modelCatalogTool(name: string): boolean {
+  const family = catalogCommand(name);
+  return draftMutation(name) || family !== undefined && modelCatalogCommand(family);
+}
+
+const draft = text('The exact draft ID or the draft name the owner supplied.');
+const draftRevision = integer("Use the owner's exact draft revision when given, or -1 to bind the current revision.");
 const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family => family !== 'nanoleaf-show-save' && family !== 'art-request');
 export const catalogTools = [
   define(READ_HUB_GUIDE, 'read', 'Discover the Hub sources and read operations that answer current device, deadline and historical power questions.', {}),
@@ -70,7 +79,7 @@ export const catalogTools = [
     name: text('The requested show name.'), starter: {type: 'string', enum: ['ocean', 'warm'], description: 'The starter timeline.'},
   }),
   define(EDIT_SHOW, 'draft', 'Edit one cue in a private light-show draft. Send no lighting command.', {
-    draftId: draft, revision: draftRevision, cue: text('Exact cue ID.'), changes: text('JSON object with some of offsetMs, durationMs, intensity, recipe. Recipe fields include pattern, colors, speed, loop, direction.'),
+    draftId: draft, revision: draftRevision, cue: text('Exact cue ID or a one-based cue number written as a string.'), changes: text('JSON object with some of offsetMs, durationMs, intensity, recipe. Recipe fields include pattern, colors, speed, loop, direction.'),
   }),
   define(PREVIEW_SHOW, 'read', 'Preview the draft as a cue storyboard. Send no lighting command.', {draftId: draft}),
   define(SAVE_SHOW, 'command', 'Save the requested draft as an immutable catalog version. Sends no lighting command.', {
@@ -79,9 +88,9 @@ export const catalogTools = [
   ...actions.map(family => define(catalogTool(family), 'command',
     family === 'art-show' ? 'Show the requested saved artwork on all requested display targets. Use hub and bunny/core, with artworkId and targets. Keep status visible with coversStatus=false when requested.'
       : family === 'music-lighting-control' ? 'Use start-show with showId and version on an eligible Nanoleaf light, or stop, pause-show, resume-show, or seek-show for the current generation. Use bunny/core.'
-      : family === 'moment-play' ? 'Play a named mood on a configured display. For an immediate moment, ask only for missing display, mood, or duration. Use {} in arguments for this immediate form.'
-        : `Run ${family} on a configured, supported target only when explicitly requested by the owner.`, {
-    owner: text('The exact owner source returned by the read tool.'), target: text(family === 'brightness-set' ? 'Use the device ID returned by read_devices. id:<device-id> also selects that exact ID. An unambiguous label is accepted.' : 'Exact target ID, or its label if unambiguous.'),
+      : family === 'moment-play' ? 'Play a named mood on a configured display. For an immediate moment, supply mood and durationMs and optionally palette and coversStatus. Ask for a missing display, mood or duration.'
+        : `Run ${family} on a configured, supported target only when requested in the current owner turn. Interpret ordinary language; never ask the owner for a JSON payload.`, {
+    owner: text('The exact owner source returned by the read tool.'), target: text(family === 'playback-control' ? 'Use the requested playback ID, or auto for the unique presented playback record.' : family === 'brightness-set' ? 'Use the device ID returned by read_devices. id:<device-id> also selects that exact ID. An unambiguous label is accepted.' : 'Exact target ID, or its label if unambiguous.'),
     arguments: text(`JSON object with the appropriate owner command fields: ${assistantRoutes[family].fields}. Do not supply revision or generation guards.`),
   })),
 ] satisfies readonly ToolDefinition[];

@@ -20,6 +20,7 @@ import {AnthropicTitleProvider} from '../src/assistant/titles.js';
 import {OPENAI_MODEL, OPENAI_URL, OpenAIProvider, OpenAITitleProvider} from '../src/assistant/openai.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
+import {ShowDrafts} from '../src/assistant/show-drafts.js';
 import {saveFinalDisclosureProofs} from '../src/assistant/disclosure-proof.js';
 import {inputBound} from '../src/assistant/spend.js';
 import {assistantStateDraft, DECLINED, REFUSED, UNSPOKEN} from '../src/assistant/engine.js';
@@ -186,9 +187,10 @@ void test('a stale owner identity and an unrelated exact Wemo ID cannot dispatch
   assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
 });
 
-void test('a mode call cannot substitute its guess for the owner choosing a setting', async context => {
+void test('the supervisor asks once for a missing mode and binds the owner answer', async context => {
   const requests: AssistantDispatch[] = [];
-  const provider = counted((_request, turn) => turn <= 2 ? call('set_mode', {mode: 'quiet'}) : reply('The dispatcher accepted the request.'));
+  const provider = counted((_request, turn) => turn === 1 ? call('ask_owner', {text: 'Which Hub mode do you want?'})
+    : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('The dispatcher accepted the request.'));
   const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(4), synced: true}),
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
@@ -222,7 +224,7 @@ void test('identical numbers in unrelated settings and relative commands authori
   assert.partialDeepStrictEqual(writes[0], {target: lamp.id, family: 'brightness-set', data: {percent: 70}});
 });
 
-void test('catalog arguments preserve the roles of color and label values', () => {
+void test('catalog arguments preserve the roles of hue and saturation', () => {
   const color = {family: 'catalog-action', command: 'lifx-color-set', target: 'desk-lamp',
     binding: {kind: 'device', owner: 'bunny/modules/lifx', target: 'desk-lamp', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}},
     data: {hue: 20, saturation: 40}} as const;
@@ -230,11 +232,6 @@ void test('catalog arguments preserve the roles of color and label values', () =
   assert.equal(authorizesControl(color, 'Set Desk lamp color to hue 20 and saturation 40', '', lamp, ''), true);
   assert.equal(authorizesControl(color, 'Set Desk lamp color to hue 40 and saturation 20', '', lamp, ''), false);
   assert.equal(authorizesControl(color, 'Set Desk lamp timer to 40 after 20 minutes', '', lamp, ''), false);
-  const rename = {family: 'catalog-action', command: 'session-label-set', target: 'kitchen',
-    binding: {kind: 'record', owner: 'bunny/core', target: 'kitchen', revision: 1}, data: {label: 'New title'}} as const;
-  assert.equal(authorizesControl(rename, 'Rename session kitchen to New title', '', [['kitchen']], ''), true);
-  assert.equal(authorizesControl(rename, 'Rename session New title to kitchen', '', [['kitchen']], ''), false);
-  assert.equal(authorizesControl(rename, 'Rename session kitchen to new title', '', [['kitchen']], ''), false);
 });
 
 void test('an exact tool ID cannot skip the owner choosing between shared catalog aliases', async context => {
@@ -267,8 +264,8 @@ void test('ordinary media requests bind the exact display and action', async con
   const base = light('office-pixoo', 'Office Pixoo');
   const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities, media: {supported: true as const, actions: ['pause' as const], playlistIds: [], renditionIds: []}}};
   const writes: AssistantDispatch[] = [];
-  const provider = counted((_request, turn) => turn % 2 === 0 ? reply('Finished.') : call('control_media_control', {
-    owner, target: device.id, arguments: '{"action":"pause"}',
+  const provider = counted((request, turn) => turn % 2 === 0 ? reply('Finished.') : call('control_media_control', {
+    owner, target: device.id, arguments: JSON.stringify({action: request.transcript.at(-1)?.role === 'owner' && turn === 1 ? 'stop' : 'pause'}),
   }));
   const w = await world(context, {provider, tools: ['control_media_control'],
     dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
@@ -288,6 +285,42 @@ void test('ordinary media requests bind the exact display and action', async con
   assert.equal(writes[0]?.family === 'catalog-action' ? writes[0].data.action : undefined, 'pause');
 });
 
+void test('a newly configured Pixoo resolves a saved playlist by name and checks its revision locally', async context => {
+  const owner = 'bunny/modules/pixoo', base = light('new-pixoo', 'Kitchen Display');
+  const playlistId = '11111111-1111-4111-8111-111111111111';
+  const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities,
+    media: {supported: true as const, actions: ['pause' as const], playlistIds: [playlistId], renditionIds: []}}};
+  let revision = 6;
+  const writes: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.')
+    : call('control_pixoo_playlist_change', {owner, target: 'Kitchen Display', arguments: JSON.stringify({
+      change: {operation: 'rename', playlistId: 'Evening loop', revision, name: 'After dinner'},
+    })}));
+  const w = await world(context, {provider, tools: ['control_pixoo_playlist_change'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device', 'pixoo-playlist'], request => ({revision: 7, states: request.data.families.includes('device')
+    ? [{type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}]
+    : [{type: 'org.bunny.pixoo-playlist.updated', subject: playlistId, dataschema: 'https://bunny.invalid/events/pixoo-playlist/2.0',
+      data: {id: playlistId, revision: 7, playlistRevision: 7, name: 'Evening loop', repeat: true, shuffle: false, items: []}}]}));
+  await control(w.core, w.module(), 'enable');
+  const ask = async (text: string) => {
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+  };
+  await ask('On the Kitchen Display, call revision six of Evening loop After dinner.');
+  assert.equal(writes.length, 0);
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === 'refused: revision-conflict'));
+  revision = 7;
+  await ask('On Kitchen Display, rename Evening loop to After dinner.');
+  assert.equal(writes.length, 1);
+  assert.partialDeepStrictEqual(writes[0], {family: 'catalog-action', command: 'pixoo-playlist-change', target: device.id,
+    binding: {kind: 'device', configurationRevision: device.configurationRevision, generation: device.generation},
+    data: {change: {operation: 'rename', playlistId, revision: 7, name: 'After dinner'}}});
+});
+
 void test('ordinary monitor requests and moments dispatch only their named settings', async context => {
   const owner = 'bunny/modules/pixoo', base = light('office-pixoo', 'Office Pixoo');
   const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities,
@@ -296,7 +329,7 @@ void test('ordinary monitor requests and moments dispatch only their named setti
   const instructions = new Map([
     ['Show Claude sessions on the office Pixoo every 3 seconds', ['control_pixoo_monitor_set', '{"filter":{"provider":"claude"},"cadenceMs":3000}']],
     ['Hide Now Playing on the office Pixoo', ['control_pixoo_now_playing_set', '{"media":"off"}']],
-    ['Play a celebrate moment on the office Pixoo for 5 seconds', ['control_moment_play', '{}']],
+    ['Play a celebrate moment on the office Pixoo for 5 seconds', ['control_moment_play', '{"mood":"celebrate","durationMs":5000}']],
   ]);
   const provider = counted(request => {
     const text = request.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? '';
@@ -349,31 +382,6 @@ void test('ambiguous device clarification omits choices denied at either destina
   assert.doesNotMatch(JSON.stringify(document), /(?:owner|model)-denied-screen/);
 });
 
-void test('showing saved art binds status visibility and the whole display set', () => {
-  const proposal = {family: 'catalog-action', command: 'art-show', target: 'hub', binding: {kind: 'fixed', owner: 'bunny/core', target: 'hub'},
-    data: {artworkId: 'kite', targets: ['pixoo', 'tidbyt'], coversStatus: false}} as const;
-  const prompt = 'Show the kite on Pixoo and Tidbyt and keep status visible';
-  assert.equal(authorizesControl(proposal, prompt, '', [['pixoo'], ['tidbyt']], ''), true);
-  assert.equal(authorizesControl({...proposal, data: {...proposal.data, coversStatus: true}}, prompt, '', [['pixoo'], ['tidbyt']], ''), false);
-  assert.equal(authorizesControl({...proposal, data: {...proposal.data, targets: ['pixoo']}}, prompt, '', [['pixoo']], ''), false);
-  const opaque = {...proposal, data: {...proposal.data, artworkId: 'kite-blue'}};
-  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite-blue'), '', [['pixoo'], ['tidbyt']], ''), true);
-  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite_blue'), '', [['pixoo'], ['tidbyt']], ''), false);
-});
-
-void test('art catalog changes bind the exact opaque ID and requested edit', () => {
-  const artworkId = 'Kite-Blue';
-  const deleteArt = {family: 'catalog-action', command: 'art-catalog-edit', target: 'art',
-    binding: {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'}, data: {action: 'delete', artworkId}} as const;
-  assert.equal(authorizesControl(deleteArt, 'Bunny, delete saved artwork Kite-Blue', '', [['art']], ''), true);
-  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork Kite_Blue', '', [['art']], ''), false);
-  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork kite-blue', '', [['art']], ''), false);
-  assert.equal(authorizesControl(deleteArt, 'Favorite saved artwork Kite-Blue', '', [['art']], ''), false);
-  const favorite = {...deleteArt, data: {action: 'favorite', artworkId, favorite: false}};
-  assert.equal(authorizesControl(favorite, 'Unfavorite artwork Kite-Blue', '', [['art']], ''), true);
-  assert.equal(authorizesControl(favorite, 'Favorite artwork Kite-Blue', '', [['art']], ''), false);
-});
-
 void test('ordinary art deletion reaches its fixed owner only for the exact selected ID', async context => {
   const writes: AssistantDispatch[] = [];
   const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_art_catalog_edit', {
@@ -398,19 +406,6 @@ void test('ordinary art deletion reaches its fixed owner only for the exact sele
   assert.ok(dispatched?.family === 'catalog-action');
   assert.deepEqual(dispatched.binding, {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'});
   assert.deepEqual(dispatched.data, {action: 'delete', artworkId: 'Kite-Blue'});
-});
-
-void test('a seek binds the light, position and direction in an ordinary request', () => {
-  const seek = {family: 'catalog-action', command: 'music-lighting-control', target: 'wall',
-    binding: {kind: 'record', owner: 'bunny/core', target: 'wall', revision: 1},
-    data: {action: 'seek-show', generation: 'current-light-show', positionMs: 1500}} as const;
-  const wall = [['wall', 'Studio Wall']];
-  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Jump the light show to 1500 milliseconds on the Studio Wall.', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds?', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 milliseconds on the Studio Wall', '', wall, ''), false);
-  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 seconds on the Studio Ceiling', '', wall, ''), false);
-  assert.equal(authorizesControl(seek, 'Jump the light show to -1.5 seconds on the Studio Wall', '', wall, ''), false);
 });
 
 async function finishWemoConfirmationWindow(w: Awaited<ReturnType<typeof world>>): Promise<void> {
@@ -1592,8 +1587,9 @@ void test('Conversation pages through large show catalogs and can read a saved t
 
 void test('ordinary light-show seek dispatches once with the active generation and exact position', async context => {
   const requests: AssistantDispatch[] = [];
-  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_music_lighting_control', {
-    owner: 'bunny/core', target: 'wall', arguments: '{"action":"seek-show","positionMs":1500,"generation":"model-supplied-generation"}',
+  const provider = counted((request, turn) => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_music_lighting_control', {
+    owner: 'bunny/core', target: 'wall', arguments: JSON.stringify({action: 'seek-show', positionMs: turn === 1 ? -2000 : 1500,
+      generation: 'model-supplied-generation'}),
   }));
   const w = await world(context, {provider, tools: ['control_music_lighting_control'], dispatch: data => {
     requests.push(data);
@@ -1605,7 +1601,7 @@ void test('ordinary light-show seek dispatches once with the active generation a
       startedAtMs: 1000, show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0}}, last: null},
   }]}));
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Seek the light show on wall to 2 seconds');
+  await input(w.core, w.module(), 'Seek the light show on wall to two seconds before the start');
   await until(() => status(w) === 'succeeded');
   assert.equal(requests.length, 0);
   await input(w.core, w.module(), 'Could you seek the light show on wall to 1.5 seconds?');
@@ -2829,18 +2825,6 @@ void test('an ordinary multi-display show clarifies duplicate labels despite the
   w.advance(1100);
   await until(() => status(w) === 'succeeded');
   assert.deepEqual(writes[0]?.family === 'catalog-action' ? writes[0].data.targets : undefined, ['display-green', 'browser']);
-});
-
-void test('saving a show binds the explicitly requested draft revision and immutable version name', () => {
-  const proposal = {family: 'catalog-action', command: 'nanoleaf-show-save', target: 'shows',
-    binding: {kind: 'fixed', owner: 'bunny/modules/nanoleaf', target: 'shows'}, data: {
-      name: 'Dawn test', showId: 'show-synthetic', versionName: 'First version',
-    }} as const;
-  const owners = [['show-synthetic']];
-  const request = 'Save draft Dawn test (show-synthetic) revision 1 as First version';
-  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, 1), true);
-  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, 2), false);
-  assert.equal(authorizesControl(proposal, request.replace('First version', 'Other version'), '', owners, '', [], false, 1), false);
 });
 
 void test('a failed compound turn reports the saved artwork and exact rejected display action', async context => {
@@ -4709,3 +4693,94 @@ void test('Claude reads an explicit device ID within its current grants when a l
   selector = id;
   assert.deepEqual(await ask('Check Main display status.'), [[owner, id]]);
 });
+
+for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], ['anthropic', 'microduck'],
+  ['openai', 'bunny'], ['openai', 'reachy'], ['openai', 'microduck']] as const) {
+  void test(`${name} ${profile} catalog admission offers playback and draft tools while refusing denied or stale writes`, async context => {
+    const playback = 'control_playback_control', edit = 'edit_light_show_cue';
+    const offered = new Set<string>();
+    const bodies: string[] = [];
+    const usage = {input_tokens: 20, output_tokens: 10};
+    let proposal: {name: string; input: Record<string, unknown>} | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      bodies.push(init.body);
+      const body = JSON.parse(init.body) as {tools: {name: string}[]};
+      for (const tool of body.tools) offered.add(tool.name);
+      const candidate = proposal;
+      proposal = undefined;
+      const selected = candidate !== undefined && body.tools.some(tool => tool.name === candidate.name) ? candidate : undefined;
+      return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: selected === undefined ? [{type: 'text', text: 'Synthetic supervisor reply.'}]
+          : [{type: 'tool_use', id: 'catalog_call', ...selected}], stop_reason: selected === undefined ? 'end_turn' : 'tool_use', usage}
+        : {status: 'completed', output: selected === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic supervisor reply.', annotations: []}]}]
+          : [{type: 'function_call', id: 'fc_catalog_call', call_id: 'catalog_call', name: selected.name, arguments: JSON.stringify(selected.input)}], usage}));
+    };
+    const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const calls: AssistantDispatch[] = [];
+    const policy = sharing();
+    let denied = true, deniedDraft = false;
+    const w = await world(context, {provider, share: query => policy(query) && !(query.destination === 'private-conversation' &&
+      (denied && query.source === 'playback' || deniedDraft && query.source === 'shows')),
+      tools: [playback, 'read_playback', edit, 'read_light_shows'],
+      dispatch: request => {calls.push(request); return Promise.resolve(accepted(request.requestId));}});
+    const owner = w.bus.connect('bunny/modules/playback');
+    context.after(() => owner.close());
+    await owner.serveSync(['playback'], () => ({revision: 7, states: [{type: 'org.bunny.playback.updated',
+      subject: 'desk-speaker', dataschema: 'https://bunny.invalid/events/playback/2.0',
+      data: {id: 'desk-speaker', revision: 7, availability: 'available',
+        playback: {status: 'known', player: 'playing', controls: ['pause', 'play'], title: 'PRIVATE_PLAYBACK_TITLE'}}}]}));
+    const drafts = new ShowDrafts(w.host().moduleDatabase() ?? assert.fail('open database'));
+    assert.ok('text' in drafts.create({name: 'Desk show', starter: 'warm'}));
+    const summary = drafts.list(0, 1, '', () => true)[0] ?? assert.fail('saved draft');
+    const before = drafts.read(summary.id) ?? assert.fail('current draft');
+    const cue = before.value.timeline.cues[0]?.id ?? assert.fail('starter cue');
+    const stale = {draftId: summary.id, revision: summary.revision - 1, cue, changes: '{"intensity":0.25}'};
+    assert.deepEqual(drafts.edit(stale), {code: 'revision-conflict'});
+
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string, next: NonNullable<typeof proposal>) => {
+      const previous = task(w)?.taskId;
+      proposal = next;
+      assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
+      await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+      assert.equal(proposal, undefined, 'the fake transport received the owner turn');
+    };
+    await ask('Is the desk speaker paused? Please leave it alone.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'desk-speaker', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 0, 'a status question and explicit denial cause zero dispatches');
+
+    await ask('Tone down the first cue in revision zero of my Desk show draft.', {name: edit, input: stale});
+    assert.deepEqual(drafts.read(summary.id), before, 'the stale edit changes neither the revision nor the draft');
+    assert.equal(calls.length, 0, 'a private draft edit never dispatches to a device');
+
+    const expected = [playback, 'read_playback', edit, 'read_light_shows'];
+    assert.deepEqual(expected.filter(tool => !offered.has(tool)), [], 'the hosted adapter receives enabled catalog tools');
+    denied = false;
+    await ask('Give the music a break, please.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'auto', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0]?.data, {action: 'pause'});
+    assert.ok(calls[0]?.family === 'catalog-action');
+    assert.deepEqual(calls[0].binding, {kind: 'record', owner: 'bunny/modules/playback', target: 'desk-speaker', revision: 7});
+    await ask('Actually, let it carry on.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'auto', arguments: '{"action":"play"}'}});
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1]?.target, calls[0].target);
+    assert.deepEqual(calls[1]?.data, {action: 'play'});
+    await ask('Pause a different speaker.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'other-speaker', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 2, 'an unknown target never enters dispatch');
+
+    await ask('Make the first cue in the Desk show draft half as bright.', {name: edit,
+      input: {...stale, draftId: 'Desk show', revision: summary.revision, cue: '1'}});
+    assert.equal(drafts.read(summary.id)?.revision, summary.revision + 1);
+    assert.equal(drafts.read(summary.id)?.value.timeline.cues[0]?.intensity, 0.25);
+    assert.equal(calls.length, 2, 'private cue edit never sends a device command');
+    assert.doesNotMatch(bodies.join(' '), /PRIVATE_PLAYBACK_TITLE|Draft Desk show \(/u);
+    assert.ok((await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
+    deniedDraft = true;
+    assert.ok(!(await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
+  });
+}

@@ -3149,6 +3149,15 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+For the Conversation catalog, run the root build and type check, JavaScript lint,
+the Companions suite, and the workflow checks. After building, the catalog
+admission cases can be isolated with
+`node --test --test-name-pattern='catalog admission|newly configured Pixoo' modules/companions/dist/tests/assistant.test.js`.
+The `apps/runtime/dist/tests/assistant-dispatch.test.js` suite checks the same
+typed payloads, revision guards and refusals through the tracked command path.
+These checks use synthetic adapters and disposable owner records.
+
+
 After the root build, `npm run test:companions:built` exercises an owner asking
 for one coding job’s status while a synthetic worker is running. Its Conversation
 fixtures also verify the saved answer after restart, a changed attempt, revoked

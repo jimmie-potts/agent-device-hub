@@ -1475,6 +1475,19 @@ setting or the intended target is ambiguous, Conversation asks for it.
 | Dedicated plug and lighting controls | `set_wemo_power`, `set_lifx_power`, `set_lifx_brightness`, and the catalog families `power-set`, `brightness-set`, `lifx-color-set`, `lifx-temperature-set` |
 | Specialized approval | Paid `art-request`, presentation of newly generated art on the selected destinations, and coding handoffs |
 
+The hosted supervisors use the same enabled catalog. Tool availability gives
+no access to private catalog fields. Companions resolves names and revision
+guards locally when the owner publishes that index. This covers session labels,
+Volcano labels, saved light shows, Pixoo playlists and compatible renditions.
+The playback control can use the unique presented playback record.
+
+Nanoleaf publishes scene IDs in its device record. Use an ID from the device's
+scene list if the scene name alone cannot identify it. The art owner's catalog
+identifies saved artwork by ID. A Pixoo original with no rendition uses its
+asset ID. Companions asks for a clearer selector when the published catalog
+leaves the target uncertain. Private catalog records and draft storyboards
+remain on the Hub.
+
 Roborock offers status only. ONN is hibernated. Conversation's Inbox Send
 again follows the existing requester and replay rules for the saved command.
 
@@ -1492,7 +1505,9 @@ display's preparation and presentation evidence. A skipped phase shows its owner
 If the evidence is unavailable, the phase reports that separately.
 
 For light shows, `create_light_show_draft` uses a Nanoleaf starter timeline.
-`edit_light_show_cue` applies edits against the current draft revision.
+`edit_light_show_cue` binds the named draft and applies one cue edit against
+its revision. A hosted supervisor receives the edit result without the private
+storyboard. The owner can inspect the saved storyboard in the tool result.
 `preview_light_show_draft` shows cue timing, colors and intensity.
 `save_light_show` writes the requested version to the existing Nanoleaf catalog. Each immutable version can confirm its save by request
 identity after a lost reply. If the save expires without a matching version,
