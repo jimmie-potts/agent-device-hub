@@ -2596,7 +2596,7 @@ export class AssistantEngine {
       const selected = chooseDevice(this.options.devices?.(owner), call.input.device, call.name === SET_LIFX_BRIGHTNESS);
       if ('matches' in selected) return 'Multiple devices match. Ask the owner for an exact device ID.';
       const result = 'code' in selected ? selected : deviceProposal(call, selected.device);
-      return 'code' in result ? `refused: ${result.code}; no ${owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light'} change was proposed.` : 'This tool is not permitted.';
+      return 'code' in result ? `refused: ${result.code}; no light change was proposed.` : 'This tool is not permitted.';
     }
     if (MODES.find(value => value === call.input.mode) === undefined) return 'The requested mode is not work, free or quiet; nothing was proposed.';
     if (copy.mode === undefined || !copy.synced) return 'The Hub mode is not synced with the core right now, so a proposal cannot be bound to its revision; nothing was proposed.';
@@ -2646,6 +2646,7 @@ export class AssistantEngine {
       if (scope !== undefined && !modelFields('conversation', 'request', scope.requestId)) throw new ProviderFault('forbidden');
       const access = recordDisclosures(modelFields, ledger);
       let text: string;
+      let wemoFactsFrom: readonly DeviceRecord[] | undefined;
       if (call.name === READ_HUB_GUIDE) {
         text = deviceHistoryGuide(new Set(tools.map(tool => tool.name)));
       } else if (call.name === READ_DEVICE_HISTORY) {
@@ -2673,12 +2674,14 @@ export class AssistantEngine {
           scope?.resolvedCatalogDevice(device.id);
           return access('devices', 'index', device.id) && access('devices', 'label', device.id);
         });
+        wemoFactsFrom = records;
         text = readDevices(records, '', now, ASSISTANT_WEMO_OWNER);
       } else if (owner !== undefined) {
         const name = call.input.device;
         const records = this.options.devices?.(owner)?.filter(device => (scope === undefined || scope.selectedDevice(owner, device.id)) &&
           access('devices', 'index', device.id) && access('devices', 'label', device.id) &&
           (name === '' || access('devices', 'status', device.id) && (scope !== undefined || access('devices', 'details', device.id))));
+        if (owner === ASSISTANT_WEMO_OWNER) wemoFactsFrom = records;
         const selected = chooseDevice(records, name, true);
         const fresh = 'device' in selected ? await this.options.readDevice?.(owner, selected.device.id, signal, parent, this.#deviceDisplay) : undefined;
         text = fresh ?? readDevices(records, 'device' in selected && typeof name === 'string' ? selected.device.id : name, now, owner, this.#deviceDisplay);
@@ -2693,7 +2696,7 @@ export class AssistantEngine {
       const answer: Answer = {text, units: 0, disclosures: ledger.fields};
       if (call.name === WEMO_TARGETS || call.name === READ_WEMO) {
         const disclosed = new Set(ledger.fields.flatMap(field => field.source === 'devices' && field.field === 'label' ? [field.record] : []));
-        answer.wemoFacts = (this.options.devices?.(ASSISTANT_WEMO_OWNER) ?? []).flatMap(device => disclosed.has(device.id) && text.includes(`(${device.id})`)
+        answer.wemoFacts = (wemoFactsFrom ?? []).flatMap(device => disclosed.has(device.id) && text.includes(`(${device.id})`)
           ? [{id: device.id, revision: controlReferenceSnapshot(wemoControlReference(device, true))}] : []);
       }
       if (ledger.incompleteDisclosures === true) answer.incompleteDisclosures = true;
