@@ -57,7 +57,7 @@ function auxiliaryPrompt(query: ShareQuery): boolean {
 
 const legacyOneSidedAllow = (grant: SharingGrant): boolean => grant.destination !== 'external-model' &&
   externalDestination(grant.destination) && grant.allow &&
-  (grant.source === 'devices' && grant.field === 'details' || auxiliaryPrompt(grant));
+  auxiliaryPrompt(grant);
 
 function supervisorField(query: ShareQuery): boolean {
   if (query.caller !== 'companion' || query.purpose !== 'supervisor' && query.purpose !== 'title') return false;
@@ -169,6 +169,7 @@ export type SupervisorScope = {
   companion: AssistantProfile;
   /** The admitted task's own current request and conversation. */
   requestId: string;
+  ownerInputs?: ReadonlySet<string>;
   conversationId: string;
   /** Records selected on the server, with provenance independent of the selected IDs. */
   messages: ReadonlyMap<string, {conversationId: string}>;
@@ -183,7 +184,7 @@ export type SupervisorScope = {
 export function supervisorFields(share: Share | undefined, scope: SupervisorScope): FieldAccess {
   return (source, field, record) => {
     if (record === undefined) return false;
-    const eligible = source === 'conversation' ? field === 'request' ? record === scope.requestId
+    const eligible = source === 'conversation' ? field === 'request' ? record === scope.requestId || scope.ownerInputs?.has(record) === true
       : scope.messages.get(record)?.conversationId === scope.conversationId
       : source === 'devices' && scope.devices.has(record) &&
         (field !== 'summary' || scope.requestedHistory?.has(record) === true) &&

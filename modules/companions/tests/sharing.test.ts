@@ -155,7 +155,7 @@ void test('detailed historical evidence requires an explicit owner request for t
     messages: new Map(), devices: new Set(['plug', 'other-plug']), requestedHistory: new Set(['plug'])} as const;
   const withLegacy = sharing([legacy]);
   assert.equal(supervisorFields(withLegacy, scope)('devices', 'details', 'plug'), false);
-  assert.equal(withLegacy.conflicts, 1);
+  assert.equal(withLegacy.conflicts, 0);
   const allowed = sharing([explicit]);
   assert.equal(supervisorFields(allowed, scope)('devices', 'details', 'plug'), false);
   const evidence = {...scope, requestedHistoryDetails: new Set(['plug'])};

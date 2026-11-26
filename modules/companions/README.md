@@ -907,7 +907,9 @@ cover these paths.
 ### External-model sharing
 
 Conversation checks sharing before discovery, paging, model-bound tool
-results and submission. Current grants apply to a previously assembled
+results and submission. Relevant earlier replies are eligible only while their
+original disclosures can still be checked. A turn sends unread owner steers in
+the order they were admitted. Current grants apply to a previously assembled
 request and to replay. A required field denied at submission prevents
 transport. Private Conversation reads, speech and an approved coding brief
 keep their existing grants.

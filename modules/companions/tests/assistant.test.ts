@@ -2800,6 +2800,60 @@ for (const name of ['anthropic', 'openai'] as const) {
   });
 }
 
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} keeps a related prior answer and sends every newly admitted steer`, async context => {
+    const seen: {owner: string[]; instructions: string}[] = [];
+    const previousPrompt = 'Give me the synthetic orbital report.';
+    const previousAnswer = 'A sapphire sensor tracks the fictional ORBITAL_FIXTURE vehicle.';
+    const followUp = 'Explain the sapphire sensor.';
+    const heldPrompt = 'Wait with this first synthetic subject.';
+    const heldModel = deferred<Response>();
+    const respond = (text: string) => Promise.resolve(Response.json(name === 'anthropic'
+      ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage: {input_tokens: 20, output_tokens: 10}}
+      : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}],
+        usage: {input_tokens: 20, output_tokens: 10}}));
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {system?: {text: string}[]; instructions?: string; input?: {role: string; content: string}[];
+        messages?: {role: string; content: {type: string; text?: string}[]}[]};
+      const owner = body.messages?.filter(item => item.role === 'user').flatMap(item => item.content.flatMap(block =>
+        block.type === 'text' && block.text !== undefined ? [block.text] : [])) ?? body.input?.filter(item => item.role === 'user').map(item => item.content) ?? [];
+      seen.push({owner, instructions: body.system?.map(block => block.text).join('\n') ?? body.instructions ?? ''});
+      if (owner[0] === heldPrompt) return heldModel.promise;
+      return respond(owner[0] === previousPrompt ? previousAnswer : 'Synthetic reply.');
+    };
+    const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const baseline = sharing();
+    let revoked: string | undefined;
+    const w = await world(context, {provider, share: query => baseline(query) && !(query.destination === 'external-model' &&
+      query.field === 'request' && query.record === revoked)});
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string) => {
+      const prior = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+      await until(() => task(w)?.taskId !== prior && status(w) === 'succeeded');
+      return task(w)?.taskId ?? assert.fail('task');
+    };
+    await ask(previousPrompt);
+    await ask(followUp);
+    assert.match(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'related assistant answer reaches the new task');
+    const origin = await ask(previousPrompt);
+    revoked = `${origin}-prompt`;
+    await ask(followUp);
+    assert.doesNotMatch(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'the prior answer cannot bypass its original request grant');
+
+    assert.equal((await input(w.core, w.module(), heldPrompt)).status, 'accepted');
+    await until(() => seen.at(-1)?.owner[0] === heldPrompt);
+    const taskId = task(w)?.taskId ?? assert.fail('steered task');
+    const steers = ['First unread owner update.', 'Second unread owner update.'];
+    for (const text of steers) assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {action: 'steer', taskId})).status, 'accepted');
+    heldModel.resolve(await respond('PRIVATE_SUPERSEDED_FIXTURE'));
+    await until(() => status(w) === 'succeeded');
+    assert.deepEqual(seen.at(-1)?.owner, steers, 'all unread steer messages arrive in order in the next model request');
+    assert.doesNotMatch(JSON.stringify(seen.at(-1)), /PRIVATE_SUPERSEDED_FIXTURE|first synthetic subject/);
+  });
+}
+
 void test('Responses device reads bind the affirmative subject without widening it', async context => {
   const cases = [
     ['What is the brightness of Desk Lamp, not all lights?', 'Desk Lamp (desk)'],
@@ -3127,9 +3181,11 @@ void test('both hosted supervisors disclose requested power timestamps only whil
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic history answer.', annotations: []}]}]}));
   }});
   let revokeAfterRead = false, revoked = false, reads = 0;
+  let deniedDiscovery: 'private-conversation' | 'external-model' | undefined;
   const baseline = sharing();
   const w = await world(context, {provider: anthropic, alternateProvider: openai, timeZone: 'UTC', tools: ['read_device_history'],
-    share: query => baseline(query) && !(revoked && query.destination === 'external-model' && query.source === 'devices' &&
+    share: query => baseline(query) && !(query.destination === deniedDiscovery && query.source === 'devices' && query.field === 'index') &&
+      !(revoked && query.destination === 'external-model' && query.source === 'devices' &&
       query.field === 'details' && query.record === target),
     devices: owner => owner === source ? [light(target, 'Desk Lamp'), light('other', 'Hall Lamp')] : [],
     dispatch: () => assert.fail('history sends no device command'),
@@ -3137,7 +3193,7 @@ void test('both hosted supervisors disclose requested power timestamps only whil
       reads += 1;
       assert.deepEqual(query, {source, target, fromAtMs, toAtMs: day});
       if (revokeAfterRead) revoked = true;
-      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 155, complete: true, durations: {on: 421, off: 86_399_579, unknown: 0},
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 155, complete: true, durations: {on: 421, off: 86_399_379, unknown: 200},
         lastChange: {atMs: offAt, seq: 154, from: 'on', to: 'off'}, evidence: [
           {seq: 153, messageId: 'PRIVATE_EVIDENCE_ON', atMs: onAt, confirmedThroughMs: offAt, kind: 'observation', power: 'on'},
           {seq: 154, messageId: 'PRIVATE_EVIDENCE_OFF', atMs: offAt, confirmedThroughMs: day, kind: 'observation', power: 'off'},
@@ -3156,10 +3212,16 @@ void test('both hosted supervisors disclose requested power timestamps only whil
       assert.equal(capture.requests.length, before + (terminal === 'succeeded' ? 2 : 1));
       return capture.results.at(-1) ?? '';
     };
-    assert.deepEqual(JSON.parse(await ask(aggregate)), {interval, complete: true, durations: {on: 421, off: 86_399_579, unknown: 0}});
-    assert.deepEqual(JSON.parse(await ask(timestamps)), {interval, complete: true,
+    assert.deepEqual(JSON.parse(await ask(aggregate)), {interval, complete: true, durations: {on: 421, off: 86_399_379, unknown: 200}});
+    assert.deepEqual(JSON.parse(await ask(timestamps)), {interval, complete: true, unknownMs: 200,
       evidence: [{atMs: onAt, power: 'on'}, {atMs: offAt, power: 'off'}], next: null, capped: false});
-    assert.deepEqual(JSON.parse(await ask(justOn)), {interval, complete: true, evidence: [{atMs: onAt, power: 'on'}], next: null, capped: false});
+    assert.deepEqual(JSON.parse(await ask(justOn)), {interval, complete: true, unknownMs: 200, evidence: [{atMs: onAt, power: 'on'}], next: null, capped: false});
+    for (const destination of ['private-conversation', 'external-model'] as const) {
+      deniedDiscovery = destination;
+      assert.equal(await ask(aggregate), 'refused: forbidden');
+      assert.equal(await ask(timestamps), 'refused: forbidden');
+    }
+    deniedDiscovery = undefined;
     const resultCount = capture.results.length;
     revokeAfterRead = true;
     await ask(timestamps, 'failed');

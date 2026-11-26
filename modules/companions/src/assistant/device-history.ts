@@ -104,7 +104,7 @@ export class DeviceHistoryPages {
     if (requested === undefined || requested.kind === 'timestamps') return 'refused: forbidden';
     const {query, kind} = requested;
     if (!matchesBoundQuery(input, requested) || input.cursor !== '' ||
-      !access('devices', 'summary', query.target)) return 'refused: forbidden';
+      !access('devices', 'index', query.target) || !access('devices', 'status', query.target) || !access('devices', 'summary', query.target)) return 'refused: forbidden';
     const snapshot = this.provider()?.(query);
     if (snapshot === undefined) return 'refused: unavailable';
     if ('error' in snapshot) return `refused: ${snapshot.error.code}`;
@@ -163,7 +163,7 @@ export class DeviceHistoryPages {
     const common = {schema: snapshot.schema, query, complete: snapshot.complete, timeZone: scope.timeZone, localRange,
       durations: snapshot.durations, next, capped: next === null && nextOffset < evidence.length};
     const page = JSON.stringify(projection?.kind === 'timestamps' ? {
-      interval: {fromAtMs: from, toAtMs: to}, complete: snapshot.complete, next, capped: common.capped,
+      interval: {fromAtMs: from, toAtMs: to}, complete: snapshot.complete, unknownMs: snapshot.durations.unknown, next, capped: common.capped,
       evidence: rows.map(({atMs, power}) => ({atMs, power})),
     } : scope.bound === undefined ? {...common, boundary: snapshot.boundary,
       lastChange: change === null ? null : {...change, localTime: describe(change.atMs)}, evidence: rows,

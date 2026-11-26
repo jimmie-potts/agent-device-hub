@@ -230,6 +230,12 @@ function deviceGroup(subject: string | undefined): AssistantDeviceOwner | undefi
   return undefined;
 }
 
+const CONTEXT_WORDS = new Set(['about', 'again', 'answer', 'could', 'does', 'give', 'have', 'please', 'should', 'tell',
+  'that', 'the', 'their', 'them', 'then', 'there', 'these', 'they', 'this', 'those', 'want', 'were', 'what', 'when', 'where', 'which', 'with', 'would', 'you', 'your']);
+function subjectWords(text: string): string[] {
+  return normalizedControlText(text).split(' ').filter(word => word.length >= 4 && !CONTEXT_WORDS.has(word));
+}
+
 const waitingText = (delegated: string): string => `${WAITING_PREFIX}${delegated.slice('Delegated'.length)}`.slice(0, 1024);
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
@@ -1533,9 +1539,15 @@ export class AssistantEngine {
     });
   }
   #supervisorScope(task: Task, purpose: 'supervisor' | 'title' = 'supervisor', boundDevice?: string) {
-    const ownerInputs = task.transcript.filter(item => item.role === 'owner');
-    const latest = ownerInputs.at(-1);
-    const transcript = latest === undefined ? [] : task.transcript.slice(task.transcript.lastIndexOf(latest));
+    const latest = task.transcript.filter(item => item.role === 'owner').at(-1);
+    const marker = task.ownerInputStart;
+    const batchStart = marker === undefined ? -1 : task.transcript.findIndex(item => item.role === 'owner' && 'effect' in item && item.effect === marker);
+    const start = latest === undefined ? 0 : batchStart < 0 ? task.transcript.lastIndexOf(latest) : batchStart;
+    const transcript = task.transcript.slice(start);
+    const ownerInputs = new Set(transcript.flatMap(item => {
+      const id = item.role === 'owner' ? conversationMessageId(task.id, item) : undefined;
+      return id === undefined ? [] : [id];
+    }));
     const effects = new Set(transcript.flatMap(item => 'effect' in item && typeof item.effect === 'string' ? [item.effect] : []));
     const request = latest?.text ?? task.prompt;
     const requestId = latest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, latest) ?? fail('invalid-state');
@@ -1549,21 +1561,26 @@ export class AssistantEngine {
 
     const canReadMessage = (id: string) => this.store.messages.get(id)?.conversationId === task.conversationId &&
       this.store.messages.removal(id) === undefined && local('conversation', 'text', task.conversationId) && local('conversation', 'text', id);
-    const access = supervisorFields(this.options.share, {companion: task.profile, requestId, conversationId: task.conversationId, messages, devices, purpose,
+    const access = supervisorFields(this.options.share, {companion: task.profile, requestId, ownerInputs, conversationId: task.conversationId, messages, devices, purpose,
       ...(history?.history === undefined ? {} : {requestedHistory: new Set([history.history.query.target])}),
       ...(history?.history?.kind !== 'timestamps' ? {} : {requestedHistoryDetails: new Set([history.history.query.target])})});
     const allowsExcerpt = (id: string): boolean => canReadMessage(id) &&
       recordedSupervisorField(this.options.share, task.profile, purpose, 'conversation', 'excerpt', task.conversationId) &&
       recordedSupervisorField(this.options.share, task.profile, purpose, 'conversation', 'excerpt', id);
-    const previous = ownerInputs.at(-2);
+    const previous = task.transcript.slice(0, start).filter(item => item.role === 'owner').at(-1);
     const previousId = previous === undefined ? undefined : conversationMessageId(task.id, previous);
     const saved = task.contextThrough === undefined || history !== undefined ? [] : this.store.recentContext(task.profile, task.conversationId,
       task.contextThrough, message => message.role === 'owner' && !privateJobMessage(message) && allowsExcerpt(message.id), purpose === 'supervisor').messages;
-    const earlier = previous !== undefined ? previousId !== undefined && allowsExcerpt(previousId)
+    const earlier: RecentMessage[] = previous !== undefined ? previousId !== undefined && allowsExcerpt(previousId)
       ? [{id: previousId, role: 'owner' as const, text: previous.text}] : [] : saved.slice(-4);
     const words = normalizedControlText(request);
-    const refers = /\b(?:it|that|those|both|former|latter|first one|second one|earlier|previous|same|again|last request|last message)\b/u.test(words) ||
+    const namedAnswer = /\b(?:your (?:answer|reply|report|suggestion)|(?:answer|reply|report|suggestion) you gave)\b/u.test(words);
+    const refers = namedAnswer || /\b(?:it|that|those|both|former|latter|first one|second one|earlier|previous|same|again|last request|last message)\b/u.test(words) ||
       /^(?:and |(?:what|how) about )/u.test(words);
+    const lastOwner = earlier.at(-1);
+    const earlierAnswer = purpose === 'supervisor' && lastOwner !== undefined ? this.#priorAnswer(task, lastOwner, allowsExcerpt) : undefined;
+    const requestTopics = new Set(subjectWords(request));
+    const overlaps = (message: RecentMessage) => subjectWords(message.text).some(word => requestTopics.has(word));
     const brightnessTarget = purpose === 'supervisor' ? brightnessSubject(request) : undefined;
     const subject = brightnessTarget ?? (purpose === 'supervisor' ? deviceRequestSubject(request) : undefined);
     const group = brightnessTarget === undefined ? deviceGroup(subject) : undefined;
@@ -1592,9 +1609,11 @@ export class AssistantEngine {
       recordedSupervisorField(this.options.share, task.profile, 'supervisor', 'devices', 'index', device.id) &&
       recordedSupervisorField(this.options.share, task.profile, 'supervisor', 'devices', 'label', device.id)));
     const recent = history !== undefined ? [] : purpose === 'title' || refers ? visibleEarlier
-      : visibleEarlier.filter(message => explicit.some(({device}) => mentioned(message.text).some(item => item.device.id === device.id)));
+      : visibleEarlier.filter(message => overlaps(message) || explicit.some(({device}) => mentioned(message.text).some(item => item.device.id === device.id)) ||
+        earlierAnswer !== undefined && overlaps(earlierAnswer));
+    if (recent.length > 0 && earlierAnswer !== undefined && (refers || recent.some(overlaps) || overlaps(earlierAnswer))) recent.push(earlierAnswer);
     const references = refers && explicit.length === 0 && exact.length === 0
-      ? mentioned(recent.at(-1)?.text ?? '') : [];
+      ? mentioned(recent.filter(message => message.role === 'owner').at(-1)?.text ?? '') : [];
     const ordinal = /\b(?:first|former)\b/u.test(words) ? 0 : /\b(?:second|latter)\b/u.test(words) ? 1 : undefined;
     const referred = ordinal !== undefined ? references.slice(ordinal, ordinal + 1)
       : references.length === 1 || /\b(?:both|those)\b/u.test(words) ? references : [];
@@ -1624,8 +1643,44 @@ export class AssistantEngine {
       }
       return access(source, field, record);
     };
-    return {request, requestId, recent, fields, transcript, effects, catalogSubject, priorCatalogIds, resolvedCatalogDevice,
+    return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, priorCatalogIds, resolvedCatalogDevice,
       brightnessTarget: brightnessTarget === undefined ? undefined : catalogSubject ?? brightnessTarget, selectedDevice, history};
+  }
+  #priorAnswer(task: Task, owner: RecentMessage, allowsExcerpt: (id: string) => boolean): RecentMessage | undefined {
+    const source = this.store.messageSource(owner.id);
+    const origin = source === undefined ? undefined : this.store.task(source.taskId);
+    if (origin === undefined || origin.id === task.id || origin.profile !== task.profile || origin.conversationId !== task.conversationId ||
+      origin.status !== 'succeeded' || origin.supervisor === undefined || origin.supervisor.provider === 'synthetic') return undefined;
+    const id = `${origin.id}-result`;
+    const answer = this.store.savedMessage(origin.id, id);
+    if (answer?.role !== 'assistant' || !allowsExcerpt(id)) return undefined;
+    const read = this.#fields(task.profile, 'read', 'private-conversation');
+    const discover = this.#fields(task.profile, 'discovery', 'private-conversation');
+    const prompt = this.#supervisorPromptFields(task.profile);
+    const permitsAnswer = (answerTask: Task, remaining: number): boolean => {
+      if (remaining === 0 || answerTask.profile !== task.profile || answerTask.conversationId !== task.conversationId || answerTask.status !== 'succeeded' ||
+        answerTask.supervisor === undefined || answerTask.supervisor.provider === 'synthetic') return false;
+      const current: FieldAccess = (source, field, record) => {
+        if (source === 'knowledge' || source === 'preferences') return prompt(source, field, record);
+        if (record === undefined) return false;
+        if (source === 'conversation') {
+          const message = this.store.messages.get(record);
+          if (message?.conversationId !== task.conversationId || this.store.messages.removal(record) !== undefined ||
+            !read(source, 'text', record) || !recordedSupervisorField(this.options.share, task.profile, 'supervisor', source, field, task.conversationId)) return false;
+          if (message.speakerId !== 'owner') {
+            const prior = this.store.messageSource(record);
+            const nested = prior === undefined ? undefined : this.store.task(prior.taskId);
+            if (field !== 'excerpt' || nested === undefined || record !== `${nested.id}-result` || !permitsAnswer(nested, remaining - 1)) return false;
+          }
+        }
+        if (source === 'devices' && (field === 'summary' || field === 'details' ||
+          !read(source, field, record) || field === 'index' && !discover(source, field, record))) return false;
+        return recordedSupervisorField(this.options.share, task.profile, 'supervisor', source, field, record);
+      };
+      return this.store.calls(answerTask.id).some(call => call.kind === 'model' && call.status === 'succeeded') &&
+        this.#callDisclosuresAllowed(answerTask.id, current, () => true, false);
+    };
+    return permitsAnswer(origin, 4) ? {id, role: 'assistant', text: answer.text} : undefined;
   }
   #supervisorPromptFields(profile: AssistantProfile): FieldAccess {
     const allowed = this.#fields(profile, 'prompt', 'external-model');
@@ -1836,7 +1891,9 @@ export class AssistantEngine {
         const scopedAccess: FieldAccess = (source, field, record) =>
           (source === 'knowledge' || source === 'preferences' ? auxiliary : scope.fields)(source, field, record);
         const access = recordDisclosures(scopedAccess, ledger);
-        if (!access('conversation', 'request', scope.requestId)) throw new Fault('forbidden', 'This request is private under the configured model sharing policy.');
+        if (!access('conversation', 'request', scope.requestId) || [...scope.ownerInputs].some(owner => !access('conversation', 'request', owner))) {
+          throw new Fault('forbidden', 'This request is private under the configured model sharing policy.');
+        }
         const context = this.#supervisorContext(current.profile, scope, access);
         const pinned = current.historyScope ?? current.claudeHistory;
         if (scope.history !== undefined && pinned?.requestId !== scope.requestId) current.historyScope = scope.history;
@@ -2008,7 +2065,9 @@ export class AssistantEngine {
    * drain in `run_turn` (`codex-rs/core/src/session/turn.rs` at a0436d69, Apache-2.0; see THIRD-PARTY-NOTICES.md).
    */
   #drain(task: Task): void {
-    for (const steer of this.store.queue.steers(task.id)) {
+    const steers = this.store.queue.steers(task.id);
+    if (steers[0] !== undefined) task.ownerInputStart = `steer-${steers[0].id}`;
+    for (const steer of steers) {
       const effect = `steer-${steer.id}`;
       const item: Appended = {role: 'owner', text: steer.text, effect, submittedAtMs: steer.savedAtMs};
       if (!task.transcript.some(existing => 'effect' in existing && existing.effect === effect)) task.transcript.push(item);

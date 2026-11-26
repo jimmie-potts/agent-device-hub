@@ -43,6 +43,7 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   codingPreference?: CodingPreference;
   clarificationDevices?: readonly string[];
   historyScope?: DeviceHistoryBinding;
+  ownerInputStart?: string;
   /** Legacy Messages task's bound history query. */
   claudeHistory?: DeviceHistoryBinding & {replayFrom: number; ordinaryFrom?: number};
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
