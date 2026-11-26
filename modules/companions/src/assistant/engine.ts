@@ -1990,7 +1990,6 @@ export class AssistantEngine {
       const ownerRoute = ownerCodingRoute(task.prompt);
       const choice = preference?.harness ?? ownerRoute.harness ?? harness;
       const execution = preference?.destination ?? ownerRoute.destination ?? destination;
-      if (codingDestinationChoice(execution) && isCloudChoice(execution) && coding.cloudDisabled === true) return undefined;
       const requirements = bindCodingRequirements(preference?.requirements ?? (os === undefined ? undefined : {os}), this.options.codingRequirements?.(task.prompt));
       const proposal: Proposal = {family: 'coding-dispatch', target: 'assistant', expectedRevision: coding.revision,
         data: {repository, brief: brief.trim(), ...(choice === undefined ? {} : {harness: choice}),
