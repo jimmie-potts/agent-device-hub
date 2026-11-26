@@ -1208,13 +1208,16 @@ summary. That text-only call has no tools and requests at most 2,048 output
 tokens. Each task can start at most one compaction, with a 45-second
 deadline and a reservation capped at 10% of remaining daily and monthly
 spend. While that call runs, Companions holds enough local spend for the
-planned ordinary request's required input. Later additions are checked when
-the ordinary request is admitted. Summaries carry earlier decisions, open requests or questions,
+planned ordinary request's required input. That hold is excluded from
+reported spend. Later additions and the current synced Hub mode are checked
+when the ordinary request is admitted. Summaries carry earlier decisions, open requests or questions,
 device references and corrections. The saved history retains full messages
 and details that the summary omits. Companions verifies the covered source
 versions and current grants before sending or reusing summary text. An edit,
 removal or revocation can invalidate the checkpoint. Saved replies and
-questions remain readable under the owner's private grants. If cost, the deadline,
+questions remain readable under the owner's private grants. Private display
+and speech check current grants for the original fields inherited through
+earlier replies and tool results. If cost, the deadline,
 provider availability or an unusable answer prevents compaction, Companions
 can continue with an eligible verbatim tail. An ambiguous attempt keeps
 its receipt and spend reservation. Its work is not repeated, and a different

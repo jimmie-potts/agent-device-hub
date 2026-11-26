@@ -47,8 +47,11 @@ void test('optional compaction protects ordinary spend against concurrent admiss
   const required = big('ordinary', 4);
   const release = spend.holdForOptional(required, {...big('compaction', 1), purpose: 'conversation'});
   assert.ok(release);
-  assert.match(spend.reserve(big('concurrent-title', 0.5)) ?? '', /daily spend limit/);
+  assert.equal(spend.totals().day.spentMicros, 16_000_000, 'reported spend excludes the pending ordinary hold');
+  assert.equal(spend.totals().day.limitMicros, 20_000_000, 'the public limit is unchanged during the hold');
+  assert.match(spend.reserve(big('concurrent-title', 0.5)) ?? '', /temporarily reserved/);
   release();
+  assert.equal(spend.totals().day.spentMicros, 16_000_000, 'releasing the hold leaves reported spend intact');
   assert.equal(spend.reserve(required), undefined);
   assert.equal(spend.totals().day.spentMicros, 20_000_000);
 });

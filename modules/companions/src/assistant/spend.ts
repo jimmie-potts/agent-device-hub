@@ -84,11 +84,16 @@ export class SpendLedger {
   }
   #sum(period: 'day' | 'month', key: string, limitMicros: number): SpendPeriod {
     const row = this.database.prepare(SUMS[period]).get(key) as Sum;
-    return {period: key, spentMicros: (row.spent ?? 0) + [...this.#holds.values()].reduce((total, amount) => total + amount, 0), limitMicros, unreported: row.unreported, unreportedMicros: row.unreportedMicros ?? 0};
+    return {period: key, spentMicros: row.spent ?? 0, limitMicros, unreported: row.unreported, unreportedMicros: row.unreportedMicros ?? 0};
   }
   totals(): SpendTotals {
     const day = localDay(this.now(), this.timeZone);
     return {version: 1, day: this.#sum('day', day, SPEND_LIMITS.dayMicros), month: this.#sum('month', day.slice(0, 7), this.monthMicros)};
+  }
+  available(totals = this.totals()): SpendTotals {
+    const held = [...this.#holds.values()].reduce((total, amount) => total + amount, 0);
+    return {...totals, day: {...totals.day, limitMicros: totals.day.limitMicros - held},
+      month: {...totals.month, limitMicros: totals.month.limitMicros - held}};
   }
   /**
    * The limit that refuses a new paid turn now, as the message naming it, or undefined. With a model, the turn is also
@@ -96,7 +101,12 @@ export class SpendLedger {
    * first call, so a message is not admitted only to fail there.
    */
   reached(model?: string, pricing?: PriceSchedule): string | undefined {
-    const least = model === undefined ? 0 : this.minimum(model, pricing), {day, month} = this.totals();
+    const least = model === undefined ? 0 : this.minimum(model, pricing), totals = this.totals();
+    const {day, month} = totals;
+    const availability = this.available(totals);
+    if (day.spentMicros < day.limitMicros && month.spentMicros < month.limitMicros &&
+      (day.spentMicros + least > availability.day.limitMicros || month.spentMicros + least > availability.month.limitMicros) &&
+      day.spentMicros + least <= day.limitMicros && month.spentMicros + least <= month.limitMicros) return 'Spend is temporarily reserved for another Conversation request.';
     if (day.spentMicros >= day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} is reached: ${dollars(day.spentMicros)} is counted today. ${AFTER.day}`;
     if (day.spentMicros + least > day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} leaves too little for a model call: ${dollars(day.spentMicros)} is counted today and the smallest call could cost ${dollars(least)}. ${AFTER.day}`;
     const nextMonth = this.responsesEnabled ? 'A new message can start when the next month begins. Provider billing is tracked separately.' : AFTER.month;
@@ -119,13 +129,13 @@ export class SpendLedger {
     const configured = own(this.prices, model);
     return configured === undefined ? own(BUILT_IN_PRICES, model) ?? {base: this.#dearest} : {base: configured};
   }
-  fits(call: Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>, totals: SpendTotals = this.totals()): boolean {
+  fits(call: Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>, totals: SpendTotals = this.available()): boolean {
     return this.#refusal(this.#reservation(call), totals) === undefined;
   }
   /** Protect the planned required request while an optional request runs in this process. */
   holdForOptional(required: Pick<SpendCall, 'model' | 'inputUnits' | 'outputUnits' | 'pricing'>, optional: SpendCall): (() => void) | undefined {
     const amount = this.#reservation(required);
-    if (this.#refusal(amount + this.#reservation(optional), this.totals()) !== undefined || this.reserve(optional) !== undefined) return undefined;
+    if (this.#refusal(amount + this.#reservation(optional), this.available()) !== undefined || this.reserve(optional) !== undefined) return undefined;
     const key = Symbol();
     this.#holds.set(key, amount);
     return () => {this.#holds.delete(key);};
@@ -142,6 +152,7 @@ export class SpendLedger {
     const reserved = this.#reservation(call), totals = this.totals();
     const refusal = this.#refusal(reserved, totals);
     if (refusal !== undefined) return refusal;
+    if (this.#refusal(reserved, this.available(totals)) !== undefined) return 'Spend is temporarily reserved for another Conversation request. The next model call was not sent.';
     const {day, month} = totals;
     this.database.prepare('INSERT INTO assistant_spend(id,purpose,owner,model,day,month,at_ms,reserved_micros,pricing) VALUES (?,?,?,?,?,?,?,?,?)')
       .run(call.id, call.purpose, call.owner, call.model, day.period, month.period, this.now(), reserved, call.pricing === undefined ? null : JSON.stringify(call.pricing));

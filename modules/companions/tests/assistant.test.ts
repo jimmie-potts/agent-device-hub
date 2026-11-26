@@ -3011,6 +3011,104 @@ for (const name of ['anthropic', 'openai'] as const) {
   });
 }
 
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} checks origin device grants for privately displayed and spoken derived replies`, async context => {
+    const phrase = 'The test device reported a reading. ORIGIN_FACT.';
+    const repeated = 'The earlier reading was recorded. DERIVED_FACT.';
+    const read = 'What is the brightness of Desk Lamp?';
+    const quote = 'What did the earlier reading say?';
+    const bodies: string[] = [];
+    const offers: SpokenReply[] = [];
+    const usage = {input_tokens: 20, output_tokens: 10};
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      bodies.push(init.body);
+      const first = init.body.includes(read) && !init.body.includes(quote) && !init.body.includes('tool_result') && !init.body.includes('function_call_output');
+      if (first) return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: [{type: 'tool_use', id: 'read_desk', name: 'read_lifx', input: {device: 'desk'}}], stop_reason: 'tool_use', usage}
+        : {status: 'completed', output: [{type: 'function_call', id: 'fc_read_desk', call_id: 'read_desk',
+          name: 'read_lifx', arguments: '{"device":"desk"}'}], usage}));
+      const text = init.body.includes(quote) ? init.body.includes(phrase) ? repeated : 'No previous reading.' : phrase;
+      return Promise.resolve(Response.json(name === 'anthropic' ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage}
+        : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}], usage}));
+    };
+    const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const baseline = sharing();
+    let revoked: 'private-conversation' | 'conversation-speech' | undefined;
+    const w = await world(context, {provider, tools: ['read_lifx'], devices: owner => owner === 'bunny/modules/lifx' ? [light('desk', 'Desk Lamp')] : [],
+      speak: offer => {offers.push(offer);}, share: query => baseline(query) && !(query.destination === revoked &&
+        query.source === 'devices' && query.field === 'status' && query.record === 'desk')});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), read)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    const first = task(w)?.taskId ?? assert.fail('origin task');
+    assert.ok(w.store().calls(first).some(call => call.disclosures?.some(field =>
+      field.source === 'devices' && field.field === 'status' && field.record === 'desk') === true));
+    assert.equal((await input(w.core, w.module(), quote)).status, 'accepted');
+    await until(() => task(w)?.taskId !== first && status(w) === 'succeeded');
+    const derived = task(w)?.taskId ?? assert.fail('derived task');
+    const messageId = `${derived}-result`;
+    assert.match(bodies.at(-1) ?? '', /ORIGIN_FACT/);
+    assert.ok((await page(w)).messages.some(message => message.text === repeated));
+    assert.ok(offers.some(offer => offer.messageId === messageId));
+
+    revoked = 'conversation-speech';
+    const spoken = offers.length;
+    assert.equal((await control(w.core, w.module(), 'speak', derived, randomUUID(), {messageId})).status, 'rejected');
+    assert.equal(offers.length, spoken);
+    assert.ok((await page(w)).messages.some(message => message.text === repeated), 'speech revocation keeps private display available');
+
+    revoked = 'private-conversation';
+    await w.restart();
+    assert.doesNotMatch(JSON.stringify(await page(w)), /ORIGIN_FACT|DERIVED_FACT/);
+    assert.equal((await control(w.core, w.module(), 'speak', derived, randomUUID(), {messageId})).status, 'rejected');
+    assert.equal(offers.length, spoken);
+  });
+
+  for (const permission of ['unchanged', 'gained', 'lost'] as const) {
+    void test(`${name} rebuilds synced mode during compaction with ${permission} permission`, async context => {
+      const pending = deferred<Response>(), ordinary: string[] = [];
+      let started = false, mode = hub(1), allowed = permission !== 'gained';
+      const policy = sharing();
+      const response = (text: string) => Response.json(name === 'anthropic'
+        ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}],
+          usage: {input_tokens: 20, output_tokens: 10}});
+      const transport = (_url: string, init: {body: string}): Promise<Response> => {
+        if (init.body.includes('Summarize the supplied older conversation exchanges')) {
+          started = true;
+          return pending.promise;
+        }
+        ordinary.push(init.body);
+        return Promise.resolve(response('Synthetic reply.'));
+      };
+      const adapter = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+        : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+      const provider: ModelProvider & {inputWindow: number} = {name, model: adapter.model, inputWindow: 115_000,
+        contextInputUnits: input => adapter.contextInputUnits(input), turn: (input, signal) => adapter.turn(input, signal)};
+      const w = await world(context, {provider, core: () => ({sessions: [], mode, synced: true}),
+        share: query => policy(query) && !(query.destination === 'external-model' && query.source === 'devices' &&
+          query.field === 'status' && query.record === 'hub' && !allowed)});
+      await control(w.core, w.module(), 'enable');
+      for (let index = 0; index < 8; index += 1) {
+        const earlier = task(w)?.taskId;
+        assert.equal((await input(w.core, w.module(), `Earlier exchange ${String(index)}. ${'The recent note describes a daily plan. '.repeat(60)}`)).status, 'accepted');
+        await until(() => task(w)?.taskId !== earlier && status(w) === 'succeeded');
+      }
+      provider.inputWindow = 14_000;
+      const earlier = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), 'What is the Hub mode now?')).status, 'accepted');
+      await until(() => started);
+      mode = hub(2, 'quiet');
+      allowed = permission !== 'lost';
+      pending.resolve(response(JSON.stringify({decisions: ['Keep the daily plan.'], openQuestions: [], references: [], corrections: []})));
+      await until(() => task(w)?.taskId !== earlier && status(w) === 'succeeded');
+      assert.doesNotMatch(ordinary.at(-1) ?? '', /The Hub mode is work now/);
+      assert.equal((ordinary.at(-1) ?? '').includes('The Hub mode is quiet now.'), permission !== 'lost');
+    });
+  }
+}
+
 for (const failure of ['uncertain', 'provider-capacity'] as const) {
   void test(`optional compaction preserves provider spend and unknown-retry boundaries on ${failure}`, async context => {
     let compacted = 0, ordinary = 0;

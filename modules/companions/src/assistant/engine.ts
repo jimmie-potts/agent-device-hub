@@ -1203,6 +1203,15 @@ export class AssistantEngine {
     try {
       const {discover, read, task} = this.#publicRead(selected);
       const fields = query.view === 'list' ? discover : read;
+      const savedDisclosures = new Map<string, boolean>();
+      const canReadSaved = (taskId: string) => {
+        let allowed = savedDisclosures.get(taskId);
+        if (allowed === undefined) {
+          allowed = this.#savedDisclosureAllowed(taskId, read, savedDisclosures);
+          savedDisclosures.set(taskId, allowed);
+        }
+        return allowed;
+      };
       const conversationId = query.conversationId ?? this.store.conversation(selected);
       if (!fields('conversation', query.view === 'list' ? 'index' : 'text', query.view === 'list' ? undefined : conversationId)) return errorBody('forbidden');
       if (query.view === 'list') {
@@ -1213,7 +1222,7 @@ export class AssistantEngine {
         const listed = this.store.conversations(selected, cursor === undefined ? undefined : {last: Number(cursor[1]), row: Number(cursor[2])}, {
           conversation: id => fields('conversation', 'index', id),
           message: message => read('conversation', 'text', message.id) &&
-            (message.role === 'owner' || this.#jobMessageAllowed(message, read) && this.#savedDisclosureAllowed(message.taskId, read)),
+            (message.role === 'owner' || this.#jobMessageAllowed(message, read) && canReadSaved(message.taskId)),
         });
         const document: ConversationList = {version: 1, profile: selected, older: listed.older,
           conversations: listed.conversations.map(value => {
@@ -1245,7 +1254,7 @@ export class AssistantEngine {
         },
         shows: (message: MessageSource) => fields('conversation', 'text', message.id) &&
           (message.role === 'owner' || this.#brightnessMessage(message) !== undefined ||
-            this.#jobMessageAllowed(message, fields) && this.#savedDisclosureAllowed(message.taskId, fields)),
+            this.#jobMessageAllowed(message, fields) && canReadSaved(message.taskId)),
         attachment: (requestId: string) => fields('artwork', 'attachment', requestId),
         task: (taskId: string) => conversationId !== undefined && task(conversationId, taskId),
       };
@@ -1736,7 +1745,7 @@ export class AssistantEngine {
   #fitHostedHistory(task: Pick<Task, 'conversationId' | 'reservedUnits' | 'supervisor'>, provider: ModelProvider, input: TurnInput,
     messages: readonly HostedHistoryMessage[]): HostedWindow {
     const budget = hostedInputCapacity(provider);
-    const totals = this.spend.totals();
+    const totals = this.spend.available();
     const pricing = task.supervisor?.pricing;
     return fitConversationHistory(input, messages, this.#usableCompaction(task.conversationId, messages), budget, candidate => {
       if (hostedInputUnits(provider, candidate) > budget) return false;
@@ -1783,7 +1792,7 @@ export class AssistantEngine {
     if (messages.length === 0 || !access('conversation', 'request', scope.requestId) ||
       [...scope.ownerInputs].some(owner => !access('conversation', 'request', owner)) ||
       scope.transcript.some(item => item.role === 'assistant') && !this.#replayable(task.id, access, scope.effects)) return;
-    const base = this.#hostedBase(task, scope.transcript, this.#supervisorContext(task.profile, access), this.#toolsFor(task), access, this.#core().mode);
+    const base = this.#hostedBase(task, scope.transcript, this.#supervisorContext(task.profile, access), this.#toolsFor(task), access, this.#currentHostedMode());
     if (hostedInputUnits(provider, base) > hostedInputCapacity(provider)) return;
     const fitted = this.#fitHostedHistory(task, provider, base, messages);
     if (fitted.omitted === 0) return;
@@ -1799,7 +1808,7 @@ export class AssistantEngine {
     const oldestOfNewest = messages.findIndex(message => message.taskId === newestTask);
     const cutoff = Math.min(oldestOfNewest, prefix + Math.max(target, fitted.omitted));
     if (cutoff <= prefix) return;
-    const totals = this.spend.totals();
+    const totals = this.spend.available();
     const compactionSpend = {day: {...totals.day, limitMicros: totals.day.spentMicros + Math.floor((totals.day.limitMicros - totals.day.spentMicros) / 10)},
       month: {...totals.month, limitMicros: totals.month.spentMicros + Math.floor((totals.month.limitMicros - totals.month.spentMicros) / 10)}, version: totals.version};
     const pricing = pin.pricing === undefined ? {} : {pricing: pin.pricing};
@@ -1936,10 +1945,60 @@ export class AssistantEngine {
     if (update !== undefined && (update.jobId !== job.jobId || codingUpdateMessageId(job, update.kind) !== message.id)) return false;
     return this.#codingJobAllowed(job, access);
   }
-  #savedDisclosureAllowed(taskId: string, access: FieldAccess): boolean {
-    if (this.store.task(taskId)?.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
-    return this.store.calls(taskId).every(call => this.#recordedFieldsAllowed(call, access, !canRevokeFields(this.options.share)) &&
-      (call.historySources?.every(({id}) => access('conversation', 'text', id)) ?? true));
+  #savedDisclosureAllowed(taskId: string, access: FieldAccess, cache?: Map<string, boolean>): boolean {
+    const acceptsOldRecords = !canRevokeFields(this.options.share);
+    const root = this.store.task(taskId);
+    if (root === undefined) return this.store.calls(taskId).every(call =>
+      (call.historySources?.length ?? 0) === 0 && this.#recordedFieldsAllowed(call, access, acceptsOldRecords));
+    const pending = [{task: root, through: Infinity}], inspected = new Map<string, number>();
+    const sources = new Set<string>();
+    let links = 0;
+    // The historical projection records every source, including sources covered by a summary.
+    while (pending.length > 0) {
+      const next = pending.pop();
+      if (next === undefined) return false;
+      const {task, through} = next;
+      const cached = cache?.get(task.id);
+      if (cached === true) continue;
+      if (cached === false && through === Infinity) return false;
+      const previous = inspected.get(task.id) ?? -1;
+      if (previous >= through) continue;
+      inspected.set(task.id, through);
+      if (task.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
+      const calls = this.store.calls(task.id);
+      if (task.id !== root.id && !calls.some(call => call.ordinal <= through && call.kind === 'model' && call.status === 'succeeded')) return false;
+      for (const call of calls) {
+        if (call.ordinal <= previous || call.ordinal > through) continue;
+        if (!this.#recordedFieldsAllowed(call, access, acceptsOldRecords)) return false;
+        const lineage = call.historySources ?? [];
+        links += lineage.length;
+        if (links > 1_000_000) return false;
+        for (const {id} of lineage) {
+          if (sources.has(id)) continue;
+          if (sources.size >= 16_384 || !access('conversation', 'text', id)) return false;
+          sources.add(id);
+          const source = this.store.messageSource(id);
+          if (source === undefined) {
+            if (this.store.messages.removal(id)?.conversationId !== root.conversationId) return false;
+            // A removed final reply still has its task's saved disclosure ledger.
+            if (!id.endsWith('-result')) continue;
+          } else if (source.role === 'owner') continue;
+          const origin = this.store.task(source?.taskId ?? id.slice(0, -'-result'.length));
+          if (origin?.conversationId !== root.conversationId || origin.profile !== root.profile ||
+            origin.status !== 'succeeded' || origin.supervisor === undefined || origin.supervisor.provider === 'synthetic') return false;
+          if (source?.role === 'tool') {
+            const tool = this.store.call(id);
+            if (!access('conversation', 'details', id) || tool?.taskId !== origin.id || tool.kind !== 'tool' || tool.status !== 'succeeded') return false;
+            pending.push({task: origin, through: tool.ordinal});
+          } else {
+            if (id !== `${origin.id}-result`) return false;
+            pending.push({task: origin, through: Infinity});
+          }
+        }
+      }
+    }
+    for (const [id, through] of inspected) if (through === Infinity) cache?.set(id, true);
+    return true;
   }
   #replayable(taskId: string, access: FieldAccess, effects?: ReadonlySet<string>): boolean {
     if (this.store.task(taskId)?.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
@@ -1970,6 +2029,10 @@ export class AssistantEngine {
     // A model reply can carry facts from a saved attempt. Its own ledger must still resolve that source.
     return message === undefined ? this.store.task(operationId) !== undefined
       : message.role === 'owner' || this.#jobMessageAllowed(message, access);
+  }
+  #currentHostedMode(): CoreCopy['mode'] {
+    const copy = this.#core();
+    return copy.synced ? copy.mode : undefined;
   }
   #core(): CoreCopy {return this.options.core?.() ?? {sessions: [], mode: undefined, synced: false};}
   /**
@@ -2042,7 +2105,8 @@ export class AssistantEngine {
   }
   async #turn(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
-    const provider = this.#taskProvider(task), copy = this.#core();
+    const provider = this.#taskProvider(task);
+    let proposalCopy = this.#core();
     let tools = this.#toolsFor(task);
     const id = `${state.taskId}-step-${String(state.step)}`;
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
@@ -2092,7 +2156,14 @@ export class AssistantEngine {
         (ledger.incompleteDisclosures === true || modelLedger.incompleteDisclosures === true) && canRevokeFields(this.options.share)) {
         throw new ProviderFault('forbidden', false, undefined, 'Sharing changed before the configured model could receive this turn.');
       }
-      return provider.turn(request ?? fail('internal'), signal)
+      const outbound = request ?? fail('internal');
+      if (paid && outbound.mode !== null) {
+        const mode = this.#currentHostedMode();
+        if (mode?.revision !== outbound.mode.revision || mode.mode !== outbound.mode.mode) {
+          throw new ProviderFault('unavailable', false, undefined, 'The Hub mode changed before the model request was sent.');
+        }
+      }
+      return provider.turn(outbound, signal)
         .then((reply): Answer => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null, disclosures: ledger.fields,
           ...(paid ? {historySources, inputVersions} : {}),
           ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})}));
@@ -2101,6 +2172,7 @@ export class AssistantEngine {
       this.#drain(current);
       tools = this.#toolsFor(current);
       if (paid) {
+        proposalCopy = this.#core();
         const eligible = this.#hostedHistory(current);
         const scope = this.#supervisorScope(current, 'supervisor', undefined, eligible);
         const auxiliary = this.#supervisorPromptFields(current.profile);
@@ -2120,7 +2192,7 @@ export class AssistantEngine {
         if (includesReplay && !this.#replayable(current.id, scopedAccess, scope.effects)) {
           throw new Fault('forbidden', 'Earlier task data can no longer be replayed to this supervisor.');
         }
-        const base = this.#hostedBase(current, scope.transcript, context, tools, access, copy.mode);
+        const base = this.#hostedBase(current, scope.transcript, context, tools, access, proposalCopy.synced ? proposalCopy.mode : undefined);
         if (hostedInputUnits(provider, base) > hostedInputCapacity(provider)) {
           throw new Fault('capacity', 'The current turn exceeds the model’s working input limit. The model request was not sent.');
         }
@@ -2144,8 +2216,9 @@ export class AssistantEngine {
         includesReplay = this.#replayable(current.id, modelFields) && current.transcript.every(allows);
         const transcript = includesReplay ? current.transcript : current.transcript.filter(item => item.role === 'owner' && allows(item));
         for (const item of transcript) if (!visible(item, fields, replayFields)) fail('forbidden');
+        const mode = proposalCopy.mode;
         request = {instructions: INSTRUCTIONS, context: this.#context(current, undefined, {prompt: fields, model: modelAccess}), transcript, tools,
-          mode: copy.mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
+          mode: mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: mode.mode, revision: mode.revision}};
       }
       if (!paid) request = {...request, transcript: request.transcript.map(item => {
         if (item.role !== 'owner' || !('submittedAtMs' in item)) return item;
@@ -2245,7 +2318,7 @@ export class AssistantEngine {
         }
       }
     } else if ((next === 'ask' || next === 'approve') && call !== undefined) {
-      question = this.#question(state.taskId, call, copy, canNameDevice);
+      question = this.#question(state.taskId, call, proposalCopy, canNameDevice);
     }
     const proposal = question?.proposal;
     if (call !== undefined && question !== undefined && proposal != null && proposal.family !== 'coding-dispatch' && command !== 'art-request') {
