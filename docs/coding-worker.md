@@ -484,7 +484,10 @@ confirms the selected Mac batch. [Private HTTPS route](../apps/runtime/PRIVATE-A
    ChatGPT sign-in with file-based storage. The owner can use the device-code
    flow if the distro cannot open the browser callback.
    [Codex CLI authentication](https://developers.openai.com/codex/auth)
-7. Keep the owner-issued PC bearer token in the private `tokenFile`. From the
+7. Verify that the owner grants the approved repository, brief and needed
+   input fields to `coding-worker:pc`. The Mac's worker grant does not apply
+   to PC jobs. Keep the owner-issued PC bearer token in the private
+   `tokenFile`. From the
    pinned runtime source, start one worker with this configuration.
 
    ```sh
