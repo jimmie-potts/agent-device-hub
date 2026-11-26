@@ -131,7 +131,7 @@ type WriterHandoff = {
   base: string; writerHome?: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
   crossHarness: boolean;
 };
-type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
+type Running = {namedStop?: () => void; operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; model?: string; modelReport?: Promise<void>; steer: AdapterSteer | undefined; controller: AbortController};
 export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true; writerStopped?: boolean; fencedRoot?: string};
 export type Harness = {
@@ -578,7 +578,9 @@ export class CodingWorker {
     if (data.action === 'cancel') {
       const running = this.#running.get(data.operationId);
       if (running === undefined) return errorBody('not-found');
-      this.#stopRun(running); return {status: 'accepted'};
+      if (running.namedStop === undefined) this.#stopRun(running);
+      else running.namedStop();
+      return {status: 'accepted'};
     }
     if (this.#running.has(data.operationId)) return {status: 'accepted'};
     const harness = data.harness ?? CLAUDE;
@@ -934,6 +936,7 @@ export class CodingWorker {
     try {
       evidence = await adapter.run({worktree, brief, bounds, signal: running.controller.signal,
         ...(protectedRoot === undefined || sourceIdentity === undefined ? {} : {continuationRoot: protectedRoot.path}),
+        namedStop: stop => {running.namedStop = stop;},
         session: id => this.#session(running, id), steering: steer => {running.steer = steer;},
         observedMessage: messageId => {void this.#observedMessage(running, messageId);},
         reportedModel: model => {
@@ -988,7 +991,7 @@ export class CodingWorker {
     const handoff = proofToken === undefined || !crossHarness ? {} : {handoffToken: proofToken};
     await this.#offerNative(running, adapter, worktree, evidence, proofToken);
     if (reason === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'completed', result, ...handoff}); return;}
-    const status = evidence.uncertain === true && !timedOut ? 'uncertain' : running.cancelled ? 'cancelled' : 'failed';
+    const status = evidence.uncertain === true && !timedOut ? 'uncertain' : reason === 'cancelled' ? 'cancelled' : 'failed';
     await this.#progress(running, {operationId: running.operationId, status, reason, result, ...handoff});
 
   }

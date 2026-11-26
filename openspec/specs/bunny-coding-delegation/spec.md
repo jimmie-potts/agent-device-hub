@@ -248,6 +248,13 @@ A new coding job SHALL bind approval to Auto or a named harness. Auto SHALL choo
 - **WHEN** the owner requests the other harness after a stopped Claude Code or Codex attempt on a supported Mac worker, the native sandbox excludes the successor, and the worker confirms the source checkout identity, revision, index and selected files
 - **THEN** the job receives a distinct attempt in a separate checkout and Git store with the same verified state, the full approved brief, bounded Git and check facts, and its own native identity and checks
 
+#### Scenario: Named stop during an acknowledged Codex turn
+
+- **WHEN** the owner stops an active Codex attempt after the worker receives its thread and turn identity
+- **THEN** the worker requests interruption of that exact turn once and waits a bounded time for both its acknowledgement and matching interrupted terminal event
+- **AND** a successor requires the existing process-group exit, confinement and checkout proofs
+- **AND** missing or contradictory evidence after turn dispatch leaves the attempt uncertain and other attempts continue independently
+
 #### Scenario: Incomplete snapshot or confinement
 
 - **WHEN** the previous writer lacks verified native confinement, or the source identity, revision, index or verified contents differ
