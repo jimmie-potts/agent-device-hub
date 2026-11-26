@@ -10,26 +10,32 @@ const lastCalls = (error: unknown): string[] => error instanceof Error ? error.m
 
 /**
  * What the card and the advanced controls showed when a step failed (#2129): each one's status and hint lines and its
- * controls with their values and whether they were disabled, the main region's connection, the command requests the
- * page sent and the attempts it retained. It reads the page once, after the failure, within `bounded`'s limit.
+ * controls with their values and whether they were disabled (the main region's text when there is no card), the main
+ * region's connection, the command requests the page sent and the attempts it retained. It reads the page once, after
+ * the failure, within `bounded`'s limit.
  */
-async function shown(page: Page, advanced: string, sent: readonly string[]): Promise<string> {
-  const read = await bounded(() => page.evaluate(selector => {
+async function shown(page: Page, sent: readonly string[]): Promise<string> {
+  const read = await bounded(() => page.evaluate(() => {
     const text = (node: Element): string => node.textContent.replace(/\s+/g, ' ').trim();
     const surface = (root: Element | null): string => {
       if (root === null) return 'absent';
       const lines = [...root.querySelectorAll('[role=status], [role=alert], .hint, .light-note, .light-card-heading p')].map(text).filter(line => line !== '');
       const controls = [...root.querySelectorAll('button, input, select')].map(node => {
         const control = node as HTMLButtonElement | HTMLInputElement | HTMLSelectElement;
-        const name = control.getAttribute('aria-label') ?? (control instanceof HTMLButtonElement ? text(control) : control.labels?.[0]?.textContent?.trim() ?? control.name);
+        // A label that holds its control also holds a select's options, which are not its name.
+        const label = control.labels?.[0], name = control.getAttribute('aria-label') ?? (control instanceof HTMLButtonElement || label === undefined ? text(control)
+          : label.textContent.replace(control.textContent, '').replace(/\s+/g, ' ').trim());
         return `${name}${control instanceof HTMLButtonElement ? '' : `=${JSON.stringify(control.value)}`}${control.disabled ? ' (disabled)' : ''}`;
       });
       return `lines ${JSON.stringify(lines)}; controls ${JSON.stringify(controls)}`;
     };
-    return {hash: location.hash, card: surface(document.querySelector('article[aria-label="Pixoo display"]')), advanced: surface(document.querySelector(selector)),
+    const card = document.querySelector('article[aria-label="Pixoo display"]'), main = document.querySelector('main#main');
+    return {hash: location.hash, card: card === null ? `absent; main region text ${JSON.stringify(main === null ? null : text(main).slice(0, 200))}` : surface(card),
+      player: surface(document.querySelector('section[aria-label="Pixoo player"]')), device: surface(document.querySelector('[data-device="pixoo-1"]')),
       attempts: sessionStorage.getItem('bunny-device-attempts')?.slice(0, 300) ?? null};
-  }, advanced));
-  const facts = 'value' in read ? [`route ${read.value.hash}`, `card: ${read.value.card}`, `advanced: ${read.value.advanced}`, `retained attempts ${String(read.value.attempts)}`]
+  }));
+  const facts = 'value' in read ? [`route ${read.value.hash}`, `card: ${read.value.card}`, `advanced player: ${read.value.player}`,
+    `advanced device controls: ${read.value.device}`, `retained attempts ${String(read.value.attempts)}`]
     : [`the card and the advanced controls could not be read: ${read.problem}`];
   return [...facts, await mainNow(page), `command requests sent ${JSON.stringify(sent)}`].join('\n  ');
 }
@@ -42,19 +48,18 @@ try {
     try {
       const page = await context.newPage(); page.setDefaultTimeout(10000);
       const sent = changes(page);
-      const advancedSelector = surface === 'player' ? 'section[aria-label="Pixoo player"]' : '[data-device="pixoo-1"]';
       // Each step names itself and what the page showed if it fails; a step that succeeds runs unchanged.
       const step = async (name: string, work: () => Promise<unknown>): Promise<void> => {
         try { await work(); } catch (error) {
           const calls = lastCalls(error);
-          throw new Error(`${name}: ${firstLine(error)}${calls.length === 0 ? '' : ` (last call log: ${calls.join(' ')})`}\n  ${await shown(page, advancedSelector, sent)}`, {cause: error});
+          throw new Error(`${name}: ${firstLine(error)}${calls.length === 0 ? '' : ` (last call log: ${calls.join(' ')})`}\n  ${await shown(page, sent)}`, {cause: error});
         }
       };
       await page.goto(`${world.url}/${surface === 'player' ? '#/module/pixoo/player' : '#/component/pixoo-1'}`); await feed(page, 'connected');
       const card = page.getByRole('article', {name: 'Pixoo display', exact: true});
       await step('wait for the card\'s Display tab', () => card.getByRole('tab', {name: 'Display', exact: true}).waitFor());
       await step('open the advanced controls', () => page.getByText(surface === 'player' ? 'Advanced player' : 'Advanced device controls', {exact: true}).click());
-      const advanced = surface === 'player' ? page.getByRole('region', {name: 'Pixoo player', exact: true}) : page.locator(advancedSelector);
+      const advanced = surface === 'player' ? page.getByRole('region', {name: 'Pixoo player', exact: true}) : page.locator('[data-device="pixoo-1"]');
       if (direction === 'card-to-advanced') {
         // Give the sibling an older completed attempt before testing a newer HTTP-only unknown.
         if (surface === 'player') {
