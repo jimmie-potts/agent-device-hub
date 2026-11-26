@@ -53,9 +53,12 @@ export const TOOLS: readonly ToolDefinition[] = [
   ...catalogTools,
   {name: READ_FIXTURE, effect: 'read', description: 'Read the immutable synthetic fixture. Only the synthetic provider sees this tool.',
     input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
-  {name: DELEGATE_CODING, effect: 'command', description: 'Propose handing one bounded coding task to the coding worker on the owner\'s computer: name an allowlisted repository and write a brief. The owner must approve the proposal; the worker then runs in a fresh worktree and its structured result arrives as this tool\'s result later. Never claim work was done before that result.',
+  {name: DELEGATE_CODING, effect: 'command', description: 'Propose one bounded coding job in an allowlisted repository. Copy the owner’s explicit harness and destination choices independently. Use auto for an unconstrained choice. The owner must approve the proposal before any worker starts. The Hub selects the worker and reports the result.',
     input: {type: 'object', properties: {repository: {type: 'string', description: 'The repository name from the worker\'s allowlist, such as agent-device-hub.'},
-      brief: {type: 'string', description: 'What to change and how to verify it, in a few sentences.'}}, required: ['repository', 'brief'], additionalProperties: false}},
+      brief: {type: 'string', description: 'What to change and how to verify it, in a few sentences.'},
+      harness: {type: 'string', enum: ['auto', 'claude-code', 'codex'], description: 'Use the harness the owner names.'},
+      destination: {type: 'string', enum: ['auto', 'mac', 'pc', 'cloud'], description: 'Use the execution destination the owner names.'},
+      os: {type: 'string', enum: ['macos', 'windows', 'linux'], description: 'Include only when the owner requires this operating system.'}}, required: ['repository', 'brief'], additionalProperties: false}},
 ];
 /** The permitted tool definitions for one turn: the built-in question plus the configured allowlist, in catalog order. */
 export function permittedTools(allowed: readonly string[], synthetic: boolean): ToolDefinition[] {

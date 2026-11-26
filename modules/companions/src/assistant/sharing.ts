@@ -1,3 +1,5 @@
+import {codingDestinationChoice} from '../coding/routing.js';
+import type {CodingDestination} from '@jimmie-potts/event-contracts/v2/coding';
 import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 
 const callers = ['owner', 'companion'] as const;
@@ -6,10 +8,21 @@ const purposes = ['discovery', 'read', 'prompt', 'title', 'brief', 'supervisor']
 const sources = ['conversation', 'knowledge', 'preferences', 'sessions', 'devices', 'playback', 'status', 'artwork', 'shows', 'operations', 'coding'] as const;
 const fields = ['index', 'text', 'label', 'status', 'details', 'attachment', 'repository', 'brief', 'request', 'excerpt', 'summary'] as const;
 
+export type CodingShareDestination = 'coding-worker' | `coding-worker:${Exclude<CodingDestination, 'mac'>}`;
+export function codingShareDestination(destination: CodingDestination): CodingShareDestination {
+  return destination === 'mac' ? 'coding-worker' : `coding-worker:${destination}`;
+}
+function isCodingShareDestination(value: unknown): value is CodingShareDestination {
+  if (value === 'coding-worker') return true;
+  if (typeof value !== 'string' || !value.startsWith('coding-worker:')) return false;
+  const destination = value.slice('coding-worker:'.length);
+  return codingDestinationChoice(destination) && destination !== 'auto' && destination !== 'mac' && destination !== 'cloud';
+}
+
 export type ShareQuery = {
   caller: typeof callers[number];
   companion: AssistantProfile;
-  destination: typeof destinations[number];
+  destination: typeof destinations[number] | CodingShareDestination;
   purpose: typeof purposes[number];
   source: typeof sources[number];
   field: typeof fields[number];
@@ -41,6 +54,7 @@ function existing(query: ShareQuery): boolean {
   if (query.destination === 'openai-supervisor') return supervisorScope(query);
   if (query.destination === 'coding-worker') return query.caller === 'owner' && query.purpose === 'brief' && query.source === 'coding' &&
     (query.field === 'repository' || query.field === 'brief');
+  if (isCodingShareDestination(query.destination)) return false;
   if (query.destination === 'private-conversation' || query.destination === 'conversation-speech') {
     return query.caller === 'owner' && (query.purpose === 'read' || query.purpose === 'discovery');
   }
@@ -53,6 +67,7 @@ export function sharing(grants: readonly SharingGrant[] = []): Share {
   const allows = (query: ShareQuery): boolean => {
     if (query.destination === 'openai-supervisor' && !supervisorScope(query)) return false;
     if (query.destination === 'coding-worker' && !existing(query)) return false;
+    if (isCodingShareDestination(query.destination) && (query.caller !== 'owner' || query.purpose !== 'brief')) return false;
     const match = grants.filter(grant => sameScope(query, grant));
     return !match.some(grant => !grant.allow) && (match.some(grant => grant.allow) || existing(query));
   };
@@ -75,7 +90,7 @@ export function parseSharingGrants(value: unknown): SharingGrant[] | undefined {
     if (!object(grant) || Object.keys(grant).some(key => !['caller', 'companion', 'destination', 'purpose', 'source', 'field', 'record', 'allow'].includes(key))) return undefined;
     const {caller, companion, destination, purpose, source, field, record, allow} = grant;
     if (!member(callers, caller) || !member(['bunny', 'reachy', 'microduck'] as const, companion) ||
-      !member(destinations, destination) || !member(purposes, purpose) || !member(sources, source) || !member(fields, field) ||
+      (!member(destinations, destination) && !isCodingShareDestination(destination)) || !member(purposes, purpose) || !member(sources, source) || !member(fields, field) ||
       typeof allow !== 'boolean' || (record !== undefined && (typeof record !== 'string' || record.length > 128 || record === ''))) return undefined;
     checked.push({caller, companion, destination, purpose, source, field, allow, ...(record === undefined ? {} : {record})});
   }

@@ -253,14 +253,15 @@ class Companions {
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
       allowResource: (_brief, resource, destination) => (context.config as CompanionsConfig | undefined)?.codingResources?.some(
         grant => grant.kind === resource.kind && grant.id === resource.id && grant.destinations.includes(destination)) === true,
-      briefRefusal: brief => this.assistant === undefined ? 'unverified-supervisor' : this.assistant.codingBriefRefusal(brief),
+      briefRefusal: brief => this.assistant === undefined ? 'unverified-supervisor' : this.assistant.codingBriefRefusal(brief, null),
+      allowDestination: (brief, destination) => this.assistant !== undefined && this.assistant.codingBriefRefusal(brief, destination) === undefined,
       jobQueued: (job, add, parent) => this.assistant?.codingJobQueued(job, add, parent),
       jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
       jobVisible: (job, companion) => this.assistant?.canReadCodingJob(companion, job) === true,
       legacyOperationVisible: ({companion, taskId, operationId}) => this.assistant?.canReadLegacyCodingOperation(companion, taskId, operationId) === true,
       jobBriefVisible: (job, companion) => this.assistant?.canReadCodingJobBrief(companion, job) === true,
-      allowMessage: (job, companion) => this.assistant?.canMessageCodingJob(companion, job) === true,
+      allowMessage: (job, companion, destination) => this.assistant?.canMessageCodingJob(companion, job, destination) === true,
       awaits: taskId => {
         const task = this.assistant?.store.task(taskId);
         return task !== undefined && !['succeeded', 'failed', 'cancelled'].includes(task.status) && task.question?.kind === 'delegation' && task.question.answer === null;

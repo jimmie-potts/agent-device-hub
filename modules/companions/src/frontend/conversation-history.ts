@@ -3,6 +3,8 @@ import {artDescription, routingId} from '@jimmie-potts/event-contracts/v2/assist
 import {catalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 import {HISTORY_ROWS, readHistoryCursor, type ConversationList, type ConversationListEntry, type ConversationMessage, type CurrentTask, type Proposal, type RecentConversationPage, type SavedQuestion} from '../assistant/history-contract.js';
+import {codingChoice, codingDestinationChoice} from '../coding/routing.js';
+import {codingRequirements} from '../assistant/coding-request.js';
 import {LIMITS} from '../assistant/limits.js';
 
 /** `conversationId` asks for an earlier conversation of the profile by its ID (Hub #2029); without it the current one is read. */
@@ -32,7 +34,11 @@ function decodeProposal(value: unknown): Proposal | null {
     return {family, target, data: {mode: data.mode}, expectedRevision};
   }
   if (integer(expectedRevision) && family === 'coding-dispatch' && target === 'assistant' && typeof data.repository === 'string' && typeof data.brief === 'string') {
-    return {family, target, data: {repository: data.repository, brief: data.brief}, expectedRevision};
+    const {harness, destination, requirements} = data;
+    if (harness !== undefined && !codingChoice(harness) || destination !== undefined && !codingDestinationChoice(destination) ||
+      requirements !== undefined && !codingRequirements(requirements, true)) return invalidPage();
+    return {family, target, data: {repository: data.repository, brief: data.brief,
+      ...(harness === undefined ? {} : {harness}), ...(destination === undefined ? {} : {destination}), ...(requirements === undefined ? {} : {requirements})}, expectedRevision};
   }
   const {expectedConfigurationRevision, expectedGeneration} = data;
   if (typeof target !== 'string' || target.length > 128 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target) ||

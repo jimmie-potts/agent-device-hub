@@ -2,9 +2,11 @@ import React, {useCallback, useEffect, useState} from 'react';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk';
-import type {MessageCodingInput, OpenNativeClientInput, StopCodingInput} from '../assistant/history-contract.js';
-import {conversationRail} from './conversation-rail.js';
-import {codingHarness, type CodingHarness} from '../coding/routing.js';
+import type {CodingPreference, MessageCodingInput, OpenNativeClientInput, StopCodingInput} from '../assistant/history-contract.js';
+import {conversationRail, profiles} from './conversation-rail.js';
+import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
+import {CodingRoutePicker, defaultCodingPreference, destinationLabel, harnessLabel} from './coding-route-picker.js';
+import {codingChoice, codingDestinationChoice, codingHarness, type CodingHarness} from '../coding/routing.js';
 import type {CodingJobEntry, CodingJobPage, JobMessage} from '../coding/job-page.js';
 import {companionName} from './coding-status.js';
 
@@ -39,6 +41,10 @@ function isJob(value: unknown): value is CodingJobEntry {
     (job.branch === undefined || job.branch === null || typeof job.branch === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(job.branch)) &&
     (job.model === undefined || typeof job.model === 'string') &&
     (job.harness === undefined || typeof job.harness === 'string') && (job.sessionId === undefined || typeof job.sessionId === 'string') &&
+    (job.requestedHarness === undefined || codingChoice(job.requestedHarness)) &&
+    (job.requestedDestination === undefined || codingDestinationChoice(job.requestedDestination)) &&
+    (job.actualDestination === undefined || codingDestinationChoice(job.actualDestination) && job.actualDestination !== 'auto' && job.actualDestination !== 'cloud') &&
+    (job.selectionReason === undefined || typeof job.selectionReason === 'string') &&
     (job.nativeClient === undefined || isNativeClient(job.nativeClient));
 }
 
@@ -143,7 +149,11 @@ function AttemptResults({value}: {value: unknown}): React.JSX.Element | null {
   const files = stringRows(result?.changedFiles), limitations = stringRows(result?.limitations);
   const checks: unknown[] = Array.isArray(result?.checks) ? result.checks : [];
   const facts = [
-    ['Harness', attempt.harness], ['Native session', attempt.sessionId], ['Reported model', context?.model],
+    ['Requested harness', codingChoice(attempt.requestedHarness) ? harnessLabel(attempt.requestedHarness) : undefined],
+    ['Actual harness', attempt.harness],
+    ['Requested destination', codingDestinationChoice(attempt.requestedDestination) ? destinationLabel(attempt.requestedDestination) : undefined],
+    ['Actual destination', codingDestinationChoice(attempt.actualDestination) ? destinationLabel(attempt.actualDestination) : undefined],
+    ['Native session', attempt.sessionId], ['Reported model', context?.model],
     ['Branch', context?.branch === null ? 'Detached HEAD' : context?.branch], ['Worktree', context?.worktreeRef],
     ['Turn count', usage?.turns], ['Cost', typeof usage?.costUsd === 'number' ? `$${usage.costUsd.toFixed(2)}` : undefined],
   ] as const;
@@ -264,7 +274,11 @@ export function CodingJobCard({job, stop, message, openNative, continueJob, lock
     <dl>
       <dt>Job</dt><dd>{job.jobId}</dd>
       <dt>Attempt</dt><dd>{job.operationId}</dd>
-      <dt>Harness</dt><dd>{job.harness ?? 'Unknown'}</dd>
+      <dt>Requested harness</dt><dd>{job.requestedHarness === undefined ? 'Unknown' : harnessLabel(job.requestedHarness)}</dd>
+      <dt>Actual harness</dt><dd>{job.harness ?? 'Unknown'}</dd>
+      <dt>Requested destination</dt><dd>{job.requestedDestination === undefined ? 'Unknown' : destinationLabel(job.requestedDestination)}</dd>
+      <dt>Actual destination</dt><dd>{job.actualDestination === undefined ? 'Unknown' : destinationLabel(job.actualDestination)}</dd>
+      {job.selectionReason !== undefined && <><dt>Selection reason</dt><dd>{job.selectionReason}</dd></>}
       <dt>Reported model</dt><dd>{job.model ?? 'Unknown'}</dd>
       <dt>Branch</dt><dd>{job.branch === null ? 'Detached HEAD' : job.branch ?? 'Unknown'}</dd>
       <dt>Worktree</dt><dd>{job.worktreeRef ?? 'Unknown'}</dd>
@@ -363,8 +377,25 @@ export function JobsPage({context}: {context: FrontendContext}): React.JSX.Eleme
   const {api, connected, control, operationsLive, ui: {Command}} = context;
   const coding = useCodingState(context);
   const read = useCallback((path: string) => api.read(path), [api]);
+  const [preference, setPreference] = useState<CodingPreference>(defaultCodingPreference);
+  const [profile, setProfile] = useState<AssistantProfile>(() => conversationRail.getSnapshot().profile);
   return <section className="conversation-page coding-jobs-page" aria-label="Jobs">
     <h1>Jobs</h1>
+    {connected && control && <details>
+      <summary>New coding job</summary>
+      <fieldset aria-label="New job choices">
+        <label>Companion{' '}<select value={profile} onChange={event => {
+          const choice = event.currentTarget.value;
+          if (choice === 'bunny' || choice === 'reachy' || choice === 'microduck') setProfile(choice);
+        }}>
+          <option value="bunny">{profiles.bunny.name}</option>
+          <option value="reachy">{profiles.reachy.name}</option>
+          <option value="microduck">{profiles.microduck.name}</option>
+        </select></label>
+        <CodingRoutePicker value={preference} onChange={setPreference}/>
+        <a href="#/module/companions/assistant" onClick={() => {conversationRail.openCodingDraft(profile, preference);}}>Continue in Conversation</a>
+      </fieldset>
+    </details>}
     {coding === undefined ? <p role="status">{connected ? 'Loading jobs…' : 'Jobs unavailable while disconnected.'}</p>
       : <Command context={context} target="assistant">{command => <>
         <CodingJobs standalone read={read} revision={coding.revision} operations={context.operations}

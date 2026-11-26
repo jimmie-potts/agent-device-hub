@@ -810,8 +810,22 @@ native session as soon as the worker reports it. **Attempts and results**
 shows saved attempts, known usage, decisions that need the owner, checks,
 changed files and limitations. The worktree reference names the worker's
 worktree without exposing its host path. **Open original conversation**
-returns to the exchange that requested the job. Choose **Auto**, **Claude Code**
-or **Codex** on an approval when the worker advertises harness selection.
+returns to the exchange that requested the job. On a coding approval, choose
+**Auto**, **Claude Code** or **Codex** for the harness. Choose **Auto**, **Mac**,
+**PC** or **Cloud** for the execution destination. The card shows the requested
+and actual destination and harness, and the Hub's selection reason when
+recorded. Readback for older jobs uses **Unknown** when the stored record has
+no destination.
+
+To start from **Jobs**, open **New coding job**, choose a companion, harness
+and destination, then select **Continue in Conversation**. Enter a brief that
+names the repository and choose **Request coding job**. Review the proposal
+before approving it. A job request uses a separate draft and waits if that
+companion has a task or queued messages. If the Hub refuses the combination,
+Conversation shows its reason and any eligible alternatives. The approval
+also shows execution requirements identified from your request and the Hub's
+configured operations. Those requirements guide worker selection. Device and
+installation permissions still come from their owning interfaces.
 For a verified stopped attempt, **Attempts and results** offers continuation
 with the named harness under the same job. If the Hub has a reason to refuse
 continuation, the card shows it.
