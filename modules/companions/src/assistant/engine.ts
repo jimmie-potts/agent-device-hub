@@ -2008,7 +2008,7 @@ export class AssistantEngine {
       const subject = powerSubject(instruction);
       const addressed = subject !== undefined && answer === null ? devices?.filter(device =>
         subject === normalizedControlText(device.id) || subject === normalizedControlText(deviceLabel(device))) : undefined;
-      const selected = addressed !== undefined && addressed.length > 1 ? {matches: addressed} : chooseDevice(devices, call.input.device);
+      const selected = addressed !== undefined && addressed.length > 1 ? {matches: addressed} : chooseDevice(devices, call.input.device, call.name === SET_LIFX_BRIGHTNESS);
       if ('matches' in selected) {
         const text = deviceClarification(owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light', selected.matches.map(device => device.id), canNameDevice);
         return {id, text, answer: null, kind: 'clarification', call: call.id, proposal: null};
@@ -2085,7 +2085,7 @@ export class AssistantEngine {
     }
     const owner = deviceToolOwner(call.name);
     if (owner !== undefined) {
-      const selected = chooseDevice(this.options.devices?.(owner), call.input.device);
+      const selected = chooseDevice(this.options.devices?.(owner), call.input.device, call.name === SET_LIFX_BRIGHTNESS);
       if ('matches' in selected) return 'Multiple devices match. Ask the owner for an exact device ID.';
       const result = 'code' in selected ? selected : deviceProposal(call, selected.device);
       return 'code' in result ? `refused: ${result.code}; no ${owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light'} change was proposed.` : 'This tool is not permitted.';

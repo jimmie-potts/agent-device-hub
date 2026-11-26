@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
+import {brightnessToolId, literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -58,8 +58,9 @@ export function chooseBrightnessSubject(matches: readonly Match[], answer?: stri
   return selected.length === 1 ? selected[0] : undefined;
 }
 
-function matchingDevices(rows: readonly Match[], target: string, owner: string): readonly Match[] {
-  const exact = rows.filter(({device}) => device.id === target);
+function matchingDevices(rows: readonly Match[], target: string, owner: string, literalId?: string): readonly Match[] {
+  const exact = rows.filter(({device}) => device.id === (literalId ?? target));
+  if (literalId !== undefined) return exact;
   if (owner !== 'auto' && exact.length > 0) return exact;
   return rows.filter(({device}) => device.id === target || normalize(deviceLabel(device)) === normalize(target));
 }
@@ -230,7 +231,8 @@ export class ConversationActions {
     const route = catalogRoute(family);
     const owner = family === 'nanoleaf-show-save' ? NANOLEAF : call.input.owner;
     const name = family === 'nanoleaf-show-save' ? 'shows' : call.input.target;
-    if (typeof owner !== 'string' || typeof name !== 'string' || name.length === 0 || name.length > 128) return {code: 'invalid-request'};
+    const literalId = family === 'brightness-set' ? brightnessToolId(name) : undefined;
+    if (typeof owner !== 'string' || typeof name !== 'string' || name.length === 0 || (literalId ?? name).length > 128) return {code: 'invalid-request'};
     let data: Record<string, unknown>;
     if (family === 'nanoleaf-show-save') {
       const revision = /^(?:please )?save draft .+? revision (\d+) as /iu.exec(current.instruction.trim())?.[1];
@@ -262,7 +264,7 @@ export class ConversationActions {
       const owners = owner === 'auto' ? route.owners : route.owners.filter(source => source === owner);
       if (owners.length === 0) return {code: 'unsupported-capability'};
       const {rows, unreadable} = await this.#deviceRecords(route.owners, parent);
-      const found = matchingDevices(rows.filter(row => owners.some(eligible => eligible === row.owner)), name, owner);
+      const found = matchingDevices(rows.filter(row => owners.some(eligible => eligible === row.owner)), name, owner, literalId);
       const selected = found[0];
       if (found.length > 1) return {question: deviceClarification('device', found.map(({device}) => device.id), current.canNameDevice)};
       if (selected === undefined) return {code: unreadable.length > 0 ? 'unavailable' : 'not-found'};
@@ -502,7 +504,7 @@ export class ConversationActions {
       const matches = await this.deviceSubjectMatches(scopedFacts.subject, parent);
       const selected = matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
-          target !== '' && matchingDevices([selected], target, owner).length !== 1 ||
+          target !== '' && matchingDevices([selected], target, owner, scopedFacts.brightnessControl ? brightnessToolId(target) : undefined).length !== 1 ||
           !access('devices', 'label', selected.device.id)) return textResult({devices: []});
       const {owner: source, device} = selected;
       if (scopedFacts.brightnessControl) {

@@ -48,7 +48,7 @@ export const catalogTools = [
     cursor: text('Empty to start, or the most recent next cursor.'),
   }),
   define(READ_DEVICES, 'read', 'Find configured devices and observe their status and permitted commands. A named Wemo plug includes its Hub maximum-on timer status and time remaining. Use empty target to list. Return the exact owner and target to use for a control.', {
-    target: text('Device name or ID, or empty to list.'), owner: text('Exact owner such as bunny/modules/pixoo, or auto to search installed owners.'),
+    target: text('Device name or ID, or empty to list. For a brightness command, id:<device-id> matches only that ID.'), owner: text('Use auto when the owner is unknown. Otherwise use the exact owner source, such as bunny/modules/pixoo.'),
   }),
   define(READ_PLAYBACK, 'read', 'Read presented playback, current controls and observation time.', {}),
   define(READ_VACUUM, 'read', 'Read Roborock vacuum status. The integration offers no cleaning controls.', {}),
@@ -81,7 +81,7 @@ export const catalogTools = [
       : family === 'music-lighting-control' ? 'Use start-show with showId and version on an eligible Nanoleaf light, or stop, pause-show, resume-show, or seek-show for the current generation. Use bunny/core.'
       : family === 'moment-play' ? 'Play a named mood on a configured display. For an immediate moment, ask only for missing display, mood, or duration. Use {} in arguments for this immediate form.'
         : `Run ${family} on a configured, supported target only when explicitly requested by the owner.`, {
-    owner: text('The exact owner source returned by the read tool.'), target: text('Exact target ID, or its label if unambiguous.'),
+    owner: text('The exact owner source returned by the read tool.'), target: text(family === 'brightness-set' ? 'Use the device ID returned by read_devices. id:<device-id> also selects that exact ID. An unambiguous label is accepted.' : 'Exact target ID, or its label if unambiguous.'),
     arguments: text(`JSON object with the appropriate owner command fields: ${assistantRoutes[family].fields}. Do not supply revision or generation guards.`),
   })),
 ] satisfies readonly ToolDefinition[];

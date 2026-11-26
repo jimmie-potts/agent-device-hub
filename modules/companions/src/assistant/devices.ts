@@ -1,6 +1,7 @@
 import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceAction, type AssistantDeviceOwner} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {Cancel, ModuleContext, SyncedCopy, TraceContext} from '@jimmie-potts/sdk';
+import {brightnessToolId} from './control-intent.js';
 import type {ToolCall} from './provider.js';
 import {READ_BYTES, SET_LIFX_POWER, SET_WEMO_POWER} from './tools.js';
 
@@ -91,11 +92,13 @@ export const deviceLabel = (device: DeviceRecord): string => device.label?.slice
 const normalized = (name: string): string => name.trim().toLowerCase().replace(/[\s-]+/g, '-');
 type Selection = {device: DeviceRecord} | {matches: readonly DeviceRecord[]} | {code: 'invalid-request' | 'not-found' | 'unavailable'};
 
-export function chooseDevice(devices: readonly DeviceRecord[] | undefined, name: unknown): Selection {
-  if (typeof name !== 'string' || name.length > 128 || name.trim() === '') return {code: 'invalid-request'};
+export function chooseDevice(devices: readonly DeviceRecord[] | undefined, name: unknown, brightness = false): Selection {
+  const literalId = brightness ? brightnessToolId(name) : undefined;
+  if (typeof name !== 'string' || (literalId ?? name).length > 128 || name.trim() === '') return {code: 'invalid-request'};
   if (devices === undefined) return {code: 'unavailable'};
-  const exact = devices.find(device => device.id === name);
+  const exact = devices.find(device => device.id === (literalId ?? name));
   if (exact !== undefined) return {device: exact};
+  if (literalId !== undefined) return {code: 'not-found'};
   const matches = devices.filter(device => normalized(deviceLabel(device)) === normalized(name) || normalized(device.id) === normalized(name));
   if (matches.length === 0) return {code: 'not-found'};
   return matches.length === 1 && matches[0] !== undefined ? {device: matches[0]} : {matches};

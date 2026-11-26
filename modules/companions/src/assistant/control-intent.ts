@@ -50,6 +50,13 @@ const brightnessAfterTarget = /^(?:set|change) (.+?) brightness (?:to|at) (\d+)(
 const brightnessBeforeTarget = /^(?:set|change) (?:the )?brightness (?:of|on|for) (.+?) (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u;
 const brightnessWithDetail = /^(?:set|change) (.+?) brightness (?:to )?(\d+)(?: percent)?$/u;
 
+// A tool's explicit ID selects by ID only. An empty or malformed suffix cannot match a configured ID.
+export function brightnessToolId(target: unknown): string | undefined {
+  if (typeof target !== 'string') return undefined;
+  const value = target.trim();
+  return value.startsWith('id:') ? value.slice(3) : undefined;
+}
+
 export const literalDeviceId = (value: string): string | undefined => /^id:([a-z0-9-]{1,128})$/u.exec(value.trim())?.[1];
 
 export function brightnessSubject(text: string): string | undefined {
