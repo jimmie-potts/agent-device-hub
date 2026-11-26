@@ -131,6 +131,10 @@
    the owner's answer. The words are part of the link's name, and the icon rail shows them beside the tile on hover
    or focus. On the phone bar the same dot on the menu button says a conversation other than the open one waits. */
 .rail-conversations{display:flex;flex-direction:column;flex:none}
+/* A failed rail part (#2139) is one Jump-shaped button: it never grows the rail. */
+.shell .rail-failed .rail-jump{overflow:hidden}
+.shell .rail-failed-note{margin:0 0 var(--space-xs) 12px;overflow:hidden;color:var(--muted-dense);font-size:var(--type-small);text-overflow:ellipsis;white-space:nowrap}
+.shell .rail-failed .rail-jump .rail-text{flex:1;min-inline-size:0;overflow:hidden;text-overflow:ellipsis}
 /* A row is as wide as the rail and no wider; a name that does not fit wraps inside the same row and is never cut. */
 .shell>aside .rail-conversations nav{gap:2px}
 .shell>aside .rail-conversations nav a{min-block-size:36px;padding-inline-end:6px;border-radius:12px;font-size:var(--type-small)}

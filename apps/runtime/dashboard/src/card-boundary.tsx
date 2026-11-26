@@ -1,12 +1,14 @@
 import React from 'react';
 import {errorType} from '@jimmie-potts/sdk/remote';
 import {recordCardFault, reportCardError} from './card-fault.ts';
+import {RailIcon} from './rail.tsx';
 
 /**
- * How a failed part shows in its place: a card's face, a route page's face under the page's own heading, or nothing for
- * a part that draws nothing of its own (its marker element is hidden).
+ * How a failed part shows in its place: a card's face, a route page's face under the page's own heading, one rail
+ * button for a part of the rail, which stays icon-sized in the collapsed rail and one line in the expanded one, or
+ * nothing for a part that draws nothing of its own (its marker element is hidden).
  */
-export type FailedFace = 'card' | 'page' | 'hidden';
+export type FailedFace = 'card' | 'page' | 'rail' | 'hidden';
 
 type Props = {
   /** The part's identity: a Home placement's widget, `component:<id>`, `module:<module>/<page>`, `page:<route>` or `part:<name>`. */
@@ -62,7 +64,14 @@ export class CardBoundary extends React.Component<Props, State> {
     if (failed === undefined) return <React.Fragment key={attempt}>{typeof children === 'function' ? <Draw draw={children}/> : children}</React.Fragment>;
     const marks = {'data-card-failed': id, 'data-error-type': failed, 'data-fault-count': faults};
     if (face === 'hidden') return <span hidden {...marks}/>;
-    const statement = <p role="status">{name} failed to show. Retry draws it again and sends nothing.</p>;
+    const sentence = `${name} failed to show. Retry draws it again and sends nothing.`;
+    // The rail's face is a short note over a Jump-shaped Retry: the collapsed rail hides the note and the button's word, as
+    // it does its other rail text, and keeps the icon; the sentence is the button's title and the face's status.
+    if (face === 'rail') return <div className="rail-failed" {...marks}><p role="status" className="vh">{sentence}</p>
+      <p className="rail-text rail-failed-note" aria-hidden="true">{name} failed</p>
+      <button type="button" className="secondary rail-jump" aria-label={`Retry ${name}`} title={sentence} onClick={this.#retry}>
+        <RailIcon name="close"/><span className="rail-text">Retry</span></button></div>;
+    const statement = <p role="status">{sentence}</p>;
     const retry = <div className="actions"><button type="button" className="secondary" onClick={this.#retry}>Retry</button></div>;
     if (face === 'page') return <section aria-label={name} {...marks}><header className="page"><h1>{name}</h1></header><article className="card card-failed">{statement}{retry}</article></section>;
     return <article className="card card-failed" {...marks}><h2>{name}</h2>{statement}{retry}</article>;

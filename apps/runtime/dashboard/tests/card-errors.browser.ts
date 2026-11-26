@@ -22,9 +22,11 @@ if (output !== undefined) await mkdir(output, {recursive: true});
 const shot = async (page: Page, name: string): Promise<void> => { if (output !== undefined) await page.screenshot({path: `${output}/card-errors-${name}.png`, fullPage: true}); };
 const checks: string[] = [];
 const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
-// CARD_ERRORS_PART runs one part: render, effect, component, module, page, directory or late.
+// CARD_ERRORS_PART runs one part: render, effect, component, module, page, directory, rail, backdrop or late.
 const part = process.env.CARD_ERRORS_PART;
 const runs = (name: string): boolean => part === undefined || part === name;
+// The rail's conversations and the art backdrop need the companions and art modules: a second world, for those parts only.
+const modules = runs('rail') || runs('backdrop') ? await startWorld({companions: true, art: true}) : undefined;
 const failed = (page: Page, card: string) => page.locator(`[data-card-failed="${card}"]`);
 
 /**
@@ -63,7 +65,7 @@ const record = (card: string, type: string) => ({level: 'error', event: 'dashboa
 
 /** Retries `card` and waits until it has recorded one more failure. */
 async function retryFails(page: Page, card: string, count: number): Promise<void> {
-  await failed(page, card).getByRole('button', {name: 'Retry', exact: true}).click();
+  await failed(page, card).getByRole('button', {name: /^Retry/}).click();
   await recorded(page, card, count);
 }
 
@@ -81,7 +83,7 @@ const boxes = (page: Page) => page.locator('.home-layout-grid > [data-home-card]
 })));
 
 /** Opens the faultable page; `expected` are the cards this part fails on purpose, which therefore do not fail the run. */
-async function open(fault: Record<string, CardFault>, expected: readonly string[]): Promise<{page: Page; errors: string[]; sent: string[]; set: (card: string, fault: CardFault | undefined) => Promise<void>}> {
+async function open(fault: Record<string, CardFault>, expected: readonly string[], url = world.url): Promise<{page: Page; errors: string[]; sent: string[]; set: (card: string, fault: CardFault | undefined) => Promise<void>}> {
   const page = await context.newPage();
   expectCardFaults(page, expected);
   page.setDefaultTimeout(12_000);
@@ -89,7 +91,7 @@ async function open(fault: Record<string, CardFault>, expected: readonly string[
   page.on('pageerror', error => { errors.push(error.name); });
   const sent = changes(page);
   const faults = await serveFaultable(page, fault);
-  await page.goto(world.url);
+  await page.goto(url);
   await page.locator('main#main').waitFor({timeout: 8000}).catch(() => {});
   return {page, errors, sent, set: async (card, value) => { await faults.set(card, value); }};
 }
@@ -312,6 +314,89 @@ try {
   await directory.page.close();
   }
 
+  // The rail's conversations: the failed part is one rail button that fits the rail, expanded, collapsed and as the phone
+  // drawer. The rail keeps to the viewport, Settings and the feed indicator stay in view, and Retry sends nothing.
+  if (runs('rail') && modules !== undefined) {
+  const card = 'part:conversations';
+  const rail = await open({[card]: 'render'}, [card], modules.url);
+  await contained(rail.page, card, 'the rail\'s conversations that throw');
+  await feed(rail.page, 'connected', {failedCards: [card]});
+  const fits = async (state: string): Promise<void> => {
+    const facts = await rail.page.evaluate(name => {
+      const box = (node: Element | null) => node?.getBoundingClientRect();
+      const aside = box(document.querySelector('#rail')), failedPart = document.querySelector(`[data-card-failed="${name}"]`), face = box(failedPart);
+      const settings = box(document.querySelector('#rail nav[aria-label=Utilities] a')), foot = box(document.querySelector('#rail .sidebar-foot'));
+      const inside = (inner: DOMRect | undefined, outer: DOMRect | undefined) => inner !== undefined && outer !== undefined && inner.width > 0
+        && inner.left >= outer.left - 0.5 && inner.right <= outer.right + 0.5 && inner.top >= outer.top - 0.5 && inner.bottom <= outer.bottom + 0.5;
+      const viewport = new DOMRect(0, 0, innerWidth, innerHeight);
+      // Every visible box of the face, its text included, stays in the rail, and no text runs past its own box. Text the
+      // rail hides visually (one pixel, clipped) is left out.
+      const parts = [...(failedPart?.querySelectorAll('*') ?? [])].filter(node => node.getBoundingClientRect().width > 1 && node.getBoundingClientRect().height > 1);
+      return {railHeight: Math.round(aside?.height ?? 0), viewport: innerHeight, faceHeight: Math.round(face?.height ?? 0),
+        faceInRail: inside(face, aside) && parts.every(node => inside(box(node), aside) && node.scrollWidth <= node.clientWidth + 1),
+        outside: parts.filter(node => !inside(box(node), aside) || node.scrollWidth > node.clientWidth + 1).map(node => `${node.tagName.toLowerCase()}.${node.getAttribute('class') ?? ''} ${node.scrollWidth}/${node.clientWidth}`),
+        settingsInView: inside(settings, viewport), footInView: inside(foot, viewport)};
+    }, card);
+    assert.ok(facts.railHeight <= facts.viewport, `${state}: the rail keeps to the viewport (${JSON.stringify(facts)})`);
+    assert.ok(facts.faceInRail, `${state}: the failed face stays inside the rail (${JSON.stringify(facts)})`);
+    assert.ok(facts.settingsInView && facts.footInView, `${state}: Settings and the feed indicator stay in view (${JSON.stringify(facts)})`);
+    assert.equal(await failed(rail.page, card).getByRole('button', {name: /^Retry/}).isVisible(), true, `${state}: Retry is reachable`);
+    assert.deepEqual(await textOverlaps(rail.page), [], `${state}: no text overlaps`);
+    await shot(rail.page, `rail-${state}`);
+  };
+  /** The rail face: one Retry named for the part, whose title and status carry the sentence. */
+  const face = async (): Promise<void> => {
+    const sentence = 'Conversations failed to show. Retry draws it again and sends nothing.';
+    assert.equal(await failed(rail.page, card).getByRole('button', {name: 'Retry Conversations', exact: true}).getAttribute('title'), sentence);
+    assert.equal(await failed(rail.page, card).getByRole('status').textContent(), sentence);
+    assert.equal(await failed(rail.page, card).locator('button, a, input, select, textarea, [tabindex]').count(), 1, 'Retry is the face\'s one control');
+  };
+  const toggle = rail.page.locator('#rail .rail-toggle');
+  if (await toggle.getAttribute('aria-label') === 'Expand navigation') await toggle.click();
+  await rail.page.locator('#rail .rail-toggle[aria-label="Collapse navigation"]').waitFor();
+  await fits('expanded');
+  await toggle.click();
+  await rail.page.locator('#rail .rail-toggle[aria-label="Expand navigation"]').waitFor();
+  await fits('collapsed');
+  await face();
+  // Retry from the collapsed rail: still failing, it is contained again.
+  await retryFails(rail.page, card, 2);
+  await fits('collapsed-again');
+  await toggle.click();
+  await rail.page.setViewportSize({width: 390, height: 844});
+  await rail.page.getByRole('button', {name: 'Open navigation'}).click();
+  await rail.page.locator('.shell[data-drawer=open]').waitFor();
+  await fits('drawer');
+  await rail.set(card, undefined);
+  await failed(rail.page, card).getByRole('button', {name: /^Retry/}).click();
+  await failed(rail.page, card).waitFor({state: 'detached'});
+  await rail.page.locator('#rail .rail-conversations > :not([data-card-failed])').first().waitFor();
+  assert.deepEqual(rail.errors, ['TypeError', 'TypeError']);
+  assert.deepEqual(await records(rail.page), [record(card, 'TypeError'), record(card, 'TypeError')]);
+  assert.deepEqual(rail.sent, [], 'neither the failures nor a Retry sent a command');
+  await rail.page.setViewportSize({width: 1440, height: 900});
+  checks.push('the rail\'s failed conversations fit the expanded rail, the collapsed rail and the phone drawer; Retry draws them again');
+  await rail.page.close();
+  }
+
+  // The art backdrop source draws nothing: failing, it still draws nothing, is recorded and counted, and Home stays.
+  if (runs('backdrop') && modules !== undefined) {
+  const card = 'part:art-backdrop';
+  const backdrop = await open({[card]: 'render'}, [card], modules.url);
+  await contained(backdrop.page, card, 'the art backdrop source that throws');
+  await feed(backdrop.page, 'connected', {failedCards: [card]});
+  await recorded(backdrop.page, card, 1);
+  assert.equal(await failed(backdrop.page, card).isHidden(), true, 'the failed backdrop source draws nothing');
+  assert.equal(await failed(backdrop.page, card).evaluate(node => node.getBoundingClientRect().height), 0);
+  await backdrop.page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
+  await backdrop.page.locator('[data-home-card=inbox] h2', {hasText: 'Inbox'}).first().waitFor();
+  assert.deepEqual(backdrop.errors, ['TypeError']);
+  assert.deepEqual(await records(backdrop.page), [record(card, 'TypeError')]);
+  assert.deepEqual(backdrop.sent, []);
+  checks.push('a failed art backdrop source draws nothing, is recorded and counted, and Home stays');
+  await backdrop.page.close();
+  }
+
   // A card that fails after the journey's last health check: the harness records it as it happens, by its card, and the
   // world's close() would fail the run on it. This page expects no fault, so the record is taken back here.
   if (runs('late')) {
@@ -331,5 +416,6 @@ try {
 } finally {
   await context.close();
   await browser.close();
+  await modules?.close();
   await world.close();
 }

@@ -436,7 +436,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       <ShellNavigation route={route} hardware={hardwareModule(runtime)} ownRow={pinnable.has(address) || (workspace && conversations)} devices={{open: menu, menuId: 'devices-menu', button: devicesRow,
         toggle: () => { if (menu) closeMenu('row'); else setMenu(true); }, show: () => { setMenu(true); }}}/>
       <PinnedPages route={route} fallback={devicesRow}/>
-      {conversations && <div className="rail-conversations"><CardBoundary id="part:conversations" name="Conversations"><ModuleFrontend module="companions" connection={connection} connected={state.feed === 'connected' && !runtime.catalogFailed}
+      {conversations && <div className="rail-conversations"><CardBoundary id="part:conversations" name="Conversations" face="rail"><ModuleFrontend module="companions" connection={connection} connected={state.feed === 'connected' && !runtime.catalogFailed}
         control={false} operations={[]} operationsLive={false} Component={ConversationRail}/></CardBoundary></div>}
       <div className="sidebar-foot">
         <div className="rail-foot-row">

@@ -9,7 +9,9 @@
 // - `tidbyt`: the Tidbyt module's display card, on Home and on its component page (`TidbytDisplay`);
 // - `module:<module>/<page>`: a module page on its route (`ModulePageView`);
 // - `page:automation`: the Automation route's page (`AutomationPage`);
-// - `page:devices`: the always-mounted device directory (`DeviceDirectory`).
+// - `page:devices`: the always-mounted device directory (`DeviceDirectory`);
+// - `part:conversations`: the rail's conversations (`ConversationRail`);
+// - `part:art-backdrop`: the art module's Home backdrop source (`ArtBackdropSource`).
 // A render fault throws a `TypeError`, an effect fault a `RangeError`, so a record shows which one it was. Each probe also
 // counts its mounts in `window.cardMounts`, by the same key, and the build exposes the page's own log of fault records
 // (card-fault.ts) as `window.cardFaultRecords()`.
@@ -29,6 +31,8 @@ const TARGETS: readonly Target[] = [
   {specifier: './module-page.tsx', importer: 'main.tsx', name: 'ModulePageView', key: '`module:${props.module.name}/${props.page.id}`'},
   {specifier: './automation.tsx', importer: 'main.tsx', name: 'AutomationPage', key: `'page:automation'`},
   {specifier: './device-directory.tsx', importer: 'main.tsx', name: 'DeviceDirectory', key: `'page:devices'`},
+  {specifier: '@jimmie-potts/companions/frontend', importer: 'main.tsx', name: 'ConversationRail', key: `'part:conversations'`},
+  {specifier: '@jimmie-potts/art/frontend', importer: 'main.tsx', name: 'ArtBackdropSource', key: `'part:art-backdrop'`},
 ];
 
 const PROBE = `

@@ -1297,6 +1297,10 @@ show. Retry draws it again and sends nothing." and one **Retry**; a failed page
 keeps its heading, and the rail and navigation keep working. The device
 directory, mounted on every route, shows its failure on the Devices page and
 draws nothing elsewhere; the backdrop source, which draws nothing, shows nothing.
+The rail's failed conversations are one rail button, "Retry Conversations", with
+the sentence as its title: the expanded rail and the phone drawer show
+"Conversations failed" over it, and the collapsed rail shows only its icon, so
+the rail never grows past the viewport or pushes Settings out of view.
 A changed identity, such as another module page, starts the boundary again.
 
 Not contained, so these still unmount the whole page:
