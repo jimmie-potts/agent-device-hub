@@ -48,7 +48,11 @@ export class CloudQualification {
   #teardownConfirmed = false;
   #charged: number | null = null;
   readonly #claims: Set<string>;
-  constructor(readonly provider: QualificationProvider, readonly now: () => number) {
+  readonly #provider: QualificationProvider;
+  readonly #now: () => number;
+  constructor(provider: QualificationProvider, now: () => number) {
+    this.#provider = provider;
+    this.#now = now;
     this.#claims = claims.get(provider) ?? new Set<string>();
     claims.set(provider, this.#claims);
   }
@@ -64,18 +68,18 @@ export class CloudQualification {
 
   async launch(candidate: Candidate, grant?: CloudGrant): Promise<boolean> {
     if (this.#state !== 'unused' || grant === undefined || !sameCandidate(grant, candidate) ||
-      !validAllowance(grant, this.now()) || !this.provider.accepts({...grant})) return false;
+      !validAllowance(grant, this.#now()) || !this.#provider.accepts({...grant})) return false;
     if (this.#claims.has(grant.operationId)) return false;
     this.#claims.add(grant.operationId);
     this.#state = 'launching';
     const approved = {...grant};
     this.#approved = approved;
     try {
-      const workspace = await this.provider.launch({...approved});
+      const workspace = await this.#provider.launch({...approved});
       if (sameCandidate(approved, workspace) && workspace.workspaceId.length > 0) {
         const limits = workspace.enforced;
         this.#workspace = {...workspace, enforced: {...limits}};
-        if (workspace.endpointId.length > 0 && workspace.selectionId.length > 0 && validAllowance(limits, this.now()) &&
+        if (workspace.endpointId.length > 0 && workspace.selectionId.length > 0 && validAllowance(limits, this.#now()) &&
           limits.computeMs <= approved.computeMs && limits.storageBytes <= approved.storageBytes &&
           limits.chargeMicros <= approved.chargeMicros && limits.expiresAtMs <= approved.expiresAtMs) {
           this.#state = 'active';
@@ -103,7 +107,7 @@ export class CloudQualification {
     this.#teardownStarted = true;
     this.#state = 'cleaning';
     try {
-      const proof = await this.provider.teardown(workspace.workspaceId, workspace.operationId);
+      const proof = await this.#provider.teardown(workspace.workspaceId, workspace.operationId);
       if (proof.workspaceId === workspace.workspaceId && proof.operationId === workspace.operationId &&
         proof.workspaceRemoved === true && proof.writerStopped === true) {
         this.#teardownConfirmed = true;
