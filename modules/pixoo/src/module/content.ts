@@ -2,7 +2,7 @@
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {ModuleContent, ModuleContentRequest} from '@jimmie-potts/sdk';
 import {LibraryError, type Library} from '../library/index.js';
-import {hashSchema, idSchema} from '../library/contracts.js';
+import {hashSchema, idSchema, nameSchema} from '../library/contracts.js';
 import {MediaError, type MediaProfile} from '../media/index.js';
 import {z} from 'zod';
 
@@ -32,6 +32,12 @@ export async function readPixooContent(library: Library, profile: Readonly<Media
   const signal = request?.signal;
   if (signal?.aborted === true) return refuse((signal.reason as {name?: unknown} | undefined)?.name === 'TimeoutError' ? 'unavailable' : 'cancelled');
   try {
+    if (ref === 'asset-id-by-name') {
+      const parsed = z.object({name: nameSchema}).strict().safeParse(query);
+      if (!parsed.success) return refuse('invalid-request');
+      const ids = await library.findAssetIdsByName(parsed.data.name, signal);
+      return ids.length === 1 ? json({id: ids[0]}) : refuse(ids.length === 0 ? 'not-found' : 'invalid-state');
+    }
     if (ref === 'catalog-media' || ref === 'catalog-playlists') {
       const parsed = pageQuery.safeParse(query);
       if (!parsed.success) return refuse('invalid-request');

@@ -10,6 +10,7 @@ Use the same request scope and existing guarded dispatch for the remaining suppo
 
 - Keep configured tool names and payload shape. Bind migrated operations to the same request proof as Wemo. Check the admission proof again before a new effect.
 - Resolve registered routes locally. Device ownership and target guards come from device state. Record targets carry the owner's revision. Fixed routes retain the exact owner target. Drafts retain the local cue and revision checks.
+- Resolve a scene name for its selected light and an asset name in its owning Pixoo library through Runtime-local module content. The browser gateway refuses both references. The Runtime invokes the fixed owner references within the existing tool deadline. The owners return an opaque identity or a refusal. A name lookup neither starts a device read nor publishes a record.
 - Keep the external field policy. Use current owner-entered selectors and resolve them locally. A denied catalog read returns no private record. Store results for the authorized Conversation owner.
 - Keep paid artwork and coding behind their explicit approvals. Preserve prior receipts, the tracked dispatcher, deadlines, and unknown-result handling across restarts.
 

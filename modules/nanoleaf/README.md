@@ -415,7 +415,10 @@ request of its own:
   that table alone and keeps working on the store.
 - `musicBase`: the latest session's `generation` and what its ending puts back (`restores`).
 
-No record holds a scene name.
+No record holds a scene name. The Runtime-local `scene-id-by-name` content
+read accepts a device ID and a saved scene name. It returns only the unique
+opaque scene ID for that light. It uses the owner's saved list and sends no
+device request.
 
 Known limits:
 

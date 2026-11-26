@@ -138,6 +138,11 @@ export class Library {
   listAssets():Promise<Asset[]> {
     return this.run(()=>this.db.prepare('SELECT * FROM assets ORDER BY created_at,id').all().map(row=>this.asset(row)));
   }
+  findAssetIdsByName(name:string,signal?:AbortSignal):Promise<string[]> {
+    const selector=validate(nameSchema,name);
+    return this.run(()=>this.db.prepare('SELECT id FROM assets WHERE name = ? COLLATE NOCASE LIMIT 2').all(selector)
+      .map(row=>String(row.id)),signal);
+  }
   private async validateHosted(id:string,profile?:Readonly<MediaProfile>,signal?:AbortSignal):Promise<void> {
     const rendition=this.manifest(id);
     if(profile?.name!==HOSTED||rendition.frames.length<2)return;

@@ -1,3 +1,4 @@
+import {privateCatalogIdentityReference} from '../core/catalog-identity.js';
 import {historyFilter, type HistoryFilter, type HistoryPage} from '../core/history.js';
 import type {AutomationControls} from '../core/automation-part.js';
 import {holdsAutomationSecret, isAutomationDefinitionFamily} from '../core/automation-definitions.js';
@@ -805,6 +806,7 @@ export class Gateway {
   }
 
   async #readContent(name: string, ref: string, params: URLSearchParams): Promise<Answer> {
+    if (privateCatalogIdentityReference(name, ref)) throw refuse('not-found', 'no such content');
     const module = this.#module(name);
     const {content} = module.manifest;
     if (!ID.test(ref)) throw refuse('invalid-request', 'a content reference is 1 to 128 letters, digits, underscores, dots or hyphens');

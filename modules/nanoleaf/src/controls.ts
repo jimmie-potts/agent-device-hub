@@ -222,6 +222,15 @@ export function sceneList(db: Db, device: string = DEFAULT): {id: string; name?:
     : saved.names.map(name => ({id: sceneId(saved.key, name), ...(name.length <= MAX_LABEL ? {name} : {})}));
 }
 
+/** Bounded lookup in the selected light's already saved scene list. The reply never contains its names. */
+export function sceneIdsByName(db: Db, device: string, name: string): readonly string[] {
+  const saved = scenesOf(db, device);
+  if (saved === undefined) return [];
+  const key = name.trim().toLowerCase();
+  return saved.names.filter(candidate => candidate.trim().toLowerCase() === key).slice(0, 2).map(candidate => sceneId(saved.key, candidate));
+}
+
+
 function sceneName(db: Db, device: string, id: string): string | undefined {
   const saved = scenesOf(db, device);
   return saved?.names.find(name => sceneId(saved.key, name) === id);

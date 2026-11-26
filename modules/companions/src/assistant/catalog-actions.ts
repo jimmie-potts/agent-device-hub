@@ -81,12 +81,16 @@ function matchingDevices(rows: readonly Match[], target: string, owner: string, 
 }
 
 /** A bounded read through the Art owner's public SDK content manifest for an exact retained ID outside recent state. */
+export type CatalogIdentityQuery = {kind: 'scene'; deviceId: string; name: string} | {kind: 'asset'; name: string};
+export type CatalogIdentityRead = (query: CatalogIdentityQuery, timeoutMs: number) => Promise<{id: string} | ErrorBody>;
+
 export type RetainedArtworkRead = (artworkId: string, timeoutMs: number) => Promise<CatalogArtwork | ErrorBody | undefined>;
 
 export class ConversationActions {
   #drafts: ShowDrafts | undefined;
   constructor(private readonly context: ModuleContext, private readonly enabled: readonly string[],
-    private readonly deviceDisplay: DeviceReadDisplay, private readonly retainedArtwork?: RetainedArtworkRead) {}
+    private readonly deviceDisplay: DeviceReadDisplay, private readonly retainedArtwork?: RetainedArtworkRead,
+    private readonly readIdentity?: CatalogIdentityRead) {}
 
   async #snapshot<T extends object>(owner: string, family: string, parent: TraceContext): Promise<readonly T[] | undefined> {
     const result = await this.context.sdk.sync<T>([family], () => {}, {owner, timeoutMs: 1200, parent});
@@ -209,7 +213,7 @@ export class ConversationActions {
   }
 
   /** The input's effect fields never supply routing or revision guards. */
-  async propose(family: CatalogFamily, call: ToolCall, parent: TraceContext, canNameDevice: CanNameDevice): Promise<Proposed> {
+  async propose(family: CatalogFamily, call: ToolCall, parent: TraceContext, canNameDevice: CanNameDevice, canResolveName: (name: string) => boolean = () => false): Promise<Proposed> {
     if (family === 'art-request') {
       const {format, description} = call.input;
       if (!artDescription(description) || (format !== 'gif' && format !== 'still')) return {code: 'invalid-request'};
@@ -260,11 +264,21 @@ export class ConversationActions {
       knownTargets = rows.filter(row => permitsDevice(route, row.device)).map(row => [row.device.id, deviceLabel(row.device)]);
       if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
       if (selected.owner === 'bunny/modules/pixoo') {
-        const resolved = await this.#pixooCatalog(family, data, device, parent);
-        if ('code' in resolved) return resolved;
+        const resolved = await this.#pixooCatalog(family, data, device, parent, canResolveName);
+        if (!('data' in resolved)) return resolved;
         ({data} = resolved);
       }
       const {modes, scenes, moments, media} = device.capabilities;
+      if (family === 'scene-activate' && scenes.supported && typeof data.sceneId === 'string' &&
+        !scenes.sceneIds.includes(data.sceneId) && !/^scene-[a-f0-9]{64}$/u.test(data.sceneId) && this.readIdentity !== undefined) {
+        if (!canResolveName(data.sceneId)) return {code: 'invalid-request'};
+        const match = await this.readIdentity({kind: 'scene', deviceId: device.id, name: data.sceneId}, 1200);
+        if ('error' in match) return match.error.code === 'invalid-state'
+          ? {question: 'More than one saved scene has that name on this light. Which scene ID should I use?'}
+          : {code: match.error.code};
+        data = {...data, sceneId: match.id};
+      }
+
       if (family === 'device-mode-set' && (!modes.supported || !modes.values.some(value => value === data.mode)) ||
         family === 'scene-activate' && (!scenes.supported || !scenes.sceneIds.some(id => id === data.sceneId)) ||
         family === 'media-start' && (!media.supported || !media.playlistIds.some(id => id === data.playlistId)) ||
@@ -323,7 +337,10 @@ export class ConversationActions {
     }
     let showText: string | undefined;
     if (family === 'art-show') {
-      if (typeof data.artworkId !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(data.artworkId) || !Array.isArray(data.targets) || data.targets.length === 0 || 'guards' in data) return {code: 'invalid-request'};
+      if (!Array.isArray(data.targets) || data.targets.length === 0 || 'guards' in data) return {code: 'invalid-request'};
+      if (typeof data.artworkId !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(data.artworkId)) {
+        return {question: 'Which saved artwork should I use? Give its ID or refer to an artwork already in this conversation.'};
+      }
       const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
       if (art === undefined) return {code: 'unavailable'};
       const recent = art.artworks.find(item => item.artworkId === data.artworkId);
@@ -331,7 +348,7 @@ export class ConversationActions {
       const retained = recent === undefined || job === undefined ? await this.retainedArtwork?.(data.artworkId, 1200) : undefined;
       if (retained !== undefined && 'error' in retained) return {code: retained.error.code};
       const artwork = recent ?? retained;
-      if (artwork === undefined) return {code: 'not-found'};
+      if (artwork === undefined) return {question: 'I could not find that saved artwork. Which artwork ID should I use?'};
       const selected = await this.#artSelection(data.targets, parent, canNameDevice, artwork);
       if (!('targets' in selected)) return selected;
       const sourceRequestId = job?.requestId ?? retained?.sourceRequestId;
@@ -355,7 +372,7 @@ export class ConversationActions {
   }
 
   async #pixooCatalog(family: CatalogFamily, data: Record<string, unknown>, device: DeviceRecord,
-    parent: TraceContext): Promise<{data: Record<string, unknown>} | Refusal> {
+    parent: TraceContext, canResolveName: (name: string) => boolean): Promise<{data: Record<string, unknown>} | Refusal | {question: string}> {
     const {media} = device.capabilities;
     if (family === 'media-start' || family === 'pixoo-playlist-change') {
       const change = data.change;
@@ -378,13 +395,14 @@ export class ConversationActions {
     if (family === 'pixoo-asset-change' && object(data.change) && data.change.operation !== 'import') {
       const {assetId} = data.change;
       if (typeof assetId !== 'string' || assetId.length === 0 || assetId.length > 128) return {code: 'invalid-request'};
-      const renditions = await this.#snapshot<{id: string; name: string; assetId: string}>('bunny/modules/pixoo', 'pixoo-rendition', parent);
-      if (renditions === undefined) return {code: 'unavailable'};
-      const names = [...new Set(renditions.filter(rendition => normalize(rendition.name) === normalize(assetId)).map(rendition => rendition.assetId))];
-      if (renditions.some(rendition => rendition.assetId === assetId)) return {data};
-      if (names.length > 1) return {code: 'invalid-state'};
-      // An original without a rendition has no catalog name here. The owner still accepts its exact ID.
-      if (names[0] !== undefined) return {data: {...data, change: {...data.change, assetId: names[0]}}};
+      if (/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(assetId)) return {data};
+      if (this.readIdentity === undefined) return {question: 'Which exact saved asset ID should I use?'};
+      if (!canResolveName(assetId)) return {code: 'invalid-request'};
+      const match = await this.readIdentity({kind: 'asset', name: assetId}, 1200);
+      if ('error' in match) return match.error.code === 'invalid-state'
+        ? {question: 'More than one saved asset has that name. Which asset ID should I use?'}
+        : {code: match.error.code};
+      return {data: {...data, change: {...data.change, assetId: match.id}}};
     }
     return {data};
   }

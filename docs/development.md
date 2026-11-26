@@ -3155,7 +3155,10 @@ admission cases can be isolated with
 `node --test --test-name-pattern='catalog admission|newly configured Pixoo' modules/companions/dist/tests/assistant.test.js`.
 The `apps/runtime/dist/tests/assistant-dispatch.test.js` suite checks the same
 typed payloads, revision guards and refusals through the tracked command path.
-These checks use synthetic adapters and disposable owner records.
+These checks use synthetic adapters and disposable owner records. The
+Nanoleaf and Pixoo module suites cover their owner-local name lookups. The
+Runtime's `catalog-identity.test.js` checks the fixed owner references,
+bounded replies and timeout.
 
 
 After the root build, `npm run test:companions:built` exercises an owner asking

@@ -6,6 +6,7 @@ The hosted supervisors omit supported Conversation tools and the dispatch path c
 
 - Interpret catalog actions through the current authenticated owner turn. Resolve identifiers and bind current owner revisions locally before dispatch.
 - Include registered catalog commands and private draft tools in the hosted allowlist filter. Recheck existing sharing grants for tool results.
+- Resolve stored Nanoleaf scene names and Pixoo original names in existing owner content APIs. Return only a unique opaque ID.
 - Preserve the tracked dispatcher, owner evidence, paid artwork and coding approvals, and existing owner command payloads.
 
 ## Capabilities
@@ -13,6 +14,8 @@ The hosted supervisors omit supported Conversation tools and the dispatch path c
 ### Modified Capabilities
 
 - `bunny-assistant-tasks` covers hosted Conversation catalog admission and private draft edits.
+- `nanoleaf-module` covers owner-local scene lookup.
+- `bunny-pixoo-module` covers owner-local original asset lookup.
 
 ## Impact
 

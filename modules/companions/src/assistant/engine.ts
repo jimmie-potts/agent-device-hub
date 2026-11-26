@@ -32,7 +32,7 @@ import {buildConversationCompactionInput, COMPACTION_OUTPUT_TOKENS, readConversa
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
-import {chooseBrightnessSubject, ConversationActions, deviceClarification, type RetainedArtworkRead} from './catalog-actions.js';
+import {chooseBrightnessSubject, ConversationActions, deviceClarification, type CatalogIdentityRead, type RetainedArtworkRead} from './catalog-actions.js';
 import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {catalogCommand, catalogTool, draftMutation, isCatalogTool, modelCatalogCommand, modelCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
 import {DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
@@ -59,6 +59,7 @@ export type AssistantOptions = {
   provider?: ModelProvider;
   alternateProvider?: ModelProvider;
   retainedArtwork?: RetainedArtworkRead;
+  readCatalogIdentity?: CatalogIdentityRead;
   tools?: readonly string[];
   core?: () => CoreCopy;
   dispatch?: Dispatch;
@@ -2312,13 +2313,19 @@ export class AssistantEngine {
         next = 'act';
       }
     } else if (next === 'approve' && command !== undefined && call !== undefined) {
-      const selected = command === 'art-request' && this.store.hasArtReply(task.id)
-        ? {code: 'invalid-state'} : await this.#catalog().propose(command, call, active.span.context, canNameDevice);
-      const id = `${state.taskId}-q${String(this.#task(state.taskId).questions + 1)}`;
+      const scope = interpreted ? this.#currentModelControl(currentTask, id) : undefined;
+      const selectors = scope === undefined ? [] : this.#catalogReferenceTexts(currentTask, scope, id, true);
+      const selected = command === 'art-request' && this.store.hasArtReply(task.id) || interpreted && scope === undefined
+        ? {code: 'invalid-state'} : await this.#catalog().propose(command, call, active.span.context, canNameDevice,
+          name => selectors.some(text => containsControlValue(text, name)));
+      const questionId = `${state.taskId}-q${String(this.#task(state.taskId).questions + 1)}`;
       if ('code' in selected) result = `refused: ${selected.code}`;
-      else if ('question' in selected) question = {id, kind: 'clarification', text: selected.question, answer: null, call: call.id, proposal: null};
+      else if ('question' in selected) {
+        if (interpreted && this.#controlClarification(currentTask)?.answer != null) result = 'refused: the target is still unclear.';
+        else question = {id: questionId, kind: 'clarification', text: selected.question, answer: null, call: call.id, proposal: null};
+      }
       else {
-        question = {id, kind: 'approval', text: selected.text, answer: null, call: call.id, proposal: selected.proposal};
+        question = {id: questionId, kind: 'approval', text: selected.text, answer: null, call: call.id, proposal: selected.proposal};
         targets = selected.targets;
         knownTargets = selected.knownTargets;
         draftRevision = selected.draftRevision;
@@ -2327,7 +2334,7 @@ export class AssistantEngine {
           const matches = namedControlTargets(selected.proposal, instruction, knownTargets ?? []);
           if (matches.length > 1 && this.#controlClarification(task)?.answer == null) {
             const text = deviceClarification('device', matches.flatMap(([id]) => id === undefined ? [] : [id]), canNameDevice);
-            question = {id, kind: 'clarification', text, answer: null, call: call.id, proposal: null};
+            question = {id: questionId, kind: 'clarification', text, answer: null, call: call.id, proposal: null};
           }
         }
       }
@@ -2392,7 +2399,7 @@ export class AssistantEngine {
     }
     if (textBytes(JSON.stringify(task.transcript)) > LIMITS.stateBytes) throw new Fault('capacity', 'This turn reached its working transcript limit.');
   }
-  #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed, this.#deviceDisplay, this.options.retainedArtwork);}
+  #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed, this.#deviceDisplay, this.options.retainedArtwork, this.options.readCatalogIdentity);}
   #catalogActions: ConversationActions | undefined;
   /** The question a call asks, or undefined when the command cannot be proposed. */
   #question(taskId: string, call: ToolCall, copy: CoreCopy, canNameDevice: (id: string) => boolean): Question | undefined {
@@ -2568,9 +2575,12 @@ export class AssistantEngine {
     return scope;
   }
 
-  #catalogReferenceTexts(task: Task, scope: ModelControlScope, modelCallId: string): readonly string[] {
+  #catalogReferenceTexts(task: Task, scope: ModelControlScope, modelCallId: string, ownerOnly = false): readonly string[] {
     const history = this.#hostedHistory(task);
-    const prior = (this.store.call(modelCallId)?.historySources ?? []).flatMap(({id}) => history.get(id)?.text ?? []);
+    const prior = (this.store.call(modelCallId)?.historySources ?? []).flatMap(({id}) => {
+      const message = history.get(id);
+      return message !== undefined && (!ownerOnly || message.role === 'owner') ? [message.text] : [];
+    });
     return [scope.request.text, scope.answer?.text ?? '', ...prior];
   }
 

@@ -1481,12 +1481,12 @@ guards locally when the owner publishes that index. This covers session labels,
 Volcano labels, saved light shows, Pixoo playlists and compatible renditions.
 The playback control can use the unique presented playback record.
 
-Nanoleaf publishes scene IDs in its device record. Use an ID from the device's
-scene list if the scene name alone cannot identify it. The art owner's catalog
-identifies saved artwork by ID. A Pixoo original with no rendition uses its
-asset ID. Companions asks for a clearer selector when the published catalog
-leaves the target uncertain. Private catalog records and draft storyboards
-remain on the Hub.
+Companions asks the selected Nanoleaf owner to resolve a scene name to its ID.
+The Pixoo owner resolves original names even when the original has no
+rendition. Both reads return only a unique ID. Ambiguous names need a more
+specific selector. The Art catalog identifies saved artwork by ID or a known
+Conversation reference. Private catalog records and draft storyboards remain
+on the Hub.
 
 Roborock offers status only. ONN is hibernated. Conversation's Inbox Send
 again follows the existing requester and replay rules for the saved command.

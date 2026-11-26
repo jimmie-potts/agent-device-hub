@@ -14,3 +14,10 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 
 - **WHEN** the supervisor proposes a stale draft revision, an invalid target, or a target whose permission has changed
 - **THEN** the Hub sends no device command and leaves the affected draft unchanged
+
+#### Scenario: A stored scene or original is requested by name
+
+- **WHEN** the current owner asks to activate a saved Nanoleaf scene on an eligible light or change an original Pixoo asset by name
+- **THEN** Companions resolves the name through the selected owner and binds its opaque ID before using the existing tracked command
+- **AND** private catalog names and records remain out of the hosted supervisor's results
+- **AND** an ambiguous match prompts for clarification and sends no command
