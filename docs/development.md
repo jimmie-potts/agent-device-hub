@@ -589,16 +589,24 @@ install's `--with-deps` downloads, until the job's limit. So every apt command i
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
 verification, both Runtime verification jobs and retained documentation, with 300 s per attempt, and the hook-qualification
 step's `apt-get update` and `apt-get install`, together, with 180 s per attempt.
-The runner image already makes apt drop a connection that receives nothing for
-15 s and fall back to the next mirror in `/etc/apt/apt-mirrors.txt`, but a
-download that still trickles never times out. After a failed attempt, the script
-stops the apt-get the attempt left running, waits up to 60 s for apt and dpkg to
-exit and runs `dpkg --configure -a`. It then moves the mirror apt tried first to
-the end of that list, so the retry starts on another mirror; it makes three
-attempts in all. The step limits (20 minutes for the browser installs, 14 for the
-hook step) and the job limits leave room for two stalled attempts. Because it
-changes apt's configuration and stops every `apt-get`, the script refuses to run
-unless `GITHUB_ACTIONS` is `true`.
+The runner image sets a 15-second idle connection timeout and uses the mirrors
+in `/etc/apt/apt-mirrors.txt`. A download that continues receiving data can
+still exhaust the attempt budget. After a failed attempt, the wrapper checks
+whether apt reported a DNS failure for every host in that list. If so, it
+gives each host one lookup of up to five seconds. When none resolves, the
+error names the mirrors and ends package setup after cleanup. On the three-mirror
+image, an outage throughout the first attempt is reported within the attempt
+budget plus 25 seconds (10 seconds to stop the command and 15 for DNS).
+Cleanup then allows up to 60 seconds for apt and dpkg to exit and up to 70
+seconds for the final package repair.
+
+For other failures, or when a host resolves again, the wrapper stops any
+surviving apt-get, waits for apt and dpkg, runs `dpkg --configure -a`, and
+moves the first mirror to the end of the list before retrying. The cap remains
+three attempts. The step limits are 20 minutes for browser installs and 14
+minutes for the hook step. The wrapper requires `GITHUB_ACTIONS=true` because
+it changes apt configuration and stops apt-get processes.
+
 Active workflow files are `checks.yml`, `workflow.yml`, `integration.yml`,
 `release-qualification.yml`, `codeql.yml`, `music-native.yml` and
 `runtime-dashboard-browser.yml`. The Work Guide
