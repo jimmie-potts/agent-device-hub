@@ -1,3 +1,4 @@
+import {browserEntry} from './failure-context.ts';
 // Real core storage and existing reusable cards; synthetic devices only.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
@@ -190,9 +191,9 @@ try {
 } finally {await browser.close();await world.close();}
 
 // The unit grid (#1672) replaced the flex rows home-balance checked; home-shapes checks tiling, shapes and paging by shape.
-await import('./home-shapes.browser.ts');
-await import('./home-paging.browser.ts');
+await browserEntry('home-shapes.browser.ts', import('./home-shapes.browser.ts'));
+await browserEntry('home-paging.browser.ts', import('./home-paging.browser.ts'));
 // The glass layer under Home (#1929): backdrop, boxes, rest, fallbacks and contrast.
-await import('./home-glass.browser.ts');
+await browserEntry('home-glass.browser.ts', import('./home-glass.browser.ts'));
 // The hero above the cards (#1930): the hub mode switch and its glass thumb, the status and art chips.
-await import('./home-hero.browser.ts');
+await browserEntry('home-hero.browser.ts', import('./home-hero.browser.ts'));

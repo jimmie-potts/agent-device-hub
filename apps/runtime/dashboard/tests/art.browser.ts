@@ -1,3 +1,4 @@
+import {namedBrowserEntry} from './failure-context.ts';
 // Real art owner, authenticated browser routes and private disposable storage. Only synthetic providers are reachable.
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
@@ -13,11 +14,11 @@ import {artShowJourney} from './art-show-journey.ts';
 import {artBackdropJourney} from './art-backdrop-journey.ts';
 import {destinationLink} from './navigation-helpers.ts';
 
-await artScheduleJourney();
-await artNoticeJourney();
-await artSelectionJourney();
-await artShowJourney();
-await artBackdropJourney();
+await namedBrowserEntry(artScheduleJourney);
+await namedBrowserEntry(artNoticeJourney);
+await namedBrowserEntry(artSelectionJourney);
+await namedBrowserEntry(artShowJourney);
+await namedBrowserEntry(artBackdropJourney);
 
 const world = await startWorld({art: true}), browser = await chromium.launch({headless: true});
 const artifacts = await browserArtifactDirectory();

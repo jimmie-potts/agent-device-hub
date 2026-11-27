@@ -59,6 +59,10 @@ jobs:
     # Leave finite headroom for slower hosted runs while retaining every suite.
     timeout-minutes: 40
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Standalone admission runs the exact PR head, which can predate the reporting shell.
+        shell: ${{ needs.select.outputs.mode == 'standalone' && 'bash -e {0}' || 'bash scripts/ci-selection/failure-summary.sh core default {0}' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -210,7 +214,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm run test:runtime:built
+      - shell: bash scripts/ci-selection/failure-summary.sh node test:runtime:built {0}
+        run: npm run test:runtime:built
   runtime-scenarios:
     name: Runtime scenario tests on ubuntu-latest
     needs: select
@@ -225,7 +230,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm run test:runtime:scenarios:built
+      - shell: bash scripts/ci-selection/failure-summary.sh node test:runtime:scenarios:built {0}
+        run: npm run test:runtime:scenarios:built
   firmware:
     name: Firmware host tests and ARM build on ubuntu-latest
     needs: select
@@ -253,6 +259,9 @@ jobs:
     env:
       XDG_RUNTIME_DIR: ''
       DBUS_SESSION_BUS_ADDRESS: ''
+    defaults:
+      run:
+        shell: bash scripts/ci-selection/failure-summary.sh app-verify default {0}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -345,7 +354,8 @@ jobs:
         run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
       - run: npm run build
       # Capture shard 1/2 of the active catalog, with the capture file's tests outside the capture loop.
-      - run: npm run test:runtime:verify:captures:built
+      - shell: bash scripts/ci-selection/failure-summary.sh node test:runtime:verify:captures:built {0}
+        run: npm run test:runtime:verify:captures:built
   runtime-verify:
     name: Runtime verification on ubuntu-latest
     needs: select
@@ -368,7 +378,8 @@ jobs:
         run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
       - run: npm run build
       # Every other verification file, then capture shard 2/2 of the active catalog, including shared keyboard and phone checks.
-      - run: npm run test:runtime:verify:rest:built
+      - shell: bash scripts/ci-selection/failure-summary.sh node test:runtime:verify:rest:built {0}
+        run: npm run test:runtime:verify:rest:built
   gate:
     name: Selected checks gate
     needs: [select, core, runtime-unit, runtime-scenarios, firmware, app-verify, runtime-verify-captures, runtime-verify]
