@@ -3,6 +3,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {expect} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {Browser} from 'playwright';
 import {connectRemote} from '@jimmie-potts/sdk';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
@@ -12,7 +13,7 @@ import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 /** Actual private gateway/core/module, synthetic recipes and simulated controllers only. */
 export async function reactivePresetJourney(browser: Browser): Promise<void> {
   const world = await startWorld({nanoleaf: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   const catalog = async (): Promise<ReactiveCatalog> => {
     const reader = await connectRemote({url: world.url, source: 'bunny/parts/reader', token: world.readerToken});
     try {

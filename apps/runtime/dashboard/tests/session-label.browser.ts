@@ -1,6 +1,7 @@
 // One focused label/reload journey against the built synthetic runtime (Hub #1006).
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {sessionStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {labelJourney} from './label-journey.ts';
@@ -9,7 +10,7 @@ const world = await startWorld();
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = [];
     context.on('weberror', error => { errors.push(error.error().name); });

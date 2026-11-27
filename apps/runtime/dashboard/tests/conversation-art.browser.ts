@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {expect} from 'playwright/test';
 import {decodeConversationWindow} from '../../../../modules/companions/dist/src/frontend/conversation-history.js';
 import {feed, startWorld} from './harness.ts';
 
 export async function conversationArtJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, art: true, artRecentLimit: 1, pixooPages: true, assistantCatalog: ['create_artwork', 'control_art_show']});
-  const context = await browser.newContext({reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {reducedMotion: 'reduce'});
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(12_000);

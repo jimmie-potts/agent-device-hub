@@ -3,6 +3,7 @@
 // browser's own list; nothing here sends a command, sync, upload or provider request.
 import assert from 'node:assert/strict';
 import {chromium, type Locator, type Page, type Request} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {expect} from 'playwright/test';
 import {changes, copiesSynced, feed, startWorld} from './harness.ts';
 import {chooseConversation, conversationLink, destinationLink, jumpTo, openDeviceMenu, openDirectory} from './navigation-helpers.ts';
@@ -10,7 +11,7 @@ import {PINS_KEY} from '../src/pins.ts';
 
 const world = await startWorld({devices: true, pixooPages: true, tidbyt: true, companions: true, speech: true, nanoleaf: true, nanoleafPanels: true});
 const browser = await chromium.launch({headless: true});
-const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
+const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
 const page = await context.newPage();
 page.setDefaultTimeout(15_000);
 const sent = changes(page);

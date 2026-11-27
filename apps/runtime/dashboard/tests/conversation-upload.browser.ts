@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {ART_SHOW_LEAD_MS, MAX_ART_ATTACHMENT_BYTES, artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
 import {SimulatedTronbyt} from '@jimmie-potts/tidbyt';
 import {chromium, expect, type Browser} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import sharp from 'sharp';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {feed, startWorld} from './harness.ts';
@@ -11,7 +12,7 @@ import {worldClock} from './world-clock.ts';
 export async function conversationUploadJourney(browser: Browser): Promise<void> {
   const clock = worldClock(), tronbyt = new SimulatedTronbyt({now: () => clock.clock.now()});
   const world = await startWorld({companions: true, art: true, pixooPages: true, tidbyt: true, tronbyt, clock});
-  const context = await browser.newContext({reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {reducedMotion: 'reduce'});
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
   await clock.install(page);

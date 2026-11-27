@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {chromium, type BrowserContext, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 
@@ -253,7 +254,7 @@ export async function checkControlProjections(context: BrowserContext): Promise<
 if (import.meta.main) {
   const browser = await chromium.launch({headless: true});
   try {
-    await checkControlProjections(await browser.newContext({reducedMotion: 'reduce'}));
+    await checkControlProjections(await openJourneyContext(browser, {reducedMotion: 'reduce'}));
   } finally {
     await browser.close();
   }

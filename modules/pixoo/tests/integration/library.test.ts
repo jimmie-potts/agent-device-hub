@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { expect } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -8,12 +8,11 @@ import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import { Library, type Playlist } from '../../src/library/index.js';
 import { gifFixture } from '../helpers/media-fixtures.js';
-const roots:string[]=[]; const libraries:Library[]=[];
-afterEach(async()=>{for(const library of libraries) await library.close(); libraries.length=0; for(const root of roots) await rm(root,{recursive:true,force:true}); roots.length=0;});
-async function setup() {const directory=await mkdtemp(join(tmpdir(),'pixoo-library-'));roots.push(directory); const library=await Library.open({directory});libraries.push(library);return {directory,library};}
+import { mediaTest, type MediaResources } from '../helpers/media-test.js';
+async function setup(resources: MediaResources) {const directory=await mkdtemp(join(tmpdir(),'pixoo-library-'));resources.roots.push(directory); const library=await Library.open({directory});resources.libraries.push(library);return {directory,library};}
 async function* upload() {yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1],delay:50},{width:1,height:1,pixels:[2],delay:50}]));}
-it('creates requested playlist identity and initial items atomically without changing legacy creation',async()=>{
-  const {library}=await setup();
+mediaTest('creates requested playlist identity and initial items atomically without changing legacy creation', async resources => {
+  const {library}=await setup(resources);
   const {rendition}=await library.importMedia(upload(),'initial.gif');
   const id='123e4567-e89b-42d3-a456-426614174000';
   const create=(name:string,playlistId:string,items:{renditionId:string}[]):Promise<Playlist>=>library.createPlaylist(name,{repeat:true},{playlistId,items});
@@ -27,22 +26,22 @@ it('creates requested playlist identity and initial items atomically without cha
 });
 /** The item at an index; a missing item fails the test. */
 const item=(playlist:Playlist,index:number)=>playlist.items[index]??expect.unreachable(`no item ${index}`);
-it('persists immutable media and stable playlist items across reopen',async()=>{
-  const {directory,library}=await setup();
+mediaTest('persists immutable media and stable playlist items across reopen', async resources => {
+  const {directory,library}=await setup(resources);
   const imported=await library.importMedia(upload(),'sample.gif');
   const playlist=await library.createPlaylist('Evening');
   const updated=await library.replaceItems(playlist.id,playlist.revision,[{renditionId:imported.rendition.id},{renditionId:imported.rendition.id,playback:{mode:'duration',durationMs:1000}}]);
   expect(item(updated,0).playback).toEqual({mode:'plays',totalPlays:3});
   expect(item(updated,0).id).not.toBe(item(updated,1).id);
   await library.close();
-  const reopened=await Library.open({directory});libraries.push(reopened);
+  const reopened=await Library.open({directory});resources.libraries.push(reopened);
   expect(await reopened.getPlaylist(playlist.id)).toEqual(updated);
   expect((await reopened.getAsset(imported.asset.id)).contentHash).toBe(imported.rendition.sourceHash);
   expect(await reopened.listRenditions(imported.asset.id)).toEqual([imported.rendition]);
 });
 
-it('keeps item identities and policies through reorder, edits and duplication',async()=>{
-  const {library}=await setup();
+mediaTest('keeps item identities and policies through reorder, edits and duplication', async resources => {
+  const {library}=await setup(resources);
   const {rendition}=await library.importMedia(upload(),'animation.gif');
   let playlist=await library.createPlaylist('  Night  ');
   expect(playlist).toMatchObject({name:'Night',revision:1,repeat:true,shuffle:false});
@@ -66,8 +65,8 @@ it('keeps item identities and policies through reorder, edits and duplication',a
   expect(await library.listPlaylists()).toEqual([playlist]);
 });
 
-it('rejects stale and competing writes without partial metadata changes',async()=>{
-  const {library}=await setup();
+mediaTest('rejects stale and competing writes without partial metadata changes', async resources => {
+  const {library}=await setup(resources);
   const p=await library.createPlaylist('Initial');
   const results=await Promise.allSettled([library.renamePlaylist(p.id,1,'First'),library.renamePlaylist(p.id,1,'Second')]);
   expect(results[0].status).toBe('fulfilled');
@@ -77,8 +76,8 @@ it('rejects stale and competing writes without partial metadata changes',async()
   expect(await library.getPlaylist(p.id)).toMatchObject({name:'First',revision:2});
 });
 
-it('validates policies atomically and treats a single-frame GIF as a still',async()=>{
-  const {library}=await setup();
+mediaTest('validates policies atomically and treats a single-frame GIF as a still', async resources => {
+  const {library}=await setup(resources);
   const still=await library.importMedia(bytes(gifFixture(1,1,[{width:1,height:1,pixels:[1],delay:50}])),'still.gif');
   const animated=await library.importMedia(upload(),'animated.gif');
   let p=await library.createPlaylist('Policies');
@@ -93,8 +92,8 @@ it('validates policies atomically and treats a single-frame GIF as a still',asyn
   expect(await library.getPlaylist(p.id)).toEqual(p);
 });
 
-it('preserves originals and old renditions when transforms change',async()=>{
-  const {directory,library}=await setup();
+mediaTest('preserves originals and old renditions when transforms change', async resources => {
+  const {directory,library}=await setup(resources);
   const original=gifFixture(1,1,[{width:1,height:1,pixels:[1],delay:50}]);
   const first=await library.importMedia(bytes(original),'original.gif');
   const same=await library.importMedia(bytes(original),'renamed.gif');
@@ -112,8 +111,8 @@ it('preserves originals and old renditions when transforms change',async()=>{
   expect((await library.listRenditions(first.asset.id)).map(r=>r.id).sort()).toEqual([first.rendition.id,second.rendition.id].sort());
 });
 
-it('retains session references after playlist removal and restart until explicit release',async()=>{
-  const {directory,library}=await setup();
+mediaTest('retains session references after playlist removal and restart until explicit release', async resources => {
+  const {directory,library}=await setup(resources);
   const {asset,rendition}=await library.importMedia(upload(),'active.gif');
   const empty=await library.createPlaylist('Playing');
   const p=await library.replaceItems(empty.id,1,[{renditionId:rendition.id}]);
@@ -121,7 +120,7 @@ it('retains session references after playlist removal and restart until explicit
   await expect(library.deleteAsset(asset.id)).rejects.toMatchObject({code:'asset-referenced',details:{assetId:asset.id,playlistIds:[p.id],sessionIds:[session.id]}});
   await library.deletePlaylist(p.id,p.revision);
   await library.close();
-  const reopened=await Library.open({directory}); libraries.push(reopened);
+  const reopened=await Library.open({directory}); resources.libraries.push(reopened);
   expect(await reopened.listSessions()).toEqual([session]);
   await expect(reopened.deleteAsset(asset.id)).rejects.toMatchObject({code:'asset-referenced',details:{playlistIds:[],sessionIds:[session.id]}});
   expect(await reopened.getRendition(rendition.id)).toEqual(rendition);
@@ -133,8 +132,8 @@ it('retains session references after playlist removal and restart until explicit
   expect(await readdir(join(directory,'media','renditions'))).toEqual([]);
 });
 
-it('replays durable deletion after a file error and preserves unrelated files',async()=>{
-  const {directory,library}=await setup();
+mediaTest('replays durable deletion after a file error and preserves unrelated files', async resources => {
+  const {directory,library}=await setup(resources);
   const {asset}=await library.importMedia(upload(),'delete.gif');
   const original=join(directory,'media','originals',asset.contentHash), saved=await readFile(original);
   await rm(original); await mkdir(original);
@@ -145,15 +144,15 @@ it('replays durable deletion after a file error and preserves unrelated files',a
   await library.close();
   await expect(Library.open({directory})).rejects.toMatchObject({code:'cleanup-pending'});
   await rm(original,{recursive:true});await writeFile(original,saved);
-  const reopened=await Library.open({directory});libraries.push(reopened);
+  const reopened=await Library.open({directory});resources.libraries.push(reopened);
   expect(await reopened.listAssets()).toEqual([]);
   expect(await readdir(join(directory,'media','originals'))).toEqual(['keep-me']);
   await reopened.retryCleanup();
   expect((await reopened.importMedia(upload(),'new.gif')).asset.id).not.toBe(asset.id);
 });
 
-it('allows one owner, cleans failed partials and recovers only owned staging directories',async()=>{
-  const {directory,library}=await setup();
+mediaTest('allows one owner, cleans failed partials and recovers only owned staging directories', async resources => {
+  const {directory,library}=await setup(resources);
   await expect(Library.open({directory})).rejects.toMatchObject({code:'busy'});
   await expect(library.importMedia(bytes(Buffer.from('broken')),'bad.gif')).rejects.toBeDefined();
   expect(await readdir(join(directory,'media','staging'))).toEqual([]);
@@ -163,14 +162,14 @@ it('allows one owner, cleans failed partials and recovers only owned staging dir
   await writeFile(join(directory,'media','staging','request-ZYX987'),'unrelated-file');
   await library.close();
   await expect(library.listAssets()).rejects.toMatchObject({code:'closed'});
-  const reopened=await Library.open({directory});libraries.push(reopened);
+  const reopened=await Library.open({directory});resources.libraries.push(reopened);
   expect((await readdir(join(directory,'media','staging'))).sort()).toEqual(['request-ZYX987','user-directory']);
 });
 
 async function* bytes(value:Buffer) {yield Promise.resolve(value);}
 
-it('releases ownership after abrupt process exit and retains committed metadata',async()=>{
-  const {directory,library}=await setup();await library.close();
+mediaTest('releases ownership after abrupt process exit and retains committed metadata', async resources => {
+  const {directory,library}=await setup(resources);await library.close();
   const entry=pathToFileURL(resolve('dist/src/library/index.js')).href;
   const child=spawn(process.execPath,['--expose-gc','--input-type=module','-e',`
     import {Library} from ${JSON.stringify(entry)};
@@ -191,13 +190,13 @@ it('releases ownership after abrupt process exit and retains committed metadata'
     },(error:unknown)=>error);
     expect(contention).toMatchObject({code:'busy'});
     const exited=once(child,'exit');child.kill('SIGKILL');await exited;
-    const reopened=await Library.open({directory});libraries.push(reopened);
+    const reopened=await Library.open({directory});resources.libraries.push(reopened);
     expect(await reopened.getPlaylist(playlist.id)).toMatchObject({name:'Committed before crash',revision:1});
   } finally {if(child.exitCode===null && child.signalCode===null) {const exited=once(child,'exit');child.kill('SIGKILL');await exited;}}
 },15000);
 
-it('keeps an orphan rendition reusable after another transform is registered and deleted',async()=>{
-  const {directory,library}=await setup();
+mediaTest('keeps an orphan rendition reusable after another transform is registered and deleted', async resources => {
+  const {directory,library}=await setup(resources);
   const db=new DatabaseSync(join(directory,'catalog.sqlite'));
   try {
     db.exec("CREATE TRIGGER fail_registration BEFORE INSERT ON assets BEGIN SELECT RAISE(ABORT,'injected failure'); END");
@@ -209,7 +208,7 @@ it('keeps an orphan rendition reusable after another transform is registered and
   const different=await library.importMedia(upload(),'other.gif',{transform:{fit:'crop',scaling:'smooth',background:[1,2,3]}});
   await library.deleteAsset(different.asset.id);
   await library.close();
-  const reopened=await Library.open({directory});libraries.push(reopened);
+  const reopened=await Library.open({directory});resources.libraries.push(reopened);
   const retried=await reopened.importMedia(upload(),'recovered.gif');
   expect(retried.rendition.id).toBe(orphan);
   expect(await reopened.getRendition(retried.rendition.id)).toEqual(retried.rendition);

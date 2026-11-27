@@ -4,6 +4,7 @@ import {access,readFile,readdir,writeFile} from 'node:fs/promises';
 import {setTimeout as pause} from 'node:timers/promises';
 import {once} from 'node:events';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {startFixture} from '../../../../modules/microduck/dist/src/fixture.js';
 import {validState} from '../../../../modules/microduck/dist/src/families.js';
 import type {MicroDuckState} from '../../../../modules/microduck/dist/src/contracts.js';
@@ -24,7 +25,7 @@ function find(value:unknown):MicroDuckState|undefined {
 const state=async():Promise<MicroDuckState>=>{const value=find(await world.reachyMcp('microduck_status',{}));assert.ok(value);observations.push(value);return value;};
 const until=async(predicate:(s:MicroDuckState)=>boolean,ms=15000):Promise<MicroDuckState>=>{const end=Date.now()+ms;while(Date.now()<end){const s=await state();if(predicate(s))return s;await pause(20);}assert.fail('MicroDuck vendor state deadline');};
 try {
-  const context=await browser.newContext({viewport:{width:390,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(20000);
+  const context=await openJourneyContext(browser, {viewport:{width:390,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(20000);
   const panel=page.getByRole('region',{name:'MicroDuck robot controls'});
   const open=async():Promise<void>=>{await page.goto(`${world.url}/#/module/microduck/controls`);await page.reload();await feed(page,'connected');await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();};
   await open();await until(s=>s.connection==='available'&&s.observation?.policy==='walk'&&s.observation.healthy&&s.observation.zeroVelocity);await pause(1000);

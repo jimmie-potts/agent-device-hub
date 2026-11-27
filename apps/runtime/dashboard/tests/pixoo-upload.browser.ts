@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import sharp from 'sharp';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -11,7 +12,7 @@ try {
   const bytes = await sharp(randomBytes(128 * 128 * 3), {raw: {width: 128, height: 128, channels: 3}}).png().toBuffer();
   assert.ok(bytes.byteLength > 16_384, 'ordinary input exceeds the JSON command body limit');
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
     const page = await context.newPage(); page.setDefaultTimeout(8000);

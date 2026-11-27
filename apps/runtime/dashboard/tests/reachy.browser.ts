@@ -1,6 +1,7 @@
 // Disposable runtime and fake robot; actual vendor MuJoCo is a separate owner-selected exercise.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {join} from 'node:path';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {feed,startWorld} from './harness.ts';
@@ -13,7 +14,7 @@ function reachyItem(value:unknown):{id:string;revision:number}|undefined {
 const screenshot = join(await browserArtifactDirectory(), 'reachy-browser.png');
 const world=await startWorld({reachy:true,companions:true}),browser=await chromium.launch({headless:true});
 try{
- const context=await browser.newContext({viewport:{width:390,height:1000},reducedMotion:'reduce'}),page=await context.newPage();
+ const context=await openJourneyContext(browser, {viewport:{width:390,height:1000},reducedMotion:'reduce'}),page=await context.newPage();
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);
  await page.goto(`${world.url}/#/module/reachy-mini/controls`);await feed(page,'connected');
  const panel=page.getByRole('region',{name:'Reachy robot controls'});await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();

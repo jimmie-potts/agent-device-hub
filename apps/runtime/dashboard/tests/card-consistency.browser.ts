@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {approvalPrompt} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -33,7 +34,7 @@ try {
   await world.observe(approvalPrompt('card-comparison-attention'));
   // Home shows full cards in one column (#1672); on the unit grid most of these cards are compact or generic faces,
   // so Home is compared at phone widths and each full card again on its own page at 1440 and 390 px below.
-  const context = await browser.newContext({viewport: {width: 390, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 390, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage(); page.setDefaultTimeout(15_000);
   const errors: string[] = []; context.on('weberror', event => errors.push(event.error().name));
   await page.goto(world.url); await feed(page, 'connected');

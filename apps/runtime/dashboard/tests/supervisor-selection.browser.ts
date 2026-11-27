@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type {Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {feed, startWorld, type WorldOptions} from './harness.ts';
 
 export async function supervisorSelectionJourney(browser: Browser): Promise<void> {
@@ -17,7 +18,7 @@ export async function supervisorSelectionJourney(browser: Browser): Promise<void
     const anthropic = provider('anthropic', 'claude-opus-5-5', primaryAvailable);
     assert.ok(anthropic);
     const world = await startWorld({companions: true, assistantProvider: anthropic, assistantAlternateProvider: openai});
-    const context = await browser.newContext();
+    const context = await openJourneyContext(browser);
     try {
       const page = await context.newPage();
       page.setDefaultTimeout(12_000);

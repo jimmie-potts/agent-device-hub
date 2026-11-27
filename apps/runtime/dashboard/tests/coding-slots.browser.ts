@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import type {Browser, Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {connectRemote, type RemoteEndpoint} from '@jimmie-potts/sdk/remote';
 import type {CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {feed, startWorld} from './harness.ts';
@@ -15,7 +16,7 @@ import {feed, startWorld} from './harness.ts';
  */
 export async function codingSlotsJourney(browser: Browser, shots?: string): Promise<void> {
   const world = await startWorld({companions: true, coding: true});
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
   const worker = await connectRemote({url: world.url, source: 'bunny/parts/coding-worker', token: world.codingToken});
   const shot = async (page: Page, name: string): Promise<void> => {if (shots !== undefined) await page.screenshot({path: join(shots, `${name}.png`), fullPage: false});};

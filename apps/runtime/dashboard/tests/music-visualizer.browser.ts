@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {expect, type Locator, type Page} from 'playwright/test';
-import {startWorld, changes, feed} from './harness.ts';
+import {startWorld, changes, feed, recordsLoaded} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
@@ -45,7 +46,7 @@ const frameTimes = (page: Page, selector: string) => page.evaluate(async (query:
     p95Ms: gaps[Math.floor(gaps.length * 0.95)] ?? 0, longestMs: gaps.at(-1) ?? 0, over20ms: gaps.filter(gap => gap > 20).length, over50ms: gaps.filter(gap => gap > 50).length};
 }, selector);
 try {
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   const sent = changes(page);
@@ -150,7 +151,7 @@ try {
   // A 4K window: the full view fills 3,840 x 2,160. Frame timings for both live effects are recorded beside a
   // resting-scene and a blank-canvas baseline from the same run, so runner stalls can be told from effect cost.
   // They are evidence, not a gate; whether the TV drops frames is the owner's installed check.
-  const tv = await browser.newContext({viewport: {width: 3840, height: 2160}, deviceScaleFactor: 1});
+  const tv = await openJourneyContext(browser, {viewport: {width: 3840, height: 2160}, deviceScaleFactor: 1});
   try {
     const blank = await tv.newPage();
     await blank.setContent('<body style="margin:0;background:#000"><canvas style="display:block;width:100vw;height:100vh"></canvas></body>');
@@ -223,9 +224,9 @@ try {
   await card.getByRole('link', {name: 'Open full view', exact: true}).click(); await expect(page).toHaveURL(/#\/audio\/visualizer$/);
   await page.getByRole('region', {name: 'Music visualizer full view', exact: true}).getByText('Resting. Measurement is not running.', {exact: true}).waitFor();
   await shot('full-view-resting-1440');
-  await page.goto(world.url + '/#/'); await feed(page, 'connected'); await expect(editHome).toBeEnabled();
+  await page.goto(world.url + '/#/'); await recordsLoaded(page); await expect(editHome).toBeEnabled();
   await editHome.click(); await cardOptions(page, 'Music visualizer'); await page.getByRole('button', {name: 'Remove Music visualizer', exact: true}).click(); await done.click(); await expect(editHome).toBeEnabled();
-  await page.reload(); await feed(page, 'connected'); await expect(editHome).toBeEnabled();
+  await page.reload(); await recordsLoaded(page); await expect(editHome).toBeEnabled();
   await expect(page.locator('[data-home-card="music-visualizer"]')).toHaveCount(0);
   assert.deepEqual(sent, ['/api/v2/commands/music-capture-control', '/api/v2/commands/home-layout-set', '/api/v2/commands/home-layout-set'],
     'the visualizer added no command: only the explicit Start and the two layout saves');

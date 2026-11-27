@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser, type Locator, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {feed, startWorld} from './harness.ts';
 
@@ -51,7 +52,7 @@ export async function companionSessionJourney(browser: Browser): Promise<void> {
   const output = process.env.DASHBOARD_RECEIPTS;
   if (output !== undefined) await mkdir(output, {recursive: true});
   const shot = async (page: Page, name: string): Promise<void> => { if (output !== undefined) await page.screenshot({path: `${output}/${name}.png`, fullPage: false}); };
-  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   const errors: string[] = [];
   context.on('weberror', error => { errors.push(error.error().name); });
   try {

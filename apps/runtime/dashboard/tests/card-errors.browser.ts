@@ -10,6 +10,7 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {sessionStarted} from '../../dist/tests/fixtures/agents.js';
 import {serveFaultable, type CardFault} from './card-faults.ts';
 import {unreportedCardFaults} from './card-watch.ts';
@@ -23,7 +24,7 @@ const output = process.env.DASHBOARD_RECEIPTS;
 if (output !== undefined) await mkdir(output, {recursive: true});
 const shot = async (page: Page, name: string): Promise<void> => { if (output !== undefined) await page.screenshot({path: `${output}/card-errors-${name}.png`, fullPage: true}); };
 const checks: string[] = [];
-const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
 // CARD_ERRORS_PART runs one part: render, effect, component, module, page, directory, rail, backdrop, late or exit.
 const part = process.env.CARD_ERRORS_PART;
 const runs = (name: string): boolean => part === undefined || part === name;

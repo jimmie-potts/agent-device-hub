@@ -12,14 +12,17 @@ import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-con
 import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, SESSION_SCHEMA, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session';
 import {
-  InProcessBus, type BunnyModule, type Cancel, type CommandDraft, type Participant, type RequestResult, type Scheduler, type StateDraft, type Subscription,
+  InProcessBus, type BunnyModule, type CommandDraft, type Participant, type RequestResult, type Scheduler, type StateDraft, type Subscription,
 } from '@jimmie-potts/sdk';
-import {ModuleHarness, RecordedSpans} from '@jimmie-potts/sdk/testing';
+import {ModuleHarness, RecordedSpans, manualClock, moduleWaitBudgets, waitForObservation} from '@jimmie-potts/sdk/testing';
 import {Library} from '../../src/library/index.js';
 import {encodeHostedGif} from '../../src/media/index.js';
 import {FAMILIES, pixooOwnSchemas, schemaOf, type DisplayRecord} from '../../src/module/schemas.js';
 import {TICK_MS, createPixooModule, type PixooOptions} from '../../src/module/module.js';
-import {SimulatedPixoo, type SimulatedMode} from '../../src/module/transport.js';
+import {DashboardPager} from '../../src/presentation/agent-dashboard.js';
+import {renderDashboard} from '../../src/presentation/dashboard-pixels.js';
+import {monitorView} from '../../src/presentation/sources.js';
+import {frameDigest, SimulatedPixoo, type SimulatedMode} from '../../src/module/transport.js';
 
 export const DEVICE = 'pixoo-1';
 /** The module's section: a simulated Pixoo at a documentation address with the observed GIF profile. */
@@ -63,24 +66,19 @@ export function validator(): MessageValidator {
  * clock: its request deadlines are a test's backstop, not the module's behavior.
  */
 export class ManualClock {
-  #now: number;
-  #next = 0;
-  readonly #timers = new Map<number, {at: number; callback: () => void}>();
+  readonly #clock: ReturnType<typeof manualClock>;
   #settle: () => Promise<void> = turns;
 
   constructor(start = Date.now()) {
-    this.#now = start;
+    this.#clock = manualClock(start);
   }
 
-  readonly now = (): number => this.#now;
+  readonly now = (): number => this.#clock.now();
 
   readonly scheduler: Scheduler = {after: (delayMs, callback) => {
-    const id = this.#next;
-    this.#next += 1;
-    this.#timers.set(id, {at: this.#now + delayMs, callback});
-    // A timer due now needs no time to pass: it runs after the current turn, as a real zero-delay timer would.
-    if (delayMs === 0) setImmediate(() => { this.#runDue(); });
-    const cancel: Cancel = () => { this.#timers.delete(id); };
+    const cancel = this.#clock.scheduler.after(delayMs, callback);
+    // A zero-delay timer gives work a turn even when the test leaves time still.
+    if (delayMs === 0) setImmediate(() => { this.#clock.advance(0); });
     return cancel;
   }};
 
@@ -94,26 +92,10 @@ export class ManualClock {
    * each timer, and at the end, the work the earlier timers started settles, so no timer runs ahead of it.
    */
   async advance(ms: number): Promise<void> {
-    const end = this.#now + ms;
-    for (;;) {
-      await this.#settle();
-      let due: [number, {at: number; callback: () => void}] | undefined;
-      for (const entry of this.#timers) if (entry[1].at <= end && (due === undefined || entry[1].at < due[1].at)) due = entry;
-      if (due === undefined) break;
-      this.#timers.delete(due[0]);
-      this.#now = due[1].at;
-      due[1].callback();
-    }
-    this.#now = end;
+    const end = this.now() + ms;
     await this.#settle();
-  }
-
-  /** Runs the timers due at the current time, in order of their scheduling. */
-  #runDue(): void {
-    for (const [id, timer] of [...this.#timers]) {
-      if (timer.at > this.#now || !this.#timers.delete(id)) continue;
-      timer.callback();
-    }
+    while (this.#clock.stepToNextTimer(end)) await this.#settle();
+    await this.#settle();
   }
 }
 /** A few turns of the event loop, for promised work and zero-delay timers in this process. */
@@ -123,14 +105,8 @@ async function turns(): Promise<void> {
 
 export const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 /** Polls until `find` returns something, or fails after `timeoutMs`. */
-export async function waitFor<T>(find: () => T | undefined, what: string, timeoutMs = 5000): Promise<T> {
-  const deadline = performance.now() + timeoutMs;
-  for (;;) {
-    const found = find();
-    if (found !== undefined) return found;
-    if (performance.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await sleep(5);
-  }
+export function waitFor<T>(find: () => T | undefined, what: string, timeoutMs: number = moduleWaitBudgets.pixoo.timeoutMs): Promise<T> {
+  return waitForObservation(find, (value): value is T => value !== undefined, what, {...moduleWaitBudgets.pixoo, timeoutMs});
 }
 
 /** A PNG that declares `width` x `height` pixels and holds one row of image data: a pixel bomb's header, a few bytes long. */
@@ -321,6 +297,29 @@ export class World {
     return record;
   }
 
+  /** Wait for the dashboard rendered from the published session, then return its frame digests for later comparisons. */
+  async waitForSessionDashboard(session: Session30Record, limitMs = 5000): Promise<string[]> {
+    const view = monitorView({state: 'current', revision: session.revision, sessions: [session]});
+    const digests = renderDashboard(new DashboardPager().layout(view, this.now())).map(frameDigest);
+    await this.waitForDashboard(digests, limitMs);
+    return digests;
+  }
+
+  /** A session update can reach the module before its dashboard replaces the previous picture on the device. */
+  async waitForDashboard(expected: readonly string[], limitMs = 5000): Promise<void> {
+    const matches = () => {
+      const actual = this.device.state().shown?.digests;
+      return actual?.length === expected.length && actual.every((digest, index) => digest === expected[index]) ? true : undefined;
+    };
+    try {
+      if (this.clock === undefined) await waitFor(matches, 'the session dashboard on the device', limitMs);
+      else await this.tickUntil(matches, 'the session dashboard on the device', limitMs);
+    } catch (cause) {
+      const shown = this.device.state().shown;
+      throw new Error(`Expected dashboard frames ${JSON.stringify(expected)}, device showed ${JSON.stringify(shown)}, Monitor ${JSON.stringify(this.display()?.monitor)}`, {cause});
+    }
+  }
+
   /** Publishes a new playback record from the stand-in playback owner. */
   async publishPlayback(title?: string, player?: 'playing' | 'paused'): Promise<PlaybackState> {
     this.revision += 1;
@@ -337,7 +336,7 @@ export class World {
   }
 
   /** The outcome of one request, once the module has published it. */
-  outcome(requestId: string, timeoutMs = 5000): Promise<Message<{requestId: string; result: string; evidence: string; error?: {code: string}}>> {
+  outcome(requestId: string, timeoutMs: number = moduleWaitBudgets.pixoo.timeoutMs): Promise<Message<{requestId: string; result: string; evidence: string; error?: {code: string}}>> {
     return waitFor(() => this.seen.find(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === requestId) as
       Message<{requestId: string; result: string; evidence: string; error?: {code: string}}> | undefined, `the outcome of ${requestId}`, timeoutMs);
   }

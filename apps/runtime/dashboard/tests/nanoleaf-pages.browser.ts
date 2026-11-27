@@ -8,6 +8,7 @@ import type {Identity} from '@jimmie-potts/event-contracts/v2/families';
 import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {expect} from 'playwright/test';
 import {IDENTITY, sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
@@ -40,7 +41,7 @@ try {
   const beforeScene = await scene();
   const beforeEffect = effect();
   browser = await chromium.launch({headless: true});
-  const fallback = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'no-preference'});
+  const fallback = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'no-preference'});
   try {
     const errors: string[] = []; fallback.on('weberror', error => { errors.push(`${error.error().name}: ${error.error().message}`); });
     const page = await fallback.newPage(); page.setDefaultTimeout(12_000);
@@ -79,7 +80,7 @@ try {
       assert.equal(sent.length, 0, 'fallback assembly and navigation send no command');
     } finally { await animations.dispose(); }
   } finally { await fallback.close(); }
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => { errors.push(`${error.error().name}: ${error.error().message}`); });
     const page = await context.newPage(); page.setDefaultTimeout(12_000);

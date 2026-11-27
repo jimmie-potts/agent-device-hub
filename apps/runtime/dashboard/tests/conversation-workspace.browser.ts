@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {feed, startWorld} from './harness.ts';
 import {chooseConversation, conversationLink, destinationLink, destinationNames, openDeviceMenu, showRail} from './navigation-helpers.ts';
 
 export async function conversationWorkspaceJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, speech: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(12_000);

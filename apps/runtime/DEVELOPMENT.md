@@ -1151,6 +1151,26 @@ The normal dashboard build also compiles the fixed frontend imports for the
 browser. Real feature interactions and trusted iframe execution are verified
 by the owning story's focused browser and disposable Acceptance checks.
 
+The Rooms, Music card, Music capture, Music lighting and Home shapes journeys
+use `dashboard/tests/journey-runner.ts`. Start each simulated world with
+`runJourney`, name the current step with `run.step`, and use `run.newContext`
+for every browser context. Its pass-through route remains active when a page
+removes one of its handlers. Use `run.closeContext` to retire a context early.
+A failure reports the step and a private temporary directory containing one
+Playwright trace per context. Open a completed trace locally with
+`npx playwright show-trace /path/to/context-1.zip`. The world’s hard deadline
+reports the same directory and step. An interrupted context leaves its live
+trace there. A successful journey removes its traces.
+
+Dashboard journeys that manage their own browser use `openJourneyContext` from
+`dashboard/tests/browser-context.ts`. Each context installs the same pass-through
+route as the runner before navigation, including for later tabs and popups. For a
+page created by `browser.newPage()`, call `keepRequestInterception(page.context())`
+before its first navigation. A journey can remove all of its page routes while
+requests are in flight. Playwright keeps HTTP caching disabled for the context.
+The trusted-navigation journey reads Fetch Metadata at its disposable HTTP
+server because Playwright can omit Chromium's final headers on intercepted requests.
+
 ```bash
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it

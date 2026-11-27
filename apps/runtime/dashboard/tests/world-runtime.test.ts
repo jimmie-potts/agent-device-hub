@@ -72,7 +72,11 @@ void test('a world not closed within its limit ends the run, naming the journey 
   stuck.phase('running'); stuck.phase('closing');
   timers[0]?.run();
   assert.deepEqual(failures, ['The world for devices-menu.browser.ts:9 was not closed within 25 minutes; it was closing.']);
+  let step = 'prepare';
+  const running = worldDeadline(() => `Home shapes / ${step}`, {timer, fail: message => {failures.push(message);}});
+  running.phase('running'); step = 'tiles'; timers[1]?.run();
+  assert.equal(failures.at(-1), 'The world for Home shapes / tiles was not closed within 25 minutes; it was running.');
   const closed = worldDeadline('shell.browser.ts:11', {timer, limitMs: 60_000, fail: message => {failures.push(message);}});
   closed.clear();
-  assert.deepEqual([timers[1]?.ms, timers[1]?.cancelled], [60_000, true], 'a closed world cancels its deadline');
+  assert.deepEqual([timers[2]?.ms, timers[2]?.cancelled], [60_000, true], 'a closed world cancels its deadline');
 });

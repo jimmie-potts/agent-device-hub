@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import type {Browser,Page,Response} from 'playwright';
+import type {Page,Response} from 'playwright';
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
 import {changes,feed,holdDashboardStream,type World} from './harness.ts';
+import {viewport, type Journey} from './journey-runner.ts';
 
 const panel=(page:Page)=>page.getByRole('region',{name:'Reported anonymous presence',exact:true});
 const marker=(page:Page)=>page.locator('[data-presence-marker]:visible');
@@ -51,7 +52,7 @@ async function watchDocumentReload(page:Page,url:string):Promise<()=>Promise<Res
 }
 
 /** Real stock-report owner, authenticated SDK copies and apartment renderer over fictional inputs. */
-export async function apartmentPresenceJourney(browser:Browser,world:World):Promise<void> {
+export async function apartmentPresenceJourney(run: Journey, world: World):Promise<void> {
   const {bytes,image}=syntheticApartmentArtwork(),model=furnishedFixture(image);
   const folder=join(world.stateDir,'modules/core/apartment');await mkdir(join(folder,'assets'),{recursive:true,mode:0o700});
   await writeFile(join(folder,'active.json'),JSON.stringify(model),{mode:0o600});
@@ -65,9 +66,10 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     if(section)await panel(page).screenshot({path});
     else await page.getByRole('region',{name:'Apartment 3D model',exact:true}).screenshot({path});
   };
-  const desktop=await browser.newContext({viewport:{width:1280,height:1000}});
+  run.step('Desktop apartment presence');
+  const desktop=await run.newContext({viewport: viewport.tallDesktop});
   try{
-    const page=await desktop.newPage();page.setDefaultTimeout(10_000);
+    const page=await run.page(desktop, 'controls');
     const reload=await watchDocumentReload(page,world.url);
     const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
     const sent=changes(page);await page.goto(world.url+'/#/rooms');await feed(page,'connected');
@@ -198,6 +200,7 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     await frame.selectOption({label:'Reading room'});
     await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]:not([hidden])').length===1);
     assert.equal(await view.locator('[data-presence-room=studio]').count(),0);
+    run.step('Restore the apartment after restart');
     await world.restart();
     const reloaded=await reload();
     assert.equal(reloaded?.status(),200,'the restarted runtime serves the dashboard document');
@@ -213,12 +216,14 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]:not([hidden])').length===1);
     assert.equal(await studio.count(),0,'the restored Reading room frame hides the Studio');
     assert.equal(sent.length,baseline,'reports, camera, loss and restart send zero new commands');
+    run.step('Open the apartment without WebGL');
     const fallback=await desktop.newPage();await fallback.addInitScript(()=>{HTMLCanvasElement.prototype.getContext=()=>null;});
     const fallbackSent=changes(fallback);await fallback.goto(world.url+'/#/rooms');await feed(fallback,'connected');
     await fallback.getByText('3D rendering is unavailable. The fixture list and lighting controls remain available.',{exact:true}).waitFor();
     await openSensorLayer(fallback);
     await panel(fallback).getByText('Studio · vacant',{exact:true}).waitFor();
     assert.equal(fallbackSent.length,0);await fallback.close();assert.deepEqual(errors,[]);
+    run.step('Expire an overlap across a wall-clock correction');
     const clockPage=await desktop.newPage();
     await clockPage.clock.install();
     await clockPage.goto(world.url+'/#/rooms');
@@ -230,15 +235,20 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     await clockPage.clock.setSystemTime(new Date(Date.now()-3_600_000));
     await clockPage.clock.runFor(2800);
     assert.equal(await clockDot.count(),0,'browser wall-clock correction cannot extend the scheduled expiry');
-    await clockPage.clock.setSystemTime(new Date());
+    // The simulator stamps the four axes synchronously with the runtime's wall time. Restore the browser to a
+    // sample taken after those receipts: a sample sent before them can reach Chromium late and leave all four
+    // in its future. The fresh held-status report publishes the eligible pair on this same page and clock.
     refreshOverlap();
+    await clockPage.clock.setSystemTime(new Date());
+    report('presence-b',5,false);
     await clockDot.waitFor({state:'visible'});
     report('presence-b',3,2000);
     await clockPage.close();
-  }finally{await desktop.close();}
-  const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  }finally{await run.closeContext(desktop);}
+  run.step('Phone apartment presence');
+  const phoneContext=await run.newContext({viewport: viewport.phone,isMobile:true,hasTouch:true});
   try{
-    const phone=await phoneContext.newPage(),sent=changes(phone);phone.setDefaultTimeout(10_000);
+    const phone=await run.page(phoneContext, 'controls'),sent=changes(phone);
     await phone.goto(world.url+'/#/rooms');await feed(phone,'connected');await openSensorLayer(phone);
     await panel(phone).getByText('Studio · vacant',{exact:true}).waitFor();
     await phone.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]:not([hidden])').length===2);
@@ -247,6 +257,6 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     await phone.waitForFunction(()=>document.documentElement.scrollWidth<=innerWidth);
     await capture(phone,'presence-phone.png');
     assert.equal(sent.length,0);
-  }finally{await phoneContext.close();}
+  }finally{await run.closeContext(phoneContext);}
   console.log(JSON.stringify({journey:'anonymous-apartment-presence',sources:2,combined:true,expiry:true,roomOnly:true,approximate:true,held:true,invalidCalibration:true,boundaryAmbiguous:true,sdkStale:true,reconnect:true,phone:true,zeroCommands:true,physical:false}));
 }

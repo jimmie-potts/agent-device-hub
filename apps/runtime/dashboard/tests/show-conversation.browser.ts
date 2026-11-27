@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {feed, startWorld} from './harness.ts';
 
 export async function showConversationJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, nanoleaf: true, assistantCatalog: ['create_light_show_draft', 'edit_light_show_cue',
     'preview_light_show_draft', 'save_light_show', 'read_light_shows', 'control_music_lighting_control']});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);

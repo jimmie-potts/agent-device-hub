@@ -4,10 +4,11 @@
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium, expect, type Locator, type Route} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import sharp from 'sharp';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {SIMULATED_SECTION} from '@jimmie-potts/pixoo';
-import {feed, startWorld} from './harness.ts';
+import {feed, recordsLoaded, startWorld} from './harness.ts';
 
 const deviceId = SIMULATED_SECTION.config.device.id;
 const world = await startWorld({pixooPages: true});
@@ -16,7 +17,7 @@ const results: Record<string, boolean | string> = {};
 let evidence = (): Promise<string> => Promise.resolve('none');
 const consoleErrors: string[] = [], stacks: string[] = [];
 try {
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); stacks.push(`${error.error().message} ${(error.error().stack ?? '').split('\n').slice(0, 8).join(' | ')}`); }); context.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text().slice(0, 200)); });
   const page = await context.newPage(); page.setDefaultTimeout(10_000);
   // Every command request the page makes, with its body: the card's presses and this journey's own setup requests.
@@ -227,7 +228,7 @@ try {
     for (const control of [screenOn, card.getByRole('button', {name: 'Screen off', exact: true})]) await refused(control, 'stale records disable the controls');
     if (await toggle.count() > 0) await refused(toggle, 'stale records disable the playback controls');
   } finally { releaseSync(); await page.unroute('**/api/sdk/v1/sync'); }
-  await feed(page, 'connected'); await expect(resume).toBeEnabled(); await expect(screenOn).toBeEnabled();
+  await recordsLoaded(page); await expect(resume).toBeEnabled(); await expect(screenOn).toBeEnabled();
   results['stale-records'] = true;
 
   // Read-only access offers no control at all.
@@ -237,7 +238,7 @@ try {
   assert.equal(await screenOn.count() + await pause.count() + await resume.count(), 0, 'read-only access offers no control');
   results['read-only'] = true;
   await page.unroute('**/api/v2/authority?scope=control');
-  await page.reload(); await feed(page, 'connected');
+  await page.reload(); await recordsLoaded(page);
   await expect(resume).toBeEnabled(); await expect(screenOn).toBeEnabled();
 
   // (a) A read showed Resume enabled; a display change that leaves playback alone starts another read, held here. The

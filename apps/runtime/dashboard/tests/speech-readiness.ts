@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import type {Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 
 /** The real page receives restrictive state and resolves delayed voices before React can render that state. */
 export async function speechReadinessJourney(browser: Browser): Promise<void> {
@@ -77,7 +78,7 @@ export async function speechReadinessJourney(browser: Browser): Promise<void> {
     };
   `, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'speech-readiness-entry.js'},
   bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, logLevel: 'silent', loader: {'.css': 'empty'}});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   try {
     await context.route('https://speech-readiness.invalid/**', route => route.fulfill(new URL(route.request().url()).pathname === '/bundle.js'
       ? {contentType: 'text/javascript', body: bundle.outputFiles[0]?.text ?? ''}

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {checkModeOverrides} from './mode-overrides-journey.ts';
 import {checkHubCardProjections} from './hub-control-projections.ts';
@@ -11,7 +12,7 @@ const world = await startWorld({modeDevices: true, inbox: true});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
     await checkHubCardProjections(context);

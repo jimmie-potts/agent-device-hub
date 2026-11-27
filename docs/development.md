@@ -1097,6 +1097,24 @@ replaces it in CI takes about 2 s locally.
 [#862](https://github.com/jimmie-potts/agent-device-hub/issues/862) owns speedups. Measure before changing a wait,
 and keep the waits that test safety behavior.
 
+### Module test waits and manual time
+
+MicroDuck and Pixoo use `waitForObservation(read, ready, what, budget)` from
+`@jimmie-potts/sdk/testing` for real-I/O polling. Read a small fixture value that
+can appear in the test log, such as the connection state or the number of writes.
+The helper tests that value, then reports the last observation and the budget
+if time expires. The named `moduleWaitBudgets` retain the existing 4 s
+MicroDuck and 5 s Pixoo limits and their 5 ms polling interval (#2061).
+On `564f1ef3` the longest of 29 waits in the MicroDuck module test was 956 ms,
+and the longest of ten in Pixoo long playback was 270 ms (rounded up).
+Individual call sites with a different limit keep their override.
+
+`manualClock(start)` owns the test timer queue. The runtime advances a snapshot
+of the due timers in one turn. MicroDuck moves its loop clock in 5 ms turns so a
+simulated slow commit can move its transport clock independently. Pixoo uses
+`stepToNextTimer(end)` to settle work between callbacks and gives zero-delay
+timers an event-loop turn. Real I/O deadlines stay on the host clock.
+
 ## Static analysis
 
 See [Static analysis](static-analysis.md#static-analysis) for the authoritative procedure.

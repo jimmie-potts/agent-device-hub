@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir, readFile} from 'node:fs/promises';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {destinationLink} from './navigation-helpers.ts';
 
@@ -11,7 +12,7 @@ try {
   browser = await chromium.launch({headless: true});
   const hidden = await startWorld({wispr: {}});
   try {
-    const context = await browser.newContext();
+    const context = await openJourneyContext(browser);
     try {
       const page = await context.newPage(); page.setDefaultTimeout(8000);
       const reads: string[] = [];
@@ -34,7 +35,7 @@ try {
   // files report in a zone whose day has just begun, or a run that crosses UTC midnight would read Stale (#2083, #2063).
   const world = await startWorld({wispr: {exposeToDashboard: true, shareTextAggregates: true, wholeDay: true}});
   try {
-    const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+    const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
     try {
       const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); });
       const page = await context.newPage(); page.setDefaultTimeout(8000);

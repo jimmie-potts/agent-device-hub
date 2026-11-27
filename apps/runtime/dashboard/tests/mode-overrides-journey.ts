@@ -4,13 +4,14 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {ModeState, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {destinationLink} from './navigation-helpers.ts';
 
 export async function checkModeOverrides(browser: Browser, evidence?: string): Promise<void> {
   const world = await startWorld({nanoleaf: true, pixooPages: true});
   // Hub mode, a light and the full Pixoo card side by side: Home in one column (#1672), where every card keeps its full content.
-  const context = await browser.newContext({viewport: {width: 560, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 560, height: 1000}, reducedMotion: 'reduce'});
   try {
     const page = await context.newPage(); page.setDefaultTimeout(15_000);
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
