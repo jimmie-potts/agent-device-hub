@@ -37,10 +37,32 @@ for (const provider of ['anthropic', 'openai'] as const) {
       literal: 'a gentle glow', refusal: 'missing'},
     {kind: 'brightness', label: 'asks for a value when the owner supplies only a time', text: 'Set Studio 2 brightness at sunset.',
       literal: 'sunset', refusal: 'missing'},
+    {kind: 'brightness', label: 'asks rather than choosing an excluded maximum', text: 'Set Studio 2 brightness to something cozy, not maximum.',
+      refusal: 'missing'},
+    {kind: 'brightness', label: 'asks rather than treating an upper bound as the chosen value', text: 'Set Studio 2 brightness to anything below maximum.',
+      refusal: 'missing'},
+    {kind: 'brightness', label: 'asks rather than setting a quoted limit', text: "Set Studio 2 brightness to 'maximum'.",
+      refusal: 'missing'},
+    {kind: 'brightness', label: 'asks rather than setting an incidental ceiling', text: 'Set Studio 2 brightness to anything up to maximum.',
+      refusal: 'missing'},
+    {kind: 'brightness', label: 'retains a clear value after an excluded limit', text: 'Not maximum, set Studio 2 brightness to 42%.',
+      percent: 42, literal: '42%'},
+    {kind: 'brightness', label: 'retains the correction instead of an earlier limit', text: 'Set Studio 2 brightness to maximum, actually 42%.',
+      percent: 42, literal: '42%'},
+    {kind: 'brightness', label: 'refuses a withdrawn limit request', text: 'Set Studio 2 brightness to maximum, never mind.',
+      percent: 50, refusal: 'cancelled'},
     {kind: 'brightness', label: 'uses half brightness despite a conflicting scalar', text: 'Set Studio 2 to half brightness.',
       percent: 23, expected: 50},
     {kind: 'brightness', label: 'converts a written fraction of brightness to a percent', text: 'Set Studio 2 to 3/4 brightness.',
       percent: 2, expected: 75},
+    {kind: 'brightness', label: 'accepts a spoken word fraction of brightness', text: 'Set Studio 2 to three quarters brightness.',
+      percent: 1, expected: 75},
+    {kind: 'brightness', label: 'halves current brightness using the existing observation', text: 'Halve the current brightness of Studio 2.',
+      percent: 99, expected: 18, currentFraction: true},
+    {kind: 'brightness', label: 'does not halve a stale brightness observation', text: 'Halve the current brightness of Studio 2.',
+      percent: 99, refusal: 'stale'},
+    {kind: 'brightness', label: 'uses the requested fraction of current brightness', text: 'Set Studio 2 to three quarters of current brightness.',
+      percent: 99, expected: 26, currentFraction: true},
     {kind: 'brightness', label: 'converts a fraction of the actual maximum', text: 'Set Studio 2 to ½ of maximum brightness.',
       percent: 99, expected: 50},
     {kind: 'brightness', label: 'refuses a fractional percent below the supported step', text: 'Set Studio 2 brightness to ½%.',
@@ -211,7 +233,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const prior = companions.inspectAssistant()?.tasks[0]?.taskId;
       await submit({action: 'start', text});
       await waitFor(() => companions.inspectAssistant()?.tasks[0]?.taskId !== prior);
-      if (refusal === 'stale' || refusal === 'read-only' || refusal === 'opposite' || refusal === 'missing' || refusal === 'unsupported-fraction') {
+      if (refusal === 'stale' || refusal === 'read-only' || refusal === 'opposite' || refusal === 'missing' || refusal === 'unsupported-fraction' || refusal === 'cancelled') {
         await waitFor(() => ['waiting', 'succeeded'].includes(companions.inspectAssistant()?.tasks[0]?.status ?? ''));
         assert.equal(submissions.length, 0);
         assert.equal(writes.length, 0);
@@ -241,8 +263,9 @@ for (const provider of ['anthropic', 'openai'] as const) {
         return;
       }
       await waitFor(() => writes.length > 0);
-      assert.deepEqual(submissions, [{schema: `https://bunny.invalid/events/assistant-dispatch/${kind === 'power' || qualitative !== undefined ? '2.1' : '2.4'}`,
-        basis: kind === 'power' || qualitative !== undefined ? undefined : {kind, observedAtMs: clock.now(), value: kind === 'brightness' ? 35 : 3600}}]);
+      const hasBasis = 'currentFraction' in scenario || kind !== 'power' && qualitative === undefined;
+      assert.deepEqual(submissions, [{schema: `https://bunny.invalid/events/assistant-dispatch/${hasBasis ? '2.4' : '2.1'}`,
+        basis: hasBasis ? {kind, observedAtMs: clock.now(), value: kind === 'brightness' ? 35 : 3600} : undefined}]);
       assert.equal(writes.length, 1);
       const sent = writes[0] ?? assert.fail('Expected a single device submission.');
       if (kind === 'power') assert.equal(sent.on, false);

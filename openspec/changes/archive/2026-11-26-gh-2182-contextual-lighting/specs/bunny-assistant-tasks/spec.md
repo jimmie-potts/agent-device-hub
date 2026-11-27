@@ -66,7 +66,7 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 #### Scenario: Brightness requires a determinate value
 
 - **WHEN** the current request names a clear brightness value, a fraction of brightness or a registered limit
-- **THEN** the Hub uses the stated value and unit on the resolved device. A conflicting model scalar cannot replace a fraction or registered limit.
+- **THEN** the Hub uses the stated value and unit on the resolved device. A conflicting model scalar cannot replace a fraction or registered limit. A limit named only as an exclusion or ceiling supplies no setting.
 - **AND** a fractional percent must be representable at the device step.
 - **WHEN** the brightness is missing, subjective or only qualified by a time
 - **THEN** Conversation asks once for a percent, fraction or limit. The answer must supply that value for the same device and operation before one command can be sent. A bare affirmation cannot supply a value for this open question.

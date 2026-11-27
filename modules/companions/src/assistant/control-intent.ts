@@ -22,7 +22,18 @@ export const normalizedControlText = (value: string): string => value.toLowerCas
 export const containsControlValue = (input: string, value: string): boolean =>
   normalizedControlText(value) !== '' && ` ${normalizedControlText(input)} `.includes(` ${normalizedControlText(value)} `);
 
-function explicitWords(text: string): string | undefined {
+export const ownerRequestClauses = (text: string): string[] =>
+  text.trim().split(/(?<=[.!?;,])(?:\s+|$)|[\r\n]+/u).filter(Boolean);
+
+export const ownerCancelled = /(?:^|[,.!?;]\s+)(?:never mind|cancel (?:that|the request))[.!?]?\s*$/iu;
+
+export function controlExclusion(clause: string): {affirmative: string; excluded?: string} {
+  const marker = /\b(?:except|rather than|instead of|not|don['’]t|without|leave)\b/iu.exec(clause);
+  if (marker === null) return {affirmative: clause};
+  return {affirmative: clause.slice(0, marker.index), excluded: clause.slice(marker.index + marker[0].length)};
+}
+
+export function explicitWords(text: string): string | undefined {
   const addressed = normalizedControlText(text).replace(/^(?:hey )?(?:b u n n y|bunny|reachy|microduck) /u, '');
   const request = /^(?:(?:please|could you|would you|can you|will you) )+/u;
   if (text.trimEnd().endsWith('?') && !request.test(addressed)) return undefined;

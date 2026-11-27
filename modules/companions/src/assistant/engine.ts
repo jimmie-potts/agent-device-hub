@@ -23,7 +23,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, explicitPowerRequest, hubModeChoice, literalDeviceId, matchesControlSubject, missingBrightnessSubject, missingMode, namedControlTargets, normalizedControlText, type BoundControl, type SceneReceipt} from './control-intent.js';
+import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, controlExclusion, explicitPowerRequest, hubModeChoice, literalDeviceId, matchesControlSubject, missingBrightnessSubject, missingMode, namedControlTargets, normalizedControlText, ownerCancelled, ownerRequestClauses, type BoundControl, type SceneReceipt} from './control-intent.js';
 import {lightingControl, lightingFamily, lightingReference, lightingRefusal, lightingValue, planLightingControl, qualifiedLightingOwner, resolveLightingTarget, updateLightingGrounding, type LightingControlScope, type LightingDevice, type LightingClarification, type LightingQuestion} from './lighting-control.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, resolveModelControl, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
@@ -218,10 +218,8 @@ export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this han
 export const WAITING_PREFIX = 'Waiting to delegate';
 const jobReceipt = (job: CodingJob): string => `accepted: Coding job ${job.jobId} was queued for ${job.repository}. Updates will appear in this conversation.`;
 
-const deviceRequestClauses = (text: string) => text.trim().split(/(?<=[.!?;,])(?:\s+|$)|[\r\n]+/u).filter(Boolean);
-
 function deviceRequestSubject(text: string, kind: 'any' | 'read' = 'any'): string | undefined {
-  const [opening = '', ...remaining] = deviceRequestClauses(text);
+  const [opening = '', ...remaining] = ownerRequestClauses(text);
   const affirmative = normalizedControlText(opening).replace(/ (?:only|please)$/u, '');
   const remainder = remaining.find(clause => normalizedControlText(clause) !== 'please');
   const timerSubject = /^(?:is|was) (?:the )?timer for (?:the )?(.+?) (?:on|off|active|armed)$/u.exec(affirmative)?.[1]
@@ -247,7 +245,6 @@ const exclusionsInDeviceRequest = /\b(?:except|rather than|instead of|not|don t|
 const deviceLookupQuestion = 'Which exact device should I look up?';
 const deviceLookupNotResolved = JSON.stringify({devices: [], instruction: deviceLookupQuestion});
 const lookupRepair = JSON.stringify({devices: [], instruction: 'Retry read_devices once with an explicit device name or ID from the current owner request. If the target is still unclear, ask which exact device the owner means.'});
-const deviceLookupCancelled = /(?:^|[.!?;]\s+)(?:never mind|cancel (?:that|the request))[.!?]?\s*$/iu;
 type DeviceLookupStage = 'initial' | 'repair' | 'unresolved' | 'repaired' | 'answered';
 type DeviceLookupAdmission = {kind: 'named'; lookup: NamedDeviceLookup} | {kind: 'contextual'} | {kind: 'blocked'};
 
@@ -256,20 +253,20 @@ function namedDeviceLookup(request: string, call: ToolCall, answer: boolean): De
   if (typeof call.input.target !== 'string' || typeof call.input.owner !== 'string') return {kind: 'blocked'};
   const target = call.input.target.trim();
   const words = normalizedControlText(request);
-  if (deviceLookupCancelled.test(request)) return {kind: 'blocked'};
+  if (ownerCancelled.test(request)) return {kind: 'blocked'};
   if (target === '') {
     const subject = answer ? literalDeviceId(request) === undefined ? words : request
       : brightnessSubject(request) ?? deviceRequestSubject(request);
-    return subject === undefined || deviceRequestClauses(request).length !== 1 || exclusionsInDeviceRequest.test(words)
+    return subject === undefined || ownerRequestClauses(request).length !== 1 || exclusionsInDeviceRequest.test(words)
       ? {kind: 'blocked'} : {kind: 'named', lookup: {owner: call.input.owner, target: subject, request, currentSubject: true}};
   }
   // Exclusions apply within their clause. Scene wording and the position of a
   // contrast do not decide whether the owner cited the device for a read.
   const affirmative: string[] = [], excluded: string[] = [];
-  for (const clause of deviceRequestClauses(request)) {
-    const marker = /\b(?:except|rather than|instead of|not|don['’]t|without|leave)\b/iu.exec(clause);
-    affirmative.push(clause.slice(0, marker?.index ?? clause.length));
-    if (marker !== null) excluded.push(clause.slice(marker.index + marker[0].length));
+  for (const clause of ownerRequestClauses(request)) {
+    const part = controlExclusion(clause);
+    affirmative.push(part.affirmative);
+    if (part.excluded !== undefined) excluded.push(part.excluded);
   }
   const selectedText = affirmative.join(' '), excludedText = excluded.join(' ');
   const exact = exactControlIds(request);
@@ -1769,7 +1766,7 @@ export class AssistantEngine {
       const admission = namedDeviceLookup(lookupRequest, call, answered);
       if (repairing && !answered && (admission.kind !== 'named' || admission.lookup.currentSubject === true)) return {kind: 'blocked'};
       if (brightnessTarget !== undefined && !repairing && !answered && typeof call.input.target === 'string' &&
-          call.input.target.trim() !== '' && !exclusionsInDeviceRequest.test(words) && !deviceLookupCancelled.test(request)) return {kind: 'contextual'};
+          call.input.target.trim() !== '' && !exclusionsInDeviceRequest.test(words) && !ownerCancelled.test(request)) return {kind: 'contextual'};
       return admission;
     };
     const lookupGranted = (id: string) => discover('devices', 'index', id) && (['index', 'label', 'status'] as const).every(field =>
@@ -2751,7 +2748,7 @@ export class AssistantEngine {
       return 'refused: the owner asked for device status. Read the current setting without sending a command.';
     }
     if (input.setting.family === 'power-set') {
-      const explicit = new Set(deviceRequestClauses(instruction).flatMap(clause => {
+      const explicit = new Set(ownerRequestClauses(instruction).flatMap(clause => {
         const power = explicitPowerRequest(clause.replace(/^then\s+/iu, ''));
         return power !== undefined && complete(power.subject) ? [power.on] : [];
       }));
@@ -3372,7 +3369,7 @@ export class AssistantEngine {
         if (scope !== undefined && namedDeviceRead === undefined && call.name === READ_DEVICES) {
           if (scope.lookupStage === 'repair') text = deviceLookupNotResolved;
           else if (scope.lookupStage === 'initial' && typeof call.input.target === 'string' && call.input.target.trim() === '' &&
-              !deviceLookupCancelled.test(scope.request)) text = lookupRepair;
+              !ownerCancelled.test(scope.request)) text = lookupRepair;
         }
         return {text, units: 0, evidence, disclosures: ledger.fields,
           ...(namedDeviceRead === undefined ? {} : {namedDeviceRead}),
