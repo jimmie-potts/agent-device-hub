@@ -3,7 +3,7 @@
 // page-side watch itself runs in every browser journey.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {waitForCopies, waitForFeed, type FeedPage, type FeedRequest} from './feed-wait.ts';
+import {browserStepError, waitForCopies, waitForFeed, type FeedPage, type FeedRequest} from './feed-wait.ts';
 
 const ORIGIN = 'http://127.0.0.1:4100';
 /** The fake clock's reading when each wait begins. */
@@ -192,4 +192,27 @@ void test('synced copies resolve the wait without reading the page', async () =>
   const {page, evaluated} = fakePage({wait: () => Promise.resolve()});
   await waitForCopies(page, () => SINCE);
   assert.deepEqual(evaluated, []);
+});
+
+void test('a failed browser step keeps the locator and last actionability messages from a coloured Playwright call log', () => {
+  const problem = new Error([
+    'locator.click: Timeout 10000ms exceeded.',
+    'Call log:',
+    "\x1b[2m  - waiting for getByRole('button', { name: 'Set display mode' })\x1b[22m",
+    '  - locator resolved to button',
+    '  - attempting click action',
+    '  - element is not enabled',
+  ].join('\n'));
+  assert.equal(browserStepError(problem), [
+    'locator.click: Timeout 10000ms exceeded.',
+    "  - waiting for getByRole('button', { name: 'Set display mode' })",
+    '  …',
+    '  - attempting click action',
+    '  - element is not enabled',
+  ].join('\n'));
+});
+
+void test('a browser step preserves assertion details without a Playwright call log', () => {
+  const assertion = new Error('card shares the target lock\nfalse !== true');
+  assert.equal(browserStepError(assertion), assertion.message);
 });
