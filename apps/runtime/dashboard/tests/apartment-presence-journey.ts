@@ -223,6 +223,7 @@ export async function apartmentPresenceJourney(run: Journey, world: World):Promi
     await openSensorLayer(fallback);
     await panel(fallback).getByText('Studio · vacant',{exact:true}).waitFor();
     assert.equal(fallbackSent.length,0);await fallback.close();assert.deepEqual(errors,[]);
+    run.step('Expire an overlap across a wall-clock correction');
     const clockPage=await desktop.newPage();
     await clockPage.clock.install();
     await clockPage.goto(world.url+'/#/rooms');
@@ -234,8 +235,12 @@ export async function apartmentPresenceJourney(run: Journey, world: World):Promi
     await clockPage.clock.setSystemTime(new Date(Date.now()-3_600_000));
     await clockPage.clock.runFor(2800);
     assert.equal(await clockDot.count(),0,'browser wall-clock correction cannot extend the scheduled expiry');
-    await clockPage.clock.setSystemTime(new Date());
+    // The simulator stamps the four axes synchronously with the runtime's wall time. Restore the browser to a
+    // sample taken after those receipts: a sample sent before them can reach Chromium late and leave all four
+    // in its future. The fresh held-status report publishes the eligible pair on this same page and clock.
     refreshOverlap();
+    await clockPage.clock.setSystemTime(new Date());
+    report('presence-b',5,false);
     await clockDot.waitFor({state:'visible'});
     report('presence-b',3,2000);
     await clockPage.close();
