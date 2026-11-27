@@ -34,8 +34,10 @@ export function renderFailure(kind, fallback, record) {
     lines.push('| Suite | Module | Case ID | Result number | Declaration (line, column) | Duration (ms) |', '| --- | --- | --- | --- | --- | --- |');
     for (const item of cases) {
       const fields = nodeFields(item ?? {});
+      const suite = fields.suite === 'not observed' ? suiteId(fallback) : fields.suite;
+      const module = fields.module === 'not observed' && fields.fileNumber ? `file ${fields.fileNumber}` : fields.module;
       const position = fields.line && fields.column ? `${fields.line}, ${fields.column}` : 'not observed';
-      lines.push(`| ${fields.suite} | ${fields.module} | ${fields.caseId ?? 'not observed'} | ${fields.ordinal ?? 'not observed'} | ${position} | ${fields.duration ?? 'not observed'} |`);
+      lines.push(`| ${suite} | ${module} | ${fields.caseId ?? 'not observed'} | ${fields.ordinal ?? 'not observed'} | ${position} | ${fields.duration ?? 'not observed'} |`);
     }
     if (record.omitted === true || record.cases.length > 10) lines.push('', 'Additional failing cases omitted.');
   }

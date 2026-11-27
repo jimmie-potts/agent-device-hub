@@ -1,5 +1,15 @@
 // Only members of these reviewed vocabularies can appear in a browser failure summary.
 const entries = [
+  'artBackdropJourney', 'artNoticeJourney', 'artScheduleJourney', 'artSelectionJourney', 'artShowJourney',
+  'codingDelegationJourney', 'codingJobsJourney', 'codingSlotsJourney', 'companionSessionJourney',
+  'conversationArtJourney', 'conversationContextJourney', 'conversationHistoryJourney',
+  'conversationQueueJourney', 'conversationRailJourney', 'conversationStateJourney',
+  'conversationSteerJourney', 'conversationUploadJourney', 'conversationWorkspaceJourney',
+  'duckFailureJourney', 'duckJourney', 'duckReplacementJourney', 'failedTurnJourney',
+  'homeSpeechLifetimeJourney', 'knowledgeJourney', 'lifxConversationJourney', 'pixooConfirmationJourney',
+  'preferencesJourney', 'showConversationJourney', 'speechJourney', 'speechReadinessJourney',
+  'spokenRepliesJourney', 'suggestionsJourney', 'suggestionsReconnectJourney', 'supervisorSelectionJourney',
+  'wemoConversationJourney',
   'art-backdrop-journey.ts', 'art-notice-journey.ts', 'art-schedule-journey.ts', 'art-selection-journey.ts',
   'art-show-journey.ts', 'art-theme.browser.ts', 'art.browser.ts', 'automation.browser.ts', 'browser.ts',
   'card-consistency.browser.ts', 'card-errors.browser.ts', 'card-watch-run.ts', 'companion-cards.browser.ts',
@@ -111,7 +121,7 @@ export function journeyId(value: unknown): string {
 export function browserFields(input: {journey?: unknown; step?: unknown; condition?: unknown; feed?: unknown; copies?: unknown}) {
   return {
     journey: journeyId(input.journey), step: from(steps, input.step),
-    condition: from(['feed connecting', 'feed connected', 'feed reconnecting', 'feed ended', 'copies synced'], input.condition),
+    condition: from(['world deadline', 'feed connecting', 'feed connected', 'feed reconnecting', 'feed ended', 'copies synced'], input.condition),
     feed: from(feeds, input.feed), copies: from(copies, input.copies),
   };
 }
@@ -120,11 +130,11 @@ export function boundedInt(value: unknown, max: number): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= max ? value : undefined;
 }
 
-export function nodeFields(input: {suite?: unknown; module?: unknown; line?: unknown; column?: unknown; caseId?: unknown; ordinal?: unknown; duration?: unknown}) {
+export function nodeFields(input: {suite?: unknown; module?: unknown; line?: unknown; column?: unknown; caseId?: unknown; ordinal?: unknown; fileNumber?: unknown; duration?: unknown}) {
   const suite = from(Object.keys(nodeModules), input.suite);
   const modules: readonly string[] = Object.hasOwn(nodeModules, suite) ? nodeModules[suite as keyof typeof nodeModules] : [];
   return {suite, module: from(modules, input.module), line: boundedInt(input.line, 1_000_000),
-    column: boundedInt(input.column, 100_000), caseId: boundedInt(input.caseId, 1_000_000), ordinal: boundedInt(input.ordinal, 1_000_000),
+    column: boundedInt(input.column, 100_000), fileNumber: boundedInt(input.fileNumber, 1_000_000), caseId: boundedInt(input.caseId, 1_000_000), ordinal: boundedInt(input.ordinal, 1_000_000),
     duration: boundedInt(input.duration, 86_400_000)};
 }
 

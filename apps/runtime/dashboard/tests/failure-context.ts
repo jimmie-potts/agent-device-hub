@@ -19,6 +19,16 @@ export async function browserEntry(name: string, run: Promise<unknown>): Promise
   catch (error) {withFailureContext(error, {journey: name}); throw error;}
 }
 
+export function namedBrowserEntry<Args extends unknown[]>(journey: (...args: Args) => Promise<void>, ...args: Args): Promise<void> {
+  return browserEntry(journey.name, journey(...args));
+}
+
+export function recordBrowserFailure(fields: Details): void {
+  if (destination === undefined) return;
+  try {writeFileSync(destination, JSON.stringify(browserFields(fields)), {mode: 0o600, flag: 'wx'});}
+  catch { /* A reporting failure must leave the original exception and exit status intact. */ }
+}
+
 if (destination !== undefined) {
   process.on('uncaughtExceptionMonitor', (error: Error) => {
     try {
@@ -31,7 +41,7 @@ if (destination !== undefined) {
         Object.assign(details, diagnosed.get(current));
         current = current instanceof AggregateError ? current.errors[0] : current.cause;
       }
-      writeFileSync(destination, JSON.stringify(browserFields(details)), {mode: 0o600, flag: 'wx'});
+      recordBrowserFailure(details);
     } catch { /* A reporting failure must leave the original exception and exit status intact. */ }
   });
 }

@@ -12,7 +12,7 @@ const directories = new Map([
 
 export default async function* failures(events) {
   const cases = [], pending = [];
-  let ordinal = 0, omitted = false;
+  let ordinal = 0, fileNumber = 0, omitted = false;
   for await (const {type, data} of events) {
     if (type === 'test:pass' || type === 'test:fail') ordinal++;
     if (type === 'test:fail' && !data.todo && !data.skip && data.details?.error?.failureType !== 'subtestsFailed') {
@@ -21,11 +21,12 @@ export default async function* failures(events) {
         duration: Math.round(data.details?.duration_ms)});
     }
     if (type !== 'test:summary') continue;
+    if (data.file) fileNumber++;
     const match = typeof data.file === 'string' && /^(.*)\/([^/]+)\.test\.js$/.exec(relative(process.cwd(), data.file));
     for (const item of pending.splice(0)) {
       const declaredHere = data.file && item.file === data.file;
       cases.push(nodeFields({suite: match && directories.get(match[1]), module: match && match[2],
-        caseId: item.caseId, ordinal: item.ordinal, line: declaredHere ? item.line : undefined,
+        caseId: item.caseId, ordinal: item.ordinal, fileNumber: data.file ? fileNumber : undefined, line: declaredHere ? item.line : undefined,
         column: declaredHere ? item.column : undefined, duration: item.duration}));
     }
     if (!data.file && !data.success && !process.env.NODE_TEST_CONTEXT) {

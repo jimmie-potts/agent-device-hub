@@ -1172,11 +1172,11 @@ the journey and, where instrumented, the runner step, wait condition and last ob
 `not observed` means that the step had no safe reading for that field. The renderer accepts only reviewed identifiers
 and finite state values. The production dashboard's contents, request text and error messages are never summary fields.
 
-The runtime unit, scenario and two verification steps show up to ten failing Node cases, with rounded milliseconds
-when supplied. Suite and module are reviewed identifiers. The case ID identifies the registration in the module, and
+Native Node test steps in Core, App verification and the runtime suites show up to ten failing cases, with rounded milliseconds
+when supplied. Suite and module are reviewed identifiers. The case ID identifies the registration in the module. A module without a reviewed name uses its file number in the run, and
 the result number counts completed cases in that invocation's reporter order. Declaration line and column refer to the
 compiled test module when the runner attributes the case directly to it. Cases registered by a shared helper can have
-only their numeric identifiers. Other Core and App commands keep their own reporters and show the failing suite or
+only their numeric identifiers. Mixed Core and App commands keep their own reporters and show the failing suite or
 browser entry. Core standalone admission uses its existing own-command notices on the exact head. Passing test steps add no failure summary.
 
 To reproduce, check out the reported revision, run `npm ci` and `npm run build`, and run the command from the failing

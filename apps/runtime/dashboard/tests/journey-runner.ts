@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {chromium, type BrowserContext, type BrowserContextOptions, type Page} from 'playwright';
 import {keepRequestInterception} from './browser-context.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
-import {withFailureContext} from './failure-context.ts';
+import {recordBrowserFailure, withFailureContext} from './failure-context.ts';
 import {startWorld, type World, type WorldOptions} from './harness.ts';
 
 export {keepRequestInterception} from './browser-context.ts';
@@ -35,7 +35,11 @@ export async function runJourney(
   const problems: unknown[] = [];
   let label = 'start the simulated world', sequence = 0;
   const openWorld = async (settings: WorldOptions): Promise<World> => {
-    const world = await startWorld(settings, () => `${name} at "${label}" (local traces in ${directory})`);
+    const world = await startWorld(settings, () => {
+      // The existing world watchdog exits directly, bypassing the uncaught-exception monitor.
+      recordBrowserFailure({journey: name, step: label, condition: 'world deadline'});
+      return `${name} at "${label}" (local traces in ${directory})`;
+    });
     worlds.add(world);
     return world;
   };

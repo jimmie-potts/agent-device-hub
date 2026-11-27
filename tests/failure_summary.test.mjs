@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
-import {pathToFileURL} from 'node:url';
 import {renderFailure} from '../scripts/ci-selection/failure-summary.mjs';
 
 const blocked = 'private-name <img src=x> | [link](https://example.invalid)\n## injected heading';
@@ -61,25 +60,28 @@ test('the native reporter identifies only the failed case across a shared regist
   const root = mkdtempSync(join(tmpdir(), 'summary-node-')), directory = join(root, 'apps/runtime/dist/tests');
   t.after(() => rmSync(root, {recursive: true, force: true})); mkdirSync(directory, {recursive: true});
   writeFileSync(join(root, 'package.json'), '{"type":"module"}');
-  writeFileSync(join(directory, 'helper.js'), "import test from 'node:test';
-import YAML from 'yaml'; export function register(title, fn) {test(title, fn);}");
-  writeFileSync(join(directory, 'actions.test.js'), `import {register} from './helper.js';
-    register('healthy', () => {});
+  writeFileSync(join(directory, 'helper.js'), "import test from 'node:test'; export function register(title, fn) {test(title, fn);}");
+  writeFileSync(join(root,'nested.mjs'), "import test from 'node:test';test('nested-private-case', () => {throw Error('expected-child-failure')});");
+  writeFileSync(join(directory, 'actions.test.js'), `import assert from 'node:assert/strict';
+    import {spawnSync} from 'node:child_process'; import {existsSync} from 'node:fs';
+    import {register} from './helper.js';
+    register('healthy', () => {
+      assert.ok(!process.env.PATH.split(':').includes(process.env.BUNNY_CI_NODE_BIN));
+      const nested = spawnSync('node',['--test','nested.mjs'],{encoding:'utf8'});
+      assert.equal(nested.status,1);assert.match(nested.stdout,/expected-child-failure/);
+      assert.ok(!existsSync(process.env.BUNNY_CI_NODE_RECORD));
+    });
     register(${JSON.stringify(blocked)}, () => { throw Error('PRIVATE_ERROR'); });`);
-  const output = join(root,'node');
-  const reporter = pathToFileURL(resolve('scripts/ci-selection/failure-node.mjs')).href;
-  const env = {...process.env, BUNNY_CI_NODE_RECORD: output};
+  const entry = join(root, 'step'), summary = join(root, 'summary');
+  writeFileSync(entry, 'cd "$SUMMARY_FIXTURE"\nnode --test apps/runtime/dist/tests/actions.test.js\n');
+  const env = {...process.env, GITHUB_STEP_SUMMARY: summary, SUMMARY_FIXTURE: root};
   delete env.NODE_TEST_CONTEXT;
-  const child = spawnSync(process.execPath, ['--test','--test-reporter=spec','--test-reporter-destination=stdout',
-    '--test-reporter='+reporter,'--test-reporter-destination=stdout','apps/runtime/dist/tests/actions.test.js'],
-    {cwd: root, env, encoding:'utf8'});
+  const child = spawnSync('bash', [shell, 'node', 'runtime', entry], {env, encoding:'utf8'});
   assert.equal(child.status, 1); assert.match(child.stdout, /PRIVATE_ERROR/);
-  const raw = readFileSync(output,'utf8'), {cases} = JSON.parse(raw);
-  assert.equal(cases.length, 1);
-  assert.equal(cases[0].suite, 'runtime'); assert.equal(cases[0].module, 'actions');
-  assert.equal(cases[0].caseId, 2); assert.equal(cases[0].ordinal, 2);
-  assert.equal(cases[0].line, undefined); assert.equal(typeof cases[0].duration, 'number');
+  const raw = readFileSync(summary,'utf8');
+  assert.match(raw, /\| runtime \| actions \| 2 \| 2 \| not observed \| \d+ \|/);
   for (const value of [blocked, 'PRIVATE_ERROR', directory, 'healthy']) assert.ok(!raw.includes(value));
+
 });
 
 test('Core standalone admission can execute an older exact head without the summary shell', t => {
@@ -94,4 +96,20 @@ test('Core standalone admission can execute an older exact head without the summ
   const [program, ...args] = shell[1].replace('{0}', 'step').split(' ');
   const child = spawnSync(program, args, {cwd: root, encoding: 'utf8'});
   assert.equal(child.status, 19); assert.equal(child.stdout, 'standalone\n');
+});
+
+test('Core attributes a native test case outside the runtime catalog using its file and result numbers', t => {
+  const root = mkdtempSync(join(tmpdir(), 'summary-core-'));
+  t.after(() => rmSync(root, {recursive: true, force: true})); mkdirSync(join(root, 'scripts'));
+  cpSync(resolve('scripts/ci-selection'), join(root, 'scripts/ci-selection'), {recursive: true});
+  writeFileSync(join(root, 'package.json'), JSON.stringify({type: 'module', scripts: {'test:sdk:built': 'node --test sample.test.mjs'}}));
+  writeFileSync(join(root, 'sample.test.mjs'), "import test from 'node:test';test('PRIVATE_TITLE',()=>{throw Error('PRIVATE_DETAIL');});");
+  writeFileSync(join(root,'step'), 'npm run test:sdk:built\n');
+  const summary = join(root, 'summary'), env = {...process.env, GITHUB_STEP_SUMMARY: summary};
+  delete env.NODE_TEST_CONTEXT;
+  const child = spawnSync('bash',[shell,'core','default','step'],{env, cwd:root, encoding:'utf8'});
+  assert.equal(child.status, 1); assert.match(child.stdout, /PRIVATE_TITLE/);
+  const text = readFileSync(summary, 'utf8');
+  assert.match(text, /\| test:sdk:built \| file 1 \| 1 \| 1 \| 1, \d+ \| \d+ \|/);
+  assert.ok(!text.includes('PRIVATE')); assert.ok(!text.includes('sample'));
 });
