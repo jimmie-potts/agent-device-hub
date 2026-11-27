@@ -5,3 +5,5 @@ export {companionSchemas, type CompanionState} from '@jimmie-potts/event-contrac
 export type {Preference, PreferenceHistory, PreferenceLibrary, PreferenceView, ActivePreference, ActivePreferences} from './preferences/model.js';
 
 export type {Archive as CompanionArchive, CompanionMessage, ContextDocument, Conversation, DuckWidget, HistoryPage, KnowledgeView, Meaning, Persona, PersonaId} from './knowledge/model.js';
+
+export type {CatalogIdentityRead} from './assistant/catalog-actions.js';

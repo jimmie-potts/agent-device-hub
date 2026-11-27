@@ -36,7 +36,8 @@ export {LIMITS} from './limits.js';
 /** Submission time is private task metadata for delayed owner messages. */
 type SavedTranscriptItem = (Extract<TranscriptItem, {role: 'owner'}> & {submittedAtMs?: number})
   | Exclude<TranscriptItem, {role: 'owner'}>;
-export type Question = SavedQuestion & {call: string; codingChoice?: CodingChoice; codingDestination?: CodingDestinationChoice; codingRequirements?: CodingRequirements};
+type ConversationQuestion = SavedQuestion & {call: string; codingChoice?: CodingChoice; codingDestination?: CodingDestinationChoice; codingRequirements?: CodingRequirements};
+export type Question = ConversationQuestion & {modeClarification?: {requestId: string; requestRevision: number; modeRevision: number}};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   /** Only the private Conversation page renders this receipt, after a fresh exact Jobs lookup. */
   localJobStatus?: {question: string; visible?: {jobId: string; operationId: string; status: string}};
@@ -69,6 +70,7 @@ export type HostedHistoryMessage = Pick<RecentMessage, 'id' | 'role' | 'text'> &
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   directBrightness?: true;
   modelControlProof?: ModelControlProof;
+  privateDraftId?: string;
   wemoFacts?: readonly {id: string; revision: string}[];
   namedDeviceRead?: {owner: string; id: string};
   historySources?: readonly ContextSourceVersion[];
@@ -96,7 +98,7 @@ export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'qu
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
 export type Stage = {ref: string; requestId: string; input: StagedInput | StopCodingInput | MessageCodingInput | OpenNativeClientInput; expires: number};
-export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
+export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: ConversationQuestion | null} | null; next: number | null};
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = SavedTranscriptItem & {effect: string};
 type RecordRow = {record: string};
@@ -583,12 +585,13 @@ export class AssistantStore {
     return message.role === 'tool' && message.text.startsWith('refused: ') && this.call(message.id)?.codingApproval !== undefined
       ? {...message, codingRefusal: true} : message;
   }
-  #visibleQuestion(task: Task, visibility?: MessageVisibility): Question | null {
+  #visibleQuestion(task: Task, visibility?: MessageVisibility): ConversationQuestion | null {
     const question = task.question;
     if (question === null || visibility?.shows({id: question.id, role: 'assistant', taskId: task.id}) === false) return null;
     const answerRole = question.kind === 'delegation' ? 'tool' : 'owner';
     const answerId = `${question.id}-${answerRole === 'tool' ? 'result' : 'answer'}`;
-    return visibility?.shows({id: answerId, role: answerRole, taskId: task.id}) === false ? {...question, answer: null} : question;
+    const {modeClarification: _modeClarification, ...visible} = question;
+    return visibility?.shows({id: answerId, role: answerRole, taskId: task.id}) === false ? {...visible, answer: null} : visible;
   }
   page(profile: AssistantProfile, after: number, visibility?: MessageVisibility): ConversationPage {
     const id = this.conversation(profile);

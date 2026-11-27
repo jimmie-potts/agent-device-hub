@@ -295,7 +295,10 @@ API 1.3 serves authenticated reads at `/modules/pixoo/content/<ref>`:
 | `art-preview.<compositionId>` | A live staged copy's frame references, hashes and effective timing |
 | `art-frame.<compositionId>.<index>` | One exact PNG frame of that staged copy |
 
-Only the two catalog references accept query parameters: `q` (up to 120
+The Runtime-local `asset-id-by-name` content read accepts one `name` parameter.
+It returns only the unique original ID, even without a rendition. It refuses
+unknown or ambiguous names and is unavailable through the browser gateway.
+The two catalog references accept `q` (up to 120
 characters), `offset` (default 0) and `limit` (default 25, at most 100).
 Queries use SQL pagination. Replies include the catalog revision so a page can
 detect a changed catalog. Every JSON reply is bounded to 256 KiB; PNG frames

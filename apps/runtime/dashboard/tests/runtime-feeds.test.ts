@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {RemoteParticipant, SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
+import {setImmediate as immediate} from 'node:timers/promises';
+import {InProcessBus} from '@jimmie-potts/sdk';
+import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import type {RemoteParticipant, SyncChange, SyncHandler, SyncOptions, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {RuntimeFeeds, awaitsRecords, copiesState, type RuntimeData, type RuntimeRecord} from '../src/runtime-feeds.ts';
 
 void test('lighting, geometry and presence follow only their declared owner on the existing participant', async context => {
@@ -33,11 +35,12 @@ void test('named owners coexist; a gap keeps copies stale until their own replac
   } : {schema: 'authority/2.0', scope: 'control'})));
   const syncs: string[] = [];
   const handlers = new Map<string, (change: SyncChange<RuntimeRecord>) => void>();
+  let closes = 0, commands = 0;
   const participant = {sync: (families: readonly string[], handler: (change: SyncChange<RuntimeRecord>) => void, options: {owner: string}) => {
     const key = `${options.owner}:${families[0] ?? ''}`; syncs.push(key); handlers.set(key, handler);
-    const copy = {states: () => [], close: () => Promise.resolve()} as unknown as SyncedCopy<RuntimeRecord>;
+    const copy = {states: () => [], close: () => { closes++; return Promise.resolve(); }} as unknown as SyncedCopy<RuntimeRecord>;
     return Promise.resolve({status: 'synced', copy, message: {id: key}});
-  }} as unknown as RemoteParticipant;
+  }, request: () => { commands++; }} as unknown as RemoteParticipant;
   let state: RuntimeData | undefined;
   const feeds = new RuntimeFeeds({after: () => () => {}}, value => { state = value; }, () => { assert.fail('the session must stay alive'); });
   await feeds.start(participant);
@@ -45,12 +48,165 @@ void test('named owners coexist; a gap keeps copies stale until their own replac
   assert.equal(state?.copies.every(copy => copy.synced), true);
   feeds.hear({event: 'remote.disconnected', level: 'warn'});
   assert.equal(state?.copies.every(copy => !copy.synced), true);
+  const wallCopy = handlers.get('bunny/modules/wall:device');
+  const completed = {type: 'synced', message: {} as Message<{requestId: string; revision: number; members: []}>} as const;
+  wallCopy?.(completed);
+  assert.equal(state?.copies.every(copy => !copy.synced), true, 'an in-flight completion during disconnect does not restore freshness');
   feeds.hear({event: 'remote.reconnected', level: 'info'});
   assert.equal(state?.copies.every(copy => !copy.synced), true);
-  handlers.get('bunny/modules/wall:device')?.({type: 'synced', message: {} as Message<{requestId: string; revision: number; members: []}>});
+  wallCopy?.({type: 'removed', entity: {family: 'device', id: 'retired'}});
+  assert.equal(state?.copies.every(copy => !copy.synced), true);
+  wallCopy?.(completed);
   assert.deepEqual(state?.copies.map(copy => [copy.owner, copy.synced]), [['bunny/core', false], ['bunny/core', false], ['bunny/modules/wall', true], ['bunny/modules/sign', false]]);
-  assert.equal(syncs.length, 4, 'the page never requests a command or replays one');
+  assert.deepEqual([syncs.length, closes, commands], [4, 0, 0], 'reconnect uses the existing copies and sends no command');
   feeds.close();
+});
+
+void test('a real SDK overflow replaces one device owner while the other stays usable', async context => {
+  context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
+    schema: 'module-list/2.0', modules: [
+      {name: 'wall', state: 'running', serves: ['device'], pages: []},
+      {name: 'sign', state: 'running', serves: ['device'], pages: []},
+    ],
+  } : {schema: 'authority/2.0', scope: 'control'})));
+  const wallSource = 'bunny/modules/wall', signSource = 'bunny/modules/sign';
+  const events: string[] = [], commands: string[] = [];
+  const errors: unknown[] = [];
+  const bus = new InProcessBus({onDiagnostic: diagnostic => {
+    if (diagnostic.event === 'sync.restarted') {
+      events.push(diagnostic.event);
+      feeds.hear(diagnostic);
+    }
+    if (diagnostic.event.startsWith('command.')) commands.push(diagnostic.event);
+  }, onError: error => { errors.push(error); }});
+  const wall = bus.connect(wallSource), sign = bus.connect(signSource), browser = bus.connect('bunny/parts/dashboard');
+  const counters = {
+    [wallSource]: {subscriptions: 0, reads: 0, closes: 0},
+    [signSource]: {subscriptions: 0, reads: 0, closes: 0},
+  };
+  const device = (id: string, revision: number) => ({
+    subject: id, type: 'org.bunny.device.updated', dataschema: 'https://bunny.invalid/events/device/2.0', data: {id, revision},
+  });
+  let releaseHandler = (): void => {}, releaseSnapshot = (): void => {};
+  const handlerGate = new Promise<void>(resolve => { releaseHandler = resolve; });
+  const snapshotGate = new Promise<void>(resolve => { releaseSnapshot = resolve; });
+  await wall.serveSync(['device'], async () => {
+    if (++counters[wallSource].reads === 1) return {revision: 1, states: [device('wall', 1), device('retired', 1)]};
+    await snapshotGate;
+    return {revision: 4, states: [device('wall', 4)]};
+  });
+  await sign.serveSync(['device'], () => {
+    counters[signSource].reads++;
+    return {revision: 1, states: [device('sign', 1)]};
+  });
+  let state: RuntimeData | undefined;
+  const freshness = (owner: string) => state?.copies.find(copy => copy.owner === owner)?.synced;
+  const changes: [string, boolean | undefined][] = [];
+  const feeds = new RuntimeFeeds({after: () => () => {}}, value => { state = value; }, () => { assert.fail('the session must stay alive'); });
+  context.after(async () => {
+    releaseHandler();
+    releaseSnapshot();
+    feeds.close();
+    await Promise.all([browser.close(), wall.close(), sign.close()]);
+  });
+  const participant = {...browser, sync: async <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => {
+    const {owner} = options;
+    assert.ok(owner === wallSource || owner === signSource);
+    assert.deepEqual(families, ['device']);
+    const counts = counters[owner];
+    counts.subscriptions++;
+    const result = await browser.sync<T>(families, async change => {
+      await handler(change);
+      if (owner !== wallSource) return;
+      if (change.type === 'updated' && 'revision' in change.message.data && change.message.data.revision === 2) await handlerGate;
+      if (counts.reads > 1) changes.push([change.type, freshness(owner)]);
+    }, {...options, maxBuffered: 1});
+    if (result.status === 'rejected') return result;
+    const {copy} = result;
+    return {...result, copy: {
+      get: copy.get.bind(copy), states: copy.states.bind(copy), close: () => { counts.closes++; return copy.close(); },
+    }};
+  }} as unknown as RemoteParticipant;
+  await feeds.start(participant);
+  assert.deepEqual(counters, {
+    [wallSource]: {subscriptions: 1, reads: 1, closes: 0}, [signSource]: {subscriptions: 1, reads: 1, closes: 0},
+  });
+  assert.deepEqual([freshness(wallSource), freshness(signSource)], [true, true]);
+
+  // While the wall handler is held, one more live message fills its copy's buffer and the next overflows it.
+  for (const revision of [2, 3, 4]) {
+    await wall.publish('bunny.state.device.wall', {kind: 'state', ...device('wall', revision)});
+    await immediate();
+  }
+  assert.deepEqual(events, ['sync.restarted']);
+  assert.deepEqual([freshness(wallSource), freshness(signSource)], [false, true], 'the family diagnostic must leave the other owner current');
+  releaseHandler();
+  await immediate();
+  assert.deepEqual(counters, {
+    [wallSource]: {subscriptions: 1, reads: 2, closes: 0}, [signSource]: {subscriptions: 1, reads: 1, closes: 0},
+  }, 'the SDK makes the only replacement read using the existing subscription');
+
+  await sign.publish('bunny.state.device.sign', {kind: 'state', ...device('sign', 2)});
+  await immediate();
+  assert.deepEqual(state?.copies.find(copy => copy.owner === signSource)?.records, [{id: 'sign', revision: 2}]);
+  assert.deepEqual([freshness(wallSource), freshness(signSource)], [false, true]);
+  releaseSnapshot();
+  await immediate();
+  assert.deepEqual(changes, [['updated', false], ['removed', false], ['synced', true]], 'only completion can make the wall current');
+  assert.deepEqual(state?.copies.map(copy => copy.records), [[{id: 'wall', revision: 4}], [{id: 'sign', revision: 2}]]);
+  assert.deepEqual(counters, {
+    [wallSource]: {subscriptions: 1, reads: 2, closes: 0}, [signSource]: {subscriptions: 1, reads: 1, closes: 0},
+  });
+  assert.deepEqual(commands, []);
+  assert.deepEqual(errors, []);
+});
+
+void test('SDK replacement refusal keeps copy-scoped backoff and terminal session behavior', async context => {
+  context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
+    schema: 'module-list/2.0', modules: [{name: 'wall', state: 'running', serves: ['device'], pages: []}],
+  } : {schema: 'authority/2.0', scope: 'control'})));
+  const attempts: {changed: SyncHandler<RuntimeRecord>; restarted: () => void}[] = [];
+  const retries: {delay: number; run: () => void}[] = [];
+  let closes = 0, commands = 0, ended = 0, rejectRead = false;
+  const participant = {
+    sync: (_families: readonly string[], changed: SyncHandler<RuntimeRecord>, options: SyncOptions) => {
+      assert.ok(options.onRestarted);
+      attempts.push({changed, restarted: options.onRestarted});
+      if (rejectRead) return Promise.resolve({status: 'rejected', requestId: 'refused', error: errorBody('unavailable')});
+      return Promise.resolve({status: 'synced', copy: {states: () => [], close: () => { closes++; return Promise.resolve(); }}});
+    },
+    request: () => { commands++; },
+  } as unknown as RemoteParticipant;
+  let state: RuntimeData | undefined;
+  const feeds = new RuntimeFeeds({after: (delay, run) => { retries.push({delay, run}); return () => {}; }}, value => { state = value; }, () => { ended++; });
+  context.after(() => feeds.close());
+  await feeds.start(participant);
+  const first = attempts[0];
+  assert.ok(first);
+  first.restarted();
+  await first.changed({type: 'failed', error: errorBody('unavailable')});
+  assert.deepEqual([state?.copies[0]?.synced, state?.copies[0]?.refused, ended], [false, 'unavailable', 0]);
+  const refusedState = state;
+  await first.changed({type: 'synced', message: {} as Message<{requestId: string; revision: number; members: []}>});
+  assert.equal(state, refusedState, 'a copy the SDK stopped on refusal cannot restore freshness');
+  assert.deepEqual([attempts.length, closes, commands], [1, 0, 0], 'refusal waits for the scheduled read');
+
+  rejectRead = true;
+  assert.deepEqual(retries.map(retry => retry.delay), [1000]);
+  retries[0]?.run();
+  await immediate();
+  assert.deepEqual(retries.map(retry => retry.delay), [1000, 2000]);
+  assert.deepEqual([attempts.length, closes, commands], [2, 1, 0]);
+  rejectRead = false;
+  retries[1]?.run();
+  await immediate();
+  assert.deepEqual([state?.copies[0]?.synced, state?.copies[0]?.refused], [true, undefined]);
+  const current = attempts[2];
+  assert.ok(current);
+  current.restarted();
+  await current.changed({type: 'failed', error: errorBody('forbidden')});
+  assert.deepEqual([state?.copies[0]?.synced, ended, retries.length], [false, 1, 2]);
+  assert.deepEqual([attempts.length, closes, commands], [3, 1, 0], 'terminal refusal ends the session without another request');
 });
 
 void test('explicit placement refresh reports its own required sync results, never a later retry or a missing copy', async context => {
@@ -86,12 +242,15 @@ void test('a replacement marks its copy stale before the replaced copy finishes 
   let releaseClose = (): void => {};
   const closing = new Promise<void>(resolve => { releaseClose = resolve; });
   const handlers: ((change: SyncChange<RuntimeRecord>) => void)[] = [];
-  let syncs = 0;
-  const participant = {sync: (_families: readonly string[], handler: (change: SyncChange<RuntimeRecord>) => void) => {
+  const restarts: (() => void)[] = [];
+  let syncs = 0, closes = 0, commands = 0;
+  const participant = {sync: (_families: readonly string[], handler: (change: SyncChange<RuntimeRecord>) => void, options: SyncOptions) => {
+    assert.ok(options.onRestarted);
+    restarts.push(options.onRestarted);
     handlers.push(handler);
     const first = syncs++ < 2;
-    return Promise.resolve({status: 'synced', copy: {states: () => [], close: () => first ? closing : Promise.resolve()}});
-  }} as unknown as RemoteParticipant;
+    return Promise.resolve({status: 'synced', copy: {states: () => [], close: () => { closes++; return first ? closing : Promise.resolve(); }}});
+  }, request: () => { commands++; }} as unknown as RemoteParticipant;
   let state: RuntimeData | undefined;
   const feeds = new RuntimeFeeds({after: () => () => {}}, value => { state = value; }, () => { assert.fail('the session must stay alive'); });
   await feeds.start(participant);
@@ -103,8 +262,15 @@ void test('a replacement marks its copy stale before the replaced copy finishes 
   releaseClose();
   assert.equal(await refreshed, true);
   assert.deepEqual(state?.copies.map(copy => copy.synced), [true, true]);
-  assert.equal(syncs, 4, 'one replacement read per copy, and no command');
+  const refreshedState = state;
+  restarts[0]?.();
+  assert.equal(state, refreshedState, 'the replaced copy cannot make its replacement stale');
+  assert.deepEqual([syncs, closes, commands], [4, 2, 0], 'one replacement read and close per requested copy');
   feeds.close();
+  handlers[2]?.({type: 'synced', message: {} as Message<{requestId: string; revision: number; members: []}>});
+  restarts[2]?.();
+  assert.equal(state, refreshedState, 'callbacks from a closed copy cannot reach the page');
+  assert.deepEqual([syncs, closes, commands], [4, 4, 0]);
 });
 
 void test('an overtaken replacement whose close returns last cannot detach the current copy', async context => {
