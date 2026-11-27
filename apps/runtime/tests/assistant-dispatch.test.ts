@@ -159,9 +159,10 @@ it('every catalog route delivers its exact input and guards to the existing owne
     const route = catalogRoute(family);
     const owners = route.binding === 'device' ? route.owners : [route.owner];
     for (const owner of owners) {
-      const target = route.binding === 'fixed' ? route.target : family === 'home-layout-set' ? 'home'
+      const namedTarget = route.binding === 'record' ? undefined : route.target;
+      const target = namedTarget ?? (family === 'home-layout-set' ? 'home'
         : family === 'lighting-layout-set' ? 'lighting' : family === 'playback-layout-set' ? 'playback'
-          : family === 'notice-clear' || family === 'session-label-set' ? hash : 'device';
+          : family === 'notice-clear' || family === 'session-label-set' ? hash : 'device');
       const held = family === 'wemo-hold-release';
       const record = deviceRecord(target, 7, owner.split('/').at(-1) ?? 'device', held ? 'unavailable' : 'available');
       if (held) record.held = {requestId: 'held-operation', heldAtMs: timestamp};

@@ -7,6 +7,8 @@
 - [x] Bind relative brightness and temperature to the observed value and time, and preserve exact replay.
 - [x] Maintain exact Pixoo playlist lookup beyond the advertised preview.
 
+- [x] Exercise an interleaved temperature-only owner update before admission and preserve offline local edits, applicable owners and scoped current facts.
+
 ## 2. Verification
 
 - [x] Exercise both public readers and shared command admission against disposable device state.

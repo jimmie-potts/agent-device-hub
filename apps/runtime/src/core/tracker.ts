@@ -30,7 +30,7 @@ import {extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-
 import {CORE_SOURCE, coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {LIGHTING_SHOW_LIMITS} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {PrivateRequestDigest, SdkError,
-  acknowledgmentOf, deviceActionFamily, readLifxDeviceFacts, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
+  acknowledgmentOf, deviceActionFamily, openLifxDeviceFacts, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing, Outcome} from '@jimmie-potts/sdk';
 import {DASHBOARD_SOURCE} from '../credentials.js';
 import {REGISTRY_REASONS} from '../diagnostics.js';
@@ -437,10 +437,11 @@ export class Tracker {
     // Recorded as sent before anything is sent: a refused commit sends nothing, and a crash after it leaves the action
     // pending, so it ends uncertain at its deadline and is never sent again.
     let earlier: Operation | undefined;
+    let lifxCopy: Awaited<ReturnType<typeof openLifxDeviceFacts>>;
     try {
-      const lifx = action.deviceAdmission !== undefined && (family === 'lifx-color-set' || family === 'lifx-temperature-set') &&
+      lifxCopy = action.deviceAdmission !== undefined && (family === 'lifx-color-set' || family === 'lifx-temperature-set') &&
         this.#read(requestId) === undefined && this.#options.currentDevice?.(target)?.source === 'bunny/modules/lifx'
-        ? (await readLifxDeviceFacts(sdk, {timeoutMs: 1200, parent: span}))?.find(light => light.id === target)
+        ? await openLifxDeviceFacts(sdk, {timeoutMs: 1200, parent: span})
         : undefined;
       const now = clock.now();
       sent = {
@@ -459,6 +460,7 @@ export class Tracker {
             throw new Refused('expired', 'the Conversation request expired before device admission');
           }
           const current = this.#options.currentDevice?.(target);
+          const lifx = lifxCopy?.records()?.find(light => light.id === target);
           const refusal = deviceRefusal({admission: action.deviceAdmission, current,
             registered: this.#options.registeredDevice?.(target) === true, family, data, lifx});
           if (refusal !== undefined) throw new Refused(refusal.code, refusal.detail);
@@ -498,6 +500,8 @@ export class Tracker {
       served.end();
       const refusal = error instanceof Refused ? error : new Refused('internal', 'the core store failed');
       return refuse(refusal.code, refusal.detail);
+    } finally {
+      void lifxCopy?.close().catch(() => {});
     }
     if (earlier !== undefined) {
       served.end();

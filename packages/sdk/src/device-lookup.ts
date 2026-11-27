@@ -31,8 +31,29 @@ export type LifxDeviceFacts = {id: string; capabilities: {color: {supported: boo
   temperature: {supported: false} | {supported: true; minimum: number; maximum: number}};
   observed: {status: 'unknown'} | {status: 'known'; observedAtMs: number; hue: number; saturation: number; brightness: number; kelvin: number}};
 
-export function readLifxDeviceFacts(sdk: Pick<Sdk, 'sync'>, options: DeviceReadOptions): Promise<readonly LifxDeviceFacts[] | undefined> {
-  return ownerRecords<LifxDeviceFacts>(sdk, 'lifx-light', LIFX, options);
+export async function openLifxDeviceFacts(sdk: Pick<Sdk, 'sync'>, options: DeviceReadOptions): Promise<{
+  records: () => readonly LifxDeviceFacts[] | undefined; close: () => Promise<void>;
+} | undefined> {
+  let current = true;
+  const result = await sdk.sync<LifxDeviceFacts>(['lifx-light'], change => {
+    if (change.type === 'failed') current = false;
+    if (change.type === 'synced') current = true;
+  }, {...options, owner: LIFX, onRestarted: () => {current = false;}});
+  if (result.status !== 'synced') return undefined;
+  return {
+    records: () => current ? result.copy.states()
+      .filter(message => message.source === LIFX && message.subject === message.data.id).map(message => message.data) : undefined,
+    close: () => result.copy.close(),
+  };
+}
+
+export async function readLifxDeviceFacts(sdk: Pick<Sdk, 'sync'>, options: DeviceReadOptions): Promise<readonly LifxDeviceFacts[] | undefined> {
+  const read = await openLifxDeviceFacts(sdk, options);
+  try {
+    return read?.records();
+  } finally {
+    await read?.close();
+  }
 }
 
 export const deviceLabel = (device: DeviceRecord): string => device.label?.slice(0, 128) ?? device.id;
@@ -104,7 +125,8 @@ export function deviceFacts(row: OwnedDevice, now: number, canControl: (family: 
   const colorStale = color?.status === 'known' && colorObservationStale(device, color.observedAtMs, now);
   const actions = [...new Set([...Object.keys(generalDeviceActions), ...Object.keys(assistantRoutes)])].filter(family => canControl(family) && supportsDeviceAction(row, family) &&
     (family === 'lifx-color-set' ? light?.capabilities.color.supported === true
-      : family === 'lifx-temperature-set' ? light?.capabilities.temperature.supported === true : true));
+      : family === 'lifx-temperature-set' ? light?.capabilities.temperature.supported === true
+        : family === 'wemo-hold-release' ? device.held !== undefined : true));
   const observationBases = (['brightness', 'temperature'] as const).flatMap(kind => {
     if (!actions.includes(kind === 'brightness' ? 'brightness-set' : 'lifx-temperature-set')) return [];
     const basis = currentObservationBasis(row, kind, now, light);

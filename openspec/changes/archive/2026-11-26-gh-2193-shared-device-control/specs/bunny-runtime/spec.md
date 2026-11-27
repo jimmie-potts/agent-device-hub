@@ -20,3 +20,9 @@ The runtime SHALL expose the device lookup to read-scoped MCP clients using the 
 
 - **WHEN** a client supplies an exact playlist ID absent from the Pixoo preview
 - **THEN** the designated owner checks its complete catalog before admitting the action
+
+#### Scenario: An owner-local edit targets an offline device
+
+- **WHEN** an authorized client submits a supported library or layout edit for an offline device with no hold
+- **THEN** the existing owner SHALL validate and apply its local edit
+- **AND** commands that require an available device and commands against a hold still follow their existing admission rules

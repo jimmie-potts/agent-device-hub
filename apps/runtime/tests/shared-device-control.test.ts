@@ -8,8 +8,12 @@ import type {ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {BrightnessSetRequest, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {lifxSchemas} from '@jimmie-potts/lifx';
+import {NANOLEAF_LINES_DEVICE} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
+import {nanoleafSchemas} from '@jimmie-potts/nanoleaf';
+import {pixooOwnSchemas} from '@jimmie-potts/pixoo';
 import {Outcome, type BunnyModule, type LifxDeviceFacts, type ModuleContext} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
+import {CoreStore, type CoreTransaction} from '../src/core/store.js';
 import {deviceRecord, deviceState} from './fixtures/device.js';
 import {contextOf, edgeConfig, fixture, flush, it, manualClock, run, waitFor} from './support.js';
 
@@ -157,13 +161,47 @@ it('MCP and Conversation dispatch through the same registered device admission',
   const temperatureBase = (await lookup(control))?.observationBases.find(basis => basis.kind === 'temperature');
   assert.deepEqual(temperatureBase, {kind: 'temperature', observedAtMs: clock.now(), value: 3600});
   assert.equal(await temperature('conversation-stale-temperature', 3400, color), 'revision-conflict');
-  assert.equal(await temperature('conversation-relative-temperature', 3400, temperatureBase), 'accepted');
-  assert.equal(await mcp('mcp-temperature-in-flight', {...guard, kelvin: 3400}, record.id, 'lifx-temperature-set', temperatureBase), 'revision-conflict');
+  let markEntered: () => void = () => {}, releaseAdmission: () => void = () => {};
+  const entered = new Promise<void>(resolve => {markEntered = resolve;});
+  const released = new Promise<void>(resolve => {releaseAdmission = resolve;});
+  const originalTransaction = CoreStore.prototype.transaction;
+  let pauseNext = true;
+  const mock = context.mock.method(CoreStore.prototype, 'transaction', async function <R>(this: CoreStore, work: (transaction: CoreTransaction) => R) {
+    if (pauseNext) {
+      pauseNext = false;
+      markEntered();
+      await released;
+    }
+    return originalTransaction.bind(this)(work);
+  });
+  const racing = mcp('mcp-temperature-stale-at-admission', {...guard, kelvin: 3400}, record.id, 'lifx-temperature-set', temperatureBase);
+  try {
+    await entered;
+    assert.ok(device);
+    assert.ok(lightFacts.observed.status === 'known');
+    clock.advance(1);
+    lightFacts = {...lightFacts, revision: lightFacts.revision + 1,
+      observed: {...lightFacts.observed, observedAtMs: clock.now(), kelvin: 3700}};
+    await device.sdk.publish(`bunny.state.lifx-light.${record.id}`, {
+      kind: 'state', type: 'org.bunny.lifx-light.updated', subject: record.id,
+      dataschema: 'https://bunny.invalid/events/lifx-light/2.1', data: lightFacts,
+    });
+    await flush();
+  } finally {
+    releaseAdmission();
+    mock.mock.restore();
+  }
+  assert.equal(await racing, 'revision-conflict');
+  assert.deepEqual(temperatures, []);
+  const afterRace = (await lookup(control))?.observationBases.find(basis => basis.kind === 'temperature');
+  assert.deepEqual(afterRace, {kind: 'temperature', observedAtMs: clock.now(), value: 3700});
+  assert.equal(await temperature('conversation-relative-temperature', 3400, afterRace), 'accepted');
+  assert.equal(await mcp('mcp-temperature-in-flight', {...guard, kelvin: 3400}, record.id, 'lifx-temperature-set', afterRace), 'revision-conflict');
   await completed('conversation-relative-temperature', 'lifx-temperature-set');
 
   assert.ok(lightFacts.observed.status === 'known');
   clock.advance(1);
-  lightFacts = {...lightFacts, revision: 3, observed: {...lightFacts.observed, observedAtMs: clock.now(), kelvin: 3400}};
+  lightFacts = {...lightFacts, revision: lightFacts.revision + 1, observed: {...lightFacts.observed, observedAtMs: clock.now(), kelvin: 3400}};
   const currentTemperature = (await lookup(control))?.observationBases.find(basis => basis.kind === 'temperature');
   assert.deepEqual(currentTemperature, {kind: 'temperature', observedAtMs: clock.now(), value: 3400});
   assert.deepEqual(await mcp('mcp-relative-temperature', {...guard, kelvin: 3300}, record.id, 'lifx-temperature-set', currentTemperature),
@@ -214,21 +252,30 @@ it('MCP resolves an exact Pixoo playlist outside its capability preview through 
   const missing = '33333333-3333-4333-8333-333333333333';
   const record = deviceRecord('fixture-pixoo', 1, 'pixoo', 'available');
   record.capabilities.media = {supported: true, actions: ['pause'], playlistIds: [preview], renditionIds: []};
-  const written: string[] = [];
+  const written: string[] = [], edited: string[] = [];
+  let pixooContext: ModuleContext | undefined;
   const pixoo: BunnyModule = {
     manifest: {name: 'pixoo', apiVersion: '1.2', configure: config => ({config, devices: [record.id]})},
-    async start({sdk}) {
-      await sdk.serveSync(['device'], () => ({revision: 1, states: [deviceState(record)]}));
+    async start(given) {
+      pixooContext = given;
+      const {sdk} = given;
+      await sdk.serveSync(['device'], () => ({revision: record.revision, states: [deviceState(record)]}));
       await sdk.respond<{playlistId: string}>('bunny.cmd.media-start.fixture-pixoo', command => {
         if (command.data.playlistId !== full) return errorBody('unsupported-capability');
         written.push(command.data.playlistId);
         return {status: 'accepted'};
       });
+      await sdk.respond<{change: {name: string}}>('bunny.cmd.pixoo-playlist-change.fixture-pixoo', command => {
+        edited.push(command.data.change.name);
+        return {status: 'accepted'};
+      });
     },
     stop() {},
   };
+  const companions = fixture('companions');
   const files = await edgeConfig(context, [operator], {mcp: true, modules: {pixoo: {}}});
-  const {runtime} = await run(context, {modules: [createCoreModule(), pixoo], configFile: files.config, edge: {schemas: {}}});
+  const {runtime} = await run(context, {modules: [createCoreModule(), pixoo, companions], configFile: files.config,
+    edge: {schemas: pixooOwnSchemas}});
   const mcp = await client(context, runtime.url, operator.token);
   const answer = await mcp.callTool({name: 'core_device_lookup', arguments: {target: 'id:fixture-pixoo'}});
   const lookup = answer.structuredContent as {data: {result: {devices: {choices: {media: {playlistIds: string[]; playlistIdsComplete: boolean}}}[]}}};
@@ -241,4 +288,80 @@ it('MCP resolves an exact Pixoo playlist outside its capability preview through 
   assert.equal(refused.isError, true);
   assert.equal((refused.structuredContent as {data: {error: {code: string}}}).data.error.code, 'unsupported-capability');
   assert.deepEqual(written, [full]);
+  assert.ok(pixooContext);
+  record.availability = 'unavailable';
+  record.revision += 1;
+  await pixooContext.sdk.publish('bunny.state.device.fixture-pixoo', {kind: 'state', ...deviceState(record)});
+  await flush();
+  const command = (requestId: string, name: string) => ({family: 'pixoo-playlist-change', target: record.id, requestId,
+    data: {change: {operation: 'create', name}}});
+  const mcpEdit = await mcp.callTool({name: 'core_send_command', arguments: command('offline-mcp-edit', 'MCP offline')});
+  assert.equal(mcpEdit.isError, false, JSON.stringify(mcpEdit.structuredContent));
+  const edit = command('offline-conversation-edit', 'Conversation offline');
+  const fromConversation = await contextOf(companions).sdk.request('bunny.cmd.assistant-dispatch.assistant', {
+    type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.3',
+    data: {...edit, family: 'catalog-action', command: edit.family, binding: {kind: 'device', target: record.id,
+      owner: 'bunny/modules/pixoo', configurationRevision: record.configurationRevision, generation: record.generation}},
+  }, {requestId: edit.requestId, timeoutMs: 2000});
+  assert.equal(fromConversation.status, 'accepted', JSON.stringify(fromConversation));
+  assert.equal((await start('offline-play', full)).isError, true);
+  assert.deepEqual(written, [full], 'offline playing sends no device action');
+  assert.deepEqual(edited, ['MCP offline', 'Conversation offline']);
+});
+
+it('MCP shares Wemo power identity and advertises Lines-only edits only for Lines', async context => {
+  const lines = deviceRecord(NANOLEAF_LINES_DEVICE, 1, 'nanoleaf', 'unavailable');
+  const panels = deviceRecord('fixture-panels', 1, 'nanoleaf', 'unavailable');
+  const plug = deviceRecord('fixture-plug', 1, 'wemo', 'available');
+  plug.label = 'Fixture plug';
+  plug.capabilities.power = {supported: true};
+  const edits: string[] = [];
+  const nanoleaf: BunnyModule = {
+    manifest: {name: 'nanoleaf', apiVersion: '1.2', configure: config => ({config, devices: [lines.id, panels.id]})},
+    async start({sdk}) {
+      await sdk.serveSync(['device'], () => ({revision: 1, states: [deviceState(lines), deviceState(panels)]}));
+      await sdk.respond('bunny.cmd.nanoleaf-favorite-edit.*', command => {
+        edits.push(command.subject);
+        return {status: 'accepted'};
+      });
+    },
+    stop() {},
+  };
+  const wemo: BunnyModule = {
+    manifest: {name: 'wemo', apiVersion: '1.2', configure: config => ({config, devices: [plug.id]})},
+    async start({sdk}) {
+      await sdk.serveSync(['device'], () => ({revision: 1, states: [deviceState(plug)]}));
+    },
+    stop() {},
+  };
+  const files = await edgeConfig(context, [operator], {mcp: true, modules: {nanoleaf: {}, wemo: {}}});
+  const {runtime} = await run(context, {modules: [createCoreModule(), nanoleaf, wemo], configFile: files.config,
+    edge: {schemas: nanoleafSchemas}});
+  const mcp = await client(context, runtime.url, operator.token);
+  const lookup = async (id: string) => {
+    const answer = await mcp.callTool({name: 'core_device_lookup', arguments: {target: `id:${id}`}});
+    assert.equal(answer.isError, false);
+    return (answer.structuredContent as {data: {result: {devices: {
+      actions: string[]; choices: {power: object}; hold: unknown; configurationRevision: number; generation: DeviceRecord['generation'];
+    }[]}}}).data.result.devices[0];
+  };
+  const wemoFacts = await lookup(plug.id);
+  assert.deepEqual(wemoFacts?.actions, ['power-set']);
+  assert.deepEqual(wemoFacts?.choices.power, {supported: true});
+  assert.equal(wemoFacts?.hold, null);
+  assert.equal(wemoFacts?.configurationRevision, plug.configurationRevision);
+  assert.deepEqual(wemoFacts?.generation, plug.generation);
+  const linesActions = (await lookup(lines.id))?.actions;
+  for (const family of ['nanoleaf-machine-edit', 'nanoleaf-favorite-edit']) {
+    assert.ok(linesActions?.includes(family));
+    assert.equal((await lookup(panels.id))?.actions.includes(family), false);
+  }
+  const favorite = (target: string) => mcp.callTool({name: 'core_send_command', arguments: {
+    family: 'nanoleaf-favorite-edit', target, data: {edit: {kind: 'rename', name: 'Original', newName: 'Renamed'}},
+  }});
+  assert.equal((await favorite(lines.id)).isError, false);
+  const refused = await favorite(panels.id);
+  assert.equal(refused.isError, true);
+  assert.equal((refused.structuredContent as {data: {error: {code: string}}}).data.error.code, 'unsupported-capability');
+  assert.deepEqual(edits, [lines.id]);
 });

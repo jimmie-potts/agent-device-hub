@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {literalToolDeviceId, literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
-import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, requiresDeviceAvailability, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {ART_SHOW_EFFECTS_FAMILY, acceptsArtRendition, artDestination, artShowSurfaces, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord, ArtworkSummary, CatalogArtwork} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {ErrorBody, ErrorCode} from '@jimmie-potts/event-contracts/v2';
@@ -269,7 +269,7 @@ export class ConversationActions {
       }
       if (family === 'wemo-hold-release') {
         if (device.held === undefined || data.heldRequestId !== device.held.requestId) return {code: 'revision-conflict'};
-      } else if (device.availability !== 'available' || device.held !== undefined) return {code: 'unavailable'};
+      } else if (device.held !== undefined || requiresDeviceAvailability(family) && device.availability !== 'available') return {code: 'unavailable'};
       binding = {kind: 'device', target: device.id, owner: selected.owner, configurationRevision: device.configurationRevision, generation: device.generation};
       if (family === 'brightness-set' && selected.owner === 'bunny/modules/pixoo') {
         if (typeof data.percent !== 'number' || !Number.isSafeInteger(data.percent) || data.percent < 0 || data.percent > 100) {
@@ -507,18 +507,28 @@ export class ConversationActions {
         return textResult({devices: [{owner: source, id: device.id, name: facts.name,
           lastReportedAvailability: facts.lastReportedAvailability, controls,
           brightness: controls.length > 0 ? facts.choices.brightness : undefined, actions: facts.actions,
-          observation: facts.observation, observationBases: facts.observationBases}]});
+          ...(facts.observation.value.status === 'known' ? {observation: facts.observation, observationBases: facts.observationBases} : {})}]});
       }
       const now = this.context.clock.now();
       const colors = source === LIFX ? await readLifxDeviceFacts(this.context.sdk, {timeoutMs: 1200, parent}) : undefined;
       const lifx = colors?.find(light => light.id === device.id);
       const facts = deviceFacts(selected, now, family => catalogFamily(family) && this.enabled.includes(catalogTool(family)) ||
-        family === 'brightness-set' && source === LIFX && this.enabled.includes(SET_LIFX_BRIGHTNESS),
+        family === 'brightness-set' && source === LIFX && this.enabled.includes(SET_LIFX_BRIGHTNESS) ||
+        family === 'power-set' && (source === WEMO && this.enabled.includes('set_wemo_power') ||
+          source === LIFX && this.enabled.includes('set_lifx_power')),
       lifx === undefined ? {} : {lifx});
       if (source === WEMO) return textResult({devices: [{owner: source, id: device.id, name: facts.name,
         lastReportedAvailability: facts.lastReportedAvailability, observation: facts.observation.value, freshness: facts.observation.freshness,
+        choices: {power: facts.choices.power}, actions: facts.actions,
+        hold: facts.hold === null || facts.actions.includes('wemo-hold-release') ? facts.hold : {held: true},
+        ...(facts.actions.length === 0 ? {} : {configurationRevision: facts.configurationRevision, generation: facts.generation}),
         maximumOnLimit: this.deviceDisplay.powerLimit(device.id, now)}]});
-      return textResult({devices: [facts]});
+      return textResult({devices: [{owner: source, id: device.id, name: facts.name,
+        lastReportedAvailability: facts.lastReportedAvailability, observation: facts.observation.value, freshness: facts.observation.freshness,
+        choices: facts.choices, actions: facts.actions,
+        ...(facts.lightCapabilities === undefined ? {} : {lightCapabilities: facts.lightCapabilities}),
+        ...(facts.color === undefined ? {} : {color: facts.color}),
+        ...(facts.observationBases.length === 0 ? {} : {observationBases: facts.observationBases})}]});
     }
     const {rows, unreadable} = await this.#deviceRecords(owners, parent);
     const visible = rows.filter(({device}) => access('devices', 'index', device.id) && access('devices', 'label', device.id));

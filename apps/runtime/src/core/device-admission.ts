@@ -1,4 +1,4 @@
-import {LIFX_COLOR_PARAMETERS, observationBasis, type ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {LIFX_COLOR_PARAMETERS, observationBasis, requiresDeviceAvailability, type ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {currentObservationBasis, supportsDeviceAction, type LifxDeviceFacts} from '@jimmie-potts/sdk';
@@ -31,7 +31,7 @@ export function deviceRefusal({admission, current, registered, family, data, lif
   if (family === 'wemo-hold-release' && (held === undefined || data.heldRequestId !== held.requestId)) {
     return {code: 'revision-conflict', detail: 'the selected device hold changed'};
   }
-  if (family !== 'wemo-hold-release' && (held !== undefined || availability !== 'available')) {
+  if (family !== 'wemo-hold-release' && (held !== undefined || requiresDeviceAvailability(family) && availability !== 'available')) {
     return {code: 'unavailable', detail: 'the selected device is held or unavailable'};
   }
   const supported = supportsDeviceAction({owner: current.source, device: current.data}, family);

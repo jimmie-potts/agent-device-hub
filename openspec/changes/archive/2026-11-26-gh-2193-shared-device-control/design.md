@@ -16,5 +16,8 @@ Check new device requests inside the tracker admission transaction, after checki
 An owner can restart between a read and dispatch. Missing synced evidence refuses a new guarded action. The writer keeps its own guards for changes after tracker admission. A relative
 command includes the reading's time, value and device guards. A target's pending
 work or newer tracked effects invalidate that reading before a new operation can
-commit. The exact basis is part of the request identity. A new relative action
+commit. The tracker keeps the named owner's LIFX color copy live until admission,
+so a color-only update during the transaction wait invalidates the earlier basis.
+Owner-local library, layout and acknowledgment actions retain their offline
+admission. Holds and applicability remain separate checks. The exact basis is part of the request identity. A new relative action
 needs a fresh reading after an inbox failure. A partial read names each unreadable owner so it cannot be mistaken for an empty inventory.

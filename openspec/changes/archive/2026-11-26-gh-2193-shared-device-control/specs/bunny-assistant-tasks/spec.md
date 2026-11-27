@@ -14,3 +14,8 @@ Conversation SHALL use the shared device lookup for supported device facts, and 
 - **WHEN** the owner names one light and the selected supervisor has permission for its current device status
 - **THEN** the supervisor can read the light's supported controls, advertised bounds and current observations for the request
 - **AND** historical timestamp permission is unnecessary for those current facts, while denying current status withholds them
+
+#### Scenario: The scoped reader selects a Wemo plug
+
+- **WHEN** the selected supervisor has current-status and power-control grants for one Wemo plug
+- **THEN** its facts include that plug's power support, allowed action and current guards, plus its existing maximum-on information when available

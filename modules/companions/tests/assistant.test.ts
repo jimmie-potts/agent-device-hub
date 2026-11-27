@@ -1030,7 +1030,7 @@ for (const host of ['anthropic', 'openai'] as const) {
     assert.deepEqual(facts?.actions, ['lifx-temperature-set']);
     assert.deepEqual(facts?.lightCapabilities.temperature, {supported: true, minimum: 2700, maximum: 6500, unit: 'kelvin', step: 1});
     assert.deepEqual(facts?.observationBases, [{kind: 'temperature', observedAtMs: now, value: 3600}]);
-    assert.doesNotMatch(readings[0] ?? '', /PRIVATE_HIDDEN_FIXTURE|hidden-light/);
+    assert.doesNotMatch(readings[0] ?? '', /PRIVATE_HIDDEN_FIXTURE|hidden-light|configurationRevision|generation|lastTransmissionAtMs/u);
 
     allowStatus = false;
     assert.equal((await input(w.core, w.module(), 'Set id:fixture-light to its warmest setting.')).status, 'accepted');
@@ -1281,7 +1281,20 @@ for (const host of ['anthropic', 'openai'] as const) for (const lookup of ['read
       const result = body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output ??
         body.messages?.flatMap(message => message.content).filter(item => item.type === 'tool_result').at(-1)?.content;
       const stage = step++;
-      if (stage === 1 && result !== undefined) reads.push(result);
+      if (stage === 1 && result !== undefined) {
+        reads.push(result);
+        if (lookup === 'read_devices' && toolIds(result).join() === 'fixture-plug') {
+          const data = JSON.parse(result) as {devices: {actions: string[]; hold: unknown; configurationRevision: number;
+            generation: DeviceRecord['generation']; choices: {power: object}; maximumOnLimit: unknown}[]};
+          const row = data.devices[0];
+          assert.deepEqual(row?.actions, ['power-set']);
+          assert.deepEqual(row?.choices.power, {supported: true});
+          assert.equal(row?.hold, null);
+          assert.equal(row?.configurationRevision, plugs[0]?.configurationRevision);
+          assert.deepEqual(row?.generation, plugs[0]?.generation);
+          assert.notEqual(row?.maximumOnLimit, undefined);
+        }
+      }
       const tool = stage === 0 ? {name: lookup, input: lookup === 'read_devices' ? {owner: 'auto', target: ''} : {}}
         : stage === 1 && result !== undefined && toolIds(result).join() === 'fixture-plug'
           ? {name: 'set_wemo_power', input: wemoPowerArgs(['fixture-plug'], false)} : undefined;
