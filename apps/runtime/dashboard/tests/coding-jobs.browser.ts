@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import type {Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {connectRemote} from '@jimmie-potts/sdk/remote';
 import type {CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {feed, startWorld} from './harness.ts';
@@ -17,7 +18,7 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
       return Promise.resolve({text: 'Hub fixture answered.', calls: [], stop: 'end', units: 20});
     },
   }});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   const worker = await connectRemote({url: world.url, source: 'bunny/parts/coding-worker', token: world.codingToken});
   const commands: CodingWork[] = [], prepared: Extract<CodingWork, {action: 'prepare-native-client'}>[] = [];
   let acceptMessage = (): void => {};

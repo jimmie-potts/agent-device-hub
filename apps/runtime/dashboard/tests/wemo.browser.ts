@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {setTimeout as pause} from 'node:timers/promises';
 import {expect} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import {chromium} from 'playwright';
 import {type Page} from 'playwright';
 import {feed,startWorld,holdDashboardStream} from './harness.ts';
@@ -19,7 +20,7 @@ function powerCommands(page:Page):Sent[]{
  * command; its pressed state and its light follow the plug's observed power, and a lost reply leaves it locked.
  */
 async function pressPanel(browser:Awaited<ReturnType<typeof chromium.launch>>,url:string,plugs:typeof world):Promise<Record<string,unknown>>{
-  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
+  const context=await openJourneyContext(browser, {viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   const sent=powerCommands(page);
   await page.goto(`${url}/#/component/shelf-lamp`);await feed(page,'connected');
@@ -49,7 +50,7 @@ async function pressPanel(browser:Awaited<ReturnType<typeof chromium.launch>>,ur
   await button.focus();await page.keyboard.press('Enter');await same(false,'Enter');await shows(false);
   assert.equal(plugs.wemo.state()['shelf-lamp']?.power,false);
   // Touch: a tap switches it.
-  const touch=await browser.newContext({viewport:{width:1440,height:1000},hasTouch:true}),phone=await touch.newPage();phone.setDefaultTimeout(15000);
+  const touch=await openJourneyContext(browser, {viewport:{width:1440,height:1000},hasTouch:true}),phone=await touch.newPage();phone.setDefaultTimeout(15000);
   const tapped=powerCommands(phone);await phone.goto(url);await feed(phone,'connected');
   const touchButton=phone.locator('[data-plug-panel="shelf-lamp"]').getByRole('button',{name:'Shelf lamp power',exact:true});
   await phone.waitForFunction(()=>document.querySelector<HTMLButtonElement>('[data-plug-panel="shelf-lamp"] .plug-press')?.disabled===false);
@@ -66,7 +67,7 @@ async function pressPanel(browser:Awaited<ReturnType<typeof chromium.launch>>,ur
   return {pointer:true,keyboard:true,touch:true,observedPressed:true,uncertain:true,readOnly:true};
 }
 try{
-  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
+  const context=await openJourneyContext(browser, {viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   const writes:string[]=[];page.on('request',request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/v2/automation/'))writes.push(request.url());});
   await page.goto(`${world.url}/#/component/desk-lamp`);await feed(page,'connected');

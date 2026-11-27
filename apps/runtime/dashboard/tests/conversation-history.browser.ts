@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import type * as HistoryReader from '../../../../modules/companions/dist/src/frontend/conversation-history.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {chooseConversation, conversationLink} from './navigation-helpers.ts';
 
 export async function conversationHistoryJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(12_000);

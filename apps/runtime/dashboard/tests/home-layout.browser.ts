@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, recordsLoaded, startWorld, holdDashboardStream} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {approvalPrompt, approvalResolved} from '../../dist/tests/fixtures/agents.js';
@@ -10,7 +11,7 @@ import {destinationLink} from './navigation-helpers.ts';
 const world = await startWorld({lighting: true, pixooPages: true});
 const browser = await chromium.launch({headless: true});
 try {
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage();page.setDefaultTimeout(12_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
   let streams = 0;page.on('request', request => {if (new URL(request.url()).pathname === '/api/sdk/v1/stream') streams += 1;});
@@ -84,7 +85,7 @@ try {
   assert.notEqual((await order()).at(-1), roomId);assert.equal(sent.length, 0, 'all draft edits send nothing');
   const before = await order();await done();assert.equal(sent.length, 1);assert.equal(sent[0]?.endsWith('/home-layout-set'), true);
   await page.reload();await recordsLoaded(page);await expect(room).toBeVisible();assert.deepEqual(await order(), before);
-  const secondContext = await browser.newContext({viewport: {width: 390, height: 844}});
+  const secondContext = await openJourneyContext(browser, {viewport: {width: 390, height: 844}});
   try {
     const second = await secondContext.newPage();await second.goto(world.url);await feed(second, 'connected');
     await second.getByRole('heading', {name: 'Studio', exact: true}).waitFor();
@@ -115,7 +116,7 @@ try {
   assert.notDeepEqual(await order(), retained);await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   assert.deepEqual(await order(), retained);
   // A second browser's save invalidates the draft without silently replacing it.
-  const otherContext = await browser.newContext();
+  const otherContext = await openJourneyContext(browser);
   try {
     const other = await otherContext.newPage();await other.goto(world.url);await feed(other, 'connected');
     await edit();await other.getByRole('button', {name: 'Edit Home', exact: true}).click();
@@ -140,7 +141,7 @@ try {
   await page.locator('[data-home-card="device:bunny/modules/wemo:missing-plug"]').getByText('This saved source is unavailable.', {exact: true}).waitFor();
   const injectedCount = sent.length;await page.reload();await feed(page, 'connected');
   await page.getByText('Some saved cards are no longer registered and were omitted. Review the layout before saving.', {exact: true}).waitFor();assert.equal(sent.length, injectedCount, 'reading an unknown definition never repairs the store automatically');
-  const faultContext = await browser.newContext();
+  const faultContext = await openJourneyContext(browser);
   try {
     const faultPage = await faultContext.newPage(), faultSends = changes(faultPage);faultPage.setDefaultTimeout(12_000);
     await faultPage.goto(world.url);await feed(faultPage, 'connected');await faultPage.getByRole('button', {name: 'Edit Home', exact: true}).click();

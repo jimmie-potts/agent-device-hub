@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {HomeArrangements, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {changes, feed, recordsLoaded, holdDashboardStream, startWorld} from './harness.ts';
@@ -75,7 +76,7 @@ async function stored(page: Page): Promise<{revision: number; layouts: HomeArran
 }
 
 try {
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference'});
   const {page, sent, errors} = await open(context);
   const bodies = modeCommands(page);
   await expect(page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
@@ -244,7 +245,7 @@ try {
   await context.close();
 
   // Without WebGL 2 the selected segment keeps a plain fill and the switch works.
-  const plain = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
+  const plain = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
   await plain.addInitScript(() => {
     const original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')?.value as (this: HTMLCanvasElement, ...args: unknown[]) => RenderingContext | null;
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {configurable: true, writable: true,

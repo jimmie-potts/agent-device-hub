@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {checkLightingOutcomes} from './control-projections.ts';
 
@@ -18,7 +19,7 @@ const checks: string[] = [];
 try {
   await world.observe({kind: 'session-started'}, {title: {value: 'Port the wall', source: 'provider'}});
   await world.observe({kind: 'turn-ended'});
-  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   const errors: string[] = [];
   context.on('weberror', error => { errors.push(error.error().name); });
   const page = await context.newPage();

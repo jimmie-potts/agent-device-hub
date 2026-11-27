@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {chromium, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {worldClock} from './world-clock.ts';
 
@@ -18,7 +19,7 @@ async function journey(): Promise<void> {
   const clock = worldClock();
   const world = await startWorld({volcano: true, clock});
   try {
-    const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+    const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
     const errors: string[] = [];
     context.on('weberror', error => { errors.push(error.error().message); });
     const page = await context.newPage();
@@ -223,7 +224,7 @@ async function states(): Promise<void> {
   });
   const code = bundle.outputFiles.find(file => file.path.endsWith('.js'))?.text, style = bundle.outputFiles.find(file => file.path.endsWith('.css'))?.text;
   assert.ok(code !== undefined && style !== undefined);
-  const context = await browser.newContext({viewport: {width: 480, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 480, height: 900}, reducedMotion: 'reduce'});
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
   const failures: string[] = [];

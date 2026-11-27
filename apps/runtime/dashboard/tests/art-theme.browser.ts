@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {chromium, expect, type Locator, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import {ART_THEME_KEY} from '../src/skins/art-theme.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {changes, feed, startWorld} from './harness.ts';
@@ -26,7 +27,7 @@ const layoutBox = (target: Locator): Promise<{x: number; y: number; width: numbe
   const box = element.getBoundingClientRect();return {x: box.x + scrollX, y: box.y + scrollY, width: box.width, height: box.height};
 });
 try {
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, colorScheme: 'light', reducedMotion: 'reduce'}), page = await context.newPage();
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, colorScheme: 'light', reducedMotion: 'reduce'}), page = await context.newPage();
   page.setDefaultTimeout(15_000);
   const sent = changes(page), errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   await page.goto(`${world.url}/#/settings`);await feed(page, 'connected');
@@ -80,7 +81,7 @@ try {
   assert.equal(await token(page, '--accent'), cool, 'locked colors survive new visible artwork');
   await world.restart();await page.reload();await feed(page, 'connected');
   await expect(selected.locator('[data-art-image-state="ready"]')).toBeVisible();assert.equal(await token(page, '--accent'), cool, 'runtime restart does not undo the browser lock');
-  const restarted = await browser.newContext({storageState: await context.storageState(), colorScheme: 'light'}), again = await restarted.newPage();
+  const restarted = await openJourneyContext(browser, {storageState: await context.storageState(), colorScheme: 'light'}), again = await restarted.newPage();
   await again.goto(`${world.url}/#/settings`);await feed(again, 'connected');assert.equal(await token(again, '--accent'), cool, 'a fresh browser context restores the explicit lock');await restarted.close();
   await page.goto(`${world.url}/#/settings`);await feed(page, 'connected');
   const beforeLocal = sent.length;

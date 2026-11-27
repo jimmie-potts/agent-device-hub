@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {feed, startWorld} from './harness.ts';
 
 export async function failedTurnJourney(browser: Browser): Promise<void> {
@@ -10,7 +11,7 @@ export async function failedTurnJourney(browser: Browser): Promise<void> {
       ? {text: null, calls: [{name: 'ask_owner', id: 'question', input: {text: 'Which synthetic fixture?'}}], stop: 'tool', units: 1}
       : {text: null, calls: [], stop: 'truncated', units: 1});
   }}});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(12_000);

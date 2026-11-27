@@ -5,6 +5,7 @@
 // HOME_IDLE_STEP and HOME_IDLE_WIDTHS (comma-separated) narrow a local run.
 import assert from 'node:assert/strict';
 import {chromium, expect, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {HomeLayoutRecord, HomePlacement, HomeShape} from '@jimmie-potts/event-contracts/v2/families';
 import {recordsLoaded, startWorld, type World} from './harness.ts';
 import {idleChanges} from './list-idle.ts';
@@ -46,7 +47,7 @@ try {
     for (let index = 0; index < 5; index += 1) await world.observe({kind: 'session-started'}, {identity: {...IDENTITY, sessionId: `idle-${String(index)}`}, title: {value: `Synthetic agent ${String(index + 1)}`, source: 'provider'}});
     await world.observe(approvalPrompt('idle-attention'));
     for (let index = 0; index < count; index += 1) await world.failCommand();
-    const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+    const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
     const page = await context.newPage();page.setDefaultTimeout(20_000);
     await page.goto(world.url);await recordsLoaded(page);
     await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();

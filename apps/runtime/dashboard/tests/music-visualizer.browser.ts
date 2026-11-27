@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {expect, type Locator, type Page} from 'playwright/test';
 import {startWorld, changes, feed, recordsLoaded} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
@@ -45,7 +46,7 @@ const frameTimes = (page: Page, selector: string) => page.evaluate(async (query:
     p95Ms: gaps[Math.floor(gaps.length * 0.95)] ?? 0, longestMs: gaps.at(-1) ?? 0, over20ms: gaps.filter(gap => gap > 20).length, over50ms: gaps.filter(gap => gap > 50).length};
 }, selector);
 try {
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   const sent = changes(page);
@@ -150,7 +151,7 @@ try {
   // A 4K window: the full view fills 3,840 x 2,160. Frame timings for both live effects are recorded beside a
   // resting-scene and a blank-canvas baseline from the same run, so runner stalls can be told from effect cost.
   // They are evidence, not a gate; whether the TV drops frames is the owner's installed check.
-  const tv = await browser.newContext({viewport: {width: 3840, height: 2160}, deviceScaleFactor: 1});
+  const tv = await openJourneyContext(browser, {viewport: {width: 3840, height: 2160}, deviceScaleFactor: 1});
   try {
     const blank = await tv.newPage();
     await blank.setContent('<body style="margin:0;background:#000"><canvas style="display:block;width:100vw;height:100vh"></canvas></body>');

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import type {Locator,Page} from 'playwright';
 import {expect} from 'playwright/test';
 import {setTimeout as pause} from 'node:timers/promises';
@@ -48,7 +49,7 @@ async function neutralCompletes(clock:WorldClock,panel:Locator,effects:readonly 
 const screenshot = join(await browserArtifactDirectory(), 'microduck-browser.png');
 const clock=worldClock(),world=await startWorld({microduck:true,companions:true,clock}),browser=await chromium.launch({headless:true});
 async function lostLocalRequests():Promise<void> {
-  const time=worldClock(),own=await startWorld({microduck:true,clock:time}),context=await browser.newContext(),page=await context.newPage();page.setDefaultTimeout(15000);
+  const time=worldClock(),own=await startWorld({microduck:true,clock:time}),context=await openJourneyContext(browser),page=await context.newPage();page.setDefaultTimeout(15000);
   try {
     await time.install(page);
     await page.goto(`${own.url}/#/module/microduck/controls`);await feed(page,'connected');
@@ -81,7 +82,7 @@ async function lostLocalRequests():Promise<void> {
 }
 try {
   await lostLocalRequests();
-  const context=await browser.newContext({viewport:{width:390,height:1000},reducedMotion:'reduce'}),page=await context.newPage(),errors:string[]=[];
+  const context=await openJourneyContext(browser, {viewport:{width:390,height:1000},reducedMotion:'reduce'}),page=await context.newPage(),errors:string[]=[];
   page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);await clock.install(page);
   await page.goto(`${world.url}/#/module/microduck/controls`);await feed(page,'connected');
   const panel=page.getByRole('region',{name:'MicroDuck robot controls'}),notice=panel.getByRole('button',{name:'Notice gesture',exact:true});

@@ -9,6 +9,7 @@ import {mkdir} from 'node:fs/promises';
 import {createServer, type Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {chromium, type BrowserContext, type Page, type Response} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {requestBrowserLaunch} from '../../dist/src/index.js';
 import {changes, feed, startWorld, type World} from './harness.ts';
 
@@ -20,7 +21,7 @@ const errors: string[] = [];
 const sent: string[] = [];
 
 async function fresh(): Promise<BrowserContext> {
-  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   context.on('weberror', error => { errors.push(error.error().name); });
   context.on('page', page => {
     changes(page, sent);

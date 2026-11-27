@@ -9,6 +9,7 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium, webkit, request} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {tokenDigest} from '../../dist/src/credentials.js';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
@@ -87,7 +88,7 @@ try {
     const browser = await engine.launch({headless: true});
     try {
       // Only the disposable browser context skips OS trust installation; TLS validation has its own setup probe.
-      const context = await browser.newContext({viewport: {width: 390, height: 844}, isMobile: true, hasTouch: true,
+      const context = await openJourneyContext(browser, {viewport: {width: 390, height: 844}, isMobile: true, hasTouch: true,
         ignoreHTTPSErrors: true, ...(name === 'webkit' ? {httpCredentials: {username: 'owner', password}} : {}), reducedMotion: 'reduce'});
       const page = await context.newPage();
       let passwordPrompts = 0;

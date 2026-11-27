@@ -1,13 +1,14 @@
 // Focused #923 journey: one synthetic runtime, no installed service or physical device.
 import assert from 'node:assert/strict';
 import {chromium, type Browser, type Route} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {destinationLink} from './navigation-helpers.ts';
 const world = await startWorld({devices: true, inbox: true});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   try {
     const page = await context.newPage(); page.setDefaultTimeout(15_000);
     const sent = changes(page);

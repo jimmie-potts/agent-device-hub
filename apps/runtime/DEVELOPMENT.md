@@ -1162,6 +1162,13 @@ Playwright trace per context. Open a completed trace locally with
 reports the same directory and step. An interrupted context leaves its live
 trace there. A successful journey removes its traces.
 
+Dashboard journeys that manage their own browser use `openJourneyContext` from
+`dashboard/tests/browser-context.ts`. Each context installs the same pass-through
+route as the runner before navigation, including for later tabs and popups. For a
+page created by `browser.newPage()`, call `keepRequestInterception(page.context())`
+before its first navigation. A journey can remove all of its page routes while
+requests are in flight. Playwright keeps HTTP caching disabled for the context.
+
 ```bash
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it

@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium, expect, type Locator, type Route} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import sharp from 'sharp';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {SIMULATED_SECTION} from '@jimmie-potts/pixoo';
@@ -16,7 +17,7 @@ const results: Record<string, boolean | string> = {};
 let evidence = (): Promise<string> => Promise.resolve('none');
 const consoleErrors: string[] = [], stacks: string[] = [];
 try {
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); stacks.push(`${error.error().message} ${(error.error().stack ?? '').split('\n').slice(0, 8).join(' | ')}`); }); context.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text().slice(0, 200)); });
   const page = await context.newPage(); page.setDefaultTimeout(10_000);
   // Every command request the page makes, with its body: the card's presses and this journey's own setup requests.

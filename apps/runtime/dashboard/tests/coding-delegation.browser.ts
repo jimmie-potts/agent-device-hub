@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import type {Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {connectRemote} from '@jimmie-potts/sdk/remote';
 import type {CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {feed, startWorld} from './harness.ts';
@@ -8,7 +9,7 @@ import {feed, startWorld} from './harness.ts';
 /** A delegation through the real runtime, gateway and page, with a fake worker connected by the coding-worker credential (Hub #502). */
 export async function codingDelegationJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, coding: true});
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
   const worker = await connectRemote({url: world.url, source: 'bunny/parts/coding-worker', token: world.codingToken});
   try {

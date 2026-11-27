@@ -1,6 +1,7 @@
 // HTTP-only uncertainty must lock every mounted control for the same target.
 import assert from 'node:assert/strict';
 import {chromium, type Locator, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {bounded, browserStepError, mainNow} from './feed-wait.ts';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -45,7 +46,7 @@ const results: {surface: string; direction: string; passed: boolean; reason?: st
 try {
   for (const surface of ['player', 'device'] as const) for (const direction of ['card-to-advanced', 'advanced-to-card']) {
     const world = await startWorld({pixooPages: true});
-    const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+    const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
     const sent: string[] = [];
     let activeStep: string | undefined;
     const step = async (name: string, work: () => Promise<unknown>): Promise<void> => {

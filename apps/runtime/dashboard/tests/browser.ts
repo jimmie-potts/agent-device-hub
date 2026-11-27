@@ -8,6 +8,7 @@ import {destinationLink, openConnections, openSettings} from './navigation-helpe
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {OTHER, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {controlReach, textOverlaps} from './layout.ts';
@@ -22,7 +23,7 @@ const output = process.env.DASHBOARD_RECEIPTS;
 if (output !== undefined) await mkdir(output, {recursive: true});
 const shot = async (page: Page, name: string): Promise<void> => { if (output !== undefined) await page.screenshot({path: `${output}/${name}.png`, fullPage: true}); };
 const checks: string[] = [];
-const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
 const errors: string[] = [];
 context.on('weberror', error => { errors.push(error.error().name); });
 const page = await context.newPage();
