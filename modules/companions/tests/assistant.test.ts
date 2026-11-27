@@ -4300,47 +4300,67 @@ void test('both hosted supervisors look up owner-named devices regardless of req
   const owner = 'bunny/modules/nanoleaf';
   const wall: DeviceRecord = {...light('studio-wall', 'Studio Wall'), kind: 'nanoleaf', availability: 'unavailable'};
   const devices = [wall, {...wall, id: 'hidden-wall', label: 'Hidden Wall'}, {...wall, id: 'studio-wall-xl', label: 'Studio Wall XL'}];
+  const duplicate = {...wall, id: 'duplicate-wall'};
+  const hiddenAliases = [{...duplicate, id: 'hidden-duplicate'}, {...wall, id: 'hidden-alias', label: 'Studio Wall Special'}];
+  let aliasesPresent = false, duplicateVisible = false;
   const resultByProvider = {anthropic: [] as string[], openai: [] as string[]};
   const usage = {input_tokens: 20, output_tokens: 10};
-  let target = 'Studio Wall';
+  let lookups: {target: string; owner: string}[] = [];
   const anthropic = new AnthropicProvider({key: 'fixture', transport: (_url, init) => {
     const body = JSON.parse(init.body) as {messages: {content: {type: string; content?: string}[]}[]};
-    const result = body.messages.flatMap(item => item.content).find(block => block.type === 'tool_result')?.content;
+    const latest = body.messages.flatMap(item => item.content).filter(block => block.type === 'tool_result');
+    const result = latest.at(-1)?.content;
     if (result !== undefined) resultByProvider.anthropic.push(result);
-    return Promise.resolve(Response.json({content: result === undefined
-      ? [{type: 'tool_use', id: 'named-device', name: 'read_devices', input: {owner: 'auto', target}}]
-      : [{type: 'text', text: 'Synthetic device answer.'}], stop_reason: result === undefined ? 'tool_use' : 'end_turn', usage}));
+    const args = lookups[latest.length];
+    return Promise.resolve(Response.json({content: args !== undefined
+      ? [{type: 'tool_use', id: `named-device-${latest.length}`, name: 'read_devices', input: args}]
+      : [{type: 'text', text: 'Synthetic device answer.'}], stop_reason: args !== undefined ? 'tool_use' : 'end_turn', usage}));
   }});
   const openai = new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
     const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
-    const result = body.input.find(item => item.type === 'function_call_output')?.output;
+    const latest = body.input.filter(item => item.type === 'function_call_output');
+    const result = latest.at(-1)?.output;
     if (result !== undefined) resultByProvider.openai.push(result);
-    return Promise.resolve(Response.json({status: 'completed', usage, output: result === undefined
-      ? [{type: 'function_call', id: 'fc_named_device', call_id: 'named-device', name: 'read_devices', arguments: JSON.stringify({owner: 'auto', target})}]
+    const args = lookups[latest.length];
+    return Promise.resolve(Response.json({status: 'completed', usage, output: args !== undefined
+      ? [{type: 'function_call', id: `fc_named_device_${latest.length}`, call_id: `named-device-${latest.length}`, name: 'read_devices', arguments: JSON.stringify(args)}]
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic device answer.', annotations: []}]}]}));
   }});
   const standard = sharing();
   const w = await world(context, {provider: anthropic, alternateProvider: openai, tools: ['read_devices', 'control_scene_activate'],
-    share: grant => standard(grant) && !(grant.source === 'devices' && grant.record === 'hidden-wall'),
+    share: grant => standard(grant) && !(grant.source === 'devices' && grant.record?.startsWith('hidden-') === true),
     dispatch: () => assert.fail('a named lookup must not dispatch')});
   const participant = w.bus.connect(owner);
   context.after(() => participant.close());
-  await participant.serveSync(['device'], () => ({revision: 1, states: devices.map(data => ({
+  await participant.serveSync(['device'], () => ({revision: 1, states: [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])].map(data => ({
     type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
   }))}));
   await control(w.core, w.module(), 'enable');
   for (const provider of ['anthropic', 'openai'] as const) {
-    const ask = async (prompt: string, selector: string) => {
-      target = selector;
+    const ask = async (prompt: string, selector: string, selectedOwner = 'auto', after?: string) => {
+      lookups = [{target: selector, owner: selectedOwner}];
+      if (after !== undefined) lookups.push({target: after, owner: selectedOwner});
       const previous = task(w)?.taskId, before = resultByProvider[provider].length;
       assert.equal((await input(w.core, w.module(), prompt, false, randomUUID(), {provider})).status, 'accepted');
       await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
-      assert.equal(resultByProvider[provider].length, before + 1);
-      return JSON.parse(resultByProvider[provider].at(-1) ?? '');
+      assert.equal(resultByProvider[provider].length, before + lookups.length);
+      const facts: unknown = JSON.parse(resultByProvider[provider].at(-1) ?? '');
+      return facts;
     };
     const statusFacts: unknown = await ask('What is the status of Studio Wall?', 'Studio Wall');
     assert.partialDeepStrictEqual(statusFacts, {devices: [{owner, id: wall.id, name: wall.label, lastReportedAvailability: wall.availability}]});
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Set Studio Wall to Dusk instead of Northern Lights.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Set Studio Wall to Missing Scene, not Dusk.', 'Studio Wall', owner), statusFacts);
+    assert.deepEqual(await ask('Set Studio Wall or Missing Wall to Dusk.', 'Missing Wall', 'auto', 'Studio Wall'), statusFacts);
+    const comparison = 'Set Studio Wall to Studio Wall Special.';
+    assert.deepEqual(await ask(comparison, 'Studio Wall'), statusFacts);
+    aliasesPresent = true;
+    assert.deepEqual(await ask(comparison, 'Studio Wall'), statusFacts);
+    aliasesPresent = false;
+    duplicateVisible = true;
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), {devices: []});
+    duplicateVisible = false;
     assert.deepEqual(await ask('Apply Night Sky on id:studio-wall.', 'id:studio-wall'), statusFacts);
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Hidden Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Hidden Wall.', 'Hidden Wall'), {devices: []});

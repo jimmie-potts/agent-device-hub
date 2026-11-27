@@ -50,9 +50,11 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
 }
 type Refusal = {code: ErrorCode};
 type Match = OwnedDevice;
+export type NamedDeviceLookup = {owner: string; target: string; request: string};
 type ScopedDeviceFacts = {
   subject: string | undefined;
-  namedRequest: string | undefined;
+  named: NamedDeviceLookup | undefined;
+  granted: (id: string) => boolean;
   brightnessControl: boolean;
   resolve: (id: string) => void;
 };
@@ -82,14 +84,22 @@ export class ConversationActions {
     return readDeviceRecords(this.context.sdk, owners, {timeoutMs: 1200, parent});
   }
 
-  async deviceSubjectMatches(subject: string, parent: TraceContext, namedRequest?: string): Promise<Match[]> {
+  async deviceSubjectMatches(subject: string, parent: TraceContext): Promise<Match[]> {
     const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
     const id = literalDeviceId(subject);
-    // A short alias contained in a different configured name is not evidence
-    // that the owner named the shorter device.
-    if (id === undefined && namedRequest !== undefined && rows.some(({device}) => [device.id, deviceLabel(device)].some(value =>
-      normalizedControlText(value) !== subject && containsControlValue(value, subject) && containsControlValue(namedRequest, value)))) return [];
     return rows.filter(({device}) => id === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === id);
+  }
+
+  async namedDeviceMatch({owner, target, request}: NamedDeviceLookup, granted: (id: string) => boolean, parent: TraceContext): Promise<Match | undefined> {
+    const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
+    const {rows} = await this.#deviceRecords(owners, parent);
+    const visible = rows.filter(({device}) => granted(device.id));
+    const literal = literalToolDeviceId(target);
+    // A longer permitted name in the request cannot authorize a shorter alias.
+    if (literal === undefined && visible.some(({device}) => [device.id, deviceLabel(device)].some(value =>
+      normalizedControlText(value) !== normalizedControlText(target) && containsControlValue(value, target) && containsControlValue(request, value)))) return undefined;
+    const matches = matchingDevices(visible, target, owner, literal);
+    return matches.length === 1 ? matches[0] : undefined;
   }
 
   async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {
@@ -499,9 +509,10 @@ export class ConversationActions {
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     if (owners.length === 0) return 'refused: unsupported-capability';
     if (scopedFacts !== undefined) {
-      if (scopedFacts.subject === undefined) return textResult({devices: []});
-      const matches = await this.deviceSubjectMatches(scopedFacts.subject, parent, scopedFacts.namedRequest);
-      const selected = matches.length === 1 ? matches[0] : undefined;
+      const matches = scopedFacts.named !== undefined || scopedFacts.subject === undefined ? []
+        : await this.deviceSubjectMatches(scopedFacts.subject, parent);
+      const selected = scopedFacts.named !== undefined ? await this.namedDeviceMatch(scopedFacts.named, scopedFacts.granted, parent)
+        : matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
           target !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
       const {owner: source, device} = selected;
