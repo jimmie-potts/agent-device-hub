@@ -12,7 +12,7 @@ import {join} from 'node:path';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {HomeArrangements, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
-import {changes, feed, holdDashboardStream, startWorld} from './harness.ts';
+import {changes, feed, recordsLoaded, holdDashboardStream, startWorld} from './harness.ts';
 import {lightsChip, observedPower, plugsChip} from '../src/home-hero.ts';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
@@ -37,7 +37,7 @@ async function open(context: BrowserContext, width = 1440, height = 900): Promis
   const page = await context.newPage();page.setDefaultTimeout(30_000);await page.setViewportSize({width, height});
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   const sent = changes(page);
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   return {page, sent, errors};
 }
@@ -219,7 +219,7 @@ try {
   const current = await stored(page);
   assert.equal(await page.evaluate(async ({revision, desktop, phone}) => (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
     body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: revision, layouts: {desktop, phone}}})})).status, {revision: current.revision, desktop: dismissed, phone: current.layouts.phone}), 200);
-  await page.reload();await feed(page, 'connected');
+  await page.reload();await recordsLoaded(page);
   await expect(hero(page).getByRole('button', {name: 'Restore art', exact: true})).toBeEnabled();
   const beforeReset = await stored(page);
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();await page.getByRole('button', {name: 'Reset', exact: true}).click();

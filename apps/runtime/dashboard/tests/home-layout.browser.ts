@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
-import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
+import {changes, feed, recordsLoaded, startWorld, holdDashboardStream} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {approvalPrompt, approvalResolved} from '../../dist/tests/fixtures/agents.js';
 import {destinationLink} from './navigation-helpers.ts';
@@ -83,7 +83,7 @@ try {
   await page.getByRole('button', {name: 'Desktop', exact: true}).click();
   assert.notEqual((await order()).at(-1), roomId);assert.equal(sent.length, 0, 'all draft edits send nothing');
   const before = await order();await done();assert.equal(sent.length, 1);assert.equal(sent[0]?.endsWith('/home-layout-set'), true);
-  await page.reload();await feed(page, 'connected');await expect(room).toBeVisible();assert.deepEqual(await order(), before);
+  await page.reload();await recordsLoaded(page);await expect(room).toBeVisible();assert.deepEqual(await order(), before);
   const secondContext = await browser.newContext({viewport: {width: 390, height: 844}});
   try {
     const second = await secondContext.newPage();await second.goto(world.url);await feed(second, 'connected');
@@ -150,7 +150,7 @@ try {
     await faultPage.getByRole('button', {name: 'Done', exact: true}).click();
     await faultPage.locator('.home-layout-feedback').filter({hasText: /Uncertain/}).waitFor();assert.equal(faultSends.length, 1);
     await faultPage.reload();await expect(faultPage.getByRole('button', {name: 'Edit Home', exact: true})).toBeDisabled();assert.equal(faultSends.length, 1);
-    releaseFaultStream();await faultPage.reload();await feed(faultPage, 'connected');
+    releaseFaultStream();await faultPage.reload();await recordsLoaded(faultPage);
     await expect(faultPage.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();assert.equal(faultSends.length, 1, 'reconnect and reload never replay the committed save');
   } finally {await faultContext.close();}
   const output = process.env.DASHBOARD_RECEIPTS;if (output !== undefined) await mkdir(output, {recursive: true});

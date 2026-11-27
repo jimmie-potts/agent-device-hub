@@ -1151,6 +1151,15 @@ The normal dashboard build also compiles the fixed frontend imports for the
 browser. Real feature interactions and trusted iframe execution are verified
 by the owning story's focused browser and disposable Acceptance checks.
 
+The Rooms, Music card, Music capture, Music lighting and Home shapes journeys
+use `dashboard/tests/journey-runner.ts`. Start each simulated world with
+`runJourney`, name the current step with `run.step`, and use `run.newContext`
+for every browser context. Its pass-through route remains active when a page
+removes one of its handlers. Use `run.closeContext` to retire a context early.
+A failure reports the step and a private temporary directory containing one
+Playwright trace per context. Read one locally with `npx playwright show-trace
+/path/to/context-1.zip`. A successful journey removes its traces.
+
 ```bash
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it

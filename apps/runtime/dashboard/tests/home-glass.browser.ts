@@ -16,7 +16,7 @@ import {join} from 'node:path';
 import sharp from 'sharp';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
 import {drawnMismatches} from './glass-boxes.ts';
-import {changes, feed, holdDashboardStream, startWorld} from './harness.ts';
+import {changes, feed, recordsLoaded, holdDashboardStream, startWorld} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {artworkOf, browserArt} from '../../../../modules/art/dist/src/frontend/model.js';
 import type {HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
@@ -227,7 +227,7 @@ async function open(context: BrowserContext, width = 1440, height = 900): Promis
   // Console errors are kept for the lit room's failure diagnostics only.
   const consoleErrors: string[] = [];page.on('console', message => {if (message.type() === 'error') consoleErrors.push(message.text());});
   const sent = changes(page);
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   return {page, sent, errors, consoleErrors};
 }

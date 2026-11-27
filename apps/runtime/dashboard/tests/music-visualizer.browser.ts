@@ -6,7 +6,7 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium} from 'playwright';
 import {expect, type Locator, type Page} from 'playwright/test';
-import {startWorld, changes, feed} from './harness.ts';
+import {startWorld, changes, feed, recordsLoaded} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
@@ -223,9 +223,9 @@ try {
   await card.getByRole('link', {name: 'Open full view', exact: true}).click(); await expect(page).toHaveURL(/#\/audio\/visualizer$/);
   await page.getByRole('region', {name: 'Music visualizer full view', exact: true}).getByText('Resting. Measurement is not running.', {exact: true}).waitFor();
   await shot('full-view-resting-1440');
-  await page.goto(world.url + '/#/'); await feed(page, 'connected'); await expect(editHome).toBeEnabled();
+  await page.goto(world.url + '/#/'); await recordsLoaded(page); await expect(editHome).toBeEnabled();
   await editHome.click(); await cardOptions(page, 'Music visualizer'); await page.getByRole('button', {name: 'Remove Music visualizer', exact: true}).click(); await done.click(); await expect(editHome).toBeEnabled();
-  await page.reload(); await feed(page, 'connected'); await expect(editHome).toBeEnabled();
+  await page.reload(); await recordsLoaded(page); await expect(editHome).toBeEnabled();
   await expect(page.locator('[data-home-card="music-visualizer"]')).toHaveCount(0);
   assert.deepEqual(sent, ['/api/v2/commands/music-capture-control', '/api/v2/commands/home-layout-set', '/api/v2/commands/home-layout-set'],
     'the visualizer added no command: only the explicit Start and the two layout saves');

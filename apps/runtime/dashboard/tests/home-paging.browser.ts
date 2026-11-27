@@ -4,7 +4,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, expect, type Locator, type Page} from 'playwright/test';
 import type {HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, recordsLoaded, startWorld} from './harness.ts';
 import {approvalPrompt, IDENTITY} from '../../dist/tests/fixtures/agents.js';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
@@ -35,7 +35,7 @@ try {
   const context = await browser.newContext({viewport: {width: 560, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
   const page = await context.newPage();page.setDefaultTimeout(15_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   const inbox = page.locator('[data-inbox-panel]'), inboxList = inbox.locator('[data-paged-list="Inbox"]'), inboxCard = page.locator('[data-home-card="inbox"]');
   await expect(inbox.getByText('No commands need handling.', {exact: true})).toBeVisible();
