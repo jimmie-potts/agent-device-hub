@@ -21,6 +21,14 @@ export type Journey = {
   closeWorld(world: World): Promise<void>;
 };
 
+/**
+ * Install once at context creation, before any page can start a request. Page routes take precedence over this
+ * fallback. Removing their last handler keeps interception on for all pages in the context (#1691).
+ */
+export async function keepRequestInterception(context: BrowserContext): Promise<void> {
+  await context.route('**/*', route => route.fallback());
+}
+
 /** A journey owns its simulated worlds and every context, including secondary tabs and isolated cookie jars. */
 export async function runJourney(
   name: string, options: WorldOptions, exercise: (run: Journey, world: World) => Promise<void>, renderer: 'default' | 'software-webgl' = 'default',
@@ -67,8 +75,7 @@ export async function runJourney(
           // Keep an unarchived trace during the run so the world's hard deadline can terminate a hung process.
           await context.tracing.start({snapshots: true, live: true, name: prefix});
           contexts.set(context, join(directory, `${prefix}.zip`));
-          // Stays below transient page routes for the context's lifetime, including pages opened later (#1691).
-          await context.route('**/*', route => route.fallback());
+          await keepRequestInterception(context);
           return context;
         } catch (error) {
           if (!contexts.has(context)) await clean(() => context.close());
