@@ -5134,7 +5134,7 @@ function lightingFixtureSupervisor(select: (results: readonly string[], tools: r
 }
 
 for (const adapter of ['anthropic', 'openai'] as const) {
-  for (const group of ['binding', 'units'] as const) {
+  for (const group of ['binding', 'units', 'signs'] as const) {
     void test(`${adapter} lighting quantities preserve owner intent (${group})`, async context => {
       const owner = 'bunny/modules/pixoo', id = 'fixture-display';
       const lifx = 'bunny/modules/lifx', lamp = 'fixture-lamp';
@@ -5143,7 +5143,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       const writes: AssistantDispatch[] = [];
       const outcomes: string[] = [];
       const allScenarios: {text: string; quantity: unknown; expected?: number; current?: number; temperature?: true;
-        stale?: true; boundary?: true; dispatchChange?: 'value' | 'time'; native?: true; byName?: true; unitCase?: true; correction?: string; correctedQuantity?: unknown}[] = [
+        stale?: true; boundary?: true; dispatchChange?: 'value' | 'time'; native?: true; byName?: true; unitCase?: true; signCase?: true; correction?: string; correctedQuantity?: unknown}[] = [
         {text: 'Set brightness to 20 nits.', quantity: {kind: 'absolute', amount: 20, literal: '20'}, correction: 'Twenty-five percent.', correctedQuantity: 25, expected: 25},
         {text: 'Set brightness to 20 milliwatts.', quantity: 20, correction: '20.', expected: 20},
         {text: 'Set brightness to 20 in lumens.', quantity: {kind: 'absolute', amount: 20, literal: '20'},
@@ -5154,12 +5154,19 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         {text: 'Set the brightness to 20 on the lamp in the office.', quantity: 20, unitCase: true, expected: 20},
         {text: 'Raise the brightness in percent by 20.', quantity: {kind: 'increase', amount: 20}, current: 50, unitCase: true},
         {text: 'Set brightness to 20%.', quantity: {kind: 'absolute', amount: 20, unit: 'kelvin'}, unitCase: true},
-        {text: 'Set brightness to 20 nits.', quantity: 20, correction: '−twenty percent.'},
-        {text: 'Set brightness to 20 nits.', quantity: 20, correction: '- twenty percent.'},
-        {text: 'Set brightness to 20 nits.', quantity: 20, correction: '+−twenty percent.'},
-        {text: 'Set brightness to −+20%.', quantity: 20, correction: '22%.', correctedQuantity: 22, expected: 22},
-        {text: 'Set brightness to minus −twenty percent.', quantity: 20, correction: '23%.', correctedQuantity: 23, expected: 23},
-        {text: 'Set brightness to plus plus 20%.', quantity: 20, correction: '+24%.', correctedQuantity: 24, expected: 24},
+        {text: 'Set brightness to 20 nits.', quantity: 20, correction: '−twenty percent.', signCase: true},
+        {text: 'Set brightness to 20 nits.', quantity: 20, correction: '- twenty percent.', signCase: true},
+        {text: 'Set brightness to 20 nits.', quantity: 20, correction: '+−twenty percent.', signCase: true},
+        {text: 'Set brightness to −+20%.', quantity: 20, correction: '22%.', signCase: true, correctedQuantity: 22, expected: 22},
+        {text: 'Set brightness to minus −twenty percent.', quantity: 20, correction: '23%.', signCase: true, correctedQuantity: 23, expected: 23},
+        {text: 'Set brightness to plus plus 20%.', quantity: 20, correction: '+24%.', signCase: true, correctedQuantity: 24, expected: 24},
+        {text: 'Set brightness to ±20%.', quantity: 20, correction: '25%.', signCase: true, correctedQuantity: 25, expected: 25},
+        {text: 'Set brightness to ∓20%.', quantity: 20, correction: '26%.', signCase: true, correctedQuantity: 26, expected: 26},
+        {text: 'Set brightness to +/−20%.', quantity: 20, correction: '27%.', signCase: true, correctedQuantity: 27, expected: 27},
+        {text: 'Set brightness to plus or minus twenty percent.', quantity: 20, correction: 'Twenty-eight percent.', signCase: true, correctedQuantity: 28, expected: 28},
+        {text: 'Set brightness to ±20%.', quantity: 20, correction: 'plus or minus twenty percent.', signCase: true},
+        {text: 'Set brightness to abc+37%.', quantity: 37, signCase: true},
+        {text: 'Set brightness to abc+thirty-seven percent.', quantity: 37, signCase: true},
         {text: 'Set brightness to twenty nits.', quantity: 20, correction: '21 percent.', correctedQuantity: 21, expected: 21},
         {text: 'Set brightness to half a watt.', quantity: 50, correction: '50%.', expected: 50},
         {text: 'Set brightness to twenty percent.', quantity: 20, unitCase: true, expected: 20},
@@ -5218,7 +5225,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         {text: 'Set it to −3\u202f200 K.', quantity: 3200, temperature: true},
         {text: 'Set it to 10,000 K.', quantity: 9000, current: 8900, temperature: true},
       ];
-      const scenarios = allScenarios.filter(attempt => (attempt.correction !== undefined || attempt.unitCase === true) === (group === 'units'));
+      const scenarios = allScenarios.filter(attempt => (attempt.signCase === true ? 'signs'
+        : attempt.correction !== undefined || attempt.unitCase === true ? 'units' : 'binding') === group);
       let scenario = scenarios[0] ?? assert.fail('No fixture input.');
       let corrected = false;
       let offered = false;

@@ -153,7 +153,10 @@ const QUANTITY_UNITS: Record<string, QuantityUnit | undefined> = {
 const UNIT_SPELLING = String.raw`%|percentage points?\b|pp\b|percent\b|kelvin\b|k\b|°(?!\p{L})|degrees?\b`;
 const QUANTITY_TOKEN = new RegExp(String.raw`(?<![\p{L}\p{N}_])((?:\p{N}[\p{N}.,]*(?:\p{Zs}+\p{N}[\p{N}.,]*)*|\.\p{N}+)(?:(?:\s*[/⁄∕／]\s*|[eE][+\-−]?)\p{N}[\p{N}.,]*)?)(?:\s*(${UNIT_SPELLING}))?`, 'giu');
 const WHOLE_NUMBER = /^(?:\d+|\d{1,3}(?:(?:,\d{3})+|(?:\p{Zs}\d{3})+))(?:\.\d+)?$/u;
-const SIGN_TOKEN = /(\b(?:minus|negative|plus|positive)\b|[+−﹣－–—-])\s*/giu;
+const SIGN_TOKEN = /(\b(?:(?:plus\s+or\s+minus|minus\s+or\s+plus)|minus|negative|plus|positive)\b|\+\s*[/⁄∕／]\s*[−﹣－–—-]|[−﹣－–—-]\s*[/⁄∕／]\s*\+|[±∓+−﹣－–—-])\s*/giu;
+const POSITIVE_SIGN = /^(?:plus|positive|\+)$/iu;
+const NEGATIVE_SIGN = /^(?:minus|negative|[−﹣－–—-])$/iu;
+const ATTACHED_SIGN = /[\p{L}\p{N}_]$/u;
 const ATTACHED_QUANTITY = /^(?:[\p{N}\p{Cf}_]|[+−﹣－–—-][+−﹣－–—\p{N}-]|\s*[/⁄∕／])/u;
 const BARE_QUANTITY_END = /^(?:\s*$|\s*[.,;!?)\]](?:\s|$)|\s+(?:to|on|for|at|from|and|or|then|brighter|dimmer|warmer|cooler|brightness|saturation|please|now)\b|\s+in\s+(?:the|my|our|your|this|that)\b|\s+of\s+(?:(?:the|its|current)\s+)*(?:brightness|temperature|level|setting|maximum|minimum)\b)/iu;
 const NUMBER_WORDS: Readonly<Record<string, number | undefined>> = {
@@ -171,7 +174,7 @@ const PROPERTY_UNIT = /\b(?:brightness|temperature|hue|saturation)\s+in\s+([^.!?
 const QUALITATIVE_AMOUNT = /\b(?:half|(?:(?:a|one|two|three|four) )?quarters?|a (?:few|couple))\b/giu;
 
 type QuantityToken = {literal: string; value: number; unit?: QuantityUnit | 'unsupported' | undefined; conflictingSign?: true};
-type Sign = {start: number; factor: -1 | 1 | 'conflict'};
+type Sign = {start: number; factor: -1 | 1 | 'conflict' | 'malformed'};
 
 function signSpans(text: string): ReadonlyMap<number, Sign> {
   const spans = new Map<number, Sign>();
@@ -179,10 +182,13 @@ function signSpans(text: string): ReadonlyMap<number, Sign> {
   for (const match of text.matchAll(SIGN_TOKEN)) {
     const prior = match.index === end ? spans.get(end) : undefined;
     const sign = match[1] ?? '';
-    const factor = /^(?:minus|negative|[−﹣－–—-])$/iu.test(sign) ? -1 : 1;
+    const start = prior?.start ?? match.index;
+    const attached = ATTACHED_SIGN.test(text.slice(Math.max(0, start - 2), start));
+    const factor = attached ? 'malformed' : prior !== undefined ? 'conflict' : NEGATIVE_SIGN.test(sign) ? -1
+      : POSITIVE_SIGN.test(sign) ? 1 : 'conflict';
     end = match.index + match[0].length;
     // A run is scanned independently of the amount that may follow it.
-    spans.set(end, prior === undefined ? {start: match.index, factor} : {start: prior.start, factor: 'conflict'});
+    spans.set(end, {start, factor});
   }
   return spans;
 }
@@ -191,6 +197,7 @@ function signedQuantity(text: string, start: number, literal: string, value: num
   const sign = signs.get(start);
   if (sign === undefined) return {literal, value};
   const complete = text.slice(sign.start, start) + literal;
+  if (sign.factor === 'malformed') return {literal: complete, value: Number.NaN};
   return sign.factor === 'conflict' ? {literal: complete, value: Number.NaN, conflictingSign: true}
     : {literal: complete, value: sign.factor * value};
 }
