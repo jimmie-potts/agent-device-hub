@@ -14,14 +14,18 @@ void test('a timeout names the condition, the budget and the final observation',
     'empty queue', {timeoutMs: 0, intervalMs: 0}), 0);
 });
 
-void test('invalid budgets fail before sampling and a late change cannot satisfy the wait', async () => {
+void test('invalid budgets fail before sampling and a late change cannot satisfy the wait', async t => {
   for (const [timeoutMs, intervalMs] of [[NaN, 0], [4, Infinity], [-1, 5], [5, -1]] as const) {
     await assert.rejects(waitForObservation(() => assert.fail('unexpected read'), () => true,
       'input validation', {timeoutMs, intervalMs}), RangeError);
   }
-  const started = performance.now();
-  await assert.rejects(waitForObservation(() => performance.now() - started, elapsed => elapsed >= 50,
-    'late event', {timeoutMs: 10, intervalMs: 100}), /budget 10 ms/);
+  // The polling turn resumes after the deadline. Its otherwise-ready sample must stay unread.
+  const times = [0, 0, 120];
+  t.mock.method(performance, 'now', () => times.shift() ?? 120);
+  let reads = 0;
+  await assert.rejects(waitForObservation(() => ++reads, count => count > 1,
+    'late event', {timeoutMs: 10, intervalMs: 0}), /after 120 ms .*budget 10 ms/);
+  assert.equal(reads, 1);
 });
 
 void test('advancing a turn fires its original due timers at the end of the turn', () => {
