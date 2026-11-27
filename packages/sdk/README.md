@@ -614,9 +614,13 @@ export const sign: BunnyModule<SignConfig> = {
   `context.ui` supplies `Badge`, `Facts`, `InfoTip`, `Select` and `Command` with
   the shell's styling. A feature wraps its form in
   `<Command context={context} target={target}>` and renders from its child
-  callback's `{text, locked, requestId, run}`. This reuses the existing command
-  attempt retention, tracked results and reload behavior; no command values or
-  credentials are stored, and an uncertain command is never resent by recovery.
+  callback's `{phase, text, locked, requestId, run}`. Use `phase.kind` for
+  decisions and `text` for display. The runtime shell always supplies
+  `phase`; older implementations can still supply the existing fields
+  without it. `frontendCommandView` renders the same phase where a feature
+  needs evidence wording specific to its command. The shared attempt retains
+  request identity across reload. It stores no command values or credentials
+  and never resends an uncertain command during recovery.
 
   `context.ui.Command` accepts an optional `attemptKey` for a separately tracked
   priority control, such as cancelling a known robot task. It retains that

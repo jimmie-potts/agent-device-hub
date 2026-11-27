@@ -22,7 +22,7 @@ export function WemoDeviceCard({record,owner,live,control,operations,operationsL
   const view=wemoCardState(record,live,control,operationsLive,action.locked,now);
   const held=record.held,limitRecord=limit.record;
   const powerText=(value:{status:'unknown'}|{status:'known';value:boolean}):string=>value.status==='known'?value.value?'On':'Off':'Unknown';
-  const routine=action.text==='No command sent from this page.'||action.text.startsWith('Completed: succeeded.');
+  const routine=action.phase.kind==='none'||(action.phase.kind==='completed'&&action.phase.result==='succeeded');
   const power=(on:boolean):void=>{const current=latest.current;const gate=wemoCardState(current.record,current.live,current.control,current.operationsLive,action.locked,current.now);if(gate.disabled)return;
     void action.run(deviceAction(current.record,{family:'power-set',data:{on}},crypto.randomUUID()));};
   // A plug that current evidence observes on lights the room in warm white (#1931); stale or unknown power draws none.

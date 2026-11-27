@@ -1,12 +1,15 @@
 import React, {useEffect, useId, useState} from 'react';
+import {frontendCommandView, type FrontendCommandPhase} from '@jimmie-potts/sdk/frontend';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CaptureResponseBinding, CaptureResponseSettings} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import {useAttempt} from './command-control.tsx';
 import type {MusicCaptureView} from './music-capture-feed.ts';
 
 type Draft = {settings: CaptureResponseSettings; settingsRevision: number};
-const outcomeText = (text: string): string => text.replace('The module observed the result.', 'The core confirmed the result.')
-  .replace('Nothing was sent to the device.', 'No settings change was accepted.').replace('No evidence of a device effect.', 'No completed calibration or settings change was confirmed.');
+const outcomeText = (phase: FrontendCommandPhase): string => frontendCommandView(phase, {
+  observed: 'The core confirmed the result.', expiredEffect: 'No settings change was accepted.',
+  noEvidence: 'No completed calibration or settings change was confirmed.',
+}).text;
 export function MusicResponseControls({view, available, operations, operationsLive}: {
   view: MusicCaptureView; available: boolean; operations: readonly OperationRecord[]; operationsLive: boolean;
 }): React.JSX.Element {
@@ -91,9 +94,9 @@ export function MusicResponseControls({view, available, operations, operationsLi
           expectedRevision: state.revision, expectedSettingsRevision: draft.settingsRevision, settings: draft.settings}});
       }}>Apply response settings</button>
     </>}
-    {measure.requestId !== undefined && <p role="status">Quiet measurement: {outcomeText(measure.text)}</p>}
-    {cancel.requestId !== undefined && <p role="status">Cancel: {outcomeText(cancel.text)}</p>}
-    {apply.requestId !== undefined && <p role="status">Apply: {outcomeText(apply.text)}</p>}
+    {measure.requestId !== undefined && <p role="status">Quiet measurement: {outcomeText(measure.phase)}</p>}
+    {cancel.requestId !== undefined && <p role="status">Cancel: {outcomeText(cancel.phase)}</p>}
+    {apply.requestId !== undefined && <p role="status">Apply: {outcomeText(apply.phase)}</p>}
     <div className="music-input-level">
       <label htmlFor={`${id}-preview`}>Response preview</label>
       {view.response === undefined ? <p>Response preview unavailable.</p> : <>

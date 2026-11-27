@@ -135,7 +135,7 @@ function DuckControls({context, document, onReadFailure}: {context: FrontendCont
         {listed?.next != null && <button type="button" className="companion-link" disabled={locked} onClick={() => {void load(true);}}>More conversations</button>}
       </>}
       {!context.control && <p className="companion-small">Read-only access.</p>}
-      {command?.text !== undefined && command.text !== '' && <p role="status" className="companion-small">{command.text}</p>}
+      {command !== undefined && <p role="status" className="companion-small">{command.text}</p>}
     </>;
   };
   // Reader views do not acquire a command control, including their empty/error states.

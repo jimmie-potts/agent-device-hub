@@ -92,7 +92,7 @@ export function FuseProvider({runtime, connected, operations, operationsLive, un
   const editable = enabled && runtime.control && connected && layoutCopy?.synced === true && record !== undefined && operationsLive && !command.locked;
   // The line's inputs (home-line.ts): a card's note and the latest save, stamped from one counter so the newer shows.
   const stamps = useRef({counter: 0, key: '', save: 0});
-  const saveKey = `${command.requestId ?? ''}|${command.text}|${String(command.locked)}`;
+  const saveKey = JSON.stringify([command.requestId, command.phase, command.locked]);
   if (saveKey !== stamps.current.key) {stamps.current.key = saveKey;stamps.current.counter += 1;stamps.current.save = stamps.current.counter;}
   const [note, setNote] = useState<{text: string; stamp: number}>(), [grouping, setGrouping] = useState<{requestId: string; text: string}>();
   const say = (text: string): void => {stamps.current.counter += 1;setNote(text === '' ? undefined : {text, stamp: stamps.current.counter});};
@@ -107,7 +107,7 @@ export function FuseProvider({runtime, connected, operations, operationsLive, un
   };
   // The latest save's state, every one that needs attention included (uncertain and conflicting stay locked), or a
   // card's newer note. Home's cards leave every layout result to this one line.
-  const line = homeLine({save: {requestId: command.requestId, text: command.text, locked: command.locked}, saveStamp: stamps.current.save,
+  const line = homeLine({save: command, saveStamp: stamps.current.save,
     ...(grouping === undefined ? {} : {grouping}), ...(note === undefined ? {} : {note})});
   const latest = useRef({units, group, editable});latest.current = {units, group, editable};
   const drag = useRef<Drag | null>(null);

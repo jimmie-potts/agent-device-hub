@@ -1956,7 +1956,13 @@ network access.
 ## Runtime dashboard checks
 
 Pull request App verification runs the runtime dashboard's smoke check and some
-of its browser journeys. The full suite, `npm run test:runtime-dashboard:browser`,
+of its browser journeys. The smoke check renders expired, refused and
+uncertain layout and light outcomes in an isolated page in the existing
+browser. After a build, run
+`node apps/runtime/dashboard/tests/control-projections.ts` for that case and
+the retained command identity and lock checks. The runtime dashboard unit
+suite covers command phase, display wording and lock mapping. The full suite,
+`npm run test:runtime-dashboard:browser`,
 runs locally and, since
 [#1942](https://github.com/jimmie-potts/agent-device-hub/issues/1942), in the
 Runtime dashboard browser suite workflow (`runtime-dashboard-browser.yml`) on a

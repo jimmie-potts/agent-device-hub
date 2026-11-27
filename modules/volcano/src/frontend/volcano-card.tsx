@@ -132,7 +132,7 @@ function GapsPanel({context, api, id, refresh, doc, live}: Source & {context: Fr
       </div>
       {value === undefined && <p className="volcano-note" role="alert">Enter a whole number of minutes from 1 to 240.</p>}
       {!context.control && <p className="volcano-note">Saving needs control access. Previews still work.</p>}
-      {command.text !== '' && <p className="volcano-note" role="status">{command.text}</p>}
+      <p className="volcano-note" role="status">{command.text}</p>
     </>;
   };
   return <>
