@@ -7,6 +7,7 @@ import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
 import type {FieldAccess} from './sharing.js';
 import {catalogTools} from './catalog-tools.js';
+import {HUB_MODE_ACTION_WORDS} from './catalog-grounding.js';
 import {textBytes, TOOL_NAME, type ToolDefinition} from './provider.js';
 import {READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
 export {READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
@@ -39,8 +40,16 @@ export const TOOLS: readonly ToolDefinition[] = [
     input: {type: 'object', properties: {text: {type: 'string', description: 'The question, one or two sentences.'}}, required: ['text'], additionalProperties: false}},
   {name: READ_SESSIONS, effect: 'read', description: 'Read what the coding agents are doing: each known session with its provider, label, shared status, work confirmation and attention. Reads need no approval.',
     input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
-  {name: SET_MODE, effect: 'command', description: 'Set the Hub mode to work, free or quiet when the owner explicitly requests that mode. Report what the tool confirms.',
-    input: {type: 'object', properties: {mode: {type: 'string', description: 'The requested Hub mode.', enum: MODES}}, required: ['mode'], additionalProperties: false}},
+  {name: SET_MODE, effect: 'command', description: 'Set the Hub mode only when the current owner asks to switch it now. Cite that current action using intent. For a switch request missing a mode, use clarify so the Hub can ask which mode to switch to. After that switch question, pass the owner’s bare choice as mode alone. Do not call this tool for status, examples or discussion.',
+    input: {type: 'object', properties: {
+      mode: {type: 'string', description: 'The requested Hub mode, or clarify if the mode is missing.', enum: [...MODES, 'clarify']},
+      intent: {type: 'object', description: 'Current owner evidence for an affirmative switch.', properties: {
+        kind: {type: 'string', description: 'The owner intends to switch Hub mode now.', enum: ['switch']},
+        actionQuote: {type: 'string', description: 'Verbatim affirmative mode switch request in the latest current owner message. Quote the complete action, including the requested mode if named.'},
+        actionWord: {type: 'string', description: `Copy the verb for the switch from actionQuote, using one of ${HUB_MODE_ACTION_WORDS.join(', ')} as the owner wrote it.`},
+        modeQuote: {type: 'string', description: 'The verbatim name of the selected mode within actionQuote. Omit for clarify.'},
+      }, required: ['kind', 'actionQuote', 'actionWord'], additionalProperties: false},
+    }, required: ['mode'], additionalProperties: false}},
   {name: READ_LIFX, effect: 'read', description: 'Read LIFX observed status and available controls. Use an empty device name to list lights.',
     input: {type: 'object', properties: {device: deviceName}, required: ['device'], additionalProperties: false}},
   {name: SET_LIFX_POWER, effect: 'command', description: 'Switch a LIFX light on or off when the owner explicitly requests the setting.',

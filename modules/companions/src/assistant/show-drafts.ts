@@ -6,8 +6,13 @@ import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 
 type PendingSave = {requestId: string; admitByMs: number};
 type Draft = {revision: number; value: ShowSave; pending: PendingSave | null};
-type Result = {text: string} | {code: ErrorCode};
+type Result = {text: string; draftId: string} | {code: ErrorCode};
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export function showCueIndex(cues: ShowSave['timeline']['cues'], cue: string): number {
+  const idIndex = cues.findIndex(item => item.id === cue);
+  return idIndex >= 0 ? idIndex : /^[1-9]\d*$/u.test(cue) ? Number(cue) - 1 : -1;
+}
 
 function readPending(text: string): PendingSave {
   const pending: unknown = JSON.parse(text);
@@ -46,6 +51,33 @@ export class ShowDrafts {
       value: {showId: id, expectedVersion: raw.expectedVersion, name: value.name, versionName: value.versionName, timeline: value.timeline}};
   }
 
+  references(visible: (id: string) => boolean): {id: string; label: string}[] {
+    const rows = this.database.prepare("SELECT id, json_extract(value, '$.name') AS name FROM assistant_show_drafts");
+    const result: {id: string; label: string}[] = [];
+    for (const {id, name} of rows.iterate()) {
+      if (typeof id === 'string' && typeof name === 'string' && visible(id)) result.push({id, label: name});
+    }
+    return result;
+  }
+
+  find(selector: unknown, visible: (id: string) => boolean = () => true): Draft | {code: ErrorCode} {
+    if (typeof selector !== 'string' || selector.length === 0 || selector.length > 131) return {code: 'invalid-request'};
+    const exactId = selector.startsWith('id:') ? selector.slice(3) : selector;
+    if (/^show-[a-z0-9-]+$/u.test(exactId)) {
+      if (!visible(exactId)) return {code: 'not-found'};
+      const exact = this.read(exactId);
+      if (exact !== undefined || selector.startsWith('id:')) return exact ?? {code: 'not-found'};
+    }
+    let chosen: string | undefined;
+    const matches = this.database.prepare("SELECT id FROM assistant_show_drafts WHERE lower(json_extract(value, '$.name')) = lower(?)");
+    for (const {id} of matches.iterate(selector.trim())) {
+      if (typeof id !== 'string' || !visible(id)) continue;
+      if (chosen !== undefined) return {code: 'invalid-state'};
+      chosen = id;
+    }
+    return this.read(chosen) ?? {code: 'not-found'};
+  }
+
   create(input: Readonly<Record<string, unknown>>): Result {
     const {name, starter: selected} = input;
     if (typeof name !== 'string' || (selected !== 'warm' && selected !== 'ocean')) return {code: 'invalid-request'};
@@ -57,18 +89,18 @@ export class ShowDrafts {
 
   edit(input: Readonly<Record<string, unknown>>): Result {
     const {draftId, revision, cue, changes} = input;
-    const draft = this.read(draftId);
-    if (draft === undefined) return {code: 'not-found'};
-    if (draft.revision !== revision) return {code: 'revision-conflict'};
+    const draft = this.find(draftId);
+    if ('code' in draft) return draft;
+    if (revision !== -1 && draft.revision !== revision) return {code: 'revision-conflict'};
     if (typeof cue !== 'string' || typeof changes !== 'string' || changes.length > 2048) return {code: 'invalid-request'};
     let patch: unknown;
     try {patch = JSON.parse(changes);} catch {return {code: 'invalid-request'};}
     if (!object(patch) || Object.keys(patch).some(key => !['offsetMs', 'durationMs', 'intensity', 'recipe'].includes(key)) ||
       (patch.recipe !== undefined && !object(patch.recipe))) return {code: 'invalid-request'};
     const timeline = draft.value.timeline;
-    const original = timeline.cues.find(item => item.id === cue);
+    const original = timeline.cues[showCueIndex(timeline.cues, cue)];
     if (original === undefined) return {code: 'not-found'};
-    const candidate = {...timeline, cues: timeline.cues.map(item => item.id === cue ? {...original, ...patch,
+    const candidate = {...timeline, cues: timeline.cues.map(item => item.id === original.id ? {...original, ...patch,
       recipe: {...original.recipe, ...(object(patch.recipe) ? patch.recipe : {})}} : item)};
     let value: ShowSave;
     try {
@@ -87,7 +119,7 @@ export class ShowDrafts {
     if (draft === undefined) return {code: 'not-found'};
     const {value, revision} = draft;
     const cues = value.timeline.cues.map(cue => `${cue.id} · ${String(cue.offsetMs)}–${String(cue.offsetMs + cue.durationMs)} ms · ${cue.recipe.pattern} · ${cue.recipe.colors.join(', ')} · intensity ${String(cue.intensity)}`);
-    return {text: `Draft ${value.name} (${value.showId}, revision ${String(revision)}), ${String(value.timeline.durationMs)} ms. Preview only.\n${cues.join('\n')}`};
+    return {draftId: value.showId, text: `Draft ${value.name} (${value.showId}, revision ${String(revision)}), ${String(value.timeline.durationMs)} ms. Preview only.\n${cues.join('\n')}`};
   }
 
   noteSave(input: Readonly<Record<string, unknown>>, pending: PendingSave, expectedDraftRevision: number): ErrorCode | undefined {

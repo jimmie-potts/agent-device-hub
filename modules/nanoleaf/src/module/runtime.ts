@@ -29,7 +29,7 @@ import {readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, Outcome as OutcomeWord, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
   type SyncChange, type ModuleContent, type ModuleContentRequest,
 } from '@jimmie-potts/sdk';
-import {admitCommand, Refused as PortRefused} from '../controls.js';
+import {admitCommand, sceneIdsByName, Refused as PortRefused} from '../controls.js';
 import {initialize} from '../database.js';
 import {readReactiveCatalog, saveReactivePreset, ReactiveFailure, REACTIVE_ERRORS} from '../music-presets.js';
 import {REACTIVE_TARGET} from '../music-preset-data.js';
@@ -327,6 +327,22 @@ export class NanoleafRuntime {
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref === 'music-preview') return musicPreviewContent(request);
     if (ref === 'show-version') return showContent(this.#db, request);
+    if (ref === 'scene-id-by-name') {
+      if (request === undefined || Object.keys(request.query).length !== 2) return errorBody('invalid-request');
+      const {device, name} = request.query;
+      if (device === undefined || name === undefined || name.trim() === '' || name.length > 128 || /\p{Cc}/u.test(name)) {
+        return errorBody('invalid-request');
+      }
+      if (request.signal.aborted) return errorBody('cancelled');
+      if (!this.#ids.includes(device)) return errorBody('not-found');
+      try {
+        const ids = sceneIdsByName(this.#db, device, name);
+        if (ids.length !== 1) return errorBody(ids.length === 0 ? 'not-found' : 'invalid-state');
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify({id: ids[0]}))};
+      } catch {
+        return errorBody('unavailable');
+      }
+    }
     if (ref === 'generated-show-draft' || ref === 'latest-generated-show-draft') {
       return this.#showAuthoring.content(request, ref === 'latest-generated-show-draft');
     }

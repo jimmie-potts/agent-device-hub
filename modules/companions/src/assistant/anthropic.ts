@@ -41,7 +41,12 @@ export function conformsToSchema(schema: ToolInputSchema, input: ToolCall['input
       case 'string': return typeof value === 'string' && (property.enum === undefined || property.enum.includes(value));
       case 'integer': return typeof value === 'number' && Number.isSafeInteger(value);
       case 'boolean': return typeof value === 'boolean';
-      case 'array': return Array.isArray(value) && value.every(item => typeof item === 'string');
+      case 'object': return object(value) && conformsToSchema(property, value);
+      case 'array': {
+        const {items} = property;
+        return Array.isArray(value) && value.every(item => items.type === 'string'
+          ? typeof item === 'string' : object(item) && conformsToSchema(items, item));
+      }
     }
   });
 }

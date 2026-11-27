@@ -13,3 +13,6 @@ export {
 } from './sdk.js';
 export type {SyncChange, SyncCompleted, SyncedCopy, SyncHandler, SyncOptions, SyncResult} from './sync.js';
 export type {Diagnostic, DiagnosticEvent, DiagnosticLevel, OnDiagnostic} from './diagnostics.js';
+// A page records its own faults at the table's level (Hub #2139), as module and runtime code does.
+export {errorType, levelOf, recordLog, type LogEvent} from './diagnostics.js';
+export type {LogFields, Logger} from './module.js';
