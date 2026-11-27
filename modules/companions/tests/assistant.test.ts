@@ -5262,7 +5262,10 @@ void test('lighting proposals use each registered command route and refuse inval
     const device = devices.find(row => row.id === `route-${kind}`) ?? assert.fail('missing fixture device');
     altered = fault === 'held' ? {...device, held: {requestId: 'fixture-hold', heldAtMs: 1}} : undefined;
     const before = requests.length, prior = task(w)?.taskId;
-    const prompt = ownerRequest ?? (fault === 'missing' ? `Choose the hue for id:${device.id}.` : `Apply the requested fixture setting to id:${device.id}.`);
+    const prompt = ownerRequest ?? (fault === 'missing' ? `Choose the hue for id:${device.id}.`
+      : 'percent' in setting ? `Set id:${device.id} brightness to ${String(setting.percent)}%.`
+      : 'kelvin' in setting && typeof setting.kelvin === 'number' ? `Set id:${device.id} temperature to ${String(setting.kelvin)} K.`
+      : `Apply the requested fixture setting to id:${device.id}.`);
     assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
     await until(() => task(w)?.taskId !== prior && (requests.length > before || status(w) === 'succeeded' || status(w) === 'waiting'));
     if (fault !== undefined) {

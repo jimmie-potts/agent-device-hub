@@ -42,7 +42,8 @@ function settings(family: Family, data: Record<string, unknown>): SettingIntent 
     case 'brightness-set':
     case 'lifx-temperature-set': {
       const requested = quantity(family === 'brightness-set' ? percent : kelvin);
-      return count === 1 && requested !== undefined ? {family, quantity: requested} : undefined;
+      return count === 1 && requested !== undefined && (family === 'brightness-set' || requested.kind !== 'missing')
+        ? {family, quantity: requested} : undefined;
     }
     case 'lifx-color-set': {
       const angle = quantity(hue);
@@ -123,8 +124,8 @@ export function lightingControl(call: ToolCall, family: Family) {
     if (family === 'brightness-set' && 'operation' in value) {
       const {operation, percent, literal, startingLiteral} = value;
       if (Object.keys(value).length !== 4 || typeof literal !== 'string' || typeof startingLiteral !== 'string') return undefined;
-      if (operation === 'minimum' || operation === 'maximum') {
-        if (percent !== 0 || startingLiteral !== '') return undefined;
+      if (operation === 'minimum' || operation === 'maximum' || operation === 'missing') {
+        if (percent !== 0 || startingLiteral !== '' || operation === 'missing' && literal !== '') return undefined;
         data = {percent: {kind: operation, ...(literal === '' ? {} : {literal})}};
       } else {
         data = {percent: {kind: operation, amount: percent, ...(literal === '' ? {} : {literal}), ...(startingLiteral === '' ? {} : {startingLiteral})}};
@@ -143,7 +144,7 @@ type QuantityUnit = 'percent' | 'percentage points' | 'kelvin' | 'degrees';
 const NUMERIC_OPERATIONS = ['absolute', 'increase', 'decrease', 'increase-percent', 'decrease-percent'] as const;
 type NumericOperation = typeof NUMERIC_OPERATIONS[number];
 type NumericQuantity = {kind: NumericOperation; amount: number; literal?: string; startingLiteral?: string; unit?: string};
-type Quantity = NumericQuantity | {kind: 'minimum' | 'maximum'; literal?: string};
+type Quantity = NumericQuantity | {kind: 'minimum' | 'maximum'; literal?: string} | {kind: 'missing'; literal?: never};
 
 const QUANTITY_UNITS: Record<string, QuantityUnit | undefined> = {
   '%': 'percent', percent: 'percent', k: 'kelvin', kelvin: 'kelvin',
@@ -302,6 +303,7 @@ function quantity(value: unknown): Quantity | undefined {
   const {kind, amount, literal, startingLiteral, unit} = value;
   const size = Object.keys(value).length;
   const citation = (source: unknown): source is string => typeof source === 'string' && source.length > 0 && source.length <= 48;
+  if (kind === 'missing') return size === 1 ? {kind} : undefined;
   if (kind === 'minimum' || kind === 'maximum') {
     if (size === 1) return {kind};
     return size === 2 && citation(literal) ? {kind, literal} : undefined;
@@ -387,9 +389,21 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   if (!range.supported) return {kind: 'refused', code: 'unsupported-capability'};
   const {minimum, maximum} = range;
   const supplied = answer === undefined ? [] : quantityTokens(answer);
-  const useAnswer = answer !== undefined && (supplied.length > 0 || previous?.kind === 'quantity-clarification');
+  const answering = previous?.kind === 'quantity-clarification';
+  const useAnswer = answer !== undefined && (answering || !brightness && supplied.length > 0);
   const source = useAnswer ? answer : request;
+  const stated = brightness ? statedBrightness(row.device, useAnswer ? scope.answer?.text ?? '' : scope.request.text, maximum, answering) : undefined;
+  if (stated?.kind === 'invalid') return invalid;
+  if (stated !== undefined) {
+    if (propertyUnits(source).some(unit => unit !== 'percent') ||
+        answering && (previous.unit !== 'percent' || previous.operation !== 'absolute')) return invalid;
+    const value = stated.kind === 'absolute' ? stated.amount : stated.kind === 'minimum' ? minimum : maximum;
+    return integerIn(value, minimum, maximum) ? {kind: 'ready', setting: {family: 'brightness-set', data: {percent: value}}} : invalid;
+  }
   const tokens = useAnswer ? supplied : quantityTokens(request);
+  if (requested.kind === 'missing') {
+    return answering ? invalid : {kind: 'quantity-clarification', unit, operation: 'absolute', reason: 'missing'};
+  }
   const relative = 'amount' in requested && requested.kind !== 'absolute';
   const proportional = 'amount' in requested && (requested.kind === 'increase-percent' || requested.kind === 'decrease-percent');
   if (proportional && !brightness) return invalid;
@@ -402,13 +416,13 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   if (hasUnsupportedUnit(source, tokens, unit, brightness ? 'percentage points' : undefined)) {
     return {kind: 'quantity-clarification', unit: requestedUnit, operation: requested.kind, reason: 'unit'};
   }
-  const qualitative = tokens.length === 0 && previous === undefined && qualitativeSetting(row.device, scope.request.text, requested);
+  const qualitative = !brightness && tokens.length === 0 && previous === undefined && qualitativeSetting(row.device, scope.request.text, requested);
   if (tokens.length === 0 && previous === undefined && !qualitative) {
     return {kind: 'quantity-clarification', unit: requestedUnit, operation: 'amount' in requested ? requested.kind : 'absolute', reason: 'missing'};
   }
   const supported = qualitative
     ? !('unit' in requested) || requested.unit === undefined || QUANTITY_UNITS[requested.unit.toLowerCase()] === requestedUnit
-    : supportsQuantity(tokens, requestedUnit, requested, previous?.kind === 'quantity-clarification');
+    : (!brightness || 'amount' in requested) && supportsQuantity(tokens, requestedUnit, requested, answering);
   if (!supported || propertyUnits(source).some(stated => stated !== requestedUnit)) return invalid;
   let value: number;
   let observationBasis: ObservationBasis | undefined;
@@ -438,6 +452,48 @@ export type LightingQuestion = {
   | {kind: 'quantity-clarification'; family: Family; unit: QuantityUnit; operation: Quantity['kind'] | 'color'});
 
 export type LightingClarification = LightingQuestion & {questionId: string};
+
+type StatedBrightness = {kind: 'absolute'; amount: number} | {kind: 'minimum' | 'maximum' | 'invalid'};
+
+function statedBrightness(device: DeviceRecord, text: string, maximum: number, answering: boolean): StatedBrightness | undefined {
+  const source = withoutLightingName(device, text.replace(/\b(?:use\s+)?id:[^\s]+/giu, ' '), true);
+  const words = normalizedControlText(source);
+  // A fraction belongs to the value when it directly describes brightness,
+  // begins at its explicit setting slot, or is the complete clarification answer.
+  const fractions = [...source.matchAll(/(?<![\p{L}\p{N}_+−-])(half|[¼-¾⅐-⅞]|\d+\s*[/⁄∕／]\s*\d+)(?:\s*(%|percent\b))?(?:\s+(of (?:the )?(?:maximum(?: brightness)?|brightness)))?/giu)];
+  if (fractions.length > 0) {
+    if (fractions.length !== 1) return {kind: 'invalid'};
+    const [match] = fractions;
+    if (match === undefined || match[1] === undefined) return {kind: 'invalid'};
+    const [literal, fraction, percent, basis] = match;
+    const before = source.slice(0, match.index), after = source.slice(match.index + literal.length);
+    const tail = after.trim();
+    const scalar = /^(?:brightness(?: please)?|please)?[.!?]?$/iu.test(tail);
+    const exactAnswer = answering && before.trim() === '' && scalar;
+    const brightnessSlot = scalar && (basis !== undefined || /^brightness\b/iu.test(tail) ||
+      /\bbrightness\s+to\s*$/iu.test(before));
+    if (!exactAnswer && !brightnessSlot && percent === undefined) return undefined;
+    const sign = signSpans(source).get(match.index);
+    if (!scalar || quantityTokens(before).length > 0 || sign !== undefined ||
+        percent !== undefined && basis !== undefined) return {kind: 'invalid'};
+    const [numerator, denominator] = fraction.toLowerCase() === 'half' ? [1, 2]
+      : fraction.normalize('NFKC').split(/[/⁄∕／]/u).map(Number);
+    if (numerator === undefined || denominator === undefined || !Number.isSafeInteger(numerator) ||
+        !Number.isSafeInteger(denominator) || denominator <= 0 || numerator < 0 ||
+        percent === undefined && numerator > denominator) return {kind: 'invalid'};
+    const scale = percent !== undefined ? 1 : basis?.toLowerCase().includes('maximum') === true ? maximum : 100;
+    const scaled = numerator * scale;
+    return Number.isSafeInteger(scaled) && scaled % denominator === 0
+      ? {kind: 'absolute', amount: scaled / denominator} : {kind: 'invalid'};
+  }
+
+  const minimum = /\b(?:minimum|min)\b|\bas dim as possible\b/u.test(words);
+  const maximumRequested = /\b(?:maximum|max)\b|\bfull brightness\b|\bas bright as possible\b/u.test(words);
+  if (!minimum && !maximumRequested) return undefined;
+  // Multiple or mixed settings do not become a boundary command.
+  if (minimum && maximumRequested || quantityTokens(source).length > 0) return {kind: 'invalid'};
+  return {kind: minimum ? 'minimum' : 'maximum'};
+}
 
 function qualitativeSetting(device: DeviceRecord, request: string, proposed: Quantity): boolean {
   const source = withoutLightingName(device, request, true).replace(/\bid:[^\s]+/giu, ' ');

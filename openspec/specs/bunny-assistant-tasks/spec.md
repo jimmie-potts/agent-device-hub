@@ -1431,7 +1431,15 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 - **THEN** the Hub sends no command.
 - **WHEN** the owner supplies a numeric lighting value with repeated or conflicting signs, or declares an unsupported unit beside the quantity or separately for that setting
 - **THEN** Conversation asks for an unambiguous value in a supported unit and sends no command before the owner answers.
-- **AND** a corrected numeric answer binds to the same selected device, operation and current guards. Clearly bare and natural-language settings remain supported.
+- **AND** a corrected numeric answer binds to the same selected device, operation and current guards.
+
+#### Scenario: Brightness requires a determinate value
+
+- **WHEN** the current request names a clear brightness value, a fraction of brightness or a registered limit
+- **THEN** the Hub uses the stated value and unit on the resolved device. A conflicting model scalar cannot replace a fraction or registered limit.
+- **AND** a fractional percent must be representable at the device step.
+- **WHEN** the brightness is missing, subjective or only qualified by a time
+- **THEN** Conversation asks once for a percent, fraction or limit. The answer must supply that value for the same device and operation before one command can be sent. A bare affirmation cannot supply a value for this open question.
 
 #### Scenario: Relative and extreme settings use registered limits
 

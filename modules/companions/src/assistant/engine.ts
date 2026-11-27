@@ -2443,6 +2443,11 @@ export class AssistantEngine {
     if (savedControl !== undefined) {
       direct = savedControl;
       next = 'act';
+    } else if (call?.name === ASK_OWNER && currentTask.lightingClarification?.kind === 'quantity-clarification' &&
+        currentTask.lightingClarification.family === 'brightness-set' &&
+        this.#controlClarification(currentTask)?.id === currentTask.lightingClarification.questionId) {
+      next = 'end';
+      result = 'No brightness change was sent on this reply.';
     } else if (call !== undefined && deviceScope !== undefined &&
         (deviceScope.lookupStage === 'unresolved' || deviceScope.lookupStage === 'repair' &&
           (next === 'approve' || call.name === ASK_OWNER || call.name === READ_DEVICES && deviceScope.deviceLookupAdmission(call).kind === 'blocked'))) {
@@ -2782,7 +2787,9 @@ export class AssistantEngine {
         text: resolved.unsupportedUnit === true ? 'Which saturation value in percent do you want?' : 'What saturation percentage do you want?',
         binding: {...binding, kind: resolved.kind, hue: resolved.hue, ...(resolved.unsupportedUnit === true ? {unitClarified: true} : {})}};
       const text = resolved.unit === 'degrees' ? 'Which hue in degrees and saturation in percent do you want?'
-        : `Which ${resolved.reason === 'sign' ? 'signed ' : ''}value in ${resolved.unit} do you want?`;
+        : input.setting.family === 'brightness-set' && resolved.reason === 'missing' && resolved.operation === 'absolute'
+          ? 'What brightness should I use? Give a percent, a fraction, or minimum or maximum.'
+          : `Which ${resolved.reason === 'sign' ? 'signed ' : ''}value in ${resolved.unit} do you want?`;
       return {kind: 'setting-clarification', text, binding: {...binding, kind: resolved.kind, family: input.setting.family, unit: resolved.unit, operation: resolved.operation}};
     }
     if (previous?.kind === 'missing-saturation' && (resolved.setting.family !== 'lifx-color-set' ||

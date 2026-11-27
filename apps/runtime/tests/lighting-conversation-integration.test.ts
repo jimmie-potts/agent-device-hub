@@ -33,11 +33,35 @@ for (const provider of ['anthropic', 'openai'] as const) {
     {kind: 'power', label: 'refuses the opposite of a contextual power action', text: 'Turn it on.', refusal: 'opposite', previous: 'Turn Studio 2 off.'},
     {kind: 'power', label: 'admits a matching contextual power action', text: 'Switch that one off.', previous: 'Turn Studio 2 off.'},
     {kind: 'brightness', label: 'admits a qualitative brightness setting', text: 'Set Studio 2 to half brightness.', percent: 50},
-    {kind: 'brightness', label: 'admits a model-quoted qualitative brightness setting', text: 'Set Studio 2 to a gentle glow.',
-      percent: 20, literal: 'a gentle glow'},
+    {kind: 'brightness', label: 'asks for a value when the owner gives a subjective brightness setting', text: 'Set Studio 2 to a gentle glow.',
+      literal: 'a gentle glow', refusal: 'missing'},
+    {kind: 'brightness', label: 'asks for a value when the owner supplies only a time', text: 'Set Studio 2 brightness at sunset.',
+      literal: 'sunset', refusal: 'missing'},
+    {kind: 'brightness', label: 'uses half brightness despite a conflicting scalar', text: 'Set Studio 2 to half brightness.',
+      percent: 23, expected: 50},
+    {kind: 'brightness', label: 'converts a written fraction of brightness to a percent', text: 'Set Studio 2 to 3/4 brightness.',
+      percent: 2, expected: 75},
+    {kind: 'brightness', label: 'converts a fraction of the actual maximum', text: 'Set Studio 2 to ½ of maximum brightness.',
+      percent: 99, expected: 50},
+    {kind: 'brightness', label: 'refuses a fractional percent below the supported step', text: 'Set Studio 2 brightness to ½%.',
+      percent: 50, refusal: 'unsupported-fraction'},
+    {kind: 'brightness', label: 'uses the actual maximum despite a conflicting scalar', text: 'Set Studio 2 to maximum brightness.',
+      percent: 50, expected: 100},
+    {kind: 'brightness', label: 'uses the actual minimum despite a conflicting scalar', text: 'Set Studio 2 to minimum brightness.',
+      percent: 50, expected: 0},
     {kind: 'brightness', label: 'uses the capability maximum for an explicit extreme', text: 'Set Studio 2 to maximum brightness.',
       percent: 100, extreme: 'maximum'},
     {kind: 'brightness', label: 'asks when the owner omitted a brightness setting', text: 'Set Studio 2 brightness.', refusal: 'missing'},
+    {kind: 'brightness', label: 'binds a typed missing setting to the resolved device', text: 'Set Studio 2 brightness.',
+      refusal: 'missing', typedMissing: true},
+    {kind: 'brightness', label: 'binds a fractional clarification to the resolved device', text: 'Set Studio 2 brightness.',
+      refusal: 'missing', typedMissing: true, answer: 'half', answerPercent: 50},
+    {kind: 'brightness', label: 'binds an extreme clarification to the resolved device', text: 'Set Studio 2 brightness.',
+      refusal: 'missing', typedMissing: true, answer: 'maximum', answerPercent: 100},
+    {kind: 'brightness', label: 'does not repeat an answered brightness question', text: 'Set Studio 2 brightness.',
+      refusal: 'missing', typedMissing: true, repeatQuestion: true},
+    {kind: 'brightness', label: 'rejects a scalar that differs from the supplied answer', text: 'Set Studio 2 brightness.',
+      refusal: 'missing', typedMissing: true, wrongCorrection: true},
     {kind: 'brightness', label: 'asks when a polite suffix supplies no brightness setting', text: 'Set Studio 2 brightness, please.', refusal: 'missing'},
     {kind: 'brightness', label: 'asks when a second sentence supplies no brightness setting', text: 'Set Studio 2 brightness. Thanks.', refusal: 'missing'},
     {kind: 'brightness', label: 'asks when a polite question supplies no brightness setting',
@@ -61,6 +85,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const qualitative = 'percent' in scenario ? scenario.percent : undefined;
       const extrema = 'extreme' in scenario ? scenario.extreme : undefined;
       const ownerLiteral = 'literal' in scenario ? scenario.literal : '';
+      const ownerAnswer = 'repeatQuestion' in scenario ? 'Yes.' : 'answer' in scenario ? scenario.answer : '42%';
       const clock = manualClock(1_700_000_000_000);
       const id = 'fixture-light', owner = 'bunny/modules/lifx';
       let light = deviceRecord(id, 1, 'lifx', 'available');
@@ -91,8 +116,9 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const family = kind === 'power' ? 'power-set' : kind === 'brightness' ? 'brightness-set' : 'lifx-temperature-set';
       const name = kind === 'power' ? 'set_lifx_power' : kind === 'brightness' ? 'set_lifx_brightness' : 'control_lifx_temperature_set';
       const input = kind === 'brightness'
-        ? {device: `id:${id}`, percent: extrema !== undefined ? 0 : qualitative ?? (refusal === 'missing' ? 50 : absolute ? 45 : 10),
-          operation: extrema ?? (qualitative !== undefined || absolute || refusal === 'missing' ? 'absolute' : 'increase'),
+        ? {device: `id:${id}`, percent: extrema !== undefined || 'typedMissing' in scenario ? 0 : qualitative ?? (refusal === 'missing' ? 50 : absolute ? 45 : 10),
+          operation: 'typedMissing' in scenario ? 'missing'
+            : extrema ?? (qualitative !== undefined || absolute || refusal === 'missing' ? 'absolute' : 'increase'),
           literal: qualitative !== undefined || refusal === 'missing' ? ownerLiteral : absolute ? '45%' : '10 percentage points', startingLiteral: ''}
         : kind === 'power' ? {device: `id:${id}`, on: false}
         : {owner, target: `id:${id}`, arguments: JSON.stringify({kelvin: {kind: 'decrease', amount: 200, literal: '200 Kelvin'}})};
@@ -105,16 +131,18 @@ for (const provider of ['anthropic', 'openai'] as const) {
         const lastResult = provider === 'anthropic'
           ? body.messages?.flatMap(message => message.content).filter(block => block.type === 'tool_result').at(-1)?.content
           : body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output;
-        const answered = refusal === 'missing' && lastResult === '42%';
+        const answered = refusal === 'missing' && lastResult === ownerAnswer;
         const command = (lastResult === undefined || answered) && body.tools !== undefined && body.tools.length > 0;
-        const args = answered ? {...input, percent: 42, literal: '42%'} : input;
+        const followUpName = answered && 'repeatQuestion' in scenario ? 'ask_owner' : name;
+        const args = answered ? 'repeatQuestion' in scenario ? {text: 'How bright should I set it?'}
+          : {...input, operation: 'absolute', percent: 'wrongCorrection' in scenario ? 50 : 42, literal: '42%'} : input;
         const callId = answered ? 'answered' : 'fixture';
         const usage = {input_tokens: 50, output_tokens: 20};
         return Promise.resolve(Response.json(provider === 'anthropic' ? {usage,
           stop_reason: command ? 'tool_use' : 'end_turn',
-          content: command ? [{type: 'tool_use', id: callId, name, input: args}] : [{type: 'text', text: 'Fixture response.'}],
+          content: command ? [{type: 'tool_use', id: callId, name: followUpName, input: args}] : [{type: 'text', text: 'Fixture response.'}],
         } : {usage, status: 'completed', output: command
-          ? [{type: 'function_call', id: `fc_${callId}`, call_id: callId, name, arguments: JSON.stringify(args)}]
+          ? [{type: 'function_call', id: `fc_${callId}`, call_id: callId, name: followUpName, arguments: JSON.stringify(args)}]
           : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Fixture response.', annotations: []}]}]}));
       }});
       const submissions: {schema: string; basis: unknown}[] = [];
@@ -183,18 +211,25 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const prior = companions.inspectAssistant()?.tasks[0]?.taskId;
       await submit({action: 'start', text});
       await waitFor(() => companions.inspectAssistant()?.tasks[0]?.taskId !== prior);
-      if (refusal === 'stale' || refusal === 'read-only' || refusal === 'opposite' || refusal === 'missing') {
+      if (refusal === 'stale' || refusal === 'read-only' || refusal === 'opposite' || refusal === 'missing' || refusal === 'unsupported-fraction') {
         await waitFor(() => ['waiting', 'succeeded'].includes(companions.inspectAssistant()?.tasks[0]?.status ?? ''));
         assert.equal(submissions.length, 0);
         assert.equal(writes.length, 0);
         if (refusal !== 'missing') return;
         const awaiting = companions.inspectAssistant()?.tasks[0];
         assert.equal(awaiting?.status, 'waiting');
-        await submit({action: 'answer', taskId: awaiting?.taskId, questionId: awaiting?.questionId, text: '42%'});
+        await submit({action: 'answer', taskId: awaiting?.taskId, questionId: awaiting?.questionId,
+          text: ownerAnswer});
+        if ('repeatQuestion' in scenario || 'wrongCorrection' in scenario) {
+          await waitFor(() => companions.inspectAssistant()?.tasks[0]?.status === 'succeeded');
+          assert.equal(submissions.length, 0);
+          assert.equal(writes.length, 0);
+          return;
+        }
         await waitFor(() => writes.length > 0);
         assert.equal(submissions.length, 1);
         assert.equal(writes.length, 1);
-        assert.equal(writes[0]?.percent, 42);
+        assert.equal(writes[0]?.percent, 'answerPercent' in scenario ? scenario.answerPercent : 42);
         return;
       }
       if (absolute) {
@@ -211,7 +246,8 @@ for (const provider of ['anthropic', 'openai'] as const) {
       assert.equal(writes.length, 1);
       const sent = writes[0] ?? assert.fail('Expected a single device submission.');
       if (kind === 'power') assert.equal(sent.on, false);
-      else assert.equal(kind === 'brightness' ? sent.percent : sent.kelvin, qualitative ?? (kind === 'brightness' ? 45 : 3400));
+      else assert.equal(kind === 'brightness' ? sent.percent : sent.kelvin,
+        'expected' in scenario ? scenario.expected : qualitative ?? (kind === 'brightness' ? 45 : 3400));
       assert.equal(core.operation(sent.requestId)?.family, family);
       assert.equal(core.operation(sent.requestId)?.requestedBy, 'bunny/modules/companions');
     });
