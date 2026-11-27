@@ -15,6 +15,7 @@ export type {PromptContext} from './context.js';
 
 import type {ToolDefinition} from './tool-types.js';
 export type {ToolDefinition, ToolEffect, ToolInputSchema} from './tool-types.js';
+export const TOOL_RESPONSE_INSTRUCTIONS = 'Call at most one tool per model response. Use successive responses for sequential tool calls needed to complete the same owner request.';
 export type ToolCall = {id: string; name: string; input: Readonly<Record<string, unknown>>};
 /**
  * One item of a task's transcript, kept in the task record so a turn can be replayed after restart. An assistant item

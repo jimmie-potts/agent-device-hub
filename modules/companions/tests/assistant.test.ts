@@ -420,19 +420,50 @@ async function finishWemoConfirmationWindow(w: Awaited<ReturnType<typeof world>>
   w.advance(1001);
 }
 
-void test('an explicit Wemo group binds every target once', async context => {
-  const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
-  const requests: AssistantDispatch[] = [];
-  const provider = counted(request => wemoGroup(request, false));
-  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
-    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
-  await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Turn off all Wemo plugs');
-  await finishWemoConfirmationWindow(w);
-  await until(() => status(w) === 'succeeded' && requests.length === 2);
-  assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
-  assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
-});
+for (const host of ['anthropic', 'openai'] as const) {
+  void test(`an explicit Wemo group continues after discovery through ${host}`, async context => {
+    const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+    const requests: AssistantDispatch[] = [];
+    const payloads: string[] = [];
+    let writesAtContinuation: number | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      payloads.push(init.body);
+      const step = payloads.length;
+      if (step === 2) writesAtContinuation = requests.length;
+      const id = `call_wemo_group_${step}`;
+      const tool = step === 1 ? {name: 'find_wemo_power_targets', input: {}}
+        : step === 2 ? {name: 'set_wemo_power', input: wemoPowerArgs([], true)} : undefined;
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: tool === undefined ? [{type: 'text', text: 'Synthetic terminal reply.'}] : [{type: 'tool_use', id, ...tool}],
+          stop_reason: tool === undefined ? 'end_turn' : 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: tool === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic terminal reply.'}]}]
+          : [{type: 'function_call', id: 'fc_' + id, call_id: id, name: tool.name, arguments: JSON.stringify(tool.input)}],
+        usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+      dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), 'Please turn on all Wemo plugs.')).status, 'accepted');
+    await finishWemoConfirmationWindow(w);
+    await until(() => status(w) === 'succeeded');
+    assert.equal(writesAtContinuation, 0, 'discovery cannot dispatch a command');
+    assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
+    assert.ok(requests.every(request => request.family === 'power-set' && request.data.on));
+    assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+    for (const payload of payloads.slice(0, 2)) {
+      assert.match(payload, /at most one tool per model response/i);
+      assert.doesNotMatch(payload, /one tool per turn/i);
+      assert.match(payload, /successive responses.*same owner request/i);
+      assert.match(payload, /read-only lookup.*call set_wemo_power.*next response/i);
+    }
+    const continuation = payloads[1] ?? assert.fail('missing hosted lookup continuation');
+    assert.match(continuation, host === 'anthropic' ? /"type":"tool_result"/u : /"type":"function_call_output"/u);
+    assert.match(continuation, /desk-plug.*shelf-plug/u);
+  });
+}
 
 void test('a lost Wemo group reply preserves each dispatch receipt across restart', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
