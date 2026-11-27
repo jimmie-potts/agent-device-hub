@@ -2188,7 +2188,7 @@ export class AssistantEngine {
       let scope = paid ? this.#supervisorScope(current, 'supervisor', undefined, eligible) : undefined;
       if (includesReplay && scope !== undefined && scope.namedReads.size > 0) {
         const {namedReads, lookupGranted} = scope;
-        const matches = await Promise.all([...namedReads.values()].map(({lookup}) => lookup === undefined ? undefined
+        const matches = await Promise.all([...namedReads.values()].map(async ({lookup}) => lookup === undefined ? undefined
           : this.#catalog().namedDeviceMatch(lookup, lookupGranted, parent)));
         this.#fence(active);
         current = this.#task(task.id);
