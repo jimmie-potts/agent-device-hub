@@ -220,9 +220,10 @@ const jobReceipt = (job: CodingJob): string => `accepted: Coding job ${job.jobId
 
 const deviceRequestClauses = (text: string) => text.trim().split(/(?<=[.!?;,])(?:\s+|$)|[\r\n]+/u).filter(Boolean);
 
-function deviceRequestSubject(text: string, kind: 'any' | 'read' | 'status' = 'any'): string | undefined {
-  const [opening = '', remainder] = deviceRequestClauses(text);
-  const affirmative = normalizedControlText(opening).replace(/ only$/u, '');
+function deviceRequestSubject(text: string, kind: 'any' | 'read' = 'any'): string | undefined {
+  const [opening = '', ...remaining] = deviceRequestClauses(text);
+  const affirmative = normalizedControlText(opening).replace(/ (?:only|please)$/u, '');
+  const remainder = remaining.find(clause => normalizedControlText(clause) !== 'please');
   const timerSubject = /^(?:is|was) (?:the )?timer for (?:the )?(.+?) (?:on|off|active|armed)$/u.exec(affirmative)?.[1]
     ?? /^(?:is|was) (?:the )?timer (?:on|off|active|armed) for (?:the )?(.+)$/u.exec(affirmative)?.[1];
   const readSubject = timerSubject
@@ -230,7 +231,7 @@ function deviceRequestSubject(text: string, kind: 'any' | 'read' | 'status' = 'a
     ?? /^(?:please )?(?:show|check|read) (?:me )?(?:the )?(?:currently )?(?:reported )?(?:status|state|brightness|power) (?:of|for) (?:the )?(.+)$/u.exec(affirmative)?.[1]
     ?? /^(?:please )?(?:show|check|read) (?:me )?(?:the )?(.+?) (?:status|state|brightness|power)$/u.exec(affirmative)?.[1]
     ?? /^(?:please )?(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available)$/u.exec(affirmative)?.[1];
-  const generalRead = kind === 'status' ? undefined : /^(?:please )?(?:list|show|check|read) (?:the )?(.+)$/u.exec(affirmative)?.[1];
+  const generalRead = /^(?:please )?(?:list|show|check|read) (?:the )?(.+)$/u.exec(affirmative)?.[1];
   const subject = readSubject ?? generalRead ?? (kind === 'any' ? explicitPowerRequest(text)?.subject : undefined);
   if (subject === undefined || remainder !== undefined && (kind !== 'any' || deviceGroup(subject) !== undefined)) return undefined;
   const id = exactControlIds(opening).find(id => literalDeviceId(`id:${id}`) === id && normalizedControlText(`id:${id}`) === subject);
@@ -2739,16 +2740,19 @@ export class AssistantEngine {
     // The resolved device is the subject of these recognized constraints, including when
     // the current request references a device from shared Conversation context.
     const complete = (subject: string): boolean =>
-      !/\band\b/u.test(subject) || matchesDeviceRequestSubject(subject, row.device);
-    const status = deviceRequestSubject(instruction, 'status');
-    const generalRead = deviceRequestSubject(instruction, 'read');
-    if (status !== undefined && complete(status) || matchesDeviceRequestSubject(generalRead, row.device)) {
+      !/\b(?:and|then)\b/u.test(subject) || matchesDeviceRequestSubject(subject, row.device);
+    const readSubject = deviceRequestSubject(instruction, 'read');
+    if (readSubject !== undefined && complete(readSubject)) {
       return 'refused: the owner asked for device status. Read the current setting without sending a command.';
     }
     if (input.setting.family === 'power-set') {
-      const explicit = explicitPowerRequest(instruction);
-      if (explicit !== undefined && complete(explicit.subject) &&
-          explicit.on !== input.setting.on) return 'refused: the proposed power setting conflicts with the owner request.';
+      const explicit = new Set(deviceRequestClauses(instruction).flatMap(clause => {
+        const power = explicitPowerRequest(clause.replace(/^then\s+/iu, ''));
+        return power !== undefined && complete(power.subject) ? [power.on] : [];
+      }));
+      if (explicit.size === 1 && !explicit.has(input.setting.on)) {
+        return 'refused: the proposed power setting conflicts with the owner request.';
+      }
     }
     const native = call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS;
     const refusal = lightingRefusal(row, input.setting.family, native);

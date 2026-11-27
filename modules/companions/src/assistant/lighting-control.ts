@@ -3,7 +3,7 @@ import {assistantRoutes, type CatalogProposal, type ObservationBasis} from '@jim
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {catalogCommand} from './catalog-tools.js';
-import {containsControlValue, matchesControlSubject, missingBrightnessSubject, normalizedControlText} from './control-intent.js';
+import {containsControlValue, normalizedControlText} from './control-intent.js';
 import {currentObservationBasis, deviceLabel, type LifxDeviceFacts, type OwnedDevice} from '@jimmie-potts/sdk';
 import {controlReferenceIds, exactControlIds, resolveModelControl, type ControlReference, type ControlResolution, type ModelControlScope} from './model-control.js';
 import {SET_LIFX_BRIGHTNESS, SET_LIFX_POWER} from './tool-scope.js';
@@ -124,8 +124,8 @@ export function lightingControl(call: ToolCall, family: Family) {
       const {operation, percent, literal, startingLiteral} = value;
       if (Object.keys(value).length !== 4 || typeof literal !== 'string' || typeof startingLiteral !== 'string') return undefined;
       if (operation === 'minimum' || operation === 'maximum') {
-        if (percent !== 0 || literal !== '' || startingLiteral !== '') return undefined;
-        data = {percent: {kind: operation}};
+        if (percent !== 0 || startingLiteral !== '') return undefined;
+        data = {percent: {kind: operation, ...(literal === '' ? {} : {literal})}};
       } else {
         data = {percent: {kind: operation, amount: percent, ...(literal === '' ? {} : {literal}), ...(startingLiteral === '' ? {} : {startingLiteral})}};
       }
@@ -143,7 +143,7 @@ type QuantityUnit = 'percent' | 'percentage points' | 'kelvin' | 'degrees';
 const NUMERIC_OPERATIONS = ['absolute', 'increase', 'decrease', 'increase-percent', 'decrease-percent'] as const;
 type NumericOperation = typeof NUMERIC_OPERATIONS[number];
 type NumericQuantity = {kind: NumericOperation; amount: number; literal?: string; startingLiteral?: string; unit?: string};
-type Quantity = NumericQuantity | {kind: 'minimum'} | {kind: 'maximum'};
+type Quantity = NumericQuantity | {kind: 'minimum' | 'maximum'; literal?: string};
 
 const QUANTITY_UNITS: Record<string, QuantityUnit | undefined> = {
   '%': 'percent', percent: 'percent', k: 'kelvin', kelvin: 'kelvin',
@@ -171,7 +171,7 @@ const STATED_UNIT = new RegExp(String.raw`^\s*(${UNIT_SPELLING})`, 'iu');
 const UNIT_INTRODUCER = /^\s+in\s+/iu;
 const LOCATION = /^(?:the|my|our|your|this|that)\b/iu;
 const PROPERTY_UNIT = /\b(?:brightness|temperature|hue|saturation)\s+in\s+([^.!?;]+?)(?=\s+(?:to|by|at)\b|[.!?;]|$)/giu;
-const QUALITATIVE_AMOUNT = /\b(?:half|(?:(?:a|one|two|three|four) )?quarters?|a (?:few|couple))\b/giu;
+const QUALITATIVE_AMOUNT = /\b(?:half|(?:(?:a|one|two|three|four) )?quarters?|a (?:bit|few|couple))\b/giu;
 
 type QuantityToken = {literal: string; value: number; unit?: QuantityUnit | 'unsupported' | undefined; conflictingSign?: true};
 type Sign = {start: number; factor: -1 | 1 | 'conflict' | 'malformed'};
@@ -251,11 +251,11 @@ function writtenQuantities(text: string, signs: ReadonlyMap<number, Sign>): Quan
   });
 }
 
-function withoutLightingName(device: DeviceRecord, text: string): string {
-  if (exactControlIds(text).includes(device.id)) return text;
+function withoutLightingName(device: DeviceRecord, text: string, settingEvidence = false): string {
+  if (!settingEvidence && exactControlIds(text).includes(device.id)) return text;
   for (const reference of new Set([device.id, deviceLabel(device)])) {
     const name = normalizedControlText(reference);
-    if (!/\p{L}/u.test(name) || !/\p{N}/u.test(name)) continue;
+    if (!/\p{L}/u.test(name) || !settingEvidence && !/\p{N}/u.test(name)) continue;
     const words = name.split(' ').join('[^\\p{L}\\p{N}]+');
     const mention = new RegExp(`(?<![\\p{L}\\p{N}_])${words}(?![\\p{L}\\p{N}_])`, 'giu');
     // Keep a number when the spelling could be part of a requested quantity rather than the target alone.
@@ -301,8 +301,11 @@ function quantity(value: unknown): Quantity | undefined {
   if (!object(value)) return undefined;
   const {kind, amount, literal, startingLiteral, unit} = value;
   const size = Object.keys(value).length;
-  if ((kind === 'minimum' || kind === 'maximum') && size === 1) return {kind};
   const citation = (source: unknown): source is string => typeof source === 'string' && source.length > 0 && source.length <= 48;
+  if (kind === 'minimum' || kind === 'maximum') {
+    if (size === 1) return {kind};
+    return size === 2 && citation(literal) ? {kind, literal} : undefined;
+  }
   if (!numericOperation(kind) || typeof amount !== 'number' || !Number.isSafeInteger(amount) ||
       literal !== undefined && !citation(literal) ||
       startingLiteral !== undefined && (kind !== 'absolute' || literal === undefined || !citation(startingLiteral)) ||
@@ -383,14 +386,6 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   if (range === undefined) return {kind: 'refused', code: 'unavailable'};
   if (!range.supported) return {kind: 'refused', code: 'unsupported-capability'};
   const {minimum, maximum} = range;
-  if (brightness && previous === undefined) {
-    const subject = missingBrightnessSubject(scope.request.text);
-    // "To" may introduce a value before the word brightness, or belong to the
-    // canonical device name already established for this request.
-    if (subject !== undefined && (!subject.includes(' to ') || matchesControlSubject(subject, row.device.id, deviceLabel(row.device)))) {
-      return {kind: 'quantity-clarification', unit, operation: 'absolute', reason: 'missing'};
-    }
-  }
   const supplied = answer === undefined ? [] : quantityTokens(answer);
   const useAnswer = answer !== undefined && (supplied.length > 0 || previous?.kind === 'quantity-clarification');
   const source = useAnswer ? answer : request;
@@ -407,8 +402,14 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   if (hasUnsupportedUnit(source, tokens, unit, brightness ? 'percentage points' : undefined)) {
     return {kind: 'quantity-clarification', unit: requestedUnit, operation: requested.kind, reason: 'unit'};
   }
-  if (propertyUnits(source).some(stated => stated !== requestedUnit) ||
-      !supportsQuantity(tokens, requestedUnit, requested, previous?.kind === 'quantity-clarification')) return invalid;
+  const qualitative = tokens.length === 0 && previous === undefined && qualitativeSetting(row.device, scope.request.text, requested);
+  if (tokens.length === 0 && previous === undefined && !qualitative) {
+    return {kind: 'quantity-clarification', unit: requestedUnit, operation: 'amount' in requested ? requested.kind : 'absolute', reason: 'missing'};
+  }
+  const supported = qualitative
+    ? !('unit' in requested) || requested.unit === undefined || QUANTITY_UNITS[requested.unit.toLowerCase()] === requestedUnit
+    : supportsQuantity(tokens, requestedUnit, requested, previous?.kind === 'quantity-clarification');
+  if (!supported || propertyUnits(source).some(stated => stated !== requestedUnit)) return invalid;
   let value: number;
   let observationBasis: ObservationBasis | undefined;
   if (!('amount' in requested)) {
@@ -437,6 +438,24 @@ export type LightingQuestion = {
   | {kind: 'quantity-clarification'; family: Family; unit: QuantityUnit; operation: Quantity['kind'] | 'color'});
 
 export type LightingClarification = LightingQuestion & {questionId: string};
+
+function qualitativeSetting(device: DeviceRecord, request: string, proposed: Quantity): boolean {
+  const source = withoutLightingName(device, request, true).replace(/\bid:[^\s]+/giu, ' ');
+  const words = normalizedControlText(source);
+  const evidence = proposed.literal;
+  if (!('amount' in proposed)) {
+    const other = proposed.kind === 'maximum' ? 'minimum' : 'maximum';
+    if (containsControlValue(words, other)) return false;
+    if (containsControlValue(words, proposed.kind) || /\bas [^,.!?;]+ as possible\b/iu.test(source)) return true;
+  }
+  if ('amount' in proposed && evidence === undefined && [...source.matchAll(QUALITATIVE_AMOUNT)].length > 0) return true;
+  if (evidence === undefined || !/^[\p{L}][\p{L}\p{Zs}-]*$/u.test(evidence) || BARE_QUANTITY_END.test(` ${evidence}`)) return false;
+  const value = normalizedControlText(evidence);
+  return value !== '' && [...source.matchAll(/\b(?:to|at|by)\s+([^,.;!?]+?)(?=[,.;!?]|$)/giu)].some(match => {
+    const setting = normalizedControlText(match[1] ?? '');
+    return setting === value || setting.startsWith(`${value} `);
+  });
+}
 
 function propertyUnits(text: string): Exclude<QuantityToken['unit'], undefined>[] {
   return [...text.matchAll(PROPERTY_UNIT)].flatMap(match => {

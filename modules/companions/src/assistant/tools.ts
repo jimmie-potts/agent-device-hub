@@ -59,7 +59,7 @@ export const TOOLS: readonly ToolDefinition[] = [
       operation: {type: 'string', enum: ['absolute', 'increase', 'decrease', 'increase-percent', 'decrease-percent', 'minimum', 'maximum'],
         description: 'Absolute brightness, change by percentage points, change by a percentage of current brightness, or the registered minimum or maximum.'},
       percent: {type: 'integer', description: 'The requested whole value or positive change. Use 0 with minimum or maximum.'},
-      literal: {type: 'string', description: 'Copy the complete requested numeric quantity from the owner text, including signs and units. Use an empty string for a quantity expressed in words.'},
+      literal: {type: 'string', description: 'Copy the complete current owner setting, including signs and units for a number. Copy a qualitative setting phrase as written. An explicit amount or extreme can use an empty string.'},
       startingLiteral: {type: 'string', description: 'Copy the complete starting quantity when the owner describes an absolute change from one number to another. For other requests use an empty string.'},
     }, required: ['device', 'operation', 'percent', 'literal', 'startingLiteral'], additionalProperties: false}},
   {name: READ_WEMO, effect: 'read', description: 'Read Wemo plug power, availability and the Hub maximum-on timer status, shutoff deadline and time remaining. Use an empty device name to list plugs.',

@@ -15,7 +15,15 @@ for (const provider of ['anthropic', 'openai'] as const) {
     {kind: 'power', label: 'admits a polite power action', text: 'Could you switch Studio 2 off, please?'},
     {kind: 'power', label: 'refuses a power write on a recognized status question', text: 'Is Studio 2 off?', refusal: 'read-only'},
     {kind: 'power', label: 'refuses a power write during a pure device check', text: 'Check Studio 2.', refusal: 'read-only'},
+    {kind: 'power', label: 'refuses a contextual device check expressed as a command', text: 'Check it.', refusal: 'read-only',
+      previous: 'Turn Studio 2 off.'},
+    {kind: 'power', label: 'admits a mixed check and command without punctuation', text: 'Check Studio 2 then turn it off.'},
     {kind: 'power', label: 'admits a command following a device check', text: 'Check Studio 2, then turn it off.'},
+    {kind: 'power', label: 'refuses a status write when the owner adds please', text: 'Is Studio 2 off, please?', refusal: 'read-only'},
+    {kind: 'power', label: 'refuses a status write with a conjunction in a polite check', text: 'Is Desk and Shelf Lamp off, please?',
+      deviceLabel: 'Desk and Shelf Lamp', refusal: 'read-only'},
+    {kind: 'power', label: 'retains polarity when the owner asks for a report too', text: 'Turn Studio 2 on, then tell me if it worked.',
+      refusal: 'opposite'},
     {kind: 'power', label: 'refuses the opposite of an explicit power action', text: 'Turn Studio 2 on.', refusal: 'opposite'},
     {kind: 'power', label: 'refuses writing to a device named with a conjunction during status', text: 'Is Desk and Shelf Lamp off?',
       deviceLabel: 'Desk and Shelf Lamp', refusal: 'read-only'},
@@ -25,7 +33,15 @@ for (const provider of ['anthropic', 'openai'] as const) {
     {kind: 'power', label: 'refuses the opposite of a contextual power action', text: 'Turn it on.', refusal: 'opposite', previous: 'Turn Studio 2 off.'},
     {kind: 'power', label: 'admits a matching contextual power action', text: 'Switch that one off.', previous: 'Turn Studio 2 off.'},
     {kind: 'brightness', label: 'admits a qualitative brightness setting', text: 'Set Studio 2 to half brightness.', percent: 50},
+    {kind: 'brightness', label: 'admits a model-quoted qualitative brightness setting', text: 'Set Studio 2 to a gentle glow.',
+      percent: 20, literal: 'a gentle glow'},
+    {kind: 'brightness', label: 'uses the capability maximum for an explicit extreme', text: 'Set Studio 2 to maximum brightness.',
+      percent: 100, extreme: 'maximum'},
     {kind: 'brightness', label: 'asks when the owner omitted a brightness setting', text: 'Set Studio 2 brightness.', refusal: 'missing'},
+    {kind: 'brightness', label: 'asks when a polite suffix supplies no brightness setting', text: 'Set Studio 2 brightness, please.', refusal: 'missing'},
+    {kind: 'brightness', label: 'asks when a second sentence supplies no brightness setting', text: 'Set Studio 2 brightness. Thanks.', refusal: 'missing'},
+    {kind: 'brightness', label: 'asks when a polite question supplies no brightness setting',
+      text: 'Could you change the brightness of Studio 2?', refusal: 'missing'},
     {kind: 'brightness', label: 'asks when a device name includes a brightness-setting separator', text: 'Set Wall to Wall brightness.',
       deviceLabel: 'Wall to Wall', refusal: 'missing'},
     {kind: 'brightness', label: 'asks when the owner omitted a contextual brightness setting', text: 'Set its brightness.', refusal: 'missing',
@@ -43,6 +59,8 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const refusal = 'refusal' in scenario ? scenario.refusal : undefined;
       const absolute = refusal === 'offline' || refusal === 'held';
       const qualitative = 'percent' in scenario ? scenario.percent : undefined;
+      const extrema = 'extreme' in scenario ? scenario.extreme : undefined;
+      const ownerLiteral = 'literal' in scenario ? scenario.literal : '';
       const clock = manualClock(1_700_000_000_000);
       const id = 'fixture-light', owner = 'bunny/modules/lifx';
       let light = deviceRecord(id, 1, 'lifx', 'available');
@@ -73,9 +91,9 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const family = kind === 'power' ? 'power-set' : kind === 'brightness' ? 'brightness-set' : 'lifx-temperature-set';
       const name = kind === 'power' ? 'set_lifx_power' : kind === 'brightness' ? 'set_lifx_brightness' : 'control_lifx_temperature_set';
       const input = kind === 'brightness'
-        ? {device: `id:${id}`, percent: qualitative ?? (refusal === 'missing' ? 50 : absolute ? 45 : 10),
-          operation: qualitative !== undefined || absolute || refusal === 'missing' ? 'absolute' : 'increase',
-          literal: qualitative !== undefined || refusal === 'missing' ? '' : absolute ? '45%' : '10 percentage points', startingLiteral: ''}
+        ? {device: `id:${id}`, percent: extrema !== undefined ? 0 : qualitative ?? (refusal === 'missing' ? 50 : absolute ? 45 : 10),
+          operation: extrema ?? (qualitative !== undefined || absolute || refusal === 'missing' ? 'absolute' : 'increase'),
+          literal: qualitative !== undefined || refusal === 'missing' ? ownerLiteral : absolute ? '45%' : '10 percentage points', startingLiteral: ''}
         : kind === 'power' ? {device: `id:${id}`, on: false}
         : {owner, target: `id:${id}`, arguments: JSON.stringify({kelvin: {kind: 'decrease', amount: 200, literal: '200 Kelvin'}})};
       const companions = createCompanionsModule({share: () => true, transport: (_url, init) => {
