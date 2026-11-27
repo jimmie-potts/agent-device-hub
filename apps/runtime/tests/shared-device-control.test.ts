@@ -7,6 +7,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {BrightnessSetRequest, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {createCompanionsModule} from '@jimmie-potts/companions';
 import {lifxSchemas} from '@jimmie-potts/lifx';
 import {NANOLEAF_LINES_DEVICE} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {nanoleafSchemas} from '@jimmie-potts/nanoleaf';
@@ -364,4 +365,89 @@ it('MCP shares Wemo power identity and advertises Lines-only edits only for Line
   assert.equal(refused.isError, true);
   assert.equal((refused.structuredContent as {data: {error: {code: string}}}).data.error.code, 'unsupported-capability');
   assert.deepEqual(edits, [lines.id]);
+});
+
+it('a real Conversation tool turn and MCP use the same writer and tracked admission on one runtime', async context => {
+  let record = deviceRecord('fixture-light', 1, 'lifx', 'available');
+  record.label = 'Fixture light';
+  record.capabilities.brightness = {supported: true, minimum: 0, maximum: 100};
+  const offered = record;
+  let writer: ModuleContext | undefined, core: CoreHandle | undefined, requested = 60;
+  const writes: BrightnessSetRequest[] = [], toolReceipts: string[] = [];
+  const light: BunnyModule = {
+    manifest: {name: 'lifx', apiVersion: '1.2', configure: config => ({config, devices: [record.id]})},
+    async start(given) {
+      writer = given;
+      await given.sdk.serveSync(['device'], () => ({revision: record.revision, states: [deviceState(record)]}));
+      await given.sdk.respond<BrightnessSetRequest>('bunny.cmd.brightness-set.fixture-light', command => {
+        writes.push(command.data);
+        return {status: 'accepted'};
+      });
+    },
+    stop() {},
+  };
+  const companions = createCompanionsModule({
+    tools: ['read_devices', 'set_lifx_brightness'],
+    devices: owner => owner === 'bunny/modules/lifx' ? [offered] : [],
+    provider: {name: 'synthetic', model: 'synthetic', turn: input => {
+      const previous = input.transcript.filter(item => item.role === 'tool').at(-1);
+      if (previous === undefined) return Promise.resolve({text: null, stop: 'tool', units: 1,
+        calls: [{id: 'device', name: 'read_devices', input: {owner: 'bunny/modules/lifx', target: 'id:fixture-light'}}]});
+      if (previous.name === 'read_devices') return Promise.resolve({text: null, stop: 'tool', units: 1,
+        calls: [{id: 'brightness', name: 'set_lifx_brightness', input: {device: 'id:fixture-light', percent: requested}}]});
+      toolReceipts.push(previous.result);
+      return Promise.resolve({text: 'The command receipt was recorded.', stop: 'end', units: 1, calls: []});
+    }},
+  });
+  const initial = createCoreModule({parts: [{start: given => {core = given; return Promise.resolve();}}]});
+  const files = await edgeConfig(context, [operator], {mcp: true, modules: {lifx: {}, companions: {}}});
+  const {runtime} = await run(context, {modules: [initial, light, companions], configFile: files.config, edge: {schemas: {}}});
+  const mcp = await client(context, runtime.url, operator.token);
+  assert.ok(core);
+  const sdk = core.sdk;
+  const enabled = await sdk.request('bunny.cmd.assistant-control.assistant', {
+    type: 'org.bunny.assistant.control.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-control/2.0',
+    data: {action: 'enable', expectedRevision: companions.inspectAssistant()?.revision},
+  }, {requestId: 'enable-fixture-conversation', timeoutMs: 3000});
+  assert.equal(enabled.status, 'accepted');
+  const ask = async (id: string) => {
+    const staged = await companions.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId: id, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'start', profile: 'bunny', expectedRevision: companions.inspectAssistant()?.revision,
+        text: `Set id:fixture-light brightness to ${String(requested)}%.`}))});
+    assert.ok(staged !== undefined && !('error' in staged));
+    const answer = await sdk.request('bunny.cmd.assistant-input.assistant', {
+      type: 'org.bunny.assistant.input.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-input/2.0',
+      data: staged.data,
+    }, {requestId: id, timeoutMs: 3000});
+    assert.equal(answer.status, 'accepted');
+  };
+  const guard = {expectedConfigurationRevision: offered.configurationRevision, expectedGeneration: offered.generation};
+  const send = (requestId: string) => mcp.callTool({name: 'core_send_command', arguments: {
+    family: 'brightness-set', target: record.id, data: {...guard, percent: requested}, requestId,
+  }});
+  const first = await send('mcp-real-turn');
+  assert.deepEqual(first.structuredContent, {kind: 'extension', data: {result: {status: 'accepted', requestId: 'mcp-real-turn'}}});
+  await ask('conversation-real-turn');
+  await waitFor(() => toolReceipts.length === 1 && companions.inspectAssistant()?.tasks[0]?.status === 'succeeded', 9000);
+  const conversation = writes[1];
+  assert.ok(conversation);
+  assert.match(toolReceipts[0] ?? '', new RegExp(`^accepted: brightness-set on fixture-light as operation ${conversation.requestId}`));
+  assert.equal(core.operation('mcp-real-turn')?.requestedBy, operator.source);
+  assert.equal(core.operation(conversation.requestId)?.requestedBy, 'bunny/modules/companions');
+  assert.deepEqual(writes.map(({percent, expectedConfigurationRevision, expectedGeneration}) => ({
+    percent, expectedConfigurationRevision, expectedGeneration,
+  })), [{...guard, percent: 60}, {...guard, percent: 60}]);
+
+  assert.ok(writer);
+  requested = 65;
+  record = {...record, revision: record.revision + 1, configurationRevision: record.configurationRevision + 1};
+  await writer.sdk.publish('bunny.state.device.fixture-light', {kind: 'state', ...deviceState(record)});
+  await flush();
+  const refused = await send('mcp-real-turn-stale');
+  assert.equal((refused.structuredContent as {data: {error: {code: string}}}).data.error.code, 'revision-conflict');
+  assert.equal(core.operation('mcp-real-turn-stale'), undefined);
+  await ask('conversation-real-turn-stale');
+  await waitFor(() => toolReceipts.length === 2 && companions.inspectAssistant()?.tasks[0]?.status === 'succeeded', 9000);
+  assert.match(toolReceipts[1] ?? '', /^refused: revision-conflict/u);
+  assert.equal(writes.length, 2, 'the same designated writer took exactly one request per admitted caller');
 });
