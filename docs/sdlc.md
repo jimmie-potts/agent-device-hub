@@ -112,6 +112,31 @@ state owner and one writer per device, correct targets, bounded queued work, no
 unsafe replay, accurate freshness and completion, manual control, and user data
 integrity.
 
+<a id="consumer-evidence"></a>
+**Behavior ownership and consumer evidence.** Before each implementation task,
+check whether it changes shared behavior or a contract other callers use. In the
+existing issue or plan, name the behavior owner, reusable foundations, affected
+callers, migration or removal needs and planned checks. For a local change with
+no shared seam or other affected caller, the owning component, path and check
+fit in one line.
+
+For shared interfaces, state transitions, recovery or repeated fixes, trace
+supported entry points through the actual wiring, including relevant callers
+outside the proposed diff. Account for required migrations, supported
+compatibility paths and remaining uses before removing a replaced path. Plan
+checks at the affected consumer entry points, including relevant failures and
+recovery. Refresh the assessment and renew affected evidence after a material
+design or scope change or discovery of another affected caller.
+
+In the existing PR review, record the caller paths inspected, which migrations
+and removals were verified, and any coverage gaps. Tie each required consumer
+outcome to its requirement and evidence on the current comparison. Report a
+required caller still using a replaced path or failing its entry-point check as
+a finding. Missing required consumer evidence leaves the affected work
+incomplete under [Review and merge](#review-and-merge). Ground architectural
+findings in a concrete caller or failure and apply existing review rules to
+unrelated legacy defects.
+
 Select local tests for the changed behavior and its direct consumers. For
 runtime work, use the affected disposable scenarios and the full-suite triggers
 in [Runtime verification runs](development.md#runtime-verification-runs).
