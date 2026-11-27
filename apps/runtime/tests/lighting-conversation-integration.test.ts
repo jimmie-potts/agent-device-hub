@@ -66,19 +66,22 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const companions = createCompanionsModule({share: () => true, transport: (_url, init) => {
         const body = JSON.parse(init.body) as {
           tools?: unknown[];
-          messages?: {content: {type: string}[]}[];
-          input?: {type?: string}[];
+          messages?: {content: {type: string; content?: string}[]}[];
+          input?: {type?: string; output?: string}[];
         };
-        const finished = provider === 'anthropic'
-          ? body.messages?.some(message => message.content.some(block => block.type === 'tool_result')) === true
-          : body.input?.some(item => item.type === 'function_call_output') === true;
-        const command = !finished && body.tools !== undefined && body.tools.length > 0;
+        const lastResult = provider === 'anthropic'
+          ? body.messages?.flatMap(message => message.content).filter(block => block.type === 'tool_result').at(-1)?.content
+          : body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output;
+        const answered = refusal === 'missing' && lastResult === '42%';
+        const command = (lastResult === undefined || answered) && body.tools !== undefined && body.tools.length > 0;
+        const args = answered ? {...input, percent: 42, literal: '42%'} : input;
+        const callId = answered ? 'answered' : 'fixture';
         const usage = {input_tokens: 50, output_tokens: 20};
         return Promise.resolve(Response.json(provider === 'anthropic' ? {usage,
           stop_reason: command ? 'tool_use' : 'end_turn',
-          content: command ? [{type: 'tool_use', id: 'fixture', name, input}] : [{type: 'text', text: 'Fixture response.'}],
+          content: command ? [{type: 'tool_use', id: callId, name, input: args}] : [{type: 'text', text: 'Fixture response.'}],
         } : {usage, status: 'completed', output: command
-          ? [{type: 'function_call', id: 'fc_fixture', call_id: 'fixture', name, arguments: JSON.stringify(input)}]
+          ? [{type: 'function_call', id: `fc_${callId}`, call_id: callId, name, arguments: JSON.stringify(args)}]
           : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Fixture response.', annotations: []}]}]}));
       }});
       const submissions: {schema: string; basis: unknown}[] = [];
@@ -121,23 +124,33 @@ for (const provider of ['anthropic', 'openai'] as const) {
         data: {requestId: enable, action: 'enable', expectedRevision: companions.inspectAssistant()?.revision},
       }, {requestId: enable, timeoutMs: 2000});
       assert.equal(admitted.status, 'accepted', JSON.stringify(admitted));
-      const requestId = randomUUID();
       const text = 'text' in scenario ? scenario.text : absolute ? 'Set Studio 2 brightness to 45%.' : kind === 'brightness'
         ? 'Raise Studio 2 brightness by 10 percentage points.' : 'Make Studio 2 warmer by 200 Kelvin.';
-      const staged = await companions.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId,
-        signal: new AbortController().signal, bytes: Buffer.from(JSON.stringify({action: 'start', profile: 'bunny',
-          expectedRevision: companions.inspectAssistant()?.revision, text}))});
-      assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
-      const started = await core.sdk.request('bunny.cmd.assistant-input.assistant', {
-        type: 'org.bunny.assistant.input.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-input/2.0',
-        data: {requestId, ...staged.data},
-      }, {requestId, timeoutMs: 2000});
-      assert.equal(started.status, 'accepted', JSON.stringify(started));
+      async function submit(input: Record<string, unknown>) {
+        const requestId = randomUUID();
+        const staged = await companions.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId,
+          signal: new AbortController().signal, bytes: Buffer.from(JSON.stringify({profile: 'bunny',
+            expectedRevision: companions.inspectAssistant()?.revision, ...input}))});
+        assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
+        const reply = await core.sdk.request('bunny.cmd.assistant-input.assistant', {
+          type: 'org.bunny.assistant.input.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-input/2.0',
+          data: {requestId, ...staged.data},
+        }, {requestId, timeoutMs: 2000});
+        assert.equal(reply.status, 'accepted', JSON.stringify(reply));
+      }
+      await submit({action: 'start', text});
       if (refusal === 'stale' || refusal === 'read-only' || refusal === 'opposite' || refusal === 'missing') {
         await waitFor(() => ['waiting', 'succeeded'].includes(companions.inspectAssistant()?.tasks[0]?.status ?? ''));
-        if (refusal === 'missing') assert.equal(companions.inspectAssistant()?.tasks[0]?.status, 'waiting');
-        assert.deepEqual(submissions, []);
-        assert.deepEqual(writes, []);
+        assert.equal(submissions.length, 0);
+        assert.equal(writes.length, 0);
+        if (refusal !== 'missing') return;
+        const awaiting = companions.inspectAssistant()?.tasks[0];
+        assert.equal(awaiting?.status, 'waiting');
+        await submit({action: 'answer', taskId: awaiting?.taskId, questionId: awaiting?.questionId, text: '42%'});
+        await waitFor(() => writes.length > 0);
+        assert.equal(submissions.length, 1);
+        assert.equal(writes.length, 1);
+        assert.equal(writes[0]?.percent, 42);
         return;
       }
       if (absolute) {
