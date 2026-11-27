@@ -1,3 +1,4 @@
+import {NANOLEAF_LINES_DEVICE} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {CodingStore} from '../src/coding/store.js';
 import {assistantRoutes, catalogFamily, DEVICE_HISTORY_VERSION, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
@@ -916,6 +917,124 @@ function powerLimit(status: PowerLimitRecord['status'], revision = 1): PowerLimi
 const powerLimitDraft = (data: PowerLimitRecord) => ({type: 'org.bunny.power-limit.updated', subject: data.id,
   dataschema: 'https://bunny.invalid/events/power-limit/2.0', data});
 
+void test('Conversation reads shared device facts under its active sharing grants', async context => {
+  const now = 1_700_000_000_000, owner = 'bunny/modules/lifx';
+  const device: DeviceRecord = {...light('fixture-light', 'Fixture light'),
+    observed: {status: 'known', observedAtMs: now, power: {status: 'known', value: true},
+      brightness: {status: 'known', value: 35}}};
+  const readings: string[] = [];
+  const baseline = sharing();
+  let details = true;
+  const provider = counted((turn, step) => {
+    if (step % 2 === 1) return call('read_devices', {owner, target: 'id:fixture-light'});
+    const result = turn.transcript.at(-1);
+    assert.equal(result?.role, 'tool');
+    if (result?.role === 'tool') readings.push(result.result);
+    return reply('Read complete.');
+  });
+  const w = await world(context, {provider, tools: ['read_devices', 'control_lifx_temperature_set'],
+    share: query => baseline(query) && (details || query.source !== 'devices' || query.field !== 'details'),
+    dispatch: () => assert.fail('a facts read cannot send a device command')}, undefined, now);
+  const lamp = w.bus.connect(owner);
+  context.after(() => lamp.close());
+  const lightState = {id: device.id, revision: 1, capabilities: {color: {supported: false},
+    temperature: {supported: true, minimum: 1500, maximum: 9000}}, observed: unknown};
+  await lamp.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated', subject: device.id,
+    dataschema: DEVICE_POWER_READBACK_SCHEMA, data: device}]}));
+  await lamp.serveSync(['lifx-light'], () => ({revision: 1, states: [{type: 'org.bunny.lifx-light.updated', subject: device.id,
+    dataschema: 'https://bunny.invalid/events/lifx-light/2.0', data: lightState}]}));
+  await control(w.core, w.module(), 'enable');
+
+  assert.equal((await input(w.core, w.module(), 'What temperature range can Fixture light use?')).status, 'accepted');
+  await until(() => readings.length === 1 && status(w) === 'succeeded');
+  const allowed = JSON.parse(readings[0] ?? '{}') as {devices: {
+    id: string; name: string; actions: string[]; lastReportedAvailability: string; choices: {brightness: object};
+    observation: {freshness: string; value: DeviceRecord['observed']}; lightCapabilities: object;
+  }[]};
+  const fact = allowed.devices[0];
+  assert.equal(fact?.id, device.id);
+  assert.equal(fact?.name, device.label);
+  assert.equal(fact?.lastReportedAvailability, 'available');
+  assert.equal(fact?.observation.freshness, 'current');
+  assert.deepEqual(fact?.observation.value, device.observed);
+  assert.deepEqual(fact?.choices.brightness, {supported: true, minimum: 0, maximum: 100, unit: 'percent', step: 1});
+  assert.deepEqual(fact?.lightCapabilities, {color: {supported: false},
+    temperature: {supported: true, minimum: 1500, maximum: 9000, unit: 'kelvin', step: 1}});
+  assert.deepEqual(fact?.actions, ['lifx-temperature-set']);
+
+  details = false;
+  assert.equal((await input(w.core, w.module(), 'What are the settings of Fixture light?')).status, 'accepted');
+  await until(() => readings.length === 2 && status(w) === 'succeeded');
+  assert.deepEqual(JSON.parse(readings[1] ?? '{}'), {devices: [], unreadable: []});
+});
+
+for (const host of ['anthropic', 'openai'] as const) {
+  void test(`${host} receives exact current Kelvin facts under the device status grant`, async context => {
+    const now = 1_700_000_000_000, owner = 'bunny/modules/lifx';
+    const device: DeviceRecord = {...light('fixture-light', 'Fixture light'),
+      observed: {status: 'known', observedAtMs: now, power: {status: 'known', value: true}, brightness: {status: 'known', value: 35}}};
+    const hidden = light('hidden-light', 'PRIVATE_HIDDEN_FIXTURE');
+    const baseline = sharing(), readings: string[] = [];
+    let calls = 0, allowStatus = true;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {
+        messages?: {content: {type: string; content?: string}[]}[];
+        input?: {type?: string; output?: string}[];
+      };
+      const result = body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output ??
+        body.messages?.flatMap(message => message.content).filter(item => item.type === 'tool_result').at(-1)?.content;
+      const read = ++calls % 2 === 1, id = `call_facts_${String(calls)}`;
+      if (!read) {
+        assert.ok(result !== undefined && result.length > 0);
+        readings.push(result);
+      }
+      const tool = {name: 'read_devices', input: {owner, target: 'id:fixture-light'}};
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: read ? [{type: 'tool_use', id, ...tool}] : [{type: 'text', text: 'Read complete.'}],
+          stop_reason: read ? 'tool_use' : 'end_turn', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: read
+          ? [{type: 'function_call', id: `fc_${id}`, call_id: id, name: tool.name, arguments: JSON.stringify(tool.input)}]
+          : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Read complete.'}]}],
+          usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['read_devices', 'control_lifx_temperature_set'],
+      devices: source => source === owner ? [device, hidden] : [],
+      share: query => baseline(query) && !(query.destination === 'external-model' && query.source === 'devices' &&
+        (query.field === 'details' || query.record === hidden.id || query.field === 'status' && !allowStatus)),
+      dispatch: () => assert.fail('device discovery sends no command')}, undefined, now);
+    const lamp = w.bus.connect(owner);
+    context.after(() => lamp.close());
+    await lamp.serveSync(['device'], () => ({revision: 1, states: [device, hidden].map(row => ({type: 'org.bunny.device.updated', subject: row.id,
+      dataschema: DEVICE_POWER_READBACK_SCHEMA, data: row}))}));
+    await lamp.serveSync(['lifx-light'], () => ({revision: 1, states: [{type: 'org.bunny.lifx-light.updated', subject: device.id,
+      dataschema: 'https://bunny.invalid/events/lifx-light/2.1',
+      data: {id: device.id, revision: 1, capabilities: {color: {supported: false}, temperature: {supported: true, minimum: 2700, maximum: 6500}},
+        observed: {status: 'known', observedAtMs: now, hue: 0, saturation: 0, brightness: 35, kelvin: 3600}}}]}));
+    await control(w.core, w.module(), 'enable');
+
+    assert.equal((await input(w.core, w.module(), 'Set id:fixture-light to its warmest setting.')).status, 'accepted');
+    await until(() => readings.length === 1 && status(w) === 'succeeded');
+    const supplied = JSON.parse(readings[0] ?? '{}') as {devices: {id: string; lastReportedAvailability: string; actions: string[];
+      observationBases: {kind: string; observedAtMs: number; value: number}[];
+      lightCapabilities: {temperature: {minimum: number; maximum: number; unit: string}};
+    }[]};
+    const [facts] = supplied.devices;
+    assert.deepEqual(supplied.devices.map(row => row.id), [device.id]);
+    assert.equal(facts?.lastReportedAvailability, 'available');
+    assert.deepEqual(facts?.actions, ['lifx-temperature-set']);
+    assert.deepEqual(facts?.lightCapabilities.temperature, {supported: true, minimum: 2700, maximum: 6500, unit: 'kelvin', step: 1});
+    assert.deepEqual(facts?.observationBases, [{kind: 'temperature', observedAtMs: now, value: 3600}]);
+    assert.doesNotMatch(readings[0] ?? '', /PRIVATE_HIDDEN_FIXTURE|hidden-light|configurationRevision|generation|lastTransmissionAtMs/u);
+
+    allowStatus = false;
+    assert.equal((await input(w.core, w.module(), 'Set id:fixture-light to its warmest setting.')).status, 'accepted');
+    await until(() => readings.length === 2 && status(w) === 'succeeded');
+    assert.deepEqual(JSON.parse(readings[1] ?? '{}'), {devices: []});
+  });
+}
+
 void test('Conversation reads a Wemo maximum-on deadline and recovers a lost copy through both read tools', async context => {
   const plug: DeviceRecord = {...light(PLUG_ID, 'Test plug'), kind: 'wemo', observed: {
     status: 'known', observedAtMs: TIMER_READ, power: {status: 'known', value: true}, brightness: unknown,
@@ -1137,6 +1256,87 @@ void test('a Wemo group cannot silently add an undisclosed plug to a named reque
   await until(() => status(w) === 'succeeded');
   assert.ok((await page(w)).messages.some(message => message.text.includes('refused: invalid-request')));
 });
+
+for (const host of ['anthropic', 'openai'] as const) for (const lookup of ['read_devices', 'find_wemo_power_targets'] as const) {
+  void test(`exact Wemo power read before dispatch through ${host} with ${lookup}`, async context => {
+    const plugs = [{...light('fixture-plug', 'Matching Label'), kind: 'wemo' as const},
+      {...light('other-plug', 'Matching Label'), kind: 'wemo' as const},
+      {...light('unrelated-plug', 'Separate Lamp'), kind: 'wemo' as const}];
+    const misleading = [light('lookalike', 'ID Fixture Plug Suffix'), light('literal-lookalike', 'ID Fixture Plug')];
+    const commands: AssistantDispatch[] = [];
+    const reads: string[] = [];
+    let step = 0;
+    const toolIds = (result: string): string[] => lookup === 'read_devices'
+      ? (JSON.parse(result) as {devices: {id: string}[]}).devices.map(device => device.id)
+      : [...result.matchAll(/\(([a-z-]+)\)/gu)].map(match => match[1] ?? '');
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {
+        messages?: {content: {type: string; content?: string}[]}[];
+        input?: {type?: string; output?: string}[];
+      };
+      const result = body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output ??
+        body.messages?.flatMap(message => message.content).filter(item => item.type === 'tool_result').at(-1)?.content;
+      const stage = step++;
+      if (stage === 1 && result !== undefined) {
+        reads.push(result);
+        if (lookup === 'read_devices' && toolIds(result).join() === 'fixture-plug') {
+          const data = JSON.parse(result) as {devices: {actions: string[]; hold: unknown; configurationRevision: number;
+            generation: DeviceRecord['generation']; choices: {power: object}; maximumOnLimit: unknown}[]};
+          const row = data.devices[0];
+          assert.deepEqual(row?.actions, ['power-set']);
+          assert.deepEqual(row?.choices.power, {supported: true});
+          assert.equal(row?.hold, null);
+          assert.equal(row?.configurationRevision, plugs[0]?.configurationRevision);
+          assert.deepEqual(row?.generation, plugs[0]?.generation);
+          assert.notEqual(row?.maximumOnLimit, undefined);
+        }
+      }
+      const tool = stage === 0 ? {name: lookup, input: lookup === 'read_devices' ? {owner: 'auto', target: ''} : {}}
+        : stage === 1 && result !== undefined && toolIds(result).join() === 'fixture-plug'
+          ? {name: 'set_wemo_power', input: wemoPowerArgs(['fixture-plug'], false)} : undefined;
+      const id = stage === 0 ? 'call_fixture_read' : 'call_fixture_write';
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: tool === undefined ? [{type: 'text', text: 'Synthetic terminal reply.'}] : [{type: 'tool_use', id, ...tool}],
+          stop_reason: tool === undefined ? 'end_turn' : 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: tool === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic terminal reply.'}]}]
+          : [{type: 'function_call', id: 'fc_' + id, call_id: id, name: tool.name, arguments: JSON.stringify(tool.input)}],
+        usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['read_devices', 'set_wemo_power'],
+      devices: owner => owner === WEMO_OWNER ? plugs : owner === 'bunny/modules/lifx' ? misleading : [],
+      dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+    const plugOwner = w.bus.connect(WEMO_OWNER);
+    const otherOwner = w.bus.connect('bunny/modules/lifx');
+    context.after(async () => {await plugOwner.close(); await otherOwner.close();});
+    await otherOwner.serveSync(['device'], () => ({revision: 1, states: misleading.map(device => ({
+      type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}))}));
+    await plugOwner.serveSync(['device'], () => ({revision: 1, states: plugs.map(device => ({
+      type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}))}));
+    await control(w.core, w.module(), 'enable');
+    for (const [prompt, ids] of [
+      ['Turn off id:fixture-plug_suffix.', []],
+      ['Turn off Matching Label.', lookup === 'read_devices' ? [] : ['fixture-plug', 'other-plug']],
+      ['Cut power to the one near where we read.', lookup === 'read_devices' ? [] : ['fixture-plug', 'other-plug', 'unrelated-plug']],
+      ['Turn off id:not-registered.', []],
+      ['Turn off id:fixture-plug.', ['fixture-plug']],
+      ['Turn off (id:fixture-plug).', ['fixture-plug']],
+    ] as const) {
+      const prior = task(w)?.taskId;
+      const previousWrites = commands.length;
+      step = 0;
+      assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+      await until(() => task(w)?.taskId !== prior && (commands.length > previousWrites || status(w) === 'succeeded'));
+      if (commands.length > previousWrites) await finishWemoConfirmationWindow(w);
+      await until(() => status(w) === 'succeeded');
+      assert.deepEqual(toolIds(reads.at(-1) ?? assert.fail('missing device tool output')), ids);
+      assert.deepEqual(commands.slice(previousWrites).flatMap(command => command.family === 'power-set' ? [[command.target, command.data.on]] : []),
+        ids.join() === 'fixture-plug' ? [['fixture-plug', false]] : []);
+    }
+  });
+}
 
 void test('an owner’s explicit Wemo IDs must be targets or acknowledged context', async context => {
   const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
@@ -4899,8 +5099,12 @@ function catalogPhrases(): CatalogPhrase[] {
       {say: 'Give Studio Wall two hours of celebration.', settings: {mood: 'celebrate', durationMs: 7_200_000}, code: 'invalid-request'}),
     onWall('nanoleaf-animation-play', 'Play Ocean on Studio Wall.', {animation: {preset: 'ocean'}}),
     onWall('nanoleaf-wall-edit', 'Rotate Studio Wall a quarter turn.', {edit: {kind: 'settings', settings: {rotation: 90}}}),
-    onWall('nanoleaf-machine-edit', 'Use project style for Studio Wall machine status.', {edit: {kind: 'settings', settings: {style: 'project'}}}),
-    onWall('nanoleaf-favorite-edit', 'Rename the Studio Wall favorite Evening to Dusk.', {edit: {kind: 'animation.rename', name: 'Evening', newName: 'Dusk'}}),
+    record('nanoleaf-machine-edit', 'Use project style for Desk Lines machine status.', 'Desk Lines',
+      {edit: {kind: 'settings', settings: {style: 'project'}}}, NANOLEAF_LINES_DEVICE, nanoleaf,
+      {say: 'Use project style for Studio Wall machine status.', selector: 'Studio Wall', code: 'unsupported-capability'}),
+    record('nanoleaf-favorite-edit', 'Rename the Desk Lines favorite Evening to Dusk.', 'Desk Lines',
+      {edit: {kind: 'animation.rename', name: 'Evening', newName: 'Dusk'}}, NANOLEAF_LINES_DEVICE, nanoleaf,
+      {say: 'Rename the Studio Wall favorite Evening to Dusk.', selector: 'Studio Wall', code: 'unsupported-capability'}),
     onWall('nanoleaf-notice-acknowledge', 'Acknowledge notice ' + noticeId + ' for synthetic-task on Studio Wall.', {task: 'synthetic-task', noticeId}),
     onScreen('media-start', 'Start the Evening Loop playlist on Kitchen Display.', {playlistId: 'Evening Loop'}, wrongScreen, {playlistId}),
     onScreen('media-control', 'Could you pause the media on Kitchen Display?', {action: 'pause'}),
@@ -4974,7 +5178,8 @@ async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof
     register(connect('wemo'), {device: [device({...light('bench-plug', 'Bench Plug'), kind: 'wemo', availability: 'unavailable',
       held: {requestId: 'held-operation', heldAtMs: 1000}})]}),
     register(connect('nanoleaf'), {
-      device: () => [device({...wall, kind: 'nanoleaf', capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']},
+      device: () => [device({...light(NANOLEAF_LINES_DEVICE, 'Desk Lines'), kind: 'nanoleaf'}),
+        device({...wall, kind: 'nanoleaf', capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']},
         scenes: {supported: true, sceneIds: ['scene-' + hash, 'scene-' + 'd'.repeat(64)]},
         moments: {supported: true, moods: ['celebrate'], maxDurationMs: 10000, coversStatus: false}}}),
       ...['wall-left', 'wall-right'].map(id => {
@@ -5097,7 +5302,7 @@ for (const host of ['anthropic', 'openai'] as const) {
         const exact = candidates.find(value => typeof value === 'string' && ownerText.includes(value));
         if (typeof exact === 'string') refs.push(ownerReference(role, exact));
       };
-      cite('primary', ['id:studio-wall', 'id:new-pixoo', 'Studio Wall', 'Kitchen Display', 'Bench Plug',
+      cite('primary', ['id:studio-wall', 'id:new-pixoo', 'Studio Wall', 'Desk Lines', 'Kitchen Display', 'Bench Plug',
         'spare wall panel', 'spare display', 'spare speaker', 'Writing', 'fixture-inbox', 'Volcano',
         'music', 'wall', 'Browser', 'Shared Wall', 'id:wall-left', 'id:wall-right']);
       cite('artwork', [nested.artworkId]);
@@ -5149,6 +5354,14 @@ for (const host of ['anthropic', 'openai'] as const) {
         assert.equal(typeof effect.data.startAtMs, 'number');
         assert.match(String(effect.data.momentId), /^[\da-f-]{36}$/u);
       } else assert.deepEqual(effect.data, {...(row.expected ?? row.settings), ...namedGuards});
+      if (row.family === 'media-start') {
+        const outsidePreview = '44444444-4444-4444-8444-444444444444';
+        await ask(`Start id:${outsidePreview} on Kitchen Display.`, tool,
+          argumentsFor(row.owner, row.selector, {playlistId: outsidePreview}),
+          [ownerReference('primary', 'Kitchen Display'), ownerReference('playlist', `id:${outsidePreview}`)]);
+        assert.equal(delivered.length, previous + 2, 'an exact playlist outside the preview reaches the owner writer');
+        assert.deepEqual(delivered.at(-1)?.data.data, {playlistId: outsidePreview});
+      }
       if (row.family === 'wemo-hold-release') {
         await ask('Release the hold on Bench Plug, excluding held-operation.', tool,
           argumentsFor(row.owner, row.selector, {}),

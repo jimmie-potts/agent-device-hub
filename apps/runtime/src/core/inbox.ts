@@ -27,6 +27,9 @@ type Resend = (action: Action, handle: (tx: CoreTransaction) => ErrorBody | unde
  * the saved command again. The open rule reads the same answer, so an item never opens that only Dismiss can clear.
  */
 export function resendRefusal(operation: Operation, handler: string): ErrorBody | undefined {
+  if (operation.observationBasis !== undefined) return errorBody('revision-conflict', {
+    detail: 'a relative command needs a fresh observation and a new request',
+  });
   if (operation.command.startsWith('org.bunny.microduck.')) return errorBody('forbidden', {
     detail: 'MicroDuck requires a fresh explicit request from its dashboard controls',
   });

@@ -1,6 +1,8 @@
 // Shared show contracts and pure authoring helpers for the Nanoleaf editor and Conversation.
 
 // Browser-safe semantic recipe types; encoding and device payloads remain in effects.ts.
+export const NANOLEAF_LINES_DEVICE = 'wall';
+
 export type Pattern = 'wave' | 'gradient' | 'pulse' | 'breathe' | 'sparkle';
 export type Speed = 'slow' | 'medium' | 'fast' | 'faster';
 export type Direction = 'left' | 'right' | 'up' | 'down' | 'outward' | 'inward' | 'clockwise' | 'counterclockwise';

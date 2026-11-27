@@ -27,9 +27,12 @@ applies only to new stories; do not retrofit existing issues.
 
 <!-- Required: the observed benefit, actual setup and exclusions. -->
 
-## Smallest useful implementation
+## Implementation approach and shared foundations
 
-<!-- If needed: reuse existing components; link actual prerequisites separately from related work. -->
+<!-- If needed: describe a maintainable implementation of the complete agreed outcome.
+Name existing components to reuse or improve, shared behavior and its owning layer,
+and the relevant consumers that must adopt it. Follow docs/sdlc.md "Scope defaults";
+consider total delivery and maintenance effort. Link actual prerequisites separately from related work. -->
 
 ## Behavior and protections to preserve
 
@@ -42,10 +45,10 @@ Answer here, with a ### subheading at most. -->
 
 ## Observable acceptance and planned evidence
 
-<!-- Required: the observable result and its check or observation. Name the delivery target. Source tests do not prove installation or physical behavior. -->
+<!-- Required: the observable result, integration and relevant consumer adoption, with their checks or observations. Name the delivery target. Source tests do not prove installation or physical behavior. -->
 
-Delivery target: source-only
+Delivery target: [source / installed / physical; specify the intended evidence and any remaining delivery owner]
 
 ## Meaningful deferrals
 
-<!-- If needed: name the omitted capability, consequence or manual alternative, and owner or revisit trigger. -->
+<!-- If needed: name what the user cannot do, its consequence or manual alternative, and owner or revisit trigger. -->

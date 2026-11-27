@@ -1,13 +1,14 @@
 // Device registry, per-device layout shape and device-scoped state migration (devices.py).
 import {existsSync, unlinkSync} from 'node:fs';
 import {dirname, join} from 'node:path';
+import {NANOLEAF_LINES_DEVICE} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {isObject, own, type Json, type JsonObject} from './compat.js';
 import {ValueError} from './errors.js';
 import {readJson, writeJson, type WriteJson} from './jsonfile.js';
 import {execute, privateDatabase, rows, type Db} from './sqlite.js';
 
 /** The original Lines device. */
-export const DEFAULT = 'wall';
+export const DEFAULT = NANOLEAF_LINES_DEVICE;
 export type Kind = 'lines' | 'panels';
 /** Zones per element: a Line has two lighting zones, an NL22 triangle one. */
 export const KINDS: Readonly<Record<Kind, number>> = {lines: 2, panels: 1};

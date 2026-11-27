@@ -5,17 +5,17 @@ import assert from 'node:assert/strict';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {InboxItem, ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
-import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import {assistantRoutes, catalogFamily, catalogRoute, type CatalogBinding, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {starter} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
+import {NANOLEAF_LINES_DEVICE, starter} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {lifxSchemas} from '@jimmie-potts/lifx';
 import {nanoleafSchemas} from '@jimmie-potts/nanoleaf';
 import {pixooOwnSchemas} from '@jimmie-potts/pixoo';
 import {volcanoSchemas} from '@jimmie-potts/volcano';
 import {wemoSchemas} from '@jimmie-potts/wemo';
-import {deviceRecord, deviceState} from './fixtures/device.js';
+import {deviceRecord} from './fixtures/device.js';
 import {dispatchCatalogAction} from '../src/core/assistant-actions.js';
 import type {Action, ActionAnswer} from '../src/core/tracker.js';
 import {contextOf, fixture, it, run, waitFor} from './support.js';
@@ -217,7 +217,8 @@ it('every catalog route delivers its exact input and guards to the existing owne
     const configuredOwners = ownersByFamily[family];
     const configuredTarget = targets[family];
     assert.ok(configuredOwners !== undefined || configuredTarget !== undefined, family);
-    const expected = configuredOwners?.map(owner => [`bunny/modules/${owner}`, 'future-configured-device', 'dispatch']) ??
+    const deviceTarget = family === 'nanoleaf-machine-edit' || family === 'nanoleaf-favorite-edit' ? NANOLEAF_LINES_DEVICE : 'future-configured-device';
+    const expected = configuredOwners?.map(owner => [`bunny/modules/${owner}`, deviceTarget, 'dispatch']) ??
       (configuredTarget === undefined ? [] : [configuredTarget]);
     const route = catalogRoute(family);
     assert.equal(route.binding, configuredOwners !== undefined ? 'device' : Object.hasOwn(recordTargets, family) ? 'record' : 'fixed');
@@ -233,11 +234,12 @@ it('every catalog route delivers its exact input and guards to the existing owne
         : route.binding === 'record' ? {kind: 'record', owner, target, revision: 7}
           : {kind: 'fixed', owner, target};
       let forwards = 0;
-      const operation = (actualLane: string) => ({key, draft: outgoing, requestedBy, requestId = ''}: Action): Promise<ActionAnswer> => {
+      const operation = (actualLane: string) => ({key, draft: outgoing, requestedBy, requestId = '', deviceAdmission}: Action): Promise<ActionAnswer> => {
         forwards += 1;
         assert.equal(actualLane, lane, family);
         assert.equal(key, `bunny.cmd.${family}.${target}`);
         assert.equal(requestedBy, 'bunny/modules/companions');
+        assert.deepEqual(deviceAdmission, binding.kind === 'device' ? {kind: 'conversation', owner, expiresAt: common.expiresat} : undefined);
         const guard = binding.kind === 'device' ? {expectedConfigurationRevision: binding.configurationRevision, expectedGeneration: binding.generation}
           : binding.kind === 'record' ? (family === 'volcano-session-gap' ? {expectedConfigurationRevision: 7} : {expectedRevision: 7}) : {};
         const save = family === 'nanoleaf-show-save' ? {admitByMs: timestamp + 1000} : {};
@@ -256,24 +258,15 @@ it('every catalog route delivers its exact input and guards to the existing owne
         assert.equal(invalid.ok, false, `${family} owner schema accepted the wrong type for ${setting}`);
         return Promise.resolve({status: 'accepted', requestId});
       };
-      const device = (): Message<DeviceRecord> => {
-        const capabilities: DeviceRecord['capabilities'] = {...record.capabilities,
-          power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100},
-          scenes: {supported: true, sceneIds: ['scene-' + hash]}, modes: {supported: true, values: ['free']},
-          moments: {supported: true, moods: ['celebrate'], maxDurationMs: 30000, coversStatus: false},
-          media: {supported: true, actions: ['pause'], playlistIds: [uuid], renditionIds: [hash]}};
-        return {...common, ...deviceState({...record, capabilities}), id: 'fixture-device', source: owner, kind: 'state',
-          data: {...record, capabilities}};
-      };
       const requestId = 'catalog-fixture';
       const command = {requestId, family: 'catalog-action', command: family, target, binding, data,
         ...(family === 'nanoleaf-show-save' ? {admitByMs: timestamp + 1000} : {})} satisfies AssistantDispatch;
-      const submit = (payload: typeof command, lookup: (id: string) => Message<DeviceRecord> | undefined = id => id === target ? device() : undefined) => dispatchCatalogAction(
-        {dispatch: operation('dispatch'), operation: () => undefined, clock: {now: () => timestamp}},
-        {...common, ...draft(payload), id: requestId, source: 'bunny/modules/companions'}, lookup, operation('operator'), operation('inbox'));
-      const reject = async (payload: typeof command, code: string, lookup?: (id: string) => Message<DeviceRecord> | undefined) => {
+      const submit = (payload: typeof command) => dispatchCatalogAction(
+        {dispatch: operation('dispatch'), clock: {now: () => timestamp}},
+        {...common, ...draft(payload), id: requestId, source: 'bunny/modules/companions'}, operation('operator'), operation('inbox'));
+      const reject = async (payload: typeof command, code: string) => {
         const previous = forwards;
-        const result = await submit(payload, lookup);
+        const result = await submit(payload);
         assert.equal('error' in result && result.error.code, code, `${family} for ${owner}`);
         assert.equal(forwards, previous, 'refusal sent no command');
       };
@@ -282,26 +275,6 @@ it('every catalog route delivers its exact input and guards to the existing owne
       await reject({...command, binding: {...binding, owner: 'bunny/modules/other'}}, 'invalid-request');
       await reject({...command, target: 'different-target'}, 'invalid-request');
       await reject({...command, data: {...data, expectedGeneration: record.generation}}, 'invalid-request');
-      if (binding.kind === 'device') {
-        await reject({...command, target: 'different-target', binding: {...binding, target: 'different-target'}}, 'unavailable');
-        await reject(command, 'forbidden', () => ({...device(), source: 'bunny/modules/other'}));
-        await reject(command, 'revision-conflict', () => {
-          const current = device();
-          return {...current, data: {...current.data, configurationRevision: binding.configurationRevision + 1}};
-        });
-        await reject(command, 'revision-conflict', () => {
-          const current = device();
-          return {...current, data: {...current.data, generation: {...binding.generation, sequence: binding.generation.sequence + 1}}};
-        });
-        if (family === 'wemo-hold-release') {
-          await reject({...command, data: {heldRequestId: 'another-request'}}, 'revision-conflict');
-        } else {
-          await reject(command, 'unavailable', () => {
-            const current = device();
-            return {...current, data: {...current.data, availability: 'unavailable'}};
-          });
-        }
-      }
       if (binding.kind === 'fixed') {
         await reject({...command, target: 'different-target', binding: {...binding, target: 'different-target'}}, 'invalid-request');
       }

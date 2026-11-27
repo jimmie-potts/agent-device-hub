@@ -12,8 +12,9 @@ import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts
 import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import type {ShowCatalog} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
-import {Outcome, usableArtComposition, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
-import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS, type DeviceReadDisplay} from './devices.js';
+import {deviceFacts, deviceLabel, matchingDevices, MAX_OBSERVATION_AGE_MS, Outcome, readDeviceRecords, readLifxDeviceFacts, usableArtComposition,
+  type LifxDeviceFacts, type ModuleContext, type OwnedDevice, type TraceContext} from '@jimmie-potts/sdk';
+import type {DeviceReadDisplay} from './devices.js';
 import {ShowDrafts, showCueIndex} from './show-drafts.js';
 import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
@@ -22,9 +23,7 @@ import {catalogTool, CREATE_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART,
 
 const CORE = 'bunny/core', NANOLEAF = 'bunny/modules/nanoleaf';
 const LIFX = 'bunny/modules/lifx', WEMO = 'bunny/modules/wemo';
-type LifxColor = {id: string; capabilities: {color: {supported: boolean}; temperature: {supported: boolean}};
-  observed: {status: 'unknown'} | {status: 'known'; observedAtMs: number; hue: number; saturation: number; brightness: number; kelvin: number}};
-function lifxSupports(family: CatalogFamily, light: LifxColor | undefined): boolean {
+function lifxSupports(family: CatalogFamily, light: LifxDeviceFacts | undefined): boolean {
   return family === 'lifx-color-set' ? light?.capabilities.color.supported === true
     : family === 'lifx-temperature-set' ? light?.capabilities.temperature.supported === true : true;
 }
@@ -67,7 +66,7 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
     : `Which ${noun} did you mean? Give its exact device ID.`;
 }
 type Refusal = {code: ErrorCode};
-type Match = {owner: string; device: DeviceRecord};
+type Match = OwnedDevice;
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
 
 /** Only registered identity-bearing fields can account for a nested explicit ID. */
@@ -136,13 +135,6 @@ export function chooseBrightnessSubject(matches: readonly Match[], answer?: stri
   return selected.length === 1 ? selected[0] : undefined;
 }
 
-function matchingDevices(rows: readonly Match[], target: string, owner: string, literalId?: string): readonly Match[] {
-  const exact = rows.filter(({device}) => device.id === (literalId ?? target));
-  if (literalId !== undefined) return exact;
-  if (owner !== 'auto' && exact.length > 0) return exact;
-  return rows.filter(({device}) => device.id === target || normalize(deviceLabel(device)) === normalize(target));
-}
-
 /** A bounded read through the Art owner's public SDK content manifest for an exact retained ID outside recent state. */
 export type CatalogIdentityQuery = {kind: 'scene'; deviceId: string; name: string} |
   ({kind: 'asset'; currentText?: string} & ({name: string; id?: never} | {id: string; name?: never}));
@@ -165,9 +157,7 @@ export class ConversationActions {
   }
 
   async #deviceRecords(owners: readonly string[], parent: TraceContext): Promise<{rows: Match[]; unreadable: string[]}> {
-    const views = await Promise.all(owners.map(async owner => ({owner, devices: await this.#snapshot<DeviceRecord>(owner, 'device', parent)})));
-    return {rows: views.flatMap(({owner, devices}) => devices?.map(device => ({owner, device})) ?? []),
-      unreadable: views.filter(view => view.devices === undefined).map(view => view.owner)};
+    return readDeviceRecords(this.context.sdk, owners, {timeoutMs: 1200, parent});
   }
 
   async deviceSubjectMatches(subject: string, parent: TraceContext): Promise<Match[]> {
@@ -427,7 +417,7 @@ export class ConversationActions {
 
       if (family === 'device-mode-set' && (!modes.supported || !modes.values.some(value => value === data.mode)) ||
         family === 'scene-activate' && (!scenes.supported || !scenes.sceneIds.some(id => id === data.sceneId)) ||
-        family === 'media-start' && (!media.supported || !media.playlistIds.some(id => id === data.playlistId)) ||
+        family === 'media-start' && (!media.supported || selected.owner !== 'bunny/modules/pixoo' && !media.playlistIds.some(id => id === data.playlistId)) ||
         family === 'media-control' && (!media.supported || !media.actions.some(action => action === data.action)) ||
         family === 'pixoo-media-show' && (!media.supported || !media.renditionIds.some(id => id === data.renditionId))) {
         return {code: 'unsupported-capability'};
@@ -440,7 +430,7 @@ export class ConversationActions {
           data.durationMs > moments.maxDurationMs || typeof data.coversStatus !== 'boolean') return {code: 'invalid-request'};
       }
       if (family === 'lifx-color-set' || family === 'lifx-temperature-set') {
-        const lights = await this.#snapshot<LifxColor>(LIFX, 'lifx-light', parent);
+        const lights = await readLifxDeviceFacts(this.context.sdk, {timeoutMs: 1200, parent});
         const light = lights?.find(candidate => candidate.id === device.id);
         if (light === undefined) return {code: 'unavailable'};
         if (!lifxSupports(family, light)) return {code: 'unsupported-capability'};
@@ -450,7 +440,7 @@ export class ConversationActions {
         if (admission?.excluded('operation', device.held.requestId) === true ||
           admission?.hasSelection('operation') === true && !admission.selector('operation', device.held.requestId)) return {code: 'not-found'};
         data = {...data, heldRequestId: device.held.requestId};
-      } else if (device.availability !== 'available' || device.held !== undefined) return {code: 'unavailable'};
+      } else if (device.held !== undefined) return {code: 'unavailable'};
       binding = {kind: 'device', target: device.id, owner: selected.owner, configurationRevision: device.configurationRevision, generation: device.generation};
       if (family === 'brightness-set' && selected.owner === 'bunny/modules/pixoo') {
         if (typeof data.percent !== 'number' || !Number.isSafeInteger(data.percent) || data.percent < 0 || data.percent > 100) {
@@ -567,8 +557,11 @@ export class ConversationActions {
       if (family === 'pixoo-playlist-change' && (!object(change) || change.operation === 'create')) return {data};
       const selector = family === 'media-start' ? data.playlistId : object(change) ? change.playlistId : undefined;
       if (admission !== undefined && (typeof selector !== 'string' || !admission.selector('playlist', selector, [device.id]))) return {code: 'invalid-request'};
-      if (family === 'media-start' && media.supported && media.playlistIds.some(id => id === selector) &&
-        (admission?.excludedNames('playlist').length ?? 0) === 0) return {data};
+      const playlistId = catalogSelectorId('playlist', selector);
+      if (family === 'media-start' && playlistId !== undefined && (admission?.excludedNames('playlist').length ?? 0) === 0) {
+        // The device advertises a preview. The Pixoo writer validates an exact ID against its full library.
+        return {data: {...data, playlistId}};
+      }
       const playlists = await this.#snapshot<{id: string; name: string; playlistRevision: number}>('bunny/modules/pixoo', 'pixoo-playlist', parent);
       if (guard() !== undefined) return {code: 'forbidden'};
       const selected = namedRecord(playlists, selector, playlist => playlist.name);
@@ -833,12 +826,32 @@ export class ConversationActions {
         const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');
         const controls = this.enabled.filter(name => name === SET_LIFX_BRIGHTNESS && source === LIFX && device.capabilities.brightness.supported ||
           name === tool && route.binding === 'device' && route.owners.some(owner => owner === source) && permitsDevice(route, device));
-        return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
-          lastReportedAvailability: device.availability, controls}]});
+        const facts = deviceFacts(selected, this.context.clock.now(), family => family === 'brightness-set' && controls.length > 0, {maxAgeMs: MAX_OBSERVATION_AGE_MS});
+        return textResult({devices: [{owner: source, id: device.id, name: facts.name,
+          lastReportedAvailability: facts.lastReportedAvailability, controls,
+          brightness: controls.length > 0 ? facts.choices.brightness : undefined, actions: facts.actions,
+          ...(facts.observation.value.status === 'known' ? {observation: facts.observation, observationBases: facts.observationBases} : {})}]});
       }
-      return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
-        lastReportedAvailability: device.availability, observation: device.observed,
-        ...(source === WEMO ? {maximumOnLimit: this.deviceDisplay.powerLimit(device.id, this.context.clock.now())} : {})}]});
+      const now = this.context.clock.now();
+      const colors = source === LIFX ? await readLifxDeviceFacts(this.context.sdk, {timeoutMs: 1200, parent}) : undefined;
+      const lifx = colors?.find(light => light.id === device.id);
+      const facts = deviceFacts(selected, now, family => catalogFamily(family) && this.enabled.includes(catalogTool(family)) ||
+        family === 'brightness-set' && source === LIFX && this.enabled.includes(SET_LIFX_BRIGHTNESS) ||
+        family === 'power-set' && (source === WEMO && this.enabled.includes('set_wemo_power') ||
+          source === LIFX && this.enabled.includes('set_lifx_power')),
+      lifx === undefined ? {} : {lifx});
+      if (source === WEMO) return textResult({devices: [{owner: source, id: device.id, name: facts.name,
+        lastReportedAvailability: facts.lastReportedAvailability, observation: facts.observation.value, freshness: facts.observation.freshness,
+        choices: {power: facts.choices.power}, actions: facts.actions,
+        hold: facts.hold === null || facts.actions.includes('wemo-hold-release') ? facts.hold : {held: true},
+        ...(facts.actions.length === 0 ? {} : {configurationRevision: facts.configurationRevision, generation: facts.generation}),
+        maximumOnLimit: this.deviceDisplay.powerLimit(device.id, now)}]});
+      return textResult({devices: [{owner: source, id: device.id, name: facts.name,
+        lastReportedAvailability: facts.lastReportedAvailability, observation: facts.observation.value, freshness: facts.observation.freshness,
+        choices: facts.choices, actions: facts.actions,
+        ...(facts.lightCapabilities === undefined ? {} : {lightCapabilities: facts.lightCapabilities}),
+        ...(facts.color === undefined ? {} : {color: facts.color}),
+        ...(facts.observationBases.length === 0 ? {} : {observationBases: facts.observationBases})}]});
     }
     const {rows, unreadable} = await this.#deviceRecords(owners, parent);
     const visible = rows.filter(({device}) => access('devices', 'index', device.id) && access('devices', 'label', device.id));
@@ -847,33 +860,29 @@ export class ConversationActions {
       name: deviceLabel(device), lastReportedAvailability: access('devices', 'status', device.id) ? device.availability : undefined})), unreadable});
     if (selected.length > 1) return textResult({matches: selected.map(({owner, device}) => ({owner, id: device.id})),
       guidance: 'Select the exact owner and ID.'});
-    const colors = selected.some(row => row.owner === LIFX) ? await this.#snapshot<LifxColor>(LIFX, 'lifx-light', parent) : undefined;
+    const colors = selected.some(row => row.owner === LIFX) ? await readLifxDeviceFacts(this.context.sdk, {timeoutMs: 1200, parent}) : undefined;
     const now = this.context.clock.now();
-    const devices = selected.map(({owner: source, device}) => {
+    const devices = selected.map(row => {
+      const {owner: source, device} = row;
       const light = colors?.find(row => row.id === device.id);
-      const age = source === LIFX ? MAX_OBSERVATION_AGE_MS : source === WEMO ? WEMO_OBSERVATION_AGE_MS : Number.POSITIVE_INFINITY;
-      const stale = observationStale(device, now, age);
-      const freshness = device.observed.status === 'unknown' ? 'unknown' : device.availability !== 'available' || stale ? 'stale' : 'current';
-      const color = light?.observed;
-      const colorStale = color?.status === 'known' && (color.observedAtMs > now || now - color.observedAtMs >= MAX_OBSERVATION_AGE_MS ||
-        device.lastTransmission.status === 'known' && color.observedAtMs < device.lastTransmission.transmittedAtMs);
+      const controls = this.enabled.filter(tool => {
+        if (tool === 'set_wemo_power') return source === WEMO && device.capabilities.power.supported;
+        if (tool === 'set_lifx_power') return source === LIFX && device.capabilities.power.supported;
+        if (tool === 'set_lifx_brightness') return source === LIFX && device.capabilities.brightness.supported;
+        const family = tool.startsWith('control_') ? tool.slice(8).replaceAll('_', '-') : '';
+        if (!catalogFamily(family) || !lifxSupports(family, light)) return false;
+        const route = catalogRoute(family);
+        return route.binding === 'device' && route.owners.some(eligible => eligible === source) && permitsDevice(route, device);
+      });
+      const facts = deviceFacts(row, now, family => catalogFamily(family) && controls.includes(catalogTool(family)) ||
+        family === 'power-set' && controls.some(tool => tool === 'set_wemo_power' || tool === 'set_lifx_power') ||
+        family === 'brightness-set' && controls.includes(SET_LIFX_BRIGHTNESS), light === undefined ? {} : {lifx: light});
       return {
-        owner: source, id: device.id, name: deviceLabel(device), lastReportedAvailability: device.availability, hold: device.held ?? null,
-        choices: {modes: device.capabilities.modes, media: device.capabilities.media, scenes: device.capabilities.scenes, moments: device.capabilities.moments},
-        observation: {freshness, value: device.observed,
+        ...facts,
+        observation: {...facts.observation,
           ...(device.observed.status === 'known' ? {time: this.deviceDisplay.instant(device.observed.observedAtMs)} : {})},
         ...(source === WEMO ? {maximumOnLimit: this.deviceDisplay.powerLimit(device.id, now)} : {}),
-        ...(color === undefined ? {} : {color: {freshness: color.status === 'unknown' ? 'unknown' : colorStale || device.availability !== 'available' ? 'stale' : 'current', value: color}}),
-        lastTransmissionAtMs: device.lastTransmission.status === 'known' ? device.lastTransmission.transmittedAtMs : null,
-        controls: this.enabled.filter(tool => {
-          if (tool === 'set_wemo_power') return source === 'bunny/modules/wemo' && device.capabilities.power.supported;
-          if (tool === 'set_lifx_power') return source === 'bunny/modules/lifx' && device.capabilities.power.supported;
-          if (tool === 'set_lifx_brightness') return source === 'bunny/modules/lifx' && device.capabilities.brightness.supported;
-          const family = tool.startsWith('control_') ? tool.slice(8).replaceAll('_', '-') : '';
-          if (!catalogFamily(family) || !lifxSupports(family, light)) return false;
-          const route = catalogRoute(family);
-          return route.binding === 'device' && route.owners.some(eligible => eligible === source) && permitsDevice(route, device);
-        }),
+        controls,
       };
     });
     return textResult({devices, unreadable});

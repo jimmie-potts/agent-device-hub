@@ -21,6 +21,10 @@ export const RECORDS: Readonly<Record<string, {type: string; source?: string; da
     id: 'bulb', revision: 4, capabilities: {color: {supported: true}, temperature: {supported: true, minimum: 1500, maximum: 9000}},
     observed: {status: 'known', observedAtMs: AT, hue: 120, saturation: 50, brightness: 80, kelvin: 3500},
   }},
+  'lifx-light/2.1': {type: 'org.bunny.lifx-light.updated', data: {
+    id: 'bulb', revision: 4, capabilities: {color: {supported: true}, temperature: {supported: true, minimum: 2700, maximum: 6500}},
+    observed: {status: 'known', observedAtMs: AT, hue: 120, saturation: 50, brightness: 80, kelvin: 3500},
+  }},
   'roborock-vacuum/2.0': {type: 'org.bunny.roborock-vacuum.updated', data: {
     schema: 'roborock-vacuum/2.0', id: 'vacuum', revision: 7, observedAtMs: known(AT), availability: 'available', activity: 'cleaning',
     status: Object.fromEntries(STATUS_KEYS.map(key => [key, known(1)])),

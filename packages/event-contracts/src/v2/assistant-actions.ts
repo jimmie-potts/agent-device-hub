@@ -1,14 +1,31 @@
 // Browser-safe list of commands eligible for an explicit Conversation request.
 import type {Capabilities, DeviceRecord} from './devices.js';
+import {NANOLEAF_LINES_DEVICE} from './nanoleaf-shows.js';
 
 export const SHOW_SAVE_WINDOW_MS = 30_000;
+
+export const LIFX_COLOR_PARAMETERS = {
+  hue: {unit: 'degree', minimum: 0, maximum: 360, step: 1},
+  saturation: {unit: 'percent', minimum: 0, maximum: 100, step: 1},
+} as const;
+
+export type ObservationBasis = {kind: 'brightness' | 'temperature'; observedAtMs: number; value: number};
+
+export function observationBasis(value: unknown): ObservationBasis | undefined {
+  if (!object(value) || Object.keys(value).length !== 3) return undefined;
+  const {kind, observedAtMs, value: reading} = value;
+  if ((kind !== 'brightness' && kind !== 'temperature') ||
+    typeof observedAtMs !== 'number' || !Number.isSafeInteger(observedAtMs) || observedAtMs < 0 ||
+    typeof reading !== 'number' || !Number.isInteger(reading) || reading < 0 || reading > (kind === 'brightness' ? 100 : 65535)) return undefined;
+  return {kind, observedAtMs, value: reading};
+}
 
 const lifx = 'bunny/modules/lifx', wemo = 'bunny/modules/wemo', nanoleaf = 'bunny/modules/nanoleaf';
 const pixoo = 'bunny/modules/pixoo', tidbyt = 'bunny/modules/tidbyt', volcano = 'bunny/modules/volcano';
 export const assistantDeviceOwners = [lifx, wemo, nanoleaf, pixoo, tidbyt, 'bunny/modules/roborock', volcano] as const;
 export type CatalogDeviceOwner = typeof assistantDeviceOwners[number];
 
-type DeviceRoute = {binding: 'device'; owners: readonly CatalogDeviceOwner[]; capability?: keyof Capabilities; fields: string; guardedMinor?: '2.1' | '2.3'};
+type DeviceRoute = {binding: 'device'; owners: readonly CatalogDeviceOwner[]; target?: string; capability?: keyof Capabilities; fields: string; guardedMinor?: '2.1' | '2.3'};
 type RecordRoute = {binding: 'record'; owner: string; record: string; fields: string};
 type FixedRoute = {binding: 'fixed'; owner: string; target: string; fields: string};
 type Route = DeviceRoute | RecordRoute | FixedRoute;
@@ -32,8 +49,8 @@ export const assistantRoutes = {
   'pixoo-asset-change': {binding: 'device', owners: [pixoo], fields: 'change'},
   'pixoo-notice-dismiss': {binding: 'device', owners: [pixoo], fields: 'session noticeId'},
   'nanoleaf-wall-edit': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'edit'},
-  'nanoleaf-machine-edit': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'edit'},
-  'nanoleaf-favorite-edit': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'edit'},
+  'nanoleaf-machine-edit': {binding: 'device', owners: [nanoleaf], target: NANOLEAF_LINES_DEVICE, guardedMinor: '2.1', fields: 'edit'},
+  'nanoleaf-favorite-edit': {binding: 'device', owners: [nanoleaf], target: NANOLEAF_LINES_DEVICE, guardedMinor: '2.1', fields: 'edit'},
   'nanoleaf-notice-acknowledge': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'task noticeId'},
   'nanoleaf-reactive-preset-save': {binding: 'fixed', owner: nanoleaf, target: 'reactive-presets', fields: 'presetId expectedRevision name recipe'},
   'wemo-hold-release': {binding: 'device', owners: [wemo], fields: 'heldRequestId'},
@@ -64,7 +81,8 @@ export type CatalogBinding =
 export type CatalogProposal = {family: 'catalog-action'; target: string; command: CatalogFamily; binding: CatalogBinding; data: Record<string, unknown>};
 
 export function permitsDevice(route: DeviceRoute, device: DeviceRecord): boolean {
-  return route.capability === undefined || device.capabilities[route.capability].supported;
+  return (route.target === undefined || device.id === route.target) &&
+    (route.capability === undefined || device.capabilities[route.capability].supported);
 }
 
 /** Parameter and binding checks apply both before saving an approval and at the core boundary. */
@@ -78,7 +96,7 @@ export function catalogProposal(value: unknown): CatalogProposal | undefined {
   const identity = {target, owner: binding.owner};
   let checked: CatalogBinding;
   if (route.binding === 'device') {
-    if (!route.owners.some(owner => owner === identity.owner) || !revision(binding.configurationRevision) ||
+    if (!route.owners.some(owner => owner === identity.owner) || route.target !== undefined && target !== route.target || !revision(binding.configurationRevision) ||
       !object(binding.generation) || typeof binding.generation.epoch !== 'string' || !revision(binding.generation.sequence)) return undefined;
     checked = {...identity, kind: 'device', configurationRevision: binding.configurationRevision,
       generation: {epoch: binding.generation.epoch, sequence: binding.generation.sequence}};

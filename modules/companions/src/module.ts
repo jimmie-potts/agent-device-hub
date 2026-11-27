@@ -372,7 +372,7 @@ class Companions {
         }, request);
       }
       return context.sdk.request('bunny.cmd.assistant-dispatch.assistant',
-        {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data}, request);
+        {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.observationBasis !== undefined ? '2.4' : data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data}, request);
     });
     const prices = options.prices ?? (assistant !== undefined && assistant.provider !== 'synthetic' ? assistant.prices : undefined);
     const monthlyLimitMicros = options.monthlyLimitMicros ?? (assistant !== undefined && assistant.provider !== 'synthetic' ? assistant.monthlyLimitMicros : undefined);

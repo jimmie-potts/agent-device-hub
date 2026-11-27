@@ -23,7 +23,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, literalDeviceSubject, missingBrightness, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
+import {authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, missingBrightness, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, resolveModelControl, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
@@ -226,7 +226,8 @@ function deviceRequestSubject(text: string): string | undefined {
     ?? /^(?:please )?(?:(?:list|show|check|read) (?:the )?(.+)|(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available))$/u.exec(affirmative)?.slice(1).find(value => value !== undefined);
   const subject = readSubject ?? powerSubject(text);
   if (subject === undefined || remainder !== undefined && deviceGroup(subject) !== undefined) return undefined;
-  return readSubject === undefined ? subject : literalDeviceSubject(opening, readSubject);
+  const id = exactControlIds(opening).find(id => literalDeviceId(`id:${id}`) === id && normalizedControlText(`id:${id}`) === subject);
+  return id === undefined ? subject : `id:${id}`;
 }
 
 function matchesCatalogSubject(subject: string | undefined, id: string): boolean {
@@ -1653,6 +1654,7 @@ export class AssistantEngine {
         return position < 0 ? [] : [{...entry, position}];
       }).sort((a, b) => a.position - b.position);
     };
+    const malformedSelector = exactControlIds(request).some(id => literalDeviceId(`id:${id}`) !== id);
     const matching = exact.length === 1 ? exact : exact.length > 1 ? []
       : subject === undefined || /\band\b/u.test(subject) ? mentioned(request) : [];
     const explicit = group === undefined ? matching : configured.filter(({owner}) => owner === group);
@@ -1665,14 +1667,14 @@ export class AssistantEngine {
     const ordinal = /\b(?:first|former)\b/u.test(words) ? 0 : /\b(?:second|latter)\b/u.test(words) ? 1 : undefined;
     const referred = ordinal !== undefined ? references.slice(ordinal, ordinal + 1)
       : references.length === 1 || /\b(?:both|those)\b/u.test(words) ? references : [];
-    const selected = [...explicit, ...referred];
+    const selected = malformedSelector ? [] : [...explicit, ...referred];
     for (const {device} of selected) devices.add(device.id);
     if (purpose === 'supervisor' && /\bmode\b/u.test(words)) devices.add('hub');
     // Earlier owner text can resolve a reference in the current command. The
     // chronological model background is selected independently.
     const recent = purpose === 'title' || refers ? visibleEarlier : [];
     const selectedDevice = (owner: AssistantDeviceOwner, id: string) => selected.some(entry => entry.owner === owner && entry.device.id === id);
-    const catalogSubject = group !== undefined || exact.length > 1 ? undefined
+    const catalogSubject = malformedSelector || group !== undefined || exact.length > 1 ? undefined
       : subject !== undefined && (!refers || references.length === 0) ? subject
         : selected.length === 1 && selected[0] !== undefined ? `id:${selected[0].device.id}` : undefined;
     const priorCatalogIds = new Set(this.store.calls(task.id).filter(call => effects.has(call.id) && call.kind === 'tool' && call.action === undefined)
@@ -2984,7 +2986,15 @@ export class AssistantEngine {
           }
         }
       } else if (call.name === WEMO_TARGETS) {
-        const records = this.options.devices?.(ASSISTANT_WEMO_OWNER)?.filter(device => {
+        const devices = this.options.devices?.(ASSISTANT_WEMO_OWNER);
+        const ownerScope = scope === undefined ? undefined : this.#modelControlScope(task);
+        const exact = ownerScope?.exactTargets ?? [];
+        const names = ownerScope === undefined || exact.length > 0 ? []
+          : controlReferenceIds(ownerScope.references, ownerScope.answer?.text ?? ownerScope.request.text);
+        const matched = exact.length > 0 ? devices?.filter(device => exact.includes(device.id) && literalDeviceId(`id:${device.id}`) === device.id)
+          : names.length > 0 ? devices?.filter(device => names.includes(device.id)) : devices;
+        const candidates = exact.length > 0 && matched?.length !== exact.length ? [] : matched;
+        const records = candidates?.filter(device => {
           scope?.resolvedCatalogDevice(device.id);
           return access('devices', 'index', device.id) && access('devices', 'label', device.id);
         });

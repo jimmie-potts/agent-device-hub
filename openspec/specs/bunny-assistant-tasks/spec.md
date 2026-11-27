@@ -1290,6 +1290,13 @@ The runtime SHALL normalize existing model grants into the common policy without
 
 The selected Conversation supervisor SHALL interpret the current authenticated owner request using the common context and grants. It SHALL distinguish a question, a request needing clarification and a power action for one or two configured Wemo plugs. The Hub SHALL bind a typed action to the current request, any eligible clarification and the eligible target references. The Hub SHALL validate the whole selection, current access, registered ownership, power capability and target guards before dispatch. It SHALL use the existing tracked generic power dispatch and the designated Wemo writer with its hold and maximum-on policy. Permitted conversation facts and a scoped lookup of configured Wemo IDs and labels MAY identify a referenced device. The current owner request supplies authorization.
 
+#### Scenario: Read before applying exact Wemo power
+
+- **WHEN** the current owner directs a power change using one complete Wemo ID and the supervisor looks up the device first
+- **THEN** the scoped lookup SHALL preserve that literal ID, including when followed by sentence punctuation, and return only its uniquely matched permitted device
+- **AND** an unknown or malformed explicit ID SHALL return no scoped device facts or dispatch, and ambiguous names SHALL require clarification before dispatch
+- **AND** a generic lookup SHALL return no device for an ambiguous name, while the typed Wemo finder MAY return matching permitted candidates for clarification and MAY discover permitted candidates for an open request with no recognized device name
+
 #### Scenario: Two plugs followed by one reference
 
 - **WHEN** the owner asks any companion to operate two named Wemo plugs and then asks to operate just one using the previous exchange
@@ -1336,6 +1343,26 @@ The selected Conversation supervisor SHALL interpret the current authenticated o
 - **THEN** the original exchange reports each target's own receipt and retains any confirmed result
 - **AND** duplicate delivery and restart preserve each operation identity without resending a possibly sent effect
 - **AND** transmission alone establishes no observed plug power
+
+### Requirement: Conversation uses the runtime device lookup
+
+Conversation SHALL use the shared device lookup for supported device facts, and SHALL apply its active context-sharing and tool grants to every returned field. Proposals SHALL continue to use guarded device identity and the existing tracker, approval and receipt flow.
+
+#### Scenario: Device details are outside the conversation grant
+
+- **WHEN** a model asks for device details that the active Conversation sharing policy excludes
+- **THEN** the model receives no excluded fields, even if a different client has authority to read them
+
+#### Scenario: The supervisor reads the selected light's current controls
+
+- **WHEN** the owner names one light and the selected supervisor has permission for its current device status
+- **THEN** the supervisor can read the light's supported controls, advertised bounds and current observations for the request
+- **AND** historical timestamp permission is unnecessary for those current facts, while denying current status withholds them
+
+#### Scenario: The scoped reader selects a Wemo plug
+
+- **WHEN** the selected supervisor has current-status and power-control grants for one Wemo plug
+- **THEN** its facts include that plug's power support, allowed action and current guards, plus its existing maximum-on information when available
 
 ### Requirement: Model-interpreted Conversation catalog
 
