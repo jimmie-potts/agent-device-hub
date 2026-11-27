@@ -141,7 +141,7 @@ async function checkGroupModeReceipt(page: Page): Promise<void> {
     await result.getByText('Accepted. Waiting for completion.', {exact: false}).waitFor();
     assert.equal(requests.length, 1);
     const requestId = requests[0];
-    assert.ok(requestId);
+    assert.ok(requestId !== undefined);
     await render(page, {kind: 'group-mode', record: device, operations: [{
       id: '3'.repeat(64), revision: 2, requestId, kind: 'mode', family: 'mode-override-set', command: 'org.bunny.mode-override.set.requested',
       target: device.id, requestedBy: 'bunny/parts/dashboard', status: 'completed', result: 'succeeded', evidence: 'observed',
