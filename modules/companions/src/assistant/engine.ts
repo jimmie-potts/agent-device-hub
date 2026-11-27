@@ -229,8 +229,9 @@ function deviceRequestSubject(text: string, onlyRead = false): string | undefine
     ?? /^(?:please )?(?:what (?:is|was) (?:the )?(?:(?:currently )?reported |current )?(?:status|state|brightness|power) of|(?:show|check|read) (?:me )?(?:the )?(?:status|state|brightness|power) (?:of|for)) (?:the )?(.+)$/u.exec(affirmative)?.[1]
     ?? /^(?:please )?(?:show|check|read) (?:me )?(?:the )?(?:currently )?(?:reported )?(?:status|state|brightness|power) (?:of|for) (?:the )?(.+)$/u.exec(affirmative)?.[1]
     ?? /^(?:please )?(?:show|check|read) (?:me )?(?:the )?(.+?) (?:status|state|brightness|power)$/u.exec(affirmative)?.[1]
-    ?? /^(?:please )?(?:(?:list|show|check|read) (?:the )?(.+)|(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available))$/u.exec(affirmative)?.slice(1).find(value => value !== undefined);
-  const subject = readSubject ?? (onlyRead ? undefined : explicitPowerRequest(text)?.subject);
+    ?? /^(?:please )?(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available)$/u.exec(affirmative)?.[1];
+  const subject = readSubject ?? (onlyRead ? undefined
+    : /^(?:please )?(?:list|show|check|read) (?:the )?(.+)$/u.exec(affirmative)?.[1] ?? explicitPowerRequest(text)?.subject);
   if (subject === undefined || remainder !== undefined && (onlyRead || deviceGroup(subject) !== undefined)) return undefined;
   const id = exactControlIds(opening).find(id => literalDeviceId(`id:${id}`) === id && normalizedControlText(`id:${id}`) === subject);
   return id === undefined ? subject : `id:${id}`;
@@ -2737,12 +2738,15 @@ export class AssistantEngine {
     const row = rows.find(candidate => candidate.device.id === result.targets[0]);
     if (row === undefined || input.owner !== 'auto' && row.owner !== input.owner) return 'refused: not-found';
     const instruction = scope.request.text;
-    if (matchesDeviceRequestSubject(deviceRequestSubject(instruction, true), row.device)) {
+    // The resolved device is the subject of these recognized constraints, including when
+    // the current request references a device from shared Conversation context.
+    const readSubject = deviceRequestSubject(instruction, true);
+    if (readSubject !== undefined && !/\band\b/u.test(readSubject)) {
       return 'refused: the owner asked for device status. Read the current setting without sending a command.';
     }
     if (input.setting.family === 'power-set') {
       const explicit = explicitPowerRequest(instruction);
-      if (explicit !== undefined && matchesDeviceRequestSubject(deviceRequestSubject(instruction), row.device) &&
+      if (explicit !== undefined && !/\band\b/u.test(explicit.subject) &&
           explicit.on !== input.setting.on) return 'refused: the proposed power setting conflicts with the owner request.';
     }
     const native = call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS;

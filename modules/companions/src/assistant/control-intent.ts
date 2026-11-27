@@ -94,7 +94,8 @@ export function brightnessSubject(text: string): string | undefined {
 export function missingBrightnessSubject(text: string): string | undefined {
   const words = explicitWords(text);
   const subject = words === undefined ? undefined : /^(?:set|change) (.+) brightness(?: to| at)?$/u.exec(words)?.[1];
-  return subject === undefined ? undefined : literalDeviceSubject(text, optionalArticle(subject));
+  // A setting before the trailing word "brightness" occupies its own slot.
+  return subject === undefined || subject.includes(' to ') ? undefined : literalDeviceSubject(text, optionalArticle(subject));
 }
 const optionalArticle = (value: string) => value.replace(/^(?:the|my) /u, '');
 const matchNumber = (expression: RegExp, input: string, requested: unknown): {subject: string} | undefined => {
