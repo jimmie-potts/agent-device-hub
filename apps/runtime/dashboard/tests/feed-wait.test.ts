@@ -194,7 +194,7 @@ void test('synced copies resolve the wait without reading the page', async () =>
   assert.deepEqual(evaluated, []);
 });
 
-test('a failed browser step keeps the locator and last actionability messages from a coloured Playwright call log', () => {
+void test('a failed browser step keeps the locator and last actionability messages from a coloured Playwright call log', () => {
   const problem = new Error([
     'locator.click: Timeout 10000ms exceeded.',
     'Call log:',
@@ -212,7 +212,7 @@ test('a failed browser step keeps the locator and last actionability messages fr
   ].join('\n'));
 });
 
-test('a browser step preserves assertion details without a Playwright call log', () => {
+void test('a browser step preserves assertion details without a Playwright call log', () => {
   const assertion = new Error('card shares the target lock\nfalse !== true');
   assert.equal(browserStepError(assertion), assertion.message);
 });
