@@ -4,7 +4,7 @@ import {manualClock, waitForObservation} from '../src/testing/index.js';
 
 void test('a timeout names the condition, the budget and the final observation', async () => {
   await assert.rejects(waitForObservation(() => 'syncing', value => value === 'ready',
-    'fixture records', {timeoutMs: 0, intervalMs: 0}), /fixture records after 0 ms; last observed: syncing/);
+    'fixture records', {timeoutMs: 0, intervalMs: 0}), /fixture records after \d+ ms \(budget 0 ms\); last observed: syncing/);
   await assert.rejects(waitForObservation(() => ({workers: 3}), value => value.workers === 0,
     'worker drain', {timeoutMs: 0, intervalMs: 0}), /last observed: .*workers: 3/);
   const failure = new Error('read failed');
@@ -12,6 +12,16 @@ void test('a timeout names the condition, the budget and the final observation',
     'fixture records', {timeoutMs: 0, intervalMs: 0}), error => error === failure);
   assert.equal(await waitForObservation(() => 0, value => value === 0,
     'empty queue', {timeoutMs: 0, intervalMs: 0}), 0);
+});
+
+void test('invalid budgets fail before sampling and a late change cannot satisfy the wait', async () => {
+  for (const [timeoutMs, intervalMs] of [[NaN, 0], [4, Infinity], [-1, 5], [5, -1]] as const) {
+    await assert.rejects(waitForObservation(() => assert.fail('unexpected read'), () => true,
+      'input validation', {timeoutMs, intervalMs}), RangeError);
+  }
+  const started = performance.now();
+  await assert.rejects(waitForObservation(() => performance.now() - started, elapsed => elapsed >= 50,
+    'late event', {timeoutMs: 10, intervalMs: 100}), /budget 10 ms/);
 });
 
 void test('advancing a turn fires its original due timers at the end of the turn', () => {

@@ -15,16 +15,27 @@ type Budget = {readonly timeoutMs: number; readonly intervalMs: number};
 
 export function waitForObservation<T, S extends T>(read: () => T, ready: (value: T) => value is S, what: string, budget: Budget): Promise<S>;
 export function waitForObservation<T>(read: () => T, ready: (value: T) => boolean, what: string, budget: Budget): Promise<T>;
-/** Poll a test observation on real time. The final value comes from the same read as the failed predicate. */
+/** Always take one immediate sample, then poll on real time while the budget permits another read. */
 export async function waitForObservation<T>(read: () => T, ready: (value: T) => boolean, what: string, budget: Budget): Promise<T> {
-  const deadline = performance.now() + budget.timeoutMs;
-  for (;;) {
-    const observed = read();
-    if (ready(observed)) return observed;
-    if (performance.now() > deadline) {
-      const last = typeof observed === 'string' ? observed : inspect(observed, {depth: 2, maxArrayLength: 8, maxStringLength: 160});
-      assert.fail(`timed out waiting for ${what} after ${budget.timeoutMs} ms; last observed: ${last}`);
-    }
-    await pause(budget.intervalMs);
+  const {timeoutMs, intervalMs} = budget;
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || !Number.isFinite(intervalMs) || intervalMs < 0) {
+    throw new RangeError('Wait timeout and polling interval must be finite, non-negative milliseconds');
   }
+  const started = performance.now();
+  const deadline = started + timeoutMs;
+  let observed = read();
+  while (!ready(observed)) {
+    const remaining = deadline - performance.now();
+    if (remaining > 0) {
+      await pause(Math.min(intervalMs, remaining));
+      if (performance.now() <= deadline) {
+        observed = read();
+        continue;
+      }
+    }
+    const last = typeof observed === 'string' ? observed : inspect(observed, {depth: 2, maxArrayLength: 8, maxStringLength: 160});
+    const elapsed = Math.round(performance.now() - started);
+    assert.fail(`timed out waiting for ${what} after ${elapsed} ms (budget ${timeoutMs} ms); last observed: ${last}`);
+  }
+  return observed;
 }
