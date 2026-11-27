@@ -1343,3 +1343,12 @@ The selected Conversation supervisor SHALL interpret the current authenticated o
 - **THEN** the original exchange reports each target's own receipt and retains any confirmed result
 - **AND** duplicate delivery and restart preserve each operation identity without resending a possibly sent effect
 - **AND** transmission alone establishes no observed plug power
+
+### Requirement: Conversation uses the runtime device lookup
+
+Conversation SHALL use the shared device lookup for supported device facts, and SHALL apply its active context-sharing and tool grants to every returned field. Proposals SHALL continue to use guarded device identity and the existing tracker, approval and receipt flow.
+
+#### Scenario: Device details are outside the conversation grant
+
+- **WHEN** a model asks for device details that the active Conversation sharing policy excludes
+- **THEN** the model receives no excluded fields, even if a different client has authority to read them

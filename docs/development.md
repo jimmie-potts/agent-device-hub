@@ -1639,6 +1639,14 @@ post one profile 1.8 record and one span to the Collector, read them back
 through Grafana's Loki and Tempo proxies, then `down -v`. Hosted CI runs the
 export test with the runtime suites; it does not boot the stack.
 
+Shared device lookup and command admission use the existing Runtime unit tests,
+SDK and Companions CI groups. After the root build, run
+`node --test apps/runtime/dist/tests/shared-device-control.test.js` for the
+authenticated MCP client and Companions SDK dispatch against a disposable
+registered light. The Companions suite covers the model tool's view under
+sharing grants. Run shared type, lint, workflow, event, SDK and MCP checks as
+described in [runtime verification](../apps/runtime/DEVELOPMENT.md#runtime-checks).
+
 ### Runtime test layers
 
 See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) for the authoritative procedure.

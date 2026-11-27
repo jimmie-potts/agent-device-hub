@@ -921,6 +921,57 @@ function powerLimit(status: PowerLimitRecord['status'], revision = 1): PowerLimi
 const powerLimitDraft = (data: PowerLimitRecord) => ({type: 'org.bunny.power-limit.updated', subject: data.id,
   dataschema: 'https://bunny.invalid/events/power-limit/2.0', data});
 
+void test('Conversation reads shared device facts under its active sharing grants', async context => {
+  const now = 1_700_000_000_000, owner = 'bunny/modules/lifx';
+  const device: DeviceRecord = {...light('fixture-light', 'Fixture light'),
+    observed: {status: 'known', observedAtMs: now, power: {status: 'known', value: true},
+      brightness: {status: 'known', value: 35}}};
+  const readings: string[] = [];
+  const baseline = sharing();
+  let details = true;
+  const provider = counted((turn, step) => {
+    if (step % 2 === 1) return call('read_devices', {owner, target: 'id:fixture-light'});
+    const result = turn.transcript.at(-1);
+    assert.equal(result?.role, 'tool');
+    if (result?.role === 'tool') readings.push(result.result);
+    return reply('Read complete.');
+  });
+  const w = await world(context, {provider, tools: ['read_devices', 'control_lifx_temperature_set'],
+    share: query => baseline(query) && (details || query.source !== 'devices' || query.field !== 'details'),
+    dispatch: () => assert.fail('a facts read cannot send a device command')}, undefined, now);
+  const lamp = w.bus.connect(owner);
+  context.after(() => lamp.close());
+  const lightState = {id: device.id, revision: 1, capabilities: {color: {supported: false},
+    temperature: {supported: true, minimum: 1500, maximum: 9000}}, observed: unknown};
+  await lamp.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated', subject: device.id,
+    dataschema: DEVICE_POWER_READBACK_SCHEMA, data: device}]}));
+  await lamp.serveSync(['lifx-light'], () => ({revision: 1, states: [{type: 'org.bunny.lifx-light.updated', subject: device.id,
+    dataschema: 'https://bunny.invalid/events/lifx-light/2.0', data: lightState}]}));
+  await control(w.core, w.module(), 'enable');
+
+  assert.equal((await input(w.core, w.module(), 'What temperature range can Fixture light use?')).status, 'accepted');
+  await until(() => readings.length === 1 && status(w) === 'succeeded');
+  const allowed = JSON.parse(readings[0] ?? '{}') as {devices: {
+    id: string; name: string; actions: string[]; lastReportedAvailability: string; choices: {brightness: object};
+    observation: {freshness: string; value: DeviceRecord['observed']}; lightCapabilities: object;
+  }[]};
+  const fact = allowed.devices[0];
+  assert.equal(fact?.id, device.id);
+  assert.equal(fact?.name, device.label);
+  assert.equal(fact?.lastReportedAvailability, 'available');
+  assert.equal(fact?.observation.freshness, 'current');
+  assert.deepEqual(fact?.observation.value, device.observed);
+  assert.deepEqual(fact?.choices.brightness, {supported: true, minimum: 0, maximum: 100, unit: 'percent', step: 1});
+  assert.deepEqual(fact?.lightCapabilities, {color: {supported: false},
+    temperature: {supported: true, minimum: 1500, maximum: 9000, unit: 'kelvin', step: 1}});
+  assert.deepEqual(fact?.actions, ['lifx-temperature-set']);
+
+  details = false;
+  assert.equal((await input(w.core, w.module(), 'What are the settings of Fixture light?')).status, 'accepted');
+  await until(() => readings.length === 2 && status(w) === 'succeeded');
+  assert.deepEqual(JSON.parse(readings[1] ?? '{}'), {devices: [], unreadable: []});
+});
+
 void test('Conversation reads a Wemo maximum-on deadline and recovers a lost copy through both read tools', async context => {
   const plug: DeviceRecord = {...light(PLUG_ID, 'Test plug'), kind: 'wemo', observed: {
     status: 'known', observedAtMs: TIMER_READ, power: {status: 'known', value: true}, brightness: unknown,

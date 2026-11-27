@@ -5,7 +5,6 @@ import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {followCopy, recordLog, SdkError, Outcome, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import {ASSISTANT_LIGHT_OWNER, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
-import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {CodingDispatch, CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
 import {coreValidator, type AgentOccurrence, type AttentionRaised, type Session30Record, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
@@ -26,8 +25,7 @@ export class CompanionPart implements CorePart {
   #coding: SyncedCopy<CodingState> | undefined;
   #codingFresh = false;
   #stopCodingCopy: (() => void) | undefined;
-  constructor(private readonly device: (id: string) => Message<DeviceRecord> | undefined = () => undefined,
-    private readonly dispatchOperator: (action: Action) => Promise<ActionAnswer> = () => Promise.resolve(errorBody('unavailable')),
+  constructor(private readonly dispatchOperator: (action: Action) => Promise<ActionAnswer> = () => Promise.resolve(errorBody('unavailable')),
     private readonly handleInbox: InboxRecords['handle'] = () => Promise.resolve(errorBody('unavailable'))) {}
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
   seed(records: readonly Session30Record[]): void {
@@ -118,7 +116,7 @@ export class CompanionPart implements CorePart {
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
       if (command.data.family === 'catalog-action') {
-        const answer = await dispatchCatalogAction(core, {...command, data: command.data}, this.device, this.dispatchOperator, async (action, input) => {
+        const answer = await dispatchCatalogAction(core, {...command, data: command.data}, this.dispatchOperator, async (action, input) => {
           const result = await this.handleInbox(core, {target: action.draft.subject, input, source: command.source, parent: command, resendId: input.requestId});
           return 'error' in result ? result : {status: 'accepted', requestId: input.requestId};
         });
@@ -126,20 +124,9 @@ export class CompanionPart implements CorePart {
       }
       const action = command.data;
       const {family, target, requestId} = action;
-      if (family !== 'mode-set' && core.operation(requestId) === undefined) {
-        const message = this.device(target);
-        if (message === undefined) return errorBody('unavailable');
-        if (message.source !== ('owner' in action ? action.owner : ASSISTANT_LIGHT_OWNER)) return errorBody('forbidden');
-        const record = message.data;
-        const capability = family === 'power-set' ? record.capabilities.power : record.capabilities.brightness;
-        if (!capability.supported) return errorBody('unsupported-capability');
-        const {expectedConfigurationRevision, expectedGeneration} = action.data;
-        if (record.configurationRevision !== expectedConfigurationRevision || record.generation.epoch !== expectedGeneration.epoch ||
-          record.generation.sequence !== expectedGeneration.sequence) return errorBody('revision-conflict');
-        if (record.availability !== 'available' || record.held !== undefined) return errorBody('unavailable');
-      }
       const type = family === 'mode-set' ? 'org.bunny.mode.set.requested' : family === 'power-set' ? 'org.bunny.power.set.requested' : 'org.bunny.brightness.set.requested';
       const answer = await core.dispatch({key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
+        ...(family === 'mode-set' ? {} : {deviceAdmission: {kind: 'conversation', owner: 'owner' in action ? action.owner : ASSISTANT_LIGHT_OWNER, expiresAt: command.expiresat}}),
         draft: {type, subject: target, dataschema: `https://bunny.invalid/events/${family}/2.0`, data: action.data}});
       return 'error' in answer ? answer : {status: 'accepted'};
     });

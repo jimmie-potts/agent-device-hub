@@ -29,13 +29,14 @@ import {extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-
 import {CORE_SOURCE, coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {LIGHTING_SHOW_LIMITS} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {PrivateRequestDigest, SdkError,
-  acknowledgmentOf, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
+  acknowledgmentOf, readLifxDeviceFacts, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing, Outcome} from '@jimmie-potts/sdk';
 import {DASHBOARD_SOURCE} from '../credentials.js';
 import {REGISTRY_REASONS} from '../diagnostics.js';
 import {kept, type OperationStep} from './history.js';
 import {DEADLINES, advance, kindOf, type Operation, type OperationEvent, type TakenOutcome} from './operations.js';
 import type {CoreStore, CoreTransaction} from './store.js';
+import {deviceRefusal, type DeviceAdmission} from './device-admission.js';
 
 /**
  * The core's own operator commands, which a remote grant may request directly (Hub #835's `control` scope): an approval
@@ -91,6 +92,7 @@ export type Action = {
   readonly draft: CommandDraft<object>;
   /** Who asks: an authenticated caller's source, or the core part that dispatches it. */
   readonly requestedBy: string;
+  readonly deviceAdmission?: DeviceAdmission;
   /** The request ID to send. One is generated otherwise. A request ID names one action, ever. */
   readonly requestId?: string;
   /** The context being handled, which the action joins; a new trace otherwise. */
@@ -141,6 +143,7 @@ export type TrackerOptions = {
   scheduler: ModuleScheduler;
   files?: () => string;
   currentDevice?: (id: string) => Message<DeviceRecord> | undefined;
+  registeredDevice?: (id: string) => boolean;
   /** The parts' derivers of tracked actions' changes. */
   tracked?: readonly Tracked[];
   /** Resolves once the core's store is open. */
@@ -419,17 +422,35 @@ export class Tracker {
     const fields = {'bunny.participant': action.requestedBy, 'bunny.routing.key': action.key, ...requestField(requestId)};
     const served = startSpan(this.#options.trace, 'bunny.command.request', {kind: 'server', parent: action.parent, attributes: fields});
     const span = served.context;
-    const now = clock.now();
-    const sent: Operation = {
-      requestId, kind, key: action.key, family, command: draft.type, dataschema: draft.dataschema, target, data, requestedBy: action.requestedBy,
-      status: 'sent', outcomes: [], sentAtMs: now, deadlineAtMs: now + DEADLINES[kind].outcomeMs + startDelayMs, updatedAtMs: now, traceparent: span.traceparent,
-    };
+    let sent: Operation;
     // Recorded as sent before anything is sent: a refused commit sends nothing, and a crash after it leaves the action
     // pending, so it ends uncertain at its deadline and is never sent again.
     let earlier: Operation | undefined;
     try {
+      const lifx = action.deviceAdmission !== undefined && (family === 'lifx-color-set' || family === 'lifx-temperature-set') &&
+        this.#read(requestId) === undefined && this.#options.currentDevice?.(target)?.source === 'bunny/modules/lifx'
+        ? (await readLifxDeviceFacts(sdk, {timeoutMs: 1200, parent: span}))?.find(light => light.id === target)
+        : undefined;
+      const now = clock.now();
+      sent = {
+        requestId, kind, key: action.key, family, command: draft.type, dataschema: draft.dataschema, target, data, requestedBy: action.requestedBy,
+        status: 'sent', outcomes: [], sentAtMs: now, deadlineAtMs: now + DEADLINES[kind].outcomeMs + startDelayMs, updatedAtMs: now, traceparent: span.traceparent,
+      };
       earlier = await this.#transaction(tx => {
         const known = this.#read(requestId);
+        if (action.deviceAdmission?.kind === 'mcp' && !action.deviceAdmission.live()) {
+          throw new Refused('unauthenticated', 'the caller credential has ended');
+        }
+        if (known === undefined && action.deviceAdmission !== undefined) {
+          if (action.deviceAdmission.kind === 'conversation' && action.deviceAdmission.expiresAt !== undefined &&
+            Date.parse(action.deviceAdmission.expiresAt) <= clock.now()) {
+            throw new Refused('expired', 'the Conversation request expired before device admission');
+          }
+          const current = this.#options.currentDevice?.(target);
+          const refusal = deviceRefusal({admission: action.deviceAdmission, current,
+            registered: this.#options.registeredDevice?.(target) === true, family, data, lifx});
+          if (refusal !== undefined) throw new Refused(refusal.code, refusal.detail);
+        }
         if (known === undefined && draft.dataschema === EXTENDED_ART_STAGE_SCHEMA &&
             !extendedArtStageSupported(this.#options.currentDevice?.(target), {format: data.format, base64: data.base64})) {
           throw new Refused('unsupported-capability', 'the target must be a configured Pixoo declaring extended GIF staging within its byte limit');

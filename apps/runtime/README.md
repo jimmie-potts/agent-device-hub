@@ -1479,12 +1479,20 @@ it answers 404 with `not-found`. It serves client credentials only: a browser
 session is told so with `forbidden` first, and a page's `Origin` is refused
 before MCP sees the request. Each module's read tools come from its manifest,
 as `<module>_<tool>`, and the core contributes `core_sessions`; a credential with
-`read` lists and calls those of every module. With `control` it also gets
+`read` lists and calls those of every module, plus `core_device_lookup`.
+Pass an optional `owner` source and `target` label or `id:<device-id>`. Omit the
+target to list devices. A named result gives the owner ID, supported choices and
+ranges, last reported availability, and observation currentness. The same
+SDK lookup supplies Conversation, which applies its own sharing grants. With
+`control` the MCP credential also gets
 `core_recover_approval`, which sends `approval-recover` to the core as the
 credential's source, and `core_send_command` (#782), `{family, target, data,
 requestId?}`, which sends a device's command or tracked session label through the core's dispatcher, as
-the action route does. A
-tool's result is `{kind: "extension", data: {result}}`, and a refusal
+the action route does. For actions that take device guards, pass the lookup's
+`configurationRevision` and `generation` as `expectedConfigurationRevision`
+and `expectedGeneration`. New MCP device requests and approved Conversation
+requests pass through the same tracker admission. Repeating an existing
+request ID follows the tracker's existing receipt rules. A tool's result is `{kind: "extension", data: {result}}`, and a refusal
 `{kind: "extension", data: {error}}` with the shared error body and
 `isError: true`. The refusals the MCP package makes itself, before a tool runs,
 such as arguments a tool does not take, keep its released 1.x `gateway-error`

@@ -3,6 +3,11 @@ import type {Capabilities, DeviceRecord} from './devices.js';
 
 export const SHOW_SAVE_WINDOW_MS = 30_000;
 
+export const LIFX_COLOR_PARAMETERS = {
+  hue: {unit: 'degree', minimum: 0, maximum: 360, step: 1},
+  saturation: {unit: 'percent', minimum: 0, maximum: 100, step: 1},
+} as const;
+
 const lifx = 'bunny/modules/lifx', wemo = 'bunny/modules/wemo', nanoleaf = 'bunny/modules/nanoleaf';
 const pixoo = 'bunny/modules/pixoo', tidbyt = 'bunny/modules/tidbyt', volcano = 'bunny/modules/volcano';
 export const assistantDeviceOwners = [lifx, wemo, nanoleaf, pixoo, tidbyt, 'bunny/modules/roborock', volcano] as const;

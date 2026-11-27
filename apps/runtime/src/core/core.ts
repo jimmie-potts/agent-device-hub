@@ -349,7 +349,7 @@ const METADATA_SOURCES: readonly string[] = ['bunny/modules/codex-desktop', NATI
 
 class Core {
   readonly #automation: AutomationPart;
-  readonly #companions = new CompanionPart(id => this.#automation.currentDevice(id), action => this.dispatchOperator(action),
+  readonly #companions = new CompanionPart(action => this.dispatchOperator(action),
     (core, handling) => this.#inbox.handle(core, handling));
   readonly #art: ArtPart;
   setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
@@ -493,6 +493,7 @@ class Core {
     this.#tracker = new Tracker({
       store: this.#store, sdk: context.sdk, log: context.log, trace: context.trace, clock: context.clock, scheduler: context.scheduler,
       files: context.files, currentDevice: id => this.#automation.currentDevice(id),
+      registeredDevice: id => this.#automation.registeredDevice(id),
       tracked: parts.flatMap(part => part.tracked ?? []), ready: this.#ready,
       storage: {failed: code => { this.#degraded(code); }, recovered: () => { this.#recovered(); }},
     });

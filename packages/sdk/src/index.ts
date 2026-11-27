@@ -52,3 +52,8 @@ export {HeldEvidence, Outcome, absent, hold, merge, observed, transmitted, uncer
 export {serializedAdmission, type Fresh, type SerializedAdmission} from './admission.js';
 
 export {DiagnosticEpisodes} from './diagnostic-episodes.js';
+
+export {
+  deviceActionFamily, deviceFacts, deviceLabel, matchingDevices, MAX_OBSERVATION_AGE_MS, observationStale, readDeviceRecords,
+  readLifxDeviceFacts, supportsDeviceAction, WEMO_OBSERVATION_AGE_MS, type LifxDeviceFacts, type OwnedDevice,
+} from './device-lookup.js';

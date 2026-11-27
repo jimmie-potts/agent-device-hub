@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {InboxItem, ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
-import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import {catalogFamily, catalogRoute, type CatalogBinding, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {starter} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {lifxSchemas} from '@jimmie-potts/lifx';
@@ -15,7 +15,7 @@ import {nanoleafSchemas} from '@jimmie-potts/nanoleaf';
 import {pixooOwnSchemas} from '@jimmie-potts/pixoo';
 import {volcanoSchemas} from '@jimmie-potts/volcano';
 import {wemoSchemas} from '@jimmie-potts/wemo';
-import {deviceRecord, deviceState} from './fixtures/device.js';
+import {deviceRecord} from './fixtures/device.js';
 import {dispatchCatalogAction} from '../src/core/assistant-actions.js';
 import type {Action, ActionAnswer} from '../src/core/tracker.js';
 import {contextOf, fixture, it, run, waitFor} from './support.js';
@@ -169,9 +169,10 @@ it('every catalog route delivers its exact input and guards to the existing owne
         ? {kind: 'device', owner, target, configurationRevision: record.configurationRevision, generation: record.generation}
         : route.binding === 'record' ? {kind: 'record', owner, target, revision: 7}
           : {kind: 'fixed', owner, target};
-      const operation = ({key, draft: outgoing, requestedBy, requestId = ''}: Action): Promise<ActionAnswer> => {
+      const operation = ({key, draft: outgoing, requestedBy, requestId = '', deviceAdmission}: Action): Promise<ActionAnswer> => {
         assert.equal(key, `bunny.cmd.${family}.${target}`);
         assert.equal(requestedBy, 'bunny/modules/companions');
+        assert.deepEqual(deviceAdmission, binding.kind === 'device' ? {kind: 'conversation', owner, expiresAt: common.expiresat} : undefined);
         const guard = binding.kind === 'device' ? {expectedConfigurationRevision: binding.configurationRevision, expectedGeneration: binding.generation}
           : binding.kind === 'record' ? (family === 'volcano-session-gap' ? {expectedConfigurationRevision: 7} : {expectedRevision: 7}) : {};
         const save = family === 'nanoleaf-show-save' ? {admitByMs: timestamp + 1000} : {};
@@ -183,20 +184,11 @@ it('every catalog route delivers its exact input and guards to the existing owne
         assert.ok(result.ok, `${family} for ${owner}: ${!result.ok ? result.error.detail : ''}`);
         return Promise.resolve({status: 'accepted', requestId});
       };
-      const device = (): Message<DeviceRecord> => {
-        const capabilities: DeviceRecord['capabilities'] = {...record.capabilities,
-          power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100},
-          scenes: {supported: true, sceneIds: ['scene-' + hash]}, modes: {supported: true, values: ['free']},
-          moments: {supported: true, moods: ['celebrate'], maxDurationMs: 30000, coversStatus: false},
-          media: {supported: true, actions: ['pause'], playlistIds: [uuid], renditionIds: [hash]}};
-        return {...common, ...deviceState({...record, capabilities}), id: 'fixture-device', source: owner, kind: 'state',
-          data: {...record, capabilities}};
-      };
       const requestId = 'catalog-fixture';
-      const answer = await dispatchCatalogAction({dispatch: operation, operation: () => undefined, clock: {now: () => timestamp}},
+      const answer = await dispatchCatalogAction({dispatch: operation, clock: {now: () => timestamp}},
         {...common, ...draft({requestId, family: 'catalog-action', command: family, target, binding, data,
           ...(family === 'nanoleaf-show-save' ? {admitByMs: timestamp + 1000} : {})}),
-        id: requestId, source: 'bunny/modules/companions'}, device, operation, operation);
+        id: requestId, source: 'bunny/modules/companions'}, operation, operation);
       assert.deepEqual(answer, {status: 'accepted', requestId}, `${family} for ${owner}`);
     }
   }

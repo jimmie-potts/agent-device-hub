@@ -16,7 +16,7 @@ import {MAX_DETAIL, SCHEMA_BASE, errorBody, isErrorCode, type ErrorBody, type Er
 import type {McpHandler} from '@jimmie-potts/device-mcp';
 import {MAX_RESPONSE_BYTES as WISPR_MAX_BYTES, type WisprModule} from '@jimmie-potts/wispr';
 import {
-  ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, noSpans, startSpan, statusOf, traceFields,
+  ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, deviceActionFamily, deviceFacts, deviceLabel, matchingDevices, noSpans, readDeviceRecords, readLifxDeviceFacts, startSpan, statusOf, traceFields,
   type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
   type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
@@ -34,7 +34,7 @@ import {
 } from './access.js';
 import {DASHBOARD_DIR, DASHBOARD_FILES, DASHBOARD_HEADERS, dashboardAllowed, runtimeBuild, dashboardFile} from './dashboard.js';
 import {startLauncher} from './launcher.js';
-import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
+import {TOOL_TIMEOUT_MS, createGatewayMcp, type DeviceLookupResult} from './mcp.js';
 import {retiredRoute} from './retired.js';
 import {privateProxyOrigin, wifiProxyOrigin} from './wifi-proxy.js';
 import {GatewayRefusals, methodOf} from './refusals.js';
@@ -210,6 +210,7 @@ export class Gateway {
       this.#mcp = createGatewayMcp({
         modules: () => this.#options.host.modules(), invoke: (name, call) => this.#options.host.invoke(name, call), access: this.access,
         recover: (id, input) => this.#recoverFor(id, input), dispatch: (id, input) => this.#dispatchFor(id, input),
+        lookup: (id, input, parent) => this.#deviceLookup(id, input, parent),
         scheduler: this.#options.scheduler, holdsSecret: text => this.#options.redactions.holds(text),
         ...(this.#options.trace === undefined ? {} : {trace: this.#options.trace}),
       }, hosts);
@@ -496,7 +497,7 @@ export class Gateway {
       name, apiVersion: manifest.apiVersion, state, ...(serves.length === 0 ? {} : {serves}),
       pages: admitted && (name !== 'wispr' || principal.kind !== 'browser' || this.#options.wispr?.browserExposed() === true)
         ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`, presentation: page.presentation ?? 'passive'})) : [],
-      tools: admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval', 'core_send_command'] : [])] : [],
+      tools: admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_device_lookup', 'core_recover_approval', 'core_send_command'] : [])] : [],
       settings: admitted && manifest.settings !== undefined,
     };
   }
@@ -882,6 +883,34 @@ export class Gateway {
   }
 
   /** The dispatcher's action for a client credential, by its ID, as MCP calls it. */
+  async #deviceLookup(id: string, {owner, target}: {owner: string; target: string}, parent: TraceContext): Promise<DeviceLookupResult | ErrorBody> {
+    const credential = this.access.current(id);
+    if (credential === undefined) return errorBody('unauthenticated');
+    const principal = principalOf(credential);
+    if (!principal.scopes.has('read')) return errorBody('forbidden');
+    const known = this.#ownersOf('device');
+    const owners = [...known.serving, ...known.down].filter(source => owner === 'auto' || source === owner);
+    if (owners.length === 0 && owner !== 'auto') return errorBody('not-found');
+    const registered = new Map(this.#options.host.modules().filter(module => module.admitted)
+      .map(module => [sourceOf(module.name), new Set(module.devices)]));
+    const {rows, unreadable} = await readDeviceRecords(this.#participant(principal.source), owners, {timeoutMs: SYNC_TIMEOUT_MS, parent});
+    if (!this.access.live(principal)) return errorBody('unauthenticated');
+    const visible = rows.filter(row => registered.get(row.owner)?.has(row.device.id) === true);
+    const selector = target.trim();
+    const selected = target === '' ? visible : matchingDevices(visible, target, owner, selector.startsWith('id:') ? selector.slice(3) : undefined);
+    if (target === '') return {devices: selected.map(({owner, device}) => ({owner, id: device.id,
+      name: deviceLabel(device), lastReportedAvailability: device.availability})), unreadable};
+    if (selected.length > 1) return {matches: selected.map(({owner, device}) => ({owner, id: device.id})),
+      guidance: 'Select the exact owner and ID.', unreadable};
+    const row = selected[0];
+    if (row === undefined) return {devices: [], unreadable};
+    const colors = row.owner === 'bunny/modules/lifx' && this.#options.bus.syncOwners('lifx-light').includes(row.owner)
+      ? await readLifxDeviceFacts(this.#participant(principal.source), {timeoutMs: SYNC_TIMEOUT_MS, parent}) : undefined;
+    if (!this.access.live(principal)) return errorBody('unauthenticated');
+    const lifx = colors?.find(light => light.id === row.device.id);
+    return {devices: [deviceFacts(row, this.#options.clock.now(), () => principal.scopes.has('control'), lifx === undefined ? {} : {lifx})], unreadable};
+  }
+
   async #dispatchFor(id: string, input: ActionInput & {family: string}): Promise<ActionAnswer> {
     const credential = this.access.current(id);
     if (credential === undefined) return errorBody('unauthenticated', {detail: 'the credential was revoked'});
@@ -946,6 +975,7 @@ export class Gateway {
       return await this.#options.host.invoke(CORE_MODULE, () => !this.access.live(principal)
         ? Promise.resolve(errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'})) : actions.dispatch({
         ...command, requestedBy: principal.source, ...(input.requestId === undefined ? {} : {requestId: input.requestId}),
+        ...(request === undefined && principal.kind === 'credential' && deviceActionFamily(family) ? {deviceAdmission: {kind: 'mcp', live: () => this.access.live(principal)}} : {}),
         ...(parent === undefined ? {} : {parent}),
       }));
     } catch (error) {

@@ -6,6 +6,13 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Shared device control (#2193) uses the existing runtime, SDK and Companions CI
+discovery. After the root build, run `npm run test:runtime:built`,
+`npm run test:sdk:built` and `npm run test:companions:built`. The gateway tests
+exercise the authenticated MCP tools and the Companions tests use a scripted
+provider with disposable device records. Run the shared type, lint, workflow,
+event and MCP package checks. Installed client and device checks belong to #2184.
+
 Presence Pro uses `npm run test:presence-pro:built` and
 `node --test apps/runtime/dist/tests/presence-pro.test.js` after the root build.
 The latter is a disposable authenticated state/SDK/history exercise. Existing

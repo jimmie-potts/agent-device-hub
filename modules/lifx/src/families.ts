@@ -2,6 +2,7 @@
 // `lifx-light` is each bulb's color record; `lifx-color-set` and `lifx-temperature-set` are the commands that replace the
 // old `lifx-light` 1.0.0 profile's `lifx.color.set` and `lifx.temperature.set`, with the general commands' guards.
 import {MessageValidator, SCHEMA_BASE, type Message, type PayloadCheck} from '@jimmie-potts/event-contracts/v2';
+import {LIFX_COLOR_PARAMETERS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 
@@ -25,7 +26,8 @@ export type LifxTemperatureSetRequest = {requestId: string; kelvin: number; expe
 
 const block = (name: string): object => ({$ref: `${SCHEMA_BASE}blocks/2.0#/$defs/${name}`});
 const unsupported = {type: 'object', additionalProperties: false, required: ['supported'], properties: {supported: {const: false}}};
-const percent = {type: 'integer', minimum: 0, maximum: 100};
+const percent = {type: 'integer', minimum: LIFX_COLOR_PARAMETERS.saturation.minimum, maximum: LIFX_COLOR_PARAMETERS.saturation.maximum};
+const hue = {type: 'integer', minimum: LIFX_COLOR_PARAMETERS.hue.minimum, maximum: LIFX_COLOR_PARAMETERS.hue.maximum};
 const command = (id: string, description: string, required: string[], properties: Record<string, object>): object => ({
   $schema: 'https://json-schema.org/draft/2020-12/schema', $id: id, description,
   type: 'object', $ref: `${SCHEMA_BASE}device/2.0#/$defs/command`, unevaluatedProperties: false, required, properties,
@@ -52,7 +54,7 @@ export const lifxSchemas: Readonly<Record<string, object>> = {
       observed: {oneOf: [block('unknown'), {
         type: 'object', additionalProperties: false, required: ['status', 'observedAtMs', 'hue', 'saturation', 'brightness', 'kelvin'],
         properties: {
-          status: {const: 'known'}, observedAtMs: block('instantMs'), hue: {type: 'integer', minimum: 0, maximum: 360},
+          status: {const: 'known'}, observedAtMs: block('instantMs'), hue,
           saturation: percent, brightness: percent, kelvin: {type: 'integer', minimum: 0, maximum: 65535},
         },
       }]},
@@ -60,7 +62,7 @@ export const lifxSchemas: Readonly<Record<string, object>> = {
   },
   [LIFX_COLOR_SET_SCHEMA]: command(LIFX_COLOR_SET_SCHEMA,
     'Command: set a qualified LIFX bulb\'s hue in degrees and saturation in percent (Hub #928), from the lifx-light 1.0.0 profile\'s lifx.color.set. The module reads the bulb, keeps its brightness and kelvin and writes one absolute color; it never turns the bulb on. The subject names the bulb.',
-    ['hue', 'saturation'], {hue: {type: 'integer', minimum: 0, maximum: 360}, saturation: percent}),
+    ['hue', 'saturation'], {hue, saturation: percent}),
   [LIFX_TEMPERATURE_SET_SCHEMA]: command(LIFX_TEMPERATURE_SET_SCHEMA,
     'Command: set a qualified LIFX bulb\'s color temperature in kelvin (Hub #928), from the lifx-light 1.0.0 profile\'s lifx.temperature.set. The module reads the bulb and keeps its hue, saturation and brightness, so the light looks white only at zero saturation. The subject names the bulb.',
     ['kelvin'], {kelvin: {type: 'integer', minimum: KELVIN.minimum, maximum: KELVIN.maximum}}),
