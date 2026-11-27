@@ -43,9 +43,9 @@ export function authorizesHubMode(instruction: string, mode: string): boolean {
   return requested?.[1] === mode;
 }
 
-export function answersHubMode(answer: string, mode: string): boolean {
-  const choice = answer.trim();
-  return /^[a-z]+[.!]?$/iu.test(choice) && normalizedControlText(choice) === mode;
+export function hubModeChoice(answer: string): string | undefined {
+  if (!/^[a-z,.!\s]+$/iu.test(answer)) return undefined;
+  return /^(?:please )?(work|free|quiet)(?: mode)?(?: please)?$/u.exec(normalizedControlText(answer))?.[1];
 }
 
 function requestedPower(input: string): {on: boolean; subject: string} | undefined {

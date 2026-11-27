@@ -23,7 +23,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {answersHubMode, authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, literalDeviceId, missingBrightness, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
+import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, hubModeChoice, literalDeviceId, missingBrightness, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, resolveModelControl, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
@@ -2828,14 +2828,15 @@ export class AssistantEngine {
     if (!this.#catalogFieldsPermitted(task, proposal)) return {code: 'forbidden'};
     if (proposal.family === 'mode-set') {
       const ownerText = scope.answer?.text ?? scope.request.text;
-      if (Object.hasOwn(call.input, 'intent')) {
-        if (!citesHubModeIntent(ownerText, call.input.intent, proposal.data.mode)) return {code: 'invalid-state'};
-      } else if (!authorizesHubMode(ownerText, proposal.data.mode)) {
-        const question = this.#controlClarification(task);
-        const binding = question?.modeClarification;
+      const choice = hubModeChoice(ownerText);
+      if (choice !== undefined) {
+        const binding = this.#controlClarification(task)?.modeClarification;
         if (scope.answer === undefined || binding?.requestId !== scope.request.id || binding.requestRevision !== scope.request.revision ||
-            !answersHubMode(scope.answer.text, proposal.data.mode)) return {code: 'invalid-state'};
+            choice !== proposal.data.mode) return {code: 'invalid-state'};
         if (binding.modeRevision !== proposal.expectedRevision) return {code: 'revision-conflict'};
+      } else if (!(Object.hasOwn(call.input, 'intent') ? citesHubModeIntent(ownerText, call.input.intent, proposal.data.mode)
+        : authorizesHubMode(ownerText, proposal.data.mode))) {
+        return {code: 'invalid-state'};
       }
     }
     if (proposal.family === 'catalog-action' && proposal.command === 'art-catalog-edit' && proposal.data.action === 'delete') {

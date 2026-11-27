@@ -7,6 +7,7 @@ import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
 import type {FieldAccess} from './sharing.js';
 import {catalogTools} from './catalog-tools.js';
+import {HUB_MODE_ACTION_WORDS} from './catalog-grounding.js';
 import {textBytes, TOOL_NAME, type ToolDefinition} from './provider.js';
 import {READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
 export {READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
@@ -45,8 +46,9 @@ export const TOOLS: readonly ToolDefinition[] = [
       intent: {type: 'object', description: 'Current owner evidence for an affirmative switch.', properties: {
         kind: {type: 'string', description: 'The owner intends to switch Hub mode now.', enum: ['switch']},
         actionQuote: {type: 'string', description: 'Verbatim affirmative mode switch request in the latest current owner message. Quote the complete action, including the requested mode if named.'},
+        actionWord: {type: 'string', description: `Copy the verb for the switch from actionQuote, using one of ${HUB_MODE_ACTION_WORDS.join(', ')} as the owner wrote it.`},
         modeQuote: {type: 'string', description: 'The verbatim name of the selected mode within actionQuote. Omit for clarify.'},
-      }, required: ['kind', 'actionQuote'], additionalProperties: false},
+      }, required: ['kind', 'actionQuote', 'actionWord'], additionalProperties: false},
     }, required: ['mode'], additionalProperties: false}},
   {name: READ_LIFX, effect: 'read', description: 'Read LIFX observed status and available controls. Use an empty device name to list lights.',
     input: {type: 'object', properties: {device: deviceName}, required: ['device'], additionalProperties: false}},

@@ -1500,7 +1500,8 @@ can report transmission with the physical effect still unconfirmed.
 The hosted supervisors use the same enabled catalog. The model determines whether the owner
 is asking to switch or discussing the mode. For typed switch intent, the Hub
 checks that the action quote comes from the current owner input and contains
-the selected mode. A bare mode answer requires the Hub's saved switch question.
+a declared switch verb and the selected mode. A short mode choice, including
+a polite answer such as “Quiet mode, please,” requires the Hub's saved switch question.
 Tool availability gives no access to private catalog fields. Companions resolves names and revision
 guards locally when the owner publishes that index. This covers session labels,
 Volcano labels, saved light shows, Pixoo playlists and compatible renditions.

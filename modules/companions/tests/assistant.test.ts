@@ -197,7 +197,7 @@ void test('a generic informational question cannot grant authority for a bare mo
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Could you set the Hub mode?');
   await until(() => status(w) === 'waiting');
-  assert.equal((await input(w.core, w.module(), 'Quiet', true)).status, 'accepted');
+  assert.equal((await input(w.core, w.module(), 'Quiet mode.', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.deepEqual(requests, []);
 });
@@ -214,7 +214,7 @@ void test('the supervisor asks once for a missing mode and binds the owner answe
   assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
   assert.ok((await page(w)).messages.some(message => /Which mode should I switch the Hub to/.test(message.text)));
   assert.equal(requests.length, 0);
-  assert.equal((await input(w.core, w.module(), 'quiet', true)).status, 'accepted');
+  assert.equal((await input(w.core, w.module(), 'Quiet mode, please.', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.deepEqual(requests.map(({data}) => data), [{mode: 'quiet', expectedRevision: 4}]);
 });
@@ -5615,34 +5615,40 @@ for (const host of ['anthropic', 'openai'] as const) {
     assert.equal(await ask('Switch the Hub to quiet for a while.', 'set_mode', {mode: 'quiet'}), 'refused: forbidden');
     assert.equal(delivered.length, prior + 1);
     modeDenied = false;
-    const switchIntent = (actionQuote: string, modeQuote?: string) => ({kind: 'switch', actionQuote, ...(modeQuote === undefined ? {} : {modeQuote})});
+    const switchIntent = (actionQuote: string, actionWord: string, modeQuote?: string) =>
+      ({kind: 'switch', actionQuote, actionWord, ...(modeQuote === undefined ? {} : {modeQuote})});
     assert.match(await ask('Is the Hub in work mode?', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
     assert.match(await ask('Can you explain quiet mode?', 'set_mode', {mode: 'quiet'}) ?? '', /^refused: this control needs a clear current owner request/u);
     assert.match(await ask('Set the Hub to free mode.', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
+    const modeStatus = 'Is the Hub in work mode?';
+    assert.match(await ask(modeStatus, 'set_mode', {mode: 'work', intent: switchIntent(modeStatus, 'Is', 'work')}) ?? '',
+      /^refused: this control needs a clear current owner request/u);
+    const discussMode = 'Can you explain quiet mode?';
+    await ask(discussMode, 'set_mode', {mode: 'clarify', intent: switchIntent(discussMode, 'explain')});
     assert.match(await ask('Can you explain quiet mode?', 'set_mode',
-      {mode: 'quiet', intent: switchIntent('switch to quiet', 'quiet')}) ?? '', /^refused: this control needs a clear current owner request/u);
+      {mode: 'quiet', intent: switchIntent('switch to quiet', 'switch', 'quiet')}) ?? '', /^refused: this control needs a clear current owner request/u);
     const polite = host === 'anthropic' ? 'I would like you to switch the Hub to quiet mode.' : 'Please switch the mode to quiet.';
-    assert.match(await ask(polite, 'set_mode', {mode: 'free', intent: switchIntent(polite, 'quiet')}) ?? '',
+    assert.match(await ask(polite, 'set_mode', {mode: 'free', intent: switchIntent(polite, 'switch', 'quiet')}) ?? '',
       /^refused: this control needs a clear current owner request/u);
     assert.equal(delivered.length, prior + 1, 'a status read or a different requested mode authorizes no write');
     await ask('Can you switch to quiet?', 'set_mode', {mode: 'quiet'});
     assert.equal(delivered.length, prior + 2);
     assert.ok(delivered[prior + 1]?.valid === true);
     assert.partialDeepStrictEqual(delivered[prior + 1]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 7}});
-    await ask(polite, 'set_mode', {mode: 'quiet', intent: switchIntent(polite, 'quiet')});
+    await ask(polite, 'set_mode', {mode: 'quiet', intent: switchIntent(polite, 'switch', 'quiet')});
     assert.equal(delivered.length, prior + 3);
 
     const incompleteMode = host === 'anthropic' ? 'Switch the mode' : 'Change the mode to';
-    const modeAnswer = 'Free.';
+    const modeAnswer = 'Free mode, please.';
     await ask(incompleteMode, 'ask_owner', {text: 'Which mode should I explain?'}, undefined, 'waiting');
     await w.restart();
     await until(() => status(w) === 'waiting');
-    proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free', intent: switchIntent(modeAnswer, 'Free')}};
+    proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free', intent: switchIntent(modeAnswer, 'Free', 'Free')}};
     assert.equal((await input(w.core, w.module(), modeAnswer, true)).status, 'accepted');
     await until(() => status(w) === 'succeeded');
     assert.equal(delivered.length, prior + 3, 'an informational answer cannot fill in a mode after restart');
 
-    await ask(incompleteMode, 'set_mode', {mode: 'clarify', intent: switchIntent(incompleteMode)}, undefined, 'waiting');
+    await ask(incompleteMode, 'set_mode', {mode: 'clarify', intent: switchIntent(incompleteMode, host === 'anthropic' ? 'Switch' : 'Change')}, undefined, 'waiting');
     assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which mode should I switch the Hub to/u);
     assert.equal(delivered.length, prior + 3, 'the model cannot fill in a missing mode');
     await w.restart();

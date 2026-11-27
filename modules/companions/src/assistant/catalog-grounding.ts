@@ -1,4 +1,4 @@
-import {containsControlValue, literalDeviceId, normalizedControlText} from './control-intent.js';
+import {containsControlValue, hubModeChoice, literalDeviceId, normalizedControlText} from './control-intent.js';
 import {exactControlIds, type ModelControlScope} from './model-control.js';
 
 export type CatalogSelectorKind = 'artwork' | 'asset' | 'draft' | 'playlist' | 'rendition' | 'scene';
@@ -90,17 +90,20 @@ function containsControlQuote(body: string, quote: string): boolean {
     !/[\p{L}\p{N}_-]/u.test(body[index + quote.length] ?? '');
 }
 
+export const HUB_MODE_ACTION_WORDS: readonly string[] = ['set', 'change', 'switch', 'enter', 'put'];
+
 export function citesHubModeIntent(ownerText: string, intent: unknown, mode?: string): boolean {
   if (typeof intent !== 'object' || intent === null || Array.isArray(intent) ||
-      !('kind' in intent) || intent.kind !== 'switch' || !('actionQuote' in intent)) return false;
-  const {actionQuote} = intent;
+      !('kind' in intent) || intent.kind !== 'switch' || !('actionQuote' in intent) || !('actionWord' in intent)) return false;
+  const {actionQuote, actionWord} = intent;
   if (typeof actionQuote !== 'string' || actionQuote.length === 0 || actionQuote.length > 512 ||
-      actionQuote !== actionQuote.trim() || !containsControlQuote(ownerText, actionQuote)) return false;
-  if (mode === undefined) return Object.keys(intent).length === 2;
-  if (Object.keys(intent).length !== 3 || !('modeQuote' in intent)) return false;
+      actionQuote !== actionQuote.trim() || hubModeChoice(actionQuote) !== undefined ||
+      !containsControlQuote(ownerText, actionQuote) || typeof actionWord !== 'string' ||
+      !HUB_MODE_ACTION_WORDS.includes(actionWord.toLowerCase()) || !containsControlQuote(actionQuote, actionWord)) return false;
+  if (mode === undefined) return Object.keys(intent).length === 3;
+  if (Object.keys(intent).length !== 4 || !('modeQuote' in intent)) return false;
   const {modeQuote} = intent;
-  return typeof modeQuote === 'string' && modeQuote.toLowerCase() === mode &&
-    normalizedControlText(actionQuote) !== mode && containsControlQuote(actionQuote, modeQuote);
+  return typeof modeQuote === 'string' && modeQuote.toLowerCase() === mode && containsControlQuote(actionQuote, modeQuote);
 }
 
 export function catalogQuoteNames(quote: string, id: string, label = id, owner?: string): boolean {
