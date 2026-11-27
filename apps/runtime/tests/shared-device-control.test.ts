@@ -367,7 +367,8 @@ it('MCP resolves an exact Pixoo playlist outside its capability preview through 
 
 it('MCP shares Wemo power identity and advertises Lines-only edits only for Lines', async context => {
   const lines = deviceRecord(NANOLEAF_LINES_DEVICE, 1, 'nanoleaf', 'unavailable');
-  const panels = deviceRecord('fixture-panels', 1, 'nanoleaf', 'unavailable');
+  const panels = deviceRecord('studio-wall', 1, 'nanoleaf', 'unavailable');
+  panels.label = 'Studio Wall';
   const plug = deviceRecord('fixture-plug', 1, 'wemo', 'available');
   plug.label = 'Fixture plug';
   plug.capabilities.power = {supported: true};
@@ -403,6 +404,12 @@ it('MCP shares Wemo power identity and advertises Lines-only edits only for Line
       actions: string[]; choices: {power: object}; hold: unknown; configurationRevision: number; generation: DeviceRecord['generation'];
     }[]}}}).data.result.devices[0];
   };
+  const namedPanels = await mcp.callTool({name: 'core_device_lookup', arguments: {target: 'Studio Wall'}});
+  assert.equal(namedPanels.isError, false);
+  assert.partialDeepStrictEqual(namedPanels.structuredContent, {data: {result: {devices: [{
+    owner: 'bunny/modules/nanoleaf', id: panels.id, name: panels.label, lastReportedAvailability: panels.availability,
+  }]}}});
+  assert.deepEqual(edits, [], 'named lookup sends no commands');
   const wemoFacts = await lookup(plug.id);
   assert.deepEqual(wemoFacts?.actions, ['power-set']);
   assert.deepEqual(wemoFacts?.choices.power, {supported: true});

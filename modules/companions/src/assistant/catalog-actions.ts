@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {literalToolDeviceId, literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
+import {containsControlValue, literalToolDeviceId, literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -50,6 +50,12 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
 }
 type Refusal = {code: ErrorCode};
 type Match = OwnedDevice;
+type ScopedDeviceFacts = {
+  subject: string | undefined;
+  namedRequest: string | undefined;
+  brightnessControl: boolean;
+  resolve: (id: string) => void;
+};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
 export function chooseBrightnessSubject(matches: readonly Match[], answer?: string): Match | undefined {
   const selected = answer === undefined ? matches : matches.filter(({device}) => device.id === answer.trim().replace(/^id:/u, ''));
@@ -76,9 +82,13 @@ export class ConversationActions {
     return readDeviceRecords(this.context.sdk, owners, {timeoutMs: 1200, parent});
   }
 
-  async deviceSubjectMatches(subject: string, parent: TraceContext): Promise<Match[]> {
+  async deviceSubjectMatches(subject: string, parent: TraceContext, namedRequest?: string): Promise<Match[]> {
     const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
     const id = literalDeviceId(subject);
+    // A short alias contained in a different configured name is not evidence
+    // that the owner named the shorter device.
+    if (id === undefined && namedRequest !== undefined && rows.some(({device}) => [device.id, deviceLabel(device)].some(value =>
+      normalizedControlText(value) !== subject && containsControlValue(value, subject) && containsControlValue(namedRequest, value)))) return [];
     return rows.filter(({device}) => id === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === id);
   }
 
@@ -394,7 +404,7 @@ export class ConversationActions {
     }
   }
 
-  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined; brightnessControl: boolean; resolve: (id: string) => void}): Promise<string | undefined> {
+  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: ScopedDeviceFacts): Promise<string | undefined> {
     const input = call.input;
     switch (call.name) {
       case CREATE_SHOW: case EDIT_SHOW: case PREVIEW_SHOW: {
@@ -483,14 +493,14 @@ export class ConversationActions {
     return textResult(records?.filter(record => typeof record.id === 'string' && access('status', 'index', record.id) && access('status', 'details', record.id)).map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
   }
 
-  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: {subject: string | undefined; brightnessControl: boolean; resolve: (id: string) => void}): Promise<string> {
+  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: ScopedDeviceFacts): Promise<string> {
     const {target, owner} = input;
     if (typeof target !== 'string' || typeof owner !== 'string') return 'refused: invalid-request';
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     if (owners.length === 0) return 'refused: unsupported-capability';
     if (scopedFacts !== undefined) {
       if (scopedFacts.subject === undefined) return textResult({devices: []});
-      const matches = await this.deviceSubjectMatches(scopedFacts.subject, parent);
+      const matches = await this.deviceSubjectMatches(scopedFacts.subject, parent, scopedFacts.namedRequest);
       const selected = matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
           target !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});

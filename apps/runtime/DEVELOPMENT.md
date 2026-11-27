@@ -10,7 +10,9 @@ Shared device control (#2193) uses the existing runtime, SDK and Companions CI
 discovery. After the root build, run `npm run test:runtime:built`,
 `npm run test:sdk:built` and `npm run test:companions:built`. The gateway tests
 exercise the authenticated MCP tools and the Companions tests use a scripted
-provider with disposable device records. Run the shared type, lint, workflow,
+provider with disposable device records. The named-device regression compares
+status and scene requests through the Anthropic and OpenAI adapters. Runtime MCP
+coverage exercises the equivalent Nanoleaf name. Run the shared type, lint, workflow,
 event and MCP package checks. Installed client and device checks belong to #2184.
 
 Presence Pro uses `npm run test:presence-pro:built` and

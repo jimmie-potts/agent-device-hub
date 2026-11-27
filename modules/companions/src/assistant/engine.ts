@@ -228,6 +228,26 @@ function deviceRequestSubject(text: string): string | undefined {
   return id === undefined ? subject : `id:${id}`;
 }
 
+const exclusionsInDeviceRequest = /\b(?:except|rather than|instead of|not|don t|without|leave)\b/u;
+
+function namedDeviceLookup(request: string, transcript: Task['transcript']): string | undefined {
+  if (exclusionsInDeviceRequest.test(normalizedControlText(request))) return undefined;
+  const exact = exactControlIds(request);
+  for (const item of transcript) {
+    if (item.role !== 'assistant') continue;
+    const target = item.calls.find(call => call.name === READ_DEVICES)?.input.target;
+    if (typeof target !== 'string' || target.trim() === '') continue;
+    const trimmed = target.trim();
+    if (exact.length > 0) {
+      const id = literalDeviceId(trimmed.startsWith('id:') ? trimmed : `id:${trimmed}`);
+      if (id !== undefined && exact.length === 1 && exact[0] === id) return `id:${id}`;
+    } else if (!trimmed.startsWith('id:') && containsControlValue(request, trimmed)) {
+      return normalizedControlText(trimmed);
+    }
+  }
+  return undefined;
+}
+
 function matchesCatalogSubject(subject: string | undefined, id: string): boolean {
   return subject !== undefined && (literalDeviceId(subject) === id || subject === normalizedControlText(id));
 }
@@ -1639,7 +1659,7 @@ export class AssistantEngine {
     const exact = configured.filter(({device}) => named(subject, device));
     const mentioned = (text: string) => {
       const words = normalizedControlText(text);
-      if (/\b(?:except|rather than|instead of|not|don t|without|leave)\b/u.test(words)) return [];
+      if (exclusionsInDeviceRequest.test(words)) return [];
       const explicit = text.match(/(?:^|\s)id:([a-z0-9-]{1,128})(?=\s|[?!.;,]|$)/gu) ?? [];
       return configured.flatMap(entry => {
         const label = deviceLabel(entry.device);
@@ -1669,9 +1689,15 @@ export class AssistantEngine {
     // chronological model background is selected independently.
     const recent = purpose === 'title' || refers ? visibleEarlier : [];
     const selectedDevice = (owner: AssistantDeviceOwner, id: string) => selected.some(entry => entry.owner === owner && entry.device.id === id);
-    const catalogSubject = malformedSelector || group !== undefined || exact.length > 1 ? undefined
+    const existingCatalogSubject = malformedSelector || group !== undefined || exact.length > 1 ? undefined
       : subject !== undefined && (!refers || references.length === 0) ? subject
         : selected.length === 1 && selected[0] !== undefined ? `id:${selected[0].device.id}` : undefined;
+    // A named lookup can cite the current owner request even when that request
+    // has no status subject. Keep it bound to this turn and the same replay check.
+    const namedCatalogSubject = purpose === 'supervisor' && existingCatalogSubject === undefined &&
+      !malformedSelector && group === undefined && exact.length === 0 && access('conversation', 'request', requestId) && canReadMessage(requestId)
+      ? namedDeviceLookup(request, transcript) : undefined;
+    const catalogSubject = existingCatalogSubject ?? namedCatalogSubject;
     const priorCatalogIds = new Set(this.store.calls(task.id).filter(call => effects.has(call.id) && call.kind === 'tool' && call.action === undefined)
       .flatMap(call => call.disclosures?.flatMap(field => field.source === 'devices' && field.record !== undefined ? [field.record] : []) ?? [])
       .filter(id => !devices.has(id)));
@@ -1692,7 +1718,7 @@ export class AssistantEngine {
       }
       return access(source, field, record);
     };
-    return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, priorCatalogIds, resolvedCatalogDevice,
+    return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, namedCatalogSubject, priorCatalogIds, resolvedCatalogDevice,
       brightnessTarget: brightnessTarget === undefined ? undefined : catalogSubject ?? brightnessTarget, selectedDevice, history};
   }
   #hostedHistory(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>): Map<string, HostedHistoryMessage> {
@@ -2142,12 +2168,13 @@ export class AssistantEngine {
       let scope = paid ? this.#supervisorScope(current, 'supervisor', undefined, eligible) : undefined;
       if (includesReplay && scope !== undefined && scope.catalogSubject !== undefined && scope.priorCatalogIds.size > 0) {
         const subject = scope.catalogSubject;
-        const currentDevices = await this.#catalog().deviceSubjectMatches(subject, parent);
+        const namedRequest = scope.namedCatalogSubject === undefined ? undefined : scope.request;
+        const currentDevices = await this.#catalog().deviceSubjectMatches(subject, parent, namedRequest);
         this.#fence(active);
         current = this.#task(task.id);
         eligible = this.#hostedHistory(current);
         scope = this.#supervisorScope(current, 'supervisor', undefined, eligible);
-        if (scope.catalogSubject !== subject || currentDevices.length !== 1 || currentDevices[0] === undefined ||
+        if (scope.catalogSubject !== subject || (scope.namedCatalogSubject === undefined ? undefined : scope.request) !== namedRequest || currentDevices.length !== 1 || currentDevices[0] === undefined ||
           !scope.priorCatalogIds.has(currentDevices[0].device.id) || scope.priorCatalogIds.size !== 1) throw new ProviderFault('forbidden');
       }
       const auxiliary = this.#supervisorPromptFields(current.profile);
@@ -2712,7 +2739,11 @@ export class AssistantEngine {
       } else if (isCatalogTool(call.name)) {
         const evidence: ActionEvidence[] = [];
         text = await this.#catalog().read(call, parent, item => evidence.push(item), access,
-          id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id), scope === undefined ? undefined : {subject: scope.catalogSubject, brightnessControl: scope.brightnessTarget !== undefined, resolve: scope.resolvedCatalogDevice}) ?? fail('invalid-state');
+          id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id), scope === undefined ? undefined : {
+            subject: scope.namedCatalogSubject !== undefined && call.input.target === '' ? undefined : scope.catalogSubject,
+            namedRequest: scope.namedCatalogSubject === undefined ? undefined : scope.request,
+            brightnessControl: scope.brightnessTarget !== undefined, resolve: scope.resolvedCatalogDevice,
+          }) ?? fail('invalid-state');
         return {text, units: 0, evidence, disclosures: ledger.fields, ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})};
       } else {
         text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now, access) : fail('invalid-state');
