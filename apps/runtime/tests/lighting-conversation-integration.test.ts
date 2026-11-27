@@ -41,6 +41,14 @@ for (const provider of ['anthropic', 'openai'] as const) {
       refusal: 'missing'},
     {kind: 'brightness', label: 'asks rather than treating an upper bound as the chosen value', text: 'Set Studio 2 brightness to anything below maximum.',
       refusal: 'missing'},
+    {kind: 'brightness', label: 'asks rather than treating a comparative fraction as the chosen value',
+      text: 'Set Studio 2 brightness to anything below half brightness.', refusal: 'missing'},
+    {kind: 'brightness', label: 'asks rather than treating a comparative percent as the chosen value',
+      text: 'Set Studio 2 brightness to anything below 50%.', refusal: 'missing'},
+    {kind: 'brightness', label: 'asks rather than treating a bare time as brightness', text: 'Set Studio 2 brightness at 8.',
+      refusal: 'missing'},
+    {kind: 'brightness', label: 'refuses a comparative clarification without asking again', text: 'Set Studio 2 brightness.',
+      refusal: 'missing', typedMissing: true, answer: 'Below 35%.', unresolvedCorrection: true},
     {kind: 'brightness', label: 'asks rather than setting a quoted limit', text: "Set Studio 2 brightness to 'maximum'.",
       refusal: 'missing'},
     {kind: 'brightness', label: 'asks rather than setting an incidental ceiling', text: 'Set Studio 2 brightness to anything up to maximum.',
@@ -63,7 +71,15 @@ for (const provider of ['anthropic', 'openai'] as const) {
       percent: 99, refusal: 'stale'},
     {kind: 'brightness', label: 'uses the requested fraction of current brightness', text: 'Set Studio 2 to three quarters of current brightness.',
       percent: 99, expected: 26, currentFraction: true},
+    {kind: 'brightness', label: 'adds the stated fraction when the owner asks to raise brightness', text: 'Raise Studio 2 brightness by half of current brightness.',
+      percent: 99, expected: 53, currentFraction: true},
+    {kind: 'brightness', label: 'does not adopt a range endpoint', text: 'Set Studio 2 brightness to any value from 1/4 to 1/2 brightness.',
+      refusal: 'unsupported-fraction'},
+    {kind: 'brightness', label: 'refuses a relative proposal with the opposite direction', text: 'Lower Studio 2 brightness by 10 percentage points.',
+      refusal: 'opposite'},
     {kind: 'brightness', label: 'converts a fraction of the actual maximum', text: 'Set Studio 2 to ½ of maximum brightness.',
+      percent: 99, expected: 50},
+    {kind: 'brightness', label: 'accepts a clear possessive fraction of the maximum', text: 'Set Studio 2 to half of its maximum.',
       percent: 99, expected: 50},
     {kind: 'brightness', label: 'refuses a fractional percent below the supported step', text: 'Set Studio 2 brightness to ½%.',
       percent: 50, refusal: 'unsupported-fraction'},
@@ -157,7 +173,8 @@ for (const provider of ['anthropic', 'openai'] as const) {
         const command = (lastResult === undefined || answered) && body.tools !== undefined && body.tools.length > 0;
         const followUpName = answered && 'repeatQuestion' in scenario ? 'ask_owner' : name;
         const args = answered ? 'repeatQuestion' in scenario ? {text: 'How bright should I set it?'}
-          : {...input, operation: 'absolute', percent: 'wrongCorrection' in scenario ? 50 : 42, literal: '42%'} : input;
+          : {...input, operation: 'absolute', percent: 'wrongCorrection' in scenario ? 50 : 'unresolvedCorrection' in scenario ? 35 : 42,
+            literal: 'unresolvedCorrection' in scenario ? '35%' : '42%'} : input;
         const callId = answered ? 'answered' : 'fixture';
         const usage = {input_tokens: 50, output_tokens: 20};
         return Promise.resolve(Response.json(provider === 'anthropic' ? {usage,
@@ -242,7 +259,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
         assert.equal(awaiting?.status, 'waiting');
         await submit({action: 'answer', taskId: awaiting?.taskId, questionId: awaiting?.questionId,
           text: ownerAnswer});
-        if ('repeatQuestion' in scenario || 'wrongCorrection' in scenario) {
+        if ('repeatQuestion' in scenario || 'wrongCorrection' in scenario || 'unresolvedCorrection' in scenario) {
           await waitFor(() => companions.inspectAssistant()?.tasks[0]?.status === 'succeeded');
           assert.equal(submissions.length, 0);
           assert.equal(writes.length, 0);

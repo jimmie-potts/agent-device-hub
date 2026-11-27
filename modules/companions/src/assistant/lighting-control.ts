@@ -397,8 +397,9 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   const useAnswer = answer !== undefined && (answering || !brightness && supplied.length > 0);
   const source = useAnswer ? answer : request;
   const brightnessEvidence = useAnswer ? ownerAnswer : ownerRequest;
-  const stated = brightness && brightnessEvidence !== undefined
-    ? statedBrightness(row.device, brightnessEvidence.text, maximum, answering || brightnessEvidence.replacement) : undefined;
+  const operand = brightness && brightnessEvidence !== undefined
+    ? brightnessOperand(row.device, brightnessEvidence.text, answering || brightnessEvidence.replacement) : undefined;
+  const stated = operand === undefined ? undefined : statedBrightness(operand.text, maximum);
   if (stated?.kind === 'invalid') return invalid;
   if (stated !== undefined) {
     if (propertyUnits(source).some(unit => unit !== 'percent') ||
@@ -407,8 +408,12 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
       if (answering) return invalid;
       const basis = currentObservationBasis(row, 'brightness', now, row.light);
       if (basis === undefined || !integerIn(basis.value, minimum, maximum)) return {kind: 'refused', code: 'unavailable'};
-      return relativeLightingValue(family, basis, basis.value * stated.amount, minimum, maximum);
+      if (operand?.relative === true && operand.direction === undefined) return invalid;
+      const multiplier = operand?.relative !== true ? stated.amount
+        : 1 + (operand.direction === 'increase' ? stated.amount : -stated.amount);
+      return relativeLightingValue(family, basis, basis.value * multiplier, minimum, maximum);
     }
+    if (operand?.relative === true) return invalid;
     const value = stated.kind === 'absolute' ? stated.amount : stated.kind === 'minimum' ? minimum : maximum;
     return integerIn(value, minimum, maximum) ? {kind: 'ready', setting: {family: 'brightness-set', data: {percent: value}}} : invalid;
   }
@@ -431,6 +436,16 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   const qualitative = !brightness && tokens.length === 0 && previous === undefined && qualitativeSetting(row.device, scope.request.text, requested);
   if (tokens.length === 0 && previous === undefined && !qualitative) {
     return {kind: 'quantity-clarification', unit: requestedUnit, operation: 'amount' in requested ? requested.kind : 'absolute', reason: 'missing'};
+  }
+  if (brightness) {
+    const [value] = operand === undefined ? [] : quantityTokens(operand.text);
+    const complete = operand !== undefined && value?.literal === operand.text;
+    if (!complete && tokens.length === 1 && Number.isSafeInteger(tokens[0]?.value)) {
+      return {kind: 'quantity-clarification', unit: requestedUnit, operation: requested.kind, reason: 'missing'};
+    }
+    if (!complete || operand === undefined || operand.relative !== undefined && operand.relative !== relative ||
+        operand.direction !== undefined && !requested.kind.startsWith(operand.direction) ||
+        'amount' in requested && requested.startingLiteral !== undefined && operand.starting !== requested.startingLiteral) return invalid;
   }
   const supported = qualitative
     ? !('unit' in requested) || requested.unit === undefined || QUANTITY_UNITS[requested.unit.toLowerCase()] === requestedUnit
@@ -480,41 +495,58 @@ function brightnessSource(text: string): {text: string; replacement: boolean} | 
 }
 
 const fractionWords: Readonly<Record<string, number | undefined>> = {half: 2, third: 3, quarter: 4, fourth: 4, fifth: 5, eighth: 8};
+type BrightnessOperand = {text: string; relative?: boolean; starting?: string; direction?: 'increase' | 'decrease'};
 
-function statedBrightness(device: DeviceRecord, text: string, maximum: number, answering: boolean): StatedBrightness | undefined {
-  const source = withoutLightingName(device, text.replace(/\b(?:use\s+)?id:[^\s]+/giu, ' '), true);
-  const words = explicitWords(source);
-  if (words === undefined || /(?:^|[\s(])['‘][^'’]+['’](?=$|[\s.,!?])/u.test(source)) return undefined;
-  if (/^halve (?:the |its )?(?:current )?brightness(?: (?:of|on|for))?$/u.test(words)) return {kind: 'fraction-of-current', amount: 0.5};
+function brightnessOperand(device: DeviceRecord, text: string, answering: boolean): BrightnessOperand | undefined {
+  const masked = withoutLightingName(device, text.replace(/\b(?:use\s+)?id:[^\s]+/giu, ' '), true).trim();
+  const clean = (value: string): string => value.trim().replace(/[.!?]$/u, '').replace(/(?:\s+please|\s+now)$/iu, '').trim();
+  if (answering) return {text: clean(masked)};
+  const words = explicitWords(masked);
+  if (words !== undefined && /^halve (?:the |its )?(?:current )?brightness(?: (?:of|on|for))?$/u.test(words)) {
+    return {text: 'half of current brightness', relative: false};
+  }
+  const direct = /^(?:(?:please|could you|would you|can you|will you)\s+)*(set|change|make|use|raise|lower|increase|decrease|brighten|dim)\s+(.+)$/iu
+    .exec(masked);
+  if (direct?.[1] === undefined || direct[2] === undefined) return undefined;
+  const action = direct[1].toLowerCase();
+  // A target may follow the value. Its identity has already been resolved.
+  const body = clean(direct[2]).replace(/\s+(?:on|for)(?:\s+(?:the|my|our|your|this|that)\b.*)?$/iu, '').trim();
+  const absoluteAction = action === 'set' || action === 'make' || action === 'use';
+  const boundary = (absoluteAction ? /\b(to|at)\s+/iu : /\b(to|at|by)\s+/iu).exec(body);
+  if (boundary?.[1] !== undefined) {
+    const prefix = body.slice(0, boundary.index).trim();
+    if (/\bup$/iu.test(prefix)) return undefined;
+    const value = body.slice(boundary.index + boundary[0].length).trim();
+    const operator = boundary[1].toLowerCase();
+    if (operator === 'at' && !/(?:%|percent)$/iu.test(value)) return undefined;
+    const starting = /^(?:(?:the )?brightness\s+)?from\s+(.+)$/iu.exec(prefix)?.[1];
+    const direction = operator !== 'by' ? undefined : /^(?:raise|increase|brighten)$/u.test(action) ? 'increase'
+      : /^(?:lower|decrease|dim)$/u.test(action) ? 'decrease' : undefined;
+    return {text: value, relative: operator === 'by', ...(starting === undefined ? {} : {starting}),
+      ...(direction === undefined ? {} : {direction})};
+  }
+  const extreme = /\bas (bright|dim) as possible$/iu.exec(body)?.[1];
+  if (extreme !== undefined && words !== undefined) {
+    return {text: extreme.toLowerCase() === 'bright' ? 'maximum' : 'minimum', relative: false};
+  }
+  const change = /(?:^|\s)([+−﹣－–—\-]?\d[^\s]*(?:\s+percent)?)\s+(brighter|dimmer)$/iu.exec(body);
+  if (action === 'make' && change?.[1] !== undefined) {
+    return {text: change[1], relative: true, direction: change[2]?.toLowerCase() === 'brighter' ? 'increase' : 'decrease'};
+  }
+  return {text: body.replace(/^(?:the )?brightness\s+/iu, ''), relative: false};
+}
 
-  // Parse a complete setting or answer. A bound mentioned in a comparison
-  // such as "anything below maximum" is not the selected setting.
-  const operative = /^(?:set|change|make) (?:.+? )?to (.+)$/u.exec(words);
-  const operand = operative === null ? undefined : operative[1];
-  const direct = /^(?:use|set) (?:the )?(minimum|min|maximum|max|full) brightness(?: please)?$/u.exec(words)?.[1];
-  const bound = direct ?? /^(?:the )?(minimum|min|maximum|max|full)(?: brightness)?(?: please)?$/u
-    .exec(operand !== undefined && !/\bup to\b/u.test(words) ? operand : answering ? words : '')?.[1];
+function statedBrightness(value: string, maximum: number): StatedBrightness | undefined {
+  const bound = /^(?:the )?(minimum|min|maximum|max|full)(?: brightness)?$/iu.exec(value)?.[1]?.toLowerCase();
   if (bound !== undefined) return {kind: bound === 'minimum' || bound === 'min' ? 'minimum' : 'maximum'};
-  const extreme = /^(?:make|set) .+ as (bright|dim) as possible(?: please)?$/u.exec(words)?.[1];
-  if (extreme !== undefined) return {kind: extreme === 'bright' ? 'maximum' : 'minimum'};
-
-  const fractions = [...source.matchAll(/(?<![\p{L}\p{N}_+−-])((?:(?:a|one|two|three|four|five|six|seven)[ -])?(?:half|thirds?|quarters?|fourths?|fifths?|eighths?)|[¼-¾⅐-⅞]|\d+\s*[/⁄∕／]\s*\d+)(?:\s*(%|percent\b))?(?:\s+(of (?:the )?(?:(?:maximum|current)(?: brightness)?|brightness)))?/giu)];
-  if (fractions.length !== 1) return fractions.length > 1 ? {kind: 'invalid'} : undefined;
-  const [match] = fractions;
-  if (match === undefined || match[1] === undefined) return {kind: 'invalid'};
-  const [literal, fraction, percent, basis] = match;
-  const before = source.slice(0, match.index), tail = source.slice(match.index + literal.length).trim();
-  const complete = /^(?:brightness(?: please)?|please)?[.!?]?$/iu.test(tail);
-  const exactAnswer = answering && before.trim() === '' && complete;
-  const slot = /^\s*(?:set|change|make|use)\b/iu.test(before) && complete &&
-    (basis !== undefined || /^brightness\b/iu.test(tail) || /\bbrightness\s+to\s*$/iu.test(before));
-  if (!exactAnswer && !slot && percent === undefined) return undefined;
-  if (!complete || quantityTokens(before).length > 0 || signSpans(source).get(match.index) !== undefined ||
-      percent !== undefined && basis !== undefined) return {kind: 'invalid'};
-  const [word, denominatorWord] = fraction.toLowerCase().split(/[ -]/u);
-  const wordDenominator = fractionWords[(denominatorWord ?? word ?? '').replace(/s$/u, '')];
-  const [numerator, denominator] = wordDenominator === undefined ? fraction.normalize('NFKC').split(/[/⁄∕／]/u).map(Number)
-    : [denominatorWord === undefined || word === 'a' ? 1 : NUMBER_WORDS[word ?? ''], wordDenominator];
+  const match = /^(?:(?:(a|one|two|three|four|five|six|seven)[ -])?(half|thirds?|quarters?|fourths?|fifths?|eighths?)|([¼-¾⅐-⅞]|\d+\s*[/⁄∕／]\s*\d+))(?:\s*(%|percent\b))?(?:\s+of (?:the |its )?((?:maximum|current)(?: brightness)?|brightness))?(?:\s+brightness)?$/iu.exec(value);
+  if (match === null) return undefined;
+  const [, amountWord, fractionWord, fraction, percent, basis] = match;
+  if (percent !== undefined && basis !== undefined) return {kind: 'invalid'};
+  const [numerator, denominator] = fraction === undefined
+    ? [amountWord === undefined || amountWord.toLowerCase() === 'a' ? 1 : NUMBER_WORDS[amountWord.toLowerCase()],
+      fractionWords[fractionWord?.toLowerCase().replace(/s$/u, '') ?? '']]
+    : fraction.normalize('NFKC').split(/[/⁄∕／]/u).map(Number);
   if (numerator === undefined || denominator === undefined || !Number.isSafeInteger(numerator) ||
       !Number.isSafeInteger(denominator) || denominator <= 0 || numerator < 0 ||
       percent === undefined && numerator > denominator) return {kind: 'invalid'};
