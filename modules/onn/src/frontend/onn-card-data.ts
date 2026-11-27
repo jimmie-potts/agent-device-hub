@@ -40,8 +40,9 @@ export function onnAction(state: OnnState | undefined, context: Pick<FrontendCon
 export type OnnFeedback = {label: string; detail: string; attention: boolean};
 /** Only structured completed evidence can become Sent/Observed; retained text remains available verbatim. */
 export function onnFeedback(command: FrontendCommand, operations: readonly OperationRecord[], target: string): OnnFeedback {
-  const detail = command.text === 'No command sent from this page.' ? '' : command.text;
-  if (detail === '') return {label: '', detail: '', attention: false};
+  if (command.phase?.kind === 'none' || (command.phase === undefined && command.requestId === undefined && !command.locked))
+    return {label: '', detail: '', attention: false};
+  const detail = command.text;
   const operation = operations.find(item => item.requestId === command.requestId && item.target === target && onnFamilies.some(family => family === item.family));
   if (operation !== undefined) {
     switch (operation.status) {
@@ -55,7 +56,7 @@ export function onnFeedback(command: FrontendCommand, operations: readonly Opera
         return {label: operation.result === 'failed' ? 'Failed' : 'Result unknown', detail, attention: true};
     }
   }
-  if (detail.startsWith('Requested.') || detail.startsWith('Accepted.')) return {label: 'Pending', detail, attention: false};
+  if (command.phase?.kind === 'requested' || command.phase?.kind === 'accepted') return {label: 'Pending', detail, attention: false};
   return {label: 'Check request', detail, attention: true};
 }
 

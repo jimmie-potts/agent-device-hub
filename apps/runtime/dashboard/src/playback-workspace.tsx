@@ -4,6 +4,7 @@ import type {LightingLayoutRecord, OperationRecord, PlaybackLayoutRecord, Playba
 import {PlaybackCard} from './device-controls.tsx';
 import {playbackArtwork} from './playback-artwork.ts';
 import {useAttempt} from './command-control.tsx';
+import {frontendCommandView} from '@jimmie-potts/sdk/frontend';
 import type {DashboardConnection} from './connection.ts';
 import type {RuntimeData} from './runtime-feeds.ts';
 import type {Route} from './routes.ts';
@@ -24,10 +25,12 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
   const layoutAction = useAttempt('playback', operations.filter(operation => operation.family === 'playback-layout-set'), operationsLive, undefined, 'core/playback-layout');
   const [refreshedRequest, setRefreshedRequest] = useState<string | undefined>();
   const [uncertainRequest, setUncertainRequest] = useState<string | undefined>();
+  const phase = layoutAction.phase;
   useEffect(() => {
-    if (/Uncertain|Previous request/.test(layoutAction.text)) setUncertainRequest(layoutAction.requestId);
-  }, [layoutAction.text, layoutAction.requestId]);
-  const failedSave = /Refused|Not sent|Expired|Completed: failed/.test(layoutAction.text);
+    if (phase.kind === 'uncertain' || phase.kind === 'restored') setUncertainRequest(layoutAction.requestId);
+  }, [phase.kind, layoutAction.requestId]);
+  const failedSave = phase.kind === 'refused' || phase.kind === 'not-sent' || phase.kind === 'expired' ||
+    phase.kind === 'completed' && phase.result === 'failed';
   const needsRefresh = (failedSave || uncertainRequest !== undefined && uncertainRequest === layoutAction.requestId) && refreshedRequest !== layoutAction.requestId;
   const refreshPlacement = async (): Promise<void> => {
     const request = needsRefresh ? layoutAction.requestId : undefined;
@@ -91,7 +94,7 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
         }}/>{room.name}</label>)}
       </fieldset>)}
       <button type="button" disabled={!editable || draft === undefined || players.some(player => !playerLive(player))} onClick={save}>Save room placement</button>
-      <p role="status">{!layoutLive || !roomsLive ? 'Placement records are unavailable or stale. Editing is read-only.' : layoutAction.text.replace('The module observed the result.', 'Room placement saved.')}</p>
+      <p role="status">{!layoutLive || !roomsLive ? 'Placement records are unavailable or stale. Editing is read-only.' : frontendCommandView(phase, {observed: 'Room placement saved.'}).text}</p>
       {needsRefresh && <p className="hint">Refresh to review the current placement before editing.</p>}
       <button type="button" className="secondary" onClick={() => {void refreshPlacement();}}>Refresh placement records</button>
     </details>}

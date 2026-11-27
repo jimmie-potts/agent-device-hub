@@ -2,7 +2,7 @@ import {codeOfStatus, conformsToSchema, type Effort, type Transport} from './ant
 import {sectionTexts} from './context.js';
 import {estimateHostedInputTokens, hostedInputBudget, hostedInputTokenCeiling} from './context-budget.js';
 import {LIMITS} from './limits.js';
-import {outputTokenCap, ProviderFault, textBytes, type ModelProvider, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
+import {outputTokenCap, ProviderFault, textBytes, TOOL_RESPONSE_INSTRUCTIONS, type ModelProvider, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {TITLE_INSTRUCTIONS, TITLE_MAX_TOKENS, type TitleProvider, type TitleReply} from './titles.js';
 import type {TokenUsage} from './spend-contract.js';
 
@@ -162,7 +162,8 @@ export class OpenAIProvider implements ModelProvider {
   #body(input: TurnInput): string {
     const instructions = [input.instructions, ...sectionTexts(input.context),
       ...(input.mode === null ? [] : [`The Hub mode is ${input.mode.mode} now.`]),
-      'Use at most one tool per turn. Only an explicit current owner request can authorize a control. Ask the owner when a detail is missing. Claim applied effects only with confirming tool evidence.'].join('\n\n');
+      TOOL_RESPONSE_INSTRUCTIONS,
+      'Only an explicit current owner request can authorize a control. Ask the owner when a detail is missing. Claim applied effects only with confirming tool evidence.'].join('\n\n');
     return this.#client.body(transcriptOf(input), instructions, outputTokenCap(input, OPENAI_OUTPUT_TOKENS), input.tools.map(tool =>
       ({type: 'function', name: tool.name, description: tool.description, parameters: tool.input, strict: Object.keys(tool.input.properties).length === tool.input.required.length})));
   }

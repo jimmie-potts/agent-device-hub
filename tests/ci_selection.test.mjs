@@ -474,6 +474,19 @@ test('a narrow change runs the suites its paths can break', () => {
   }
 });
 
+test('shared command code and active frontend paths retain the Lights outcome smoke check', () => {
+  const smoke = fs.readFileSync(new URL('../apps/runtime/dashboard/tests/smoke.ts', import.meta.url), 'utf8');
+  assert.match(smoke, /import \{checkLightingOutcomes\} from '\.\/control-projections\.ts';/);
+  assert.match(smoke, /await checkLightingOutcomes\(context\);/);
+  for (const file of ['packages/sdk/src/frontend-command.ts', 'apps/runtime/dashboard/src/lighting-workspace.tsx',
+    'apps/runtime/dashboard/tests/control-projections.ts', 'modules/nanoleaf/src/frontend/shows.tsx']) {
+    const app = selectedCommands(checks, pr([file])).find(job => job.id === 'app-verify');
+    assert.ok(app?.commands.includes('npm run test:runtime-dashboard:smoke'), file);
+  }
+  const dormant = selectedCommands(checks, pr(['modules/onn/src/frontend/onn-card-data.ts'])).find(job => job.id === 'app-verify');
+  assert.equal(dormant?.selected, false);
+});
+
 test('Checks selects jobs and steps only through the selection outputs, and the gate covers every job', () => {
   assert.deepEqual(Object.keys(checks.jobs), ['select', 'core', 'runtime-unit', 'runtime-scenarios', 'firmware', 'app-verify', 'runtime-verify-captures', 'runtime-verify', 'gate']);
   const select = checks.jobs.select;

@@ -446,19 +446,50 @@ async function finishWemoConfirmationWindow(w: Awaited<ReturnType<typeof world>>
   w.advance(1001);
 }
 
-void test('an explicit Wemo group binds every target once', async context => {
-  const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
-  const requests: AssistantDispatch[] = [];
-  const provider = counted(request => wemoGroup(request, false));
-  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
-    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
-  await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Turn off all Wemo plugs');
-  await finishWemoConfirmationWindow(w);
-  await until(() => status(w) === 'succeeded' && requests.length === 2);
-  assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
-  assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
-});
+for (const host of ['anthropic', 'openai'] as const) {
+  void test(`an explicit Wemo group continues after discovery through ${host}`, async context => {
+    const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+    const requests: AssistantDispatch[] = [];
+    const payloads: string[] = [];
+    let writesAtContinuation: number | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      payloads.push(init.body);
+      const step = payloads.length;
+      if (step === 2) writesAtContinuation = requests.length;
+      const id = `call_wemo_group_${step}`;
+      const tool = step === 1 ? {name: 'find_wemo_power_targets', input: {}}
+        : step === 2 ? {name: 'set_wemo_power', input: wemoPowerArgs([], true)} : undefined;
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: tool === undefined ? [{type: 'text', text: 'Synthetic terminal reply.'}] : [{type: 'tool_use', id, ...tool}],
+          stop_reason: tool === undefined ? 'end_turn' : 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: tool === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic terminal reply.'}]}]
+          : [{type: 'function_call', id: 'fc_' + id, call_id: id, name: tool.name, arguments: JSON.stringify(tool.input)}],
+        usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+      dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), 'Please turn on all Wemo plugs.')).status, 'accepted');
+    await finishWemoConfirmationWindow(w);
+    await until(() => status(w) === 'succeeded');
+    assert.equal(writesAtContinuation, 0, 'discovery cannot dispatch a command');
+    assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
+    assert.ok(requests.every(request => request.family === 'power-set' && request.data.on));
+    assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+    for (const payload of payloads.slice(0, 2)) {
+      assert.match(payload, /at most one tool per model response/i);
+      assert.doesNotMatch(payload, /one tool per turn/i);
+      assert.match(payload, /successive responses.*same owner request/i);
+      assert.match(payload, /read-only lookup.*call set_wemo_power.*next response/i);
+    }
+    const continuation = payloads[1] ?? assert.fail('missing hosted lookup continuation');
+    assert.match(continuation, host === 'anthropic' ? /"type":"tool_result"/u : /"type":"function_call_output"/u);
+    assert.match(continuation, /desk-plug.*shelf-plug/u);
+  });
+}
 
 void test('a lost Wemo group reply preserves each dispatch receipt across restart', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
@@ -4311,6 +4342,102 @@ void test('Responses history requires one exact device and current summary grant
 });
 
 
+void test('both hosted supervisors look up owner-named devices regardless of request wording', async context => {
+  const owner = 'bunny/modules/nanoleaf', substituteOwner = 'bunny/modules/tidbyt';
+  const wall: DeviceRecord = {...light('studio-wall', 'Studio Wall'), kind: 'nanoleaf', availability: 'unavailable'};
+  const devices = [wall, {...wall, id: 'hidden-wall', label: 'Hidden Wall'}, {...wall, id: 'studio-wall-xl', label: 'Studio Wall XL'}];
+  const duplicate = {...wall, id: 'duplicate-wall'};
+  const hiddenAliases = [{...duplicate, id: 'hidden-duplicate'}, {...wall, id: 'hidden-alias', label: 'Studio Wall Special'}];
+  let aliasesPresent = false, duplicateVisible = false;
+  let replaceOwner = false;
+  const resultByProvider = {anthropic: [] as string[], openai: [] as string[]};
+  const usage = {input_tokens: 20, output_tokens: 10};
+  let lookups: {target: string; owner: string}[] = [];
+  const anthropic = new AnthropicProvider({key: 'fixture', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {messages: {content: {type: string; content?: string}[]}[]};
+    const latest = body.messages.flatMap(item => item.content).filter(block => block.type === 'tool_result');
+    const result = latest.at(-1)?.content;
+    if (result !== undefined) resultByProvider.anthropic.push(result);
+    const args = lookups[latest.length];
+    return Promise.resolve(Response.json({content: args !== undefined
+      ? [{type: 'tool_use', id: `named-device-${latest.length}`, name: 'read_devices', input: args}]
+      : [{type: 'text', text: 'Synthetic device answer.'}], stop_reason: args !== undefined ? 'tool_use' : 'end_turn', usage}));
+  }});
+  const openai = new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const latest = body.input.filter(item => item.type === 'function_call_output');
+    const result = latest.at(-1)?.output;
+    if (result !== undefined) resultByProvider.openai.push(result);
+    const args = lookups[latest.length];
+    return Promise.resolve(Response.json({status: 'completed', usage, output: args !== undefined
+      ? [{type: 'function_call', id: `fc_named_device_${latest.length}`, call_id: `named-device-${latest.length}`, name: 'read_devices', arguments: JSON.stringify(args)}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic device answer.', annotations: []}]}]}));
+  }});
+  const standard = sharing();
+  const w = await world(context, {provider: anthropic, alternateProvider: openai, tools: ['read_devices', 'control_scene_activate'],
+    share: grant => standard(grant) && !(grant.source === 'devices' && grant.record?.startsWith('hidden-') === true),
+    dispatch: () => assert.fail('a named lookup must not dispatch')});
+  const participant = w.bus.connect(owner), substitute = w.bus.connect(substituteOwner);
+  context.after(async () => {await participant.close(); await substitute.close();});
+  const snapshot = (records: DeviceRecord[]) => ({revision: 1, states: records.map(data => ({
+    type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+  }))});
+  const ownerReplaced = () => {
+    const taskId = task(w)?.taskId;
+    return replaceOwner && taskId !== undefined &&
+      w.store().calls(taskId).some(saved => saved.namedDeviceRead?.owner === owner && saved.namedDeviceRead.id === wall.id);
+  };
+  await participant.serveSync(['device'], () => snapshot(ownerReplaced() ? []
+    : [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])]));
+  await substitute.serveSync(['device'], () => snapshot(ownerReplaced() ? [{...wall, kind: 'tidbyt'}] : []));
+  await control(w.core, w.module(), 'enable');
+  for (const provider of ['anthropic', 'openai'] as const) {
+    const ask = async (prompt: string, selector: string, selectedOwner = 'auto', after?: string) => {
+      lookups = [{target: selector, owner: selectedOwner}];
+      if (after !== undefined) lookups.push({target: after, owner: selectedOwner});
+      const previous = task(w)?.taskId, before = resultByProvider[provider].length;
+      assert.equal((await input(w.core, w.module(), prompt, false, randomUUID(), {provider})).status, 'accepted');
+      await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+      assert.equal(resultByProvider[provider].length, before + lookups.length);
+      const facts: unknown = JSON.parse(resultByProvider[provider].at(-1) ?? '');
+      return facts;
+    };
+    const statusFacts: unknown = await ask('What is the status of Studio Wall?', 'Studio Wall');
+    assert.partialDeepStrictEqual(statusFacts, {devices: [{owner, id: wall.id, name: wall.label, lastReportedAvailability: wall.availability}]});
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Set Studio Wall to Dusk instead of Northern Lights.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Instead of Northern Lights, apply Dusk on Studio Wall.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Instead of Studio Wall, apply Dusk to Side Wall.', 'Studio Wall'), {devices: []});
+    assert.deepEqual(await ask('Set Studio Wall to Missing Scene, not Dusk.', 'Studio Wall', owner), statusFacts);
+    assert.deepEqual(await ask('Set Studio Wall or Missing Wall to Dusk.', 'Missing Wall', 'auto', 'Studio Wall'), statusFacts);
+    const comparison = 'Set Studio Wall to Studio Wall Special.';
+    assert.deepEqual(await ask(comparison, 'Studio Wall'), statusFacts);
+    aliasesPresent = true;
+    assert.deepEqual(await ask(comparison, 'Studio Wall'), statusFacts);
+    aliasesPresent = false;
+    duplicateVisible = true;
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), {devices: []});
+    duplicateVisible = false;
+    assert.deepEqual(await ask('Apply Night Sky on id:studio-wall.', 'id:studio-wall'), statusFacts);
+    assert.deepEqual(await ask('Apply Night Sky on id:studio-wall id:studio-wall-xl.', 'id:studio-wall'), {devices: []});
+    assert.deepEqual(await ask('Read id:studio-wall; read id:studio-wall-xl.', 'id:studio-wall'), statusFacts);
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Hidden Wall'), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Hidden Wall.', 'Hidden Wall'), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Missing Wall.', 'Missing Wall'), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall XL.', 'Studio Wall'), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', ''), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky without changing Studio Wall.', 'Studio Wall'), {devices: []});
+    lookups = [{owner: 'auto', target: 'Studio Wall'}];
+    replaceOwner = true;
+    const previous = task(w)?.taskId, before = resultByProvider[provider].length;
+    assert.equal((await input(w.core, w.module(), 'Apply Night Sky on Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'failed');
+    assert.equal(task(w)?.code, 'forbidden');
+    assert.equal(resultByProvider[provider].length, before, 'the old owner facts do not cross the provider boundary');
+    replaceOwner = false;
+  }
+});
+
 void test('both hosted supervisors disclose requested power timestamps only while detail sharing holds', async context => {
   const source = 'bunny/modules/lifx', target = 'desk';
   const day = Date.parse('2026-11-25T00:00:00Z'), fromAtMs = day - 86_400_000;
@@ -5818,14 +5945,19 @@ for (const host of ['anthropic', 'openai'] as const) {
     let sharedLamp: 'visible' | 'hidden' | 'absent' = 'visible';
     const policy = sharing();
     let modeDenied = false;
+    type InputSchema = TurnInput['tools'][number]['input'];
+    type OfferedTool = {name: string; description: string; input_schema?: InputSchema; parameters?: InputSchema};
+    let offeredScene: OfferedTool | undefined;
     let proposal: {name: string; input: Record<string, unknown>; ownerText: string} | undefined;
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
-      const body = JSON.parse(init.body) as {tools?: {name: string}[]; input?: unknown[]; messages?: unknown[]};
+      const body = JSON.parse(init.body) as {tools?: OfferedTool[]; input?: unknown[]; messages?: unknown[]};
       const candidate = proposal;
       proposal = undefined;
       if (candidate !== undefined) {
         assert.match(JSON.stringify(body.messages ?? body.input), new RegExp(candidate.ownerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
-        assert.ok(body.tools?.some(tool => tool.name === candidate.name) === true, candidate.name);
+        const offered = body.tools?.find(tool => tool.name === candidate.name);
+        assert.ok(offered, candidate.name);
+        if (candidate.name === catalogTool('scene-activate')) offeredScene = offered;
       }
       const usage = {input_tokens: 20, output_tokens: 10, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
       return Promise.resolve(Response.json(host === 'anthropic'
@@ -5982,6 +6114,14 @@ for (const host of ['anthropic', 'openai'] as const) {
         assert.equal(delivered.length, previous + 1, 'a preset excluded by label cannot change by ID');
       }
       if (row.family === 'scene-activate') {
+        assert.ok(offeredScene);
+        const schema = host === 'anthropic' ? offeredScene.input_schema : offeredScene.parameters;
+        assert.ok(schema);
+        assert.deepEqual([...schema.required].sort(), ['arguments', 'owner', 'references', 'target']);
+        assert.equal(schema.properties.arguments?.type, 'string');
+        assert.match(schema.properties.arguments?.description ?? '', /exact scene name, exact scene ID, or "last-activated"/u);
+        assert.match(offeredScene.description, /resolves.*selected light.*current grants/u);
+        assert.match(offeredScene.description, /missing or ambiguous.*clarification.*sends nothing/iu);
         const oldScene = 'scene-' + 'a'.repeat(64), dusk = 'scene-' + 'd'.repeat(64);
         await ask('Set Studio Wall to Dusk instead of Northern Lights.', tool, argumentsFor(row.owner, row.selector, {sceneId: 'Dusk'}),
           [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Dusk'),
@@ -5993,6 +6133,10 @@ for (const host of ['anthropic', 'openai'] as const) {
           [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${dusk}`),
             ownerReference('scene', 'Dusk', 'named', 'request', 'exclude')]), 'refused: not-found');
         assert.equal(delivered.length, previous + 2, 'excluded names cannot dispatch through aliases of the same scene');
+        assert.equal(await ask('Set Studio Wall to Missing Scene, not Dusk.', tool, argumentsFor(row.owner, row.selector, {sceneId: 'Missing Scene'}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Missing Scene'),
+            ownerReference('scene', 'Dusk', 'named', 'request', 'exclude')]), 'refused: not-found');
+        assert.equal(delivered.length, previous + 2, 'a missing named scene sends no command and the excluded scene is not substituted');
         const useLatest = argumentsFor(row.owner, row.selector, {sceneId: 'last-activated'});
         const latest = [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')];
         await ask('Use the last scene I activated on Studio Wall.', tool, useLatest, latest);

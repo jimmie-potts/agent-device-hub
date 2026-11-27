@@ -10,7 +10,9 @@ Shared device control (#2193) uses the existing runtime, SDK and Companions CI
 discovery. After the root build, run `npm run test:runtime:built`,
 `npm run test:sdk:built` and `npm run test:companions:built`. The gateway tests
 exercise the authenticated MCP tools and the Companions tests use a scripted
-provider with disposable device records. Run the shared type, lint, workflow,
+provider with disposable device records. The named-device regression compares
+status and scene requests through the Anthropic and OpenAI adapters. Runtime MCP
+coverage exercises the equivalent Nanoleaf name. Run the shared type, lint, workflow,
 event and MCP package checks. Installed client and device checks belong to #2184.
 
 Presence Pro uses `npm run test:presence-pro:built` and
@@ -714,6 +716,14 @@ mutations, global uncertain feedback, recent-attempt evidence and light/dark
 layout at 320, 390 and 1440 px. Run it after the root build with an
 outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS` keeps screenshots private.
 These synthetic checks change no installed routines or devices.
+
+The shared dashboard save lifecycle (#1645) is exercised by the dashboard
+unit suite and existing browser journeys. Automation checks that reconnect
+reads updated routines without clearing uncertainty or changing its status to
+“Up to date.” Wemo checks typed refusal, revision conflict, a delayed owner
+copy after an accepted limit save, and explicit refresh without replay.
+The Hub mode, Inbox, session label and notice override journeys exercise the
+other consumers with the existing synthetic runtime.
 
 Paged Home lists (#1658) extend the same Home editor chain, so hosted smoke and
 the full browser suite run them. After the root build,

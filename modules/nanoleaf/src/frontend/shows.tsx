@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import type {FrontendApi, FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
+import {frontendCommandView, type FrontendApi, type FrontendCommand, type FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {MUSIC_AUTHORING_MODEL, SHOW_LIMITS, SHOW_TARGET, type ShowCatalog, type ShowSave} from '../music-show-data.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, selectMusicCue, type MusicCue, type MusicTimeline} from '../music-timeline-data.js';
 import {DIRECTION_CHOICES, draftProblem, generatedDraft, measuredDraft, PATTERN_CHOICES, showVersion, spatial, SPEED_CHOICES, starter, STARTERS} from './show-model.js';
@@ -245,7 +245,7 @@ function ShowEditor({context, catalog, command, generate}: {
     {generatedProblem !== undefined && <p role="alert">{generatedProblem} Your current draft is retained.</p>}
     {!context.control && <p>Read-only access. You can inspect saved versions; editing requires control access.</p>}
     {!live && <p role="status">{catalog.failed ? 'The show library is unavailable.' : 'The show library is stale or still loading.'} Saving is disabled.</p>}
-    <p role="status" aria-live="polite">{command.text.replace('The module observed the result.', 'The library save was observed.')}</p>
+    <p role="status" aria-live="polite">{command.phase === undefined ? command.text : frontendCommandView(command.phase, {observed: 'The library save was observed.'}).text}</p>
     {draft !== undefined && <section className="show-draft" aria-label="Show draft"><h2>{dirty ? 'Unsaved draft' : `Saved version ${draft.expectedVersion}`}</h2>
       {draft.measurement !== undefined && <p>Captured excerpt for a scoped Mac Music library item. Replay uses the matching item and its current playback position.</p>}
       {draft.provenance !== undefined && <p>Generated with {draft.provenance.model} via the Anthropic API.

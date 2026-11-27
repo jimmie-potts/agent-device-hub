@@ -1,11 +1,11 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import type {LightingLayout, LightingLayoutRecord, LightingSelection, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {FrontendCommand} from '@jimmie-potts/sdk/frontend';
+import {frontendCommandView} from '@jimmie-potts/sdk/frontend';
 import {NanoleafLightVisual} from '@jimmie-potts/nanoleaf/frontend';
 import type {DashboardConnection} from './connection.ts';
 import type {RuntimeData} from './runtime-feeds.ts';
 import type {Route} from './routes.ts';
-import {useAttempt} from './command-control.tsx';
+import {useAttempt, type TrackedCommand} from './command-control.tsx';
 import {LightCard} from './light-card.tsx';
 import {DeviceModeChoice} from './device-mode.tsx';
 import {brandName, cardsFor, emptyLightingLayout, groupCards, lightCapabilities, lightingDevices, plugDevices, prepareLighting, resolveCard, selectionKey, ungroupCard, unitKey, type LightingCard, type LightingDevice, type LightingIntent} from './lighting.ts';
@@ -16,12 +16,13 @@ import './lighting.css';
 import {PinToggle} from './pins.tsx';
 import {RoomModels} from './room-models.tsx';
 import {roomBinding} from './room-bindings.ts';
-type Bindings = Map<string, FrontendCommand>;
+type Bindings = Map<string, TrackedCommand>;
+const NO_COMMAND = frontendCommandView({kind: 'none'});
 const STALE_LAYOUT = 'Layout records are unavailable or stale. Arrangement is read-only.';
 function AttemptBinding({target, operations, operationsLive, bindings, changed}: {target: string; operations: readonly OperationRecord[]; operationsLive: boolean; bindings: Bindings; changed: () => void}): null {
   const command = useAttempt(target, operations, operationsLive);
   bindings.set(target, command);
-  useEffect(changed, [command.text, command.locked, command.requestId, changed]);
+  useEffect(changed, [command.phase, command.locked, command.requestId, changed]);
   useEffect(() => () => { bindings.delete(target); }, [bindings, target]);
   return null;
 }
@@ -43,6 +44,8 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
   const record = (layoutCopy?.records as readonly LightingLayoutRecord[] | undefined)?.find(item => item.id === 'lighting');
   const layout = record?.layout ?? emptyLightingLayout();
   const layoutCommand = useAttempt('lighting', operations, operationsLive);
+  const layoutPhase = layoutCommand.phase.kind;
+  const layoutStatus = layoutCommand.locked || layoutPhase === 'refused' || layoutPhase === 'not-sent' || layoutPhase === 'expired';
   const bindings = useRef<Bindings>(new Map());
   const [, render] = useState(0);
   const changed = useMemo(() => () => { render(value => value + 1); }, []);
@@ -115,7 +118,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
         <p>{device === undefined ? 'Light unavailable' : `${device.owner} · ${device.record.availability}${device.live ? '' : ' · stale'}`}</p>
         <p>{device?.wall === undefined ? 'Artwork is a placeholder.' : 'Artwork uses the module’s saved geometry.'}</p>
         {device !== undefined && <p>Requested power: {device.record.desired.power.status === 'known' ? String(device.record.desired.power.value) : 'unknown'}. Observed power: {current && device.record.observed.status === 'known' && device.record.observed.power.status === 'known' ? String(device.record.observed.power.value) : 'unknown'}.</p>}
-        <p>{command?.text ?? 'No command sent from this page.'}</p>
+        <p>{command?.text ?? NO_COMMAND.text}</p>
       </div>;
     })}
   </div></details>;
@@ -139,7 +142,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
       {/* A Home card shows this inside its own face (#1932), where it neither sits on the backdrop nor pushes the face down. */}
       {!layoutLive && homeSelection === undefined && <p role="status" data-glass-veil>{STALE_LAYOUT}</p>}
       {/* A Home card leaves layout results to Home's own line (#1933, fuse.tsx). */}
-      {(homeSelection === undefined || fuse === undefined) && (layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status" data-glass-veil>Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
+      {(homeSelection === undefined || fuse === undefined) && layoutStatus && <p role="status" data-glass-veil>Layout: {frontendCommandView(layoutCommand.phase, {observed: 'The layout was saved.'}).text} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
       {message !== '' && !onHomeLine && <p role="status" data-glass-veil>{message}</p>}
       {roomView && <RoomModels connection={connection} connected={connected && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true} layout={layout} layoutLive={layoutLive} devices={devices} copies={runtime.copies}
         renderLight={(anchor, roomId, currentObservationsOnly = false) => {
@@ -153,7 +156,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
               if ('reason' in current) { setMessage(current.reason); return; }
               act(current.card, intent);
             }} options={options(card,currentObservationsOnly)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined}
-            status={card.members.map(id => ({name: card.name, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
+            status={card.members.map(id => ({name: card.name, ...(bindings.current.get(id) ?? NO_COMMAND)}))}
             artwork={<div className="lighting-image-group"><div>{device.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div></div>}/>;
         }}/>}
       {cards.length === 0 && <p>{roomView ? 'Create a room, then assign its lights in Manage rooms.' : 'No light cards here. Use Arrange to select Home cards.'}</p>}
@@ -166,7 +169,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
           {...(!layoutLive ? {notice: STALE_LAYOUT} : {})}/>;
         return <LightCard key={selectionKey(card.selection)} card={card} devices={devices} operations={operations} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
         {...(!layoutLive && homeSelection !== undefined ? {notice: STALE_LAYOUT} : {})}
-        act={intent => { act(card, intent); }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
+        act={intent => { act(card, intent); }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, ...(bindings.current.get(id) ?? NO_COMMAND)}))}
         artwork={<div className="lighting-image-group">{card.members.map(id => {
           const device = devices.find(device => device.record.id === id);
           return <div key={id}>{device?.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div>;

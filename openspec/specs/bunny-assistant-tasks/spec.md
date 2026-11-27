@@ -1297,6 +1297,12 @@ The selected Conversation supervisor SHALL interpret the current authenticated o
 - **AND** an unknown or malformed explicit ID SHALL return no scoped device facts or dispatch, and ambiguous names SHALL require clarification before dispatch
 - **AND** a generic lookup SHALL return no device for an ambiguous name, while the typed Wemo finder MAY return matching permitted candidates for clarification and MAY discover permitted candidates for an open request with no recognized device name
 
+#### Scenario: A clear group request continues after discovery
+
+- **WHEN** the owner explicitly requests power on or off for all configured Wemo plugs and the read-only lookup resolves a supported group
+- **THEN** the supervisor proposes the whole group in a subsequent model response within the same owner request
+- **AND** the Hub dispatches once per intended target if the group passes current validation
+
 #### Scenario: Two plugs followed by one reference
 
 - **WHEN** the owner asks any companion to operate two named Wemo plugs and then asks to operate just one using the previous exchange
@@ -1508,5 +1514,7 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 
 - **WHEN** the current owner asks to activate a saved Nanoleaf scene on an eligible light or change an original Pixoo asset by name
 - **THEN** Companions resolves the name through the selected owner and binds its opaque ID before using the existing tracked command
+- **AND** both hosted adapters tell the supervisor that the scene argument accepts the owner's exact saved name, an exact scene ID, or the explicit last-activated reference
 - **AND** private catalog names and records remain out of the hosted supervisor's results
+- **AND** a missing scene returns `not-found` without sending a command, and the supervisor asks the owner for another scene
 - **AND** an ambiguous match prompts for clarification and sends no command

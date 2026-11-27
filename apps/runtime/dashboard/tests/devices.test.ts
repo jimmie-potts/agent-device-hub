@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {frontendCommandView, type FrontendCommand, type FrontendCommandPhase} from '@jimmie-potts/sdk/frontend';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {contentBlocked, deviceAction, operationView, deviceBlocked} from '../src/devices.ts';
@@ -48,16 +49,55 @@ void test('the Pixoo gates content by the advertised Hub mode: off in Work, on i
   assert.match(contentBlocked(device) ?? '', /need Free/);
   assert.equal(contentBlocked({...device, desired: {...device.desired, mode: {status: 'known', value: 'free'}}}), undefined);
 });
-void test('accepted is not completed; uncertainty and conflict keep controls locked until definitive evidence', () => {
-  assert.deepEqual(operationView(operation('accepted')), {text: 'Accepted. Waiting for completion.', locked: true});
-  assert.equal(operationView(operation('uncertain', {result: 'uncertain', evidence: 'none'})).locked, true);
-  assert.equal(operationView(operation('conflict', {result: 'conflict'})).locked, true);
-  assert.deepEqual(operationView(operation('completed', {result: 'succeeded', evidence: 'transmitted'})),
-    {text: 'Completed: succeeded. Transmitted; physical effect was not observed.', locked: false});
-  assert.match(operationView(operation('rejected', {error: {code: 'revision-conflict', retryable: false}})).text, /Refused.*revision-conflict.*without changing state/);
+void test('every operation status and result derives the phase, text and lock', () => {
+  const cases: readonly (readonly [OperationRecord, FrontendCommandPhase, boolean, string])[] = [
+    [operation('sent'), {kind: 'requested'}, true, 'Requested. Waiting for acceptance.'],
+    [operation('accepted'), {kind: 'accepted'}, true, 'Accepted. Waiting for completion.'],
+    [operation('rejected'), {kind: 'refused', code: undefined}, false, 'Refused without changing state.'],
+    [operation('rejected', {error: {code: 'revision-conflict', retryable: false}}),
+      {kind: 'refused', code: 'revision-conflict'}, false, 'Refused (revision-conflict) without changing state.'],
+    [operation('expired'), {kind: 'expired'}, false, 'Expired before the command reached its owner. Nothing was sent to the device.'],
+    [operation('conflict', {result: 'conflict'}), {kind: 'conflict'}, true, 'Conflicting outcomes. Controls are locked until the operation is resolved.'],
+    ...[operation('uncertain', {result: 'uncertain'}), operation('completed', {result: 'uncertain'}), operation('completed', {result: 'conflict'})].map(
+      (record): [OperationRecord, FrontendCommandPhase, boolean, string] => [
+        record, {kind: 'uncertain'}, true, 'Uncertain result. The command may have taken effect; it was not sent again.',
+      ]),
+    [operation('completed', {result: 'succeeded', evidence: 'transmitted'}),
+      {kind: 'completed', result: 'succeeded', evidence: 'transmitted', family: 'power-set', code: undefined},
+      false, 'Completed: succeeded. Transmitted; physical effect was not observed.'],
+    [operation('completed', {result: 'failed', evidence: 'none', error: {code: 'internal', retryable: false}}),
+      {kind: 'completed', result: 'failed', evidence: 'none', family: 'power-set', code: 'internal'},
+      false, 'Completed: failed (internal). No evidence of a device effect.'],
+    [operation('completed'), {kind: 'completed', result: undefined, evidence: undefined, family: 'power-set', code: undefined},
+      false, 'Completed: unknown. No evidence of a device effect.'],
+    [operation('completed', {result: 'succeeded', evidence: 'observed'}),
+      {kind: 'completed', result: 'succeeded', evidence: 'observed', family: 'power-set', code: undefined},
+      false, 'Completed: succeeded. The module observed the result.'],
+  ];
+  for (const [record, phase, locked, text] of cases) assert.deepEqual(operationView(record), {phase, text, locked}, record.status);
 });
 
-void test('saved mode completion never claims a device effect', () => {
-  assert.deepEqual(operationView(operation('completed', {family: 'mode-override-set', result: 'succeeded', evidence: 'observed'})),
-    {text: 'Choice saved. Device results are separate.', locked: false});
+void test('local and restored command phases retain their wording and lock without an operation record', () => {
+  const cases: readonly (readonly [FrontendCommandPhase, boolean, string])[] = [
+    [{kind: 'none'}, false, 'No command sent from this page.'],
+    [{kind: 'not-sent', reason: 'operation records are stale'}, false, 'Not sent: operation records are stale. Nothing was sent.'],
+    [{kind: 'restored'}, true, 'Previous request has no confirmed result yet. It was not sent again.'],
+  ];
+  for (const [phase, locked, text] of cases) assert.deepEqual(frontendCommandView(phase), {phase, text, locked});
+
+  const legacy: FrontendCommand = {text: 'Receipt', locked: false, requestId: undefined, run: async () => {}};
+  assert.equal(legacy.phase, undefined);
+});
+
+void test('saved mode and show handoff completion never claim a device effect', () => {
+  for (const family of ['mode-set', 'mode-override-set']) {
+    const view = operationView(operation('completed', {family, result: 'succeeded', evidence: 'observed'}));
+    assert.equal(view.phase.kind, 'completed');
+    assert.equal(view.text, 'Choice saved. Device results are separate.');
+    assert.equal(view.locked, false);
+  }
+  const show = operationView(operation('completed', {family: 'art-show', result: 'succeeded', evidence: 'observed'}));
+  assert.equal(show.phase.kind, 'completed');
+  assert.equal(show.text, 'Show handed off. Each surface has its own result below.');
+  assert.equal(show.locked, false);
 });

@@ -244,6 +244,14 @@ try {
     await expect(automation().getByRole('button', {name: 'Save settings', exact: true})).toBeDisabled();
     await tab('Routines').click(); await expect(routines().getByLabel('Routine name', {exact: true})).toHaveValue('Reply lost');
     await page.unroute('**/api/v2/automation/routines');
+    const reconnectedRead = page.waitForResponse(response => response.request().method() === 'GET' && response.url().endsWith('/api/v2/automation/routines'));
+    world.dropDashboardStreams();
+    await reconnectedRead;
+    await routines().getByRole('heading', {name: 'Reply lost Disabled', exact: true}).waitFor();
+    await expect(automation().getByRole('alert')).toContainText('The last change has no reliable reply.');
+    await expect(automation().getByRole('status').filter({hasText: 'Up to date.'})).toHaveCount(0);
+    await expect(submit('Create disabled routine')).toBeDisabled();
+    assert.equal(writes.length, beforeLost + 1, 'reconnect reads the changed snapshot without resolving uncertainty or replaying the mutation');
     await automation().getByRole('button', {name: 'Refresh rules and logs', exact: true}).click(); await loaded();
     await routines().getByRole('heading', {name: 'Reply lost Disabled', exact: true}).waitFor();
     await automation().getByText('Recent attempts', {exact: true}).click();

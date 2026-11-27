@@ -1,30 +1,34 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useRef} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem} from '@jimmie-potts/event-contracts/v2/families';
-import {sendAction} from './actions.ts';
+import {sendSaveAction, useSaveLifecycle} from './save-lifecycle.ts';
 import {InboxCard, InboxItemCard} from './inbox-card.tsx';
 import {PagedList} from './paged-list.tsx';
 import {fitRows, listFit, listPageSize} from './paging.ts';
 import {useHomeCardBox} from './home-shape-context.ts';
 
 function InboxRow({item, label, live, control, hidden}: {item: InboxItem; label: string; live: boolean; control: boolean; hidden: boolean}): React.JSX.Element {
-  const [attempt, setAttempt] = useState<{revision: number; locked: boolean}>();
-  const [answer, setAnswer] = useState('');
-  const inFlight = useRef(false), alive = useRef(true);
-  useEffect(() => {alive.current = true; return () => {alive.current = false;};}, []);
-  const locked = attempt?.revision === item.revision && attempt.locked;
-  const handle = async (action: 'dismiss' | 'send-again'): Promise<void> => {
-    if (!live || !control || inFlight.current || locked === true) return;
-    const revision = item.revision;
-    inFlight.current = true; setAttempt({revision, locked: true});
-    setAnswer(action === 'send-again' ? 'Requesting a new command…' : 'Requesting dismissal…');
-    const result = await sendAction({family: 'inbox-handle', target: item.id, requestId: crypto.randomUUID(), data: {action, expectedRevision: revision}});
-    inFlight.current = false;
-    if (!alive.current) return;
-    setAttempt({revision, locked: !('error' in result) || result.error.code === 'uncertain-result'});
-    setAnswer('error' in result ? `${result.error.code}. Nothing was automatically sent again.` : 'Accepted. Waiting for the shared item removal.');
+  type Attempt = {revision: number; action: 'dismiss' | 'send-again'};
+  // Both replies lock this revision. A changed item can be handled explicitly;
+  // removal unmounts the row.
+  const sameRevision = (attempt: Attempt): boolean => attempt.revision === item.revision;
+  const save = useSaveLifecycle<Attempt>({accepted: sameRevision, uncertain: sameRevision});
+  const handle = (action: Attempt['action']): void => {
+    if (!live || !control) return;
+    void save.run({action, revision: item.revision}, () => sendSaveAction({
+      family: 'inbox-handle', target: item.id, requestId: crypto.randomUUID(), data: {action, expectedRevision: item.revision},
+    }));
   };
-  return <InboxItemCard item={item} label={label} control={control} disabled={!live || inFlight.current || locked === true} answer={answer} hidden={hidden} onHandle={action => {void handle(action);}}/>;
+  const phase = save.state;
+  let answer = '';
+  switch (phase.kind) {
+    case 'sending': answer = phase.input.action === 'send-again' ? 'Requesting a new command…' : 'Requesting dismissal…'; break;
+    case 'accepted': answer = 'Accepted. Waiting for the shared item removal.'; break;
+    case 'refused': answer = `${phase.code}. Nothing was automatically sent again.`; break;
+    case 'uncertain': answer = 'uncertain-result. Nothing was automatically sent again.'; break;
+    case 'idle': case 'confirmed': break;
+  }
+  return <InboxItemCard item={item} label={label} control={control} disabled={!live || save.blocked} answer={answer} hidden={hidden} onHandle={handle}/>;
 }
 
 export type InboxFocus = {id: string; serial: number};

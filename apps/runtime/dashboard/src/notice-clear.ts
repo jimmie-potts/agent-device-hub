@@ -1,7 +1,6 @@
 // Evidence for one explicit operator override; reconnect and reload send nothing.
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
-import type {ActionReply} from './actions.ts';
 import {uncertainOf} from './sessions.ts';
 
 export type NoticeAttempt = {id: string; generation: number; revision: number; noticeId: string; requestId: string};
@@ -19,15 +18,15 @@ export const noticeAttempt = (view: SessionView, requestId: string): NoticeAttem
  */
 export const overrideAvailable = (view: SessionView | undefined, {control, live, synced}: {control: boolean; live: boolean; synced: boolean}): boolean =>
   control && live && synced && view !== undefined && uncertainOf(view) === undefined;
-export type NoticeEvidence = {reply: 'requested' | 'accepted' | 'refused' | 'uncertain'; completion: string; acknowledgedBy: readonly string[] | undefined; retired: boolean};
+export type NoticeEvidence = {completed: boolean; completion: string; acknowledgedBy: readonly string[] | undefined; retired: boolean};
 /** Matching operation completion and the selected notice's current acknowledgments are separate evidence. */
 export function noticeEvidence(attempt: NoticeAttempt, view: SessionView | undefined, live: boolean,
-  operations: readonly OperationRecord[], operationsSynced: boolean, answer?: ActionReply): NoticeEvidence {
+  operations: readonly OperationRecord[], operationsSynced: boolean): NoticeEvidence {
   const retired = view === undefined || view.id !== attempt.id || view.generation !== attempt.generation;
   const operation = operations.find(item => item.requestId === attempt.requestId && item.family === 'notice-clear' && item.target === attempt.id);
   const notice = view?.outcome.notices.find(item => item.id === attempt.noticeId);
   return {
-    reply: answer === undefined ? 'requested' : 'error' in answer ? answer.error.code === 'uncertain-result' ? 'uncertain' : 'refused' : 'accepted',
+    completed: operationsSynced && operation?.status === 'completed' && operation.result === 'succeeded',
     completion: operationsSynced ? operation?.status ?? 'not observed' : 'not synced',
     acknowledgedBy: !retired && live ? notice?.acknowledgedBy : undefined,
     retired,

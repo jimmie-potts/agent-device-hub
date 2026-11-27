@@ -7,7 +7,7 @@
 import type {TokenUsage} from './spend-contract.js';
 import {sectionTexts} from './context.js';
 import {estimateHostedInputTokens, hostedInputBudget, hostedInputTokenCeiling} from './context-budget.js';
-import {outputTokenCap, ProviderFault, textBytes, type ModelProvider, type ToolCall, type ToolDefinition, type ToolInputSchema, type TranscriptItem, type TurnInput, type TurnReply, type TurnStop} from './provider.js';
+import {outputTokenCap, ProviderFault, textBytes, TOOL_RESPONSE_INSTRUCTIONS, type ModelProvider, type ToolCall, type ToolDefinition, type ToolInputSchema, type TranscriptItem, type TurnInput, type TurnReply, type TurnStop} from './provider.js';
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_VERSION = '2026-10-21';
@@ -194,7 +194,7 @@ export class AnthropicProvider implements ModelProvider {
     // knowledge notes, preferences and memory, which change rarely, then the recent conversation, which changes with each
     // task, and the mode last, so the cached prefix reaches as far as possible.
     const stable = [input.instructions, ...sectionTexts(input.context, ['personality']),
-      'Use a tool when the request needs it and call at most one tool per turn. Reads need no approval.',
+      TOOL_RESPONSE_INSTRUCTIONS, 'Use a tool when the request needs it. Reads need no approval.',
       'Run a Hub or device control only for a clear request in the current owner message. Earlier messages can identify what a current request refers to. Status questions, hypotheticals, and suggestions never authorize a control. Paid artwork and coding delegation still ask for approval. Claim a change was applied only with confirming tool evidence.',
       'If a request needs a detail you do not have, ask the owner with ask_owner. Do not invent device or session facts.',
       ...sectionTexts(input.context, ['knowledge', 'preferences', 'memory'])].join('\n\n');
@@ -208,7 +208,7 @@ export class AnthropicProvider implements ModelProvider {
       if (block.type === 'text' && typeof block.text === 'string') {texts.push(block.text); blocks.push(block);}
       else if (block.type === 'tool_use') {
         if (typeof block.id !== 'string' || !TOOL_ID.test(block.id) || typeof block.name !== 'string' || !object(block.input)) throw new ProviderFault('invalid-message');
-        // The engine acts on one call per turn; a further call is dropped here so no replayed tool_use lacks its result.
+        // The engine acts on one call per model response; a further call is dropped here so no replayed tool_use lacks its result.
         if (calls.length === 0) {calls.push({id: block.id, name: block.name, input: block.input}); blocks.push(block);}
       } else blocks.push(block);
       // Thinking and any other block the model returned are kept as received for replay; the engine acts on none of them.

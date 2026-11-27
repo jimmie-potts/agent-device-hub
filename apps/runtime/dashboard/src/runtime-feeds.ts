@@ -32,11 +32,12 @@ export function awaitsRecords(route: Route, runtime: RuntimeData): boolean {
   if (route.kind !== 'component' && route.kind !== 'playback') return false;
   return runtime.modules === undefined || runtime.copies.some(copy => (copy.family === 'device' || copy.family === 'playback') && !copy.synced && copy.refused === undefined);
 }
-type Follow = {state: RuntimeCopy; copy?: SyncedCopy<RuntimeRecord> | undefined; epoch: number; retryMs: number; cancel: () => void};
+type Follow = {state: RuntimeCopy; copy?: SyncedCopy<RuntimeRecord> | undefined; epoch: number; completionRequired: boolean; retryMs: number; cancel: () => void};
 
 export class RuntimeFeeds {
   #participant: RemoteParticipant | undefined;
   #closed = false;
+  #disconnected = false;
   #follows: Follow[] = [];
   #state: RuntimeData = {modules: undefined, control: false, copies: [], catalogFailed: false};
   readonly #scheduler: Scheduler;
@@ -54,7 +55,7 @@ export class RuntimeFeeds {
       this.#state = {...this.#state, modules, control, catalogFailed: false};
       this.#follows = modules.flatMap(module => module.serves.flatMap(family => family === 'device' || family === 'operation' || family === 'playback' || family === 'mode' || family === 'inbox-item' || family === 'power-limit'
         || ((family === 'art-schedule' || family === 'lighting-layout' || family === 'playback-layout' || family === 'home-layout') && module.name === 'core') || (family === 'lifx-light' && module.name === 'lifx') || (family === 'nanoleaf-wall' && module.name === 'nanoleaf') || (family === PRESENCE_FAMILY && module.name === 'presence-pro')
-        ? [{state: {owner: moduleOwner(module.name), family, synced: false, records: []}, epoch: 0, retryMs: 1000, cancel: () => {}}] : []));
+        ? [{state: {owner: moduleOwner(module.name), family, synced: false, records: []}, epoch: 0, completionRequired: false, retryMs: 1000, cancel: () => {}}] : []));
       this.#show();
       await Promise.all(this.#follows.map(follow => this.#sync(follow)));
     } catch {
@@ -68,17 +69,15 @@ export class RuntimeFeeds {
     for (const follow of this.#follows) { follow.cancel(); void follow.copy?.close(); }
   }
   hear(diagnostic: Diagnostic): void {
-    if (diagnostic.event === 'remote.disconnected') {
-      for (const follow of this.#follows) follow.state = {...follow.state, synced: false};
-      this.#show();
-    } else if (diagnostic.event === 'sync.restarted') {
-      // The SDK names the family, not the owner, on overflow. Replace each same-family copy so none stays falsely fresh.
-      for (const follow of this.#follows) if (diagnostic.pattern === undefined || diagnostic.pattern === `sync ${follow.state.family}`) {
-        follow.state = {...follow.state, synced: false};
-        void this.#sync(follow);
-      }
-      this.#show();
+    if (this.#closed) return;
+    if (diagnostic.event === 'remote.reconnected') this.#disconnected = false;
+    if (diagnostic.event !== 'remote.disconnected') return;
+    this.#disconnected = true;
+    for (const follow of this.#follows) {
+      follow.completionRequired = true;
+      follow.state = {...follow.state, synced: false};
     }
+    this.#show();
   }
   /** Explicit refresh changes only current copies; it sends no command and never replays an attempt. */
   async refresh(required?: readonly {owner: string; family: RuntimeCopy['family']}[]): Promise<boolean> {
@@ -93,16 +92,18 @@ export class RuntimeFeeds {
     if (participant === undefined || this.#closed) return false;
     const epoch = ++follow.epoch;
     // Stale at once: closing the replaced copy waits for the edge, and its records must not stay current meanwhile.
-    follow.cancel(); follow.state = {...follow.state, synced: false}; this.#show();
+    follow.cancel(); follow.completionRequired = this.#disconnected; follow.state = {...follow.state, synced: false}; this.#show();
     const replaced = follow.copy; follow.copy = undefined; await replaced?.close();
-    const current = (): boolean => !this.#closed && follow.epoch === epoch;
+    let refused = false;
+    const current = (): boolean => !this.#closed && !refused && follow.epoch === epoch;
     const show = (): void => {
-      if (!current() || follow.copy === undefined) return;
+      if (!current() || follow.completionRequired || follow.copy === undefined) return;
       follow.state = {owner: follow.state.owner, family: follow.state.family, synced: true, records: follow.copy.states().map(message => message.data)};
       this.#show();
     };
     const failed = (code: string): void => {
       if (!current()) return;
+      refused = true;
       if (code === 'unauthenticated' || code === 'forbidden') { this.#ended(); return; }
       follow.state = {...follow.state, synced: false, refused: code}; this.#show();
       follow.cancel = this.#scheduler.after(follow.retryMs, () => { void this.#sync(follow); });
@@ -110,11 +111,20 @@ export class RuntimeFeeds {
     };
     try {
       const result = await participant.sync<RuntimeRecord>([follow.state.family], (change: SyncChange<RuntimeRecord>) => {
-        if (change.type === 'failed') failed(change.error.error.code); else show();
-      }, {owner: follow.state.owner, timeoutMs: 5000});
+        if (!current()) return;
+        if (change.type === 'failed') { failed(change.error.error.code); return; }
+        if (change.type === 'synced' && !this.#disconnected) follow.completionRequired = false;
+        show();
+      }, {owner: follow.state.owner, timeoutMs: 5000, onRestarted: () => {
+        if (!current()) return;
+        follow.completionRequired = true;
+        if (!follow.state.synced) return;
+        follow.state = {...follow.state, synced: false};
+        this.#show();
+      }});
       if (result.status === 'rejected') { failed(result.error.error.code); return false; }
       if (!current()) { await result.copy.close(); return false; }
-      follow.copy = result.copy; follow.retryMs = 1000; show(); return true;
+      follow.copy = result.copy; follow.retryMs = 1000; show(); return follow.state.synced;
     } catch { failed('unavailable'); return false; }
   }
   #show(): void { this.#state = {...this.#state, copies: this.#follows.map(follow => follow.state)}; this.#changed(this.#state); }
