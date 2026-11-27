@@ -2352,7 +2352,7 @@ export class AssistantEngine {
         }
       }
     } else if ((next === 'ask' || next === 'approve') && call !== undefined) {
-      question = this.#question(state.taskId, call, proposalCopy, canNameDevice);
+      question = this.#question(state.taskId, call, proposalCopy, canNameDevice, id);
     }
     const proposal = question?.proposal;
     if (call !== undefined && question !== undefined && proposal != null && proposal.family !== 'coding-dispatch' && command !== 'art-request') {
@@ -2419,7 +2419,7 @@ export class AssistantEngine {
   #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed, this.#deviceDisplay, this.options.retainedArtwork, this.options.readCatalogIdentity);}
   #catalogActions: ConversationActions | undefined;
   /** The question a call asks, or undefined when the command cannot be proposed. */
-  #question(taskId: string, call: ToolCall, copy: CoreCopy, canNameDevice: (id: string) => boolean): Question | undefined {
+  #question(taskId: string, call: ToolCall, copy: CoreCopy, canNameDevice: (id: string) => boolean, modelCallId: string): Question | undefined {
     const id = `${taskId}-q${String(this.#task(taskId).questions + 1)}`;
     if (call.name === ASK_OWNER) {
       const text = typeof call.input.text === 'string' && call.input.text.trim() !== '' ? call.input.text : 'What should the assistant do next?';
@@ -2466,12 +2466,14 @@ export class AssistantEngine {
       if ('code' in result) return undefined;
       return {id, text: deviceProposalText(result.proposal, deviceLabel(selected.device)), answer: null, kind: 'approval', call: call.id, proposal: result.proposal};
     }
-    const task = this.#task(taskId);
-    const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
-    if (call.name === SET_MODE && task.question?.answer == null && missingMode(instruction)) {
-      return {id, text: 'Which Hub mode do you want: work, free, or quiet?', answer: null, kind: 'clarification', call: call.id, proposal: null};
-    }
     const mode = MODES.find(value => value === call.input.mode);
+    const scope = call.name === SET_MODE ? this.#currentModelControl(this.#task(taskId), modelCallId) : undefined;
+    if ((mode !== undefined || call.input.mode === 'clarify') && scope !== undefined && scope.answer === undefined &&
+        scope.modeRevision !== null && this.store.call(modelCallId)?.modelControlProof?.modeRevision === scope.modeRevision &&
+        scope.exactTargets.every(target => target === 'hub') && missingMode(scope.request.text)) {
+      return {id, text: 'Which mode should I switch the Hub to: work, free, or quiet?', answer: null, kind: 'clarification', call: call.id, proposal: null,
+        modeClarification: {requestId: scope.request.id, requestRevision: scope.request.revision, modeRevision: scope.modeRevision}};
+    }
     if (mode === undefined || copy.mode === undefined || !copy.synced) return undefined;
     const proposal: Proposal = {family: 'mode-set', target: 'hub', data: {mode}, expectedRevision: copy.mode.revision};
     return {id, text: `Set the Hub mode to ${proposal.data.mode}?`, answer: null, kind: 'approval', call: call.id, proposal};
@@ -2823,8 +2825,15 @@ export class AssistantEngine {
       if (this.store.call(modelCallId)?.modelControlProof?.modeRevision !== proposal.expectedRevision) return {code: 'revision-conflict'};
     }
     if (!this.#catalogFieldsPermitted(task, proposal)) return {code: 'forbidden'};
-    if (proposal.family === 'mode-set' && !authorizesHubMode(scope.request.text, scope.answer?.text ?? '', proposal.data.mode)) {
-      return {code: 'invalid-state'};
+    if (proposal.family === 'mode-set') {
+      const ownerText = scope.answer?.text ?? scope.request.text;
+      if (!authorizesHubMode(ownerText, '', proposal.data.mode)) {
+        const question = this.#controlClarification(task);
+        const binding = question?.modeClarification;
+        if (scope.answer === undefined || binding?.requestId !== scope.request.id || binding.requestRevision !== scope.request.revision ||
+            !authorizesHubMode(scope.request.text, scope.answer.text, proposal.data.mode)) return {code: 'invalid-state'};
+        if (binding.modeRevision !== proposal.expectedRevision) return {code: 'revision-conflict'};
+      }
     }
     if (proposal.family === 'catalog-action' && proposal.command === 'art-catalog-edit' && proposal.data.action === 'delete') {
       const id = proposal.data.artworkId;

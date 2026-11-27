@@ -9,6 +9,7 @@ Use the same request scope and existing guarded dispatch for the remaining suppo
 ## Decisions
 
 - Keep configured tool names and payload shape. Bind migrated operations to the same request proof as Wemo. Check the admission proof again before a new effect.
+- Keep the existing Hub mode values and add a typed clarification choice to `set_mode`. Conversation renders the switch question and saves its link to the current owner request and Hub mode revision. A short mode answer to a generic question is informational.
 - Resolve registered routes locally. Device ownership and target guards come from device state. Record targets carry the owner's revision. Fixed routes retain the exact owner target. Drafts retain the local cue and revision checks.
 - Resolve a scene name for its selected light and an asset name in its owning Pixoo library through Runtime-local module content. The browser gateway refuses both references. The Runtime invokes the fixed owner references within the existing tool deadline. The owners return an opaque identity or a refusal. A name lookup neither starts a device read nor publishes a record.
 - Keep the external field policy. The selected supervisor supplies typed selections and exclusions with verbatim current citations. Resolve those citations against permitted canonical targets. A missing selection never substitutes an excluded target. A denied catalog read returns no private record. Store results for the authorized Conversation owner.

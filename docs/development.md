@@ -3161,6 +3161,9 @@ For the Conversation catalog, run the root build and type check, JavaScript lint
 the Companions suite, and the workflow checks. After building, the catalog
 admission cases can be isolated with
 `node --test --test-name-pattern='catalog admission|newly configured Pixoo' modules/companions/dist/tests/assistant.test.js`.
+The hosted catalog phrase cases also exercise Hub mode. They cover a direct
+polite request, an informational reply after restart, and an answer to the
+Hub's saved switch question after restart.
 The `apps/runtime/dist/tests/assistant-dispatch.test.js` suite checks the same
 typed payloads, revision guards and refusals through the tracked command path.
 These checks use synthetic adapters and disposable owner records. The

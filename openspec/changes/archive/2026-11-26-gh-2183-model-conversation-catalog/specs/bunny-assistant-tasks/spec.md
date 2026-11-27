@@ -17,6 +17,14 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 - **AND** eligible owner-local changes such as Pixoo Now Playing and Moments preferences can be admitted
 - **AND** a physical action requiring availability is refused, and an active hold refuses these preference and physical writes
 
+#### Scenario: A Hub mode answer belongs to a question about switching
+
+- **WHEN** the current owner asks to switch Hub mode without naming a mode
+- **THEN** the supervisor can ask the Hub to render and save a question about which mode to switch to
+- **AND** a short mode answer can complete that same request after restart while the request and Hub mode revision are current
+- **AND** a short answer to a generic or informational question sends no mode command
+- **AND** a complete current owner instruction naming the requested mode can dispatch directly
+
 #### Scenario: A hosted catalog proposal cites the current target words
 
 - **WHEN** the hosted supervisor proposes a catalog effect against an existing target

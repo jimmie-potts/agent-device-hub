@@ -883,7 +883,11 @@ permission or capability refuses the action at execution too.
 
 An explicit owner instruction authorizes a configured Hub or device control
 once Conversation resolves the target and setting. “Turn off the shelf lamp”
-and “Set the Hub mode to quiet” send directly. Conversation asks for an exact
+and “Can you switch to quiet?” send directly. A short reply such as “Quiet”
+can select a mode after Conversation asks which mode to switch to. That
+question remains bound to the current request and Hub mode revision across
+restart. A short answer to a generic question about mode authorizes no switch.
+Conversation asks for an exact
 choice when names match more than one device. Earlier owner messages can
 identify a reference such as “it.” A status question or model suggestion
 cannot authorize a write. Paid artwork and coding delegation still use an
@@ -1489,7 +1493,7 @@ can report transmission with the physical effect still unconfirmed.
 | Live action against a current record | `mode-override-set`, `notice-clear`, `session-label-set`, `inbox-handle`, `home-layout-set`, `lighting-layout-set`, `playback-layout-set`, `playback-control`, `volcano-session-gap`, `music-lighting-control` |
 | Live action against a fixed owner | `nanoleaf-reactive-preset-save`, `art-catalog-edit`, `art-show`, `nanoleaf-show-save` |
 | Private draft authoring | `create_light_show_draft`, `edit_light_show_cue` |
-| Global Hub mode (existing contract) | `set_mode` takes `{mode}`. The current owner request must authorize that mode. Conversation can ask for a missing mode. |
+| Global Hub mode | `set_mode` accepts the existing `{mode}` settings and adds `{mode: "clarify"}` for a missing choice. Conversation renders the switch question and binds its answer to the current owner request. |
 | Dedicated plug and lighting controls | `set_wemo_power`, `set_lifx_power`, `set_lifx_brightness`, and the catalog families `power-set`, `brightness-set`, `lifx-color-set`, `lifx-temperature-set` |
 | Specialized approval | Paid `art-request`, presentation of newly generated art on the selected destinations, and coding handoffs |
 

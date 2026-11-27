@@ -188,9 +188,23 @@ void test('a stale owner identity and an unrelated exact Wemo ID cannot dispatch
   assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
 });
 
+void test('a generic informational question cannot grant authority for a bare mode answer', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? call('ask_owner', {text: 'Which mode should I explain?'})
+    : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('Finished.'));
+  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(4), synced: true}),
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Could you set the Hub mode?');
+  await until(() => status(w) === 'waiting');
+  assert.equal((await input(w.core, w.module(), 'Quiet', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(requests, []);
+});
+
 void test('the supervisor asks once for a missing mode and binds the owner answer', async context => {
   const requests: AssistantDispatch[] = [];
-  const provider = counted((_request, turn) => turn === 1 ? call('ask_owner', {text: 'Which Hub mode do you want?'})
+  const provider = counted((_request, turn) => turn === 1 ? call('set_mode', {mode: 'clarify'})
     : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('The dispatcher accepted the request.'));
   const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(4), synced: true}),
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
@@ -198,11 +212,27 @@ void test('the supervisor asks once for a missing mode and binds the owner answe
   await input(w.core, w.module(), 'Could you set the Hub mode?');
   await until(() => status(w) === 'waiting');
   assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
-  assert.ok((await page(w)).messages.some(message => /Which Hub mode/.test(message.text)));
+  assert.ok((await page(w)).messages.some(message => /Which mode should I switch the Hub to/.test(message.text)));
   assert.equal(requests.length, 0);
   assert.equal((await input(w.core, w.module(), 'quiet', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.deepEqual(requests.map(({data}) => data), [{mode: 'quiet', expectedRevision: 4}]);
+});
+
+void test('a saved mode clarification refuses a bare choice after the Hub mode revision changes', async context => {
+  const provider = counted((_request, turn) => turn === 1 ? call('set_mode', {mode: 'quiet'})
+    : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('Finished.'));
+  let revision = 4;
+  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(revision), synced: true}),
+    dispatch: () => assert.fail('a stale mode clarification sends no command')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Set the Hub mode.');
+  await until(() => status(w) === 'waiting');
+  assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which mode should I switch the Hub to/u);
+  revision += 1;
+  assert.equal((await input(w.core, w.module(), 'quiet', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: revision-conflict')));
 });
 
 void test('identical numbers in unrelated settings and relative commands authorize no brightness write', async context => {
@@ -5317,7 +5347,7 @@ for (const host of ['anthropic', 'openai'] as const) {
       cite('favorite', [(nested.edit as {name?: string} | undefined)?.name]);
       cite('preset', [nested.presetId, nested.name]);
       if (name === 'edit_light_show_cue') cite('cue', ['first cue']);
-      proposal = {ownerText, name, input: name === 'set_mode' || name === 'create_light_show_draft' ? args
+      proposal = {ownerText, name, input: name === 'set_mode' || name === 'ask_owner' || name === 'create_light_show_draft' ? args
         : {...args, references: selection ?? refs.filter(ref => catalogToolReferenceRoles(name).some(role => role === ref.role))}};
       const accepted = await input(w.core, w.module(), ownerText);
       assert.equal(accepted.status, 'accepted', `${ownerText} ${JSON.stringify(accepted)}`);
@@ -5586,19 +5616,29 @@ for (const host of ['anthropic', 'openai'] as const) {
     assert.equal(delivered.length, prior + 1);
     modeDenied = false;
     assert.match(await ask('Is the Hub in work mode?', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
+    assert.match(await ask('Can you explain quiet mode?', 'set_mode', {mode: 'quiet'}) ?? '', /^refused: this control needs a clear current owner request/u);
     assert.match(await ask('Set the Hub to free mode.', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
     assert.equal(delivered.length, prior + 1, 'a status read or a different requested mode authorizes no write');
-    await ask('Put the Hub into quiet mode.', 'set_mode', {mode: 'quiet'});
+    await ask('Can you switch to quiet?', 'set_mode', {mode: 'quiet'});
     assert.equal(delivered.length, prior + 2);
     assert.ok(delivered[prior + 1]?.valid === true);
     assert.partialDeepStrictEqual(delivered[prior + 1]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 7}});
 
-    await ask('Set the Hub mode.', 'set_mode', {mode: 'work'}, undefined, 'waiting');
-    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which Hub mode/u);
+    const incompleteMode = 'Set the Hub mode.';
+    const modeAnswer = 'Free.';
+    await ask(incompleteMode, 'ask_owner', {text: 'Which mode should I explain?'}, undefined, 'waiting');
+    await w.restart();
+    await until(() => status(w) === 'waiting');
+    proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free'}};
+    assert.equal((await input(w.core, w.module(), modeAnswer, true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(delivered.length, prior + 2, 'an informational answer cannot fill in a mode after restart');
+
+    await ask(incompleteMode, 'set_mode', {mode: 'clarify'}, undefined, 'waiting');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which mode should I switch the Hub to/u);
     assert.equal(delivered.length, prior + 2, 'the model cannot fill in a missing mode');
     await w.restart();
     await until(() => status(w) === 'waiting');
-    const modeAnswer = 'Free.';
     proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free'}};
     assert.equal((await input(w.core, w.module(), modeAnswer, true)).status, 'accepted');
     await until(() => status(w) === 'succeeded');
