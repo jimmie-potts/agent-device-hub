@@ -6,6 +6,7 @@ import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, c
 import {ART_SHOW_EFFECTS_FAMILY, acceptsArtRendition, artDestination, artShowSurfaces, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord, ArtworkSummary, CatalogArtwork} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {ErrorBody, ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import type {ShowCatalog} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
@@ -13,6 +14,7 @@ import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {deviceFacts, deviceLabel, matchingDevices, MAX_OBSERVATION_AGE_MS, Outcome, readDeviceRecords, readLifxDeviceFacts, usableArtComposition,
   type LifxDeviceFacts, type ModuleContext, type OwnedDevice, type TraceContext} from '@jimmie-potts/sdk';
 import type {DeviceReadDisplay} from './devices.js';
+import {LIGHTING_OWNERS, type LightingDevice} from './lighting-control.js';
 import {ShowDrafts} from './show-drafts.js';
 import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
@@ -74,6 +76,21 @@ export class ConversationActions {
 
   async #deviceRecords(owners: readonly string[], parent: TraceContext): Promise<{rows: Match[]; unreadable: string[]}> {
     return readDeviceRecords(this.context.sdk, owners, {timeoutMs: 1200, parent});
+  }
+
+  async lightingDevices(parent: TraceContext, localLifx: readonly DeviceRecord[], includeColor: boolean): Promise<LightingDevice[]> {
+    const [records, lights] = await Promise.all([
+      this.#deviceRecords(LIGHTING_OWNERS, parent),
+      includeColor ? readLifxDeviceFacts(this.context.sdk, {timeoutMs: 1200, parent}) : undefined,
+    ]);
+    const rows = [...records.rows];
+    for (const device of localLifx) {
+      if (!rows.some(row => row.owner === LIFX && row.device.id === device.id)) rows.push({owner: LIFX, device});
+    }
+    return rows.sort((a, b) => a.owner === b.owner ? a.device.id.localeCompare(b.device.id) : a.owner.localeCompare(b.owner)).map(row => {
+      const light = row.owner === LIFX ? lights?.find(record => record.id === row.device.id) : undefined;
+      return light === undefined ? row : {...row, light};
+    });
   }
 
   async deviceSubjectMatches(subject: string, parent: TraceContext): Promise<Match[]> {

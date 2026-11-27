@@ -39,6 +39,10 @@ export function catalogCommand(name: string): CatalogFamily | undefined {
 const draft = text('The exact draft ID from the authoring or preview tool.');
 const draftRevision = integer('The exact draft revision the owner requested, or the previewed revision if the owner did not specify one.');
 const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family => family !== 'nanoleaf-show-save' && family !== 'art-request');
+const QUANTITY = 'For a number, use {"kind":"absolute","amount":30,"literal":"30%"} with the complete requested quantity copied from the owner text. Use startingLiteral for a distinctly stated starting value. Omit literal for values described in words. Ask for clarification when the requested value or unit is ambiguous.';
+const BRIGHTNESS = `JSON with a percent field. ${QUANTITY} Use increase or decrease for percentage points, increase-percent or decrease-percent for a percentage of current brightness, and {"kind":"minimum"} or {"kind":"maximum"} for an extreme.`;
+const TEMPERATURE = `JSON with a kelvin field. ${QUANTITY} Use increase for cooler and decrease for warmer, with the amount of change in Kelvin. Use minimum or maximum for the registered Kelvin extremes.`;
+const COLOR = `JSON with hue in degrees and saturation in percent. Each field uses a whole number or an absolute quantity. ${QUANTITY}`;
 export const catalogTools = [
   define(READ_HUB_GUIDE, 'read', 'Discover the Hub sources and read operations that answer current device, deadline and historical power questions.', {}),
   define(READ_DEVICE_HISTORY, 'read', 'Read a bounded page of observed power evidence and deterministic duration totals. Use the same query on later pages.', {
@@ -82,7 +86,8 @@ export const catalogTools = [
       : family === 'moment-play' ? 'Play a named mood on a configured display. For an immediate moment, ask only for missing display, mood, or duration. Use {} in arguments for this immediate form.'
         : `Run ${family} on a configured, supported target only when explicitly requested by the owner.`, {
     owner: text('The exact owner source returned by the read tool.'), target: text(family === 'brightness-set' ? 'Use the device ID returned by read_devices. id:<device-id> also selects that exact ID. An unambiguous label is accepted.' : 'Exact target ID, or its label if unambiguous.'),
-    arguments: text(`JSON object with the appropriate owner command fields: ${assistantRoutes[family].fields}. Do not supply revision or generation guards.`),
+    arguments: text(family === 'brightness-set' ? BRIGHTNESS : family === 'lifx-temperature-set' ? TEMPERATURE : family === 'lifx-color-set' ? COLOR
+      : `JSON object with the appropriate owner command fields: ${assistantRoutes[family].fields}. Do not supply revision or generation guards.`),
   })),
 ] satisfies readonly ToolDefinition[];
 export const isCatalogTool = (name: string): boolean => catalogTools.some(tool => tool.name === name);

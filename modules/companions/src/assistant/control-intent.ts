@@ -1,5 +1,5 @@
 import {isDeepStrictEqual} from 'node:util';
-import type {CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import type {CatalogFamily, ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {Proposal} from './history-contract.js';
 
 export type BoundControl = {
@@ -10,6 +10,7 @@ export type BoundControl = {
   readonly text: string;
   readonly call: string;
   readonly draftRevision?: number;
+  readonly observationBasis?: ObservationBasis;
   readonly modelCallId?: string;
   readonly contextTargets?: readonly string[];
 };

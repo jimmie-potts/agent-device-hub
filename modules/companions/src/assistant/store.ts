@@ -1,3 +1,4 @@
+import type {LightingClarification} from './lighting-control.js';
 import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
 import type {ModelControlProof} from './model-control.js';
@@ -44,6 +45,7 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   supervisor?: SupervisorIdentity;
   codingPreference?: CodingPreference;
   clarificationDevices?: readonly string[];
+  lightingClarification?: LightingClarification;
   historyScope?: DeviceHistoryBinding;
   ownerInputStart?: string;
   /** Legacy Messages task's bound history query. */
@@ -69,6 +71,8 @@ export type HostedHistoryMessage = Pick<RecentMessage, 'id' | 'role' | 'text'> &
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   directBrightness?: true;
   modelControlProof?: ModelControlProof;
+  lightingControlProof?: ModelControlProof;
+  lightingReadTarget?: string;
   wemoFacts?: readonly {id: string; revision: string}[];
   historySources?: readonly ContextSourceVersion[];
   inputVersions?: readonly {field: DisclosedField; version: string}[];
