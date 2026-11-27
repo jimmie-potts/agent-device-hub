@@ -5,8 +5,9 @@ import {openSettings} from './navigation-helpers.ts';
 // session, and another local app's link that opens the page while its frame, another host name's link and a hostile
 // page that re-navigates the tab are refused or harmless (Hub #561). Nothing here sends a command.
 import assert from 'node:assert/strict';
+import {channel} from 'node:diagnostics_channel';
 import {mkdir} from 'node:fs/promises';
-import {createServer, type Server} from 'node:http';
+import {createServer, type IncomingMessage, type Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {chromium, type BrowserContext, type Page, type Response} from 'playwright';
 import {openJourneyContext} from './browser-context.ts';
@@ -33,6 +34,25 @@ async function open(context: BrowserContext, url: string): Promise<Page> {
   const page = await context.newPage();
   await page.goto(url);
   return page;
+}
+// Chromium adds Fetch Metadata after Playwright intercepts the request. Read only the two fields this
+// journey checks, from the document request that actually arrives at its disposable runtime.
+async function observeDocument<T>(port: string, navigate: () => Promise<T>) {
+  const requests = channel('http.server.request.start');
+  let metadata: {site: string | string[] | undefined; destination: string | string[] | undefined} | undefined;
+  const observe = (event: unknown): void => {
+    const {request} = event as {request: IncomingMessage};
+    if (request.socket.localPort !== Number(port) || request.method !== 'GET' || request.url !== '/') return;
+    metadata = {site: request.headers['sec-fetch-site'], destination: request.headers['sec-fetch-dest']};
+    requests.unsubscribe(observe);
+  };
+  requests.subscribe(observe);
+  try {
+    const result = await navigate();
+    return {result, metadata};
+  } finally {
+    requests.unsubscribe(observe);
+  }
 }
 const signedIn = async (page: Page): Promise<void> => {
   await page.getByText('Control enabled · Local', {exact: true}).waitFor();
@@ -148,13 +168,13 @@ try {
     const toRuntime = (response: Response): boolean => new URL(response.url()).port === runtimePort;
     try {
       const context = await fresh();
-      const follow = async (from: string): Promise<{tab: Page; response: Response; site: string | undefined}> => {
+      const follow = async (from: string) => {
         const page = await open(context, from);
-        const [tab, response] = await Promise.all([
+        const {result: [tab, response], metadata} = await observeDocument(runtimePort, () => Promise.all([
           context.waitForEvent('page'), context.waitForEvent('response', candidate => candidate.request().isNavigationRequest() && toRuntime(candidate)),
           page.getByRole('link', {name: 'B.U.N.N.Y.', exact: true}).click(),
-        ]);
-        return {tab, response, site: (await response.request().allHeaders())['sec-fetch-site']};
+        ]));
+        return {tab, response, site: metadata?.site};
       };
       const linked = await follow(`http://127.0.0.1:${otherPort}/`);
       assert.deepEqual([linked.site, linked.response.status()], ['same-site', 200], 'a link from another loopback port is same-site and served');
@@ -166,10 +186,10 @@ try {
       checks.push('another local app\'s link opens the dashboard signed in, and another host name\'s link is refused');
 
       const framer = await context.newPage();
-      const framed = framer.waitForResponse(toRuntime);
-      await framer.goto(`http://127.0.0.1:${otherPort}/framed`);
-      const frameResponse = await framed;
-      assert.equal((await frameResponse.request().allHeaders())['sec-fetch-dest'], 'iframe');
+      const {result: [frameResponse], metadata} = await observeDocument(runtimePort, () => Promise.all([
+        framer.waitForResponse(toRuntime), framer.goto(`http://127.0.0.1:${otherPort}/framed`),
+      ]));
+      assert.equal(metadata?.destination, 'iframe');
       assert.equal(frameResponse.status(), 403, 'another loopback app cannot frame the dashboard');
       assert.equal(await framer.frameLocator('iframe').getByText('Control enabled · Local', {exact: true}).count(), 0);
       checks.push('another loopback app cannot frame the dashboard');
