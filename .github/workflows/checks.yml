@@ -61,7 +61,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        shell: bash scripts/ci-selection/failure-summary.sh core default {0}
+        # Standalone admission runs the exact PR head, which can predate the reporting shell.
+        shell: ${{ needs.select.outputs.mode == 'standalone' && 'bash -e {0}' || 'bash scripts/ci-selection/failure-summary.sh core default {0}' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

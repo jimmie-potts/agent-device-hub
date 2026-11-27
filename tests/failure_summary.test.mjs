@@ -4,6 +4,7 @@ import {mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import test from 'node:test';
+import YAML from 'yaml';
 import {pathToFileURL} from 'node:url';
 import {renderFailure} from '../scripts/ci-selection/failure-summary.mjs';
 
@@ -60,7 +61,8 @@ test('the native reporter identifies only the failed case across a shared regist
   const root = mkdtempSync(join(tmpdir(), 'summary-node-')), directory = join(root, 'apps/runtime/dist/tests');
   t.after(() => rmSync(root, {recursive: true, force: true})); mkdirSync(directory, {recursive: true});
   writeFileSync(join(root, 'package.json'), '{"type":"module"}');
-  writeFileSync(join(directory, 'helper.js'), "import test from 'node:test'; export function register(title, fn) {test(title, fn);}");
+  writeFileSync(join(directory, 'helper.js'), "import test from 'node:test';
+import YAML from 'yaml'; export function register(title, fn) {test(title, fn);}");
   writeFileSync(join(directory, 'actions.test.js'), `import {register} from './helper.js';
     register('healthy', () => {});
     register(${JSON.stringify(blocked)}, () => { throw Error('PRIVATE_ERROR'); });`);
@@ -78,4 +80,18 @@ test('the native reporter identifies only the failed case across a shared regist
   assert.equal(cases[0].caseId, 2); assert.equal(cases[0].ordinal, 2);
   assert.equal(cases[0].line, undefined); assert.equal(typeof cases[0].duration, 'number');
   for (const value of [blocked, 'PRIVATE_ERROR', directory, 'healthy']) assert.ok(!raw.includes(value));
+});
+
+test('Core standalone admission can execute an older exact head without the summary shell', t => {
+  const workflow = YAML.parse(readFileSync('.github/workflows/checks.yml', 'utf8'));
+  const core = workflow.jobs.core;
+  assert.match(core.steps[0].with.ref, /outputs.mode == 'standalone' && needs.select.outputs.head/);
+  const shell = /^\$\{\{ needs\.select\.outputs\.mode == 'standalone' && '([^']+)' \|\| 'bash scripts\/ci-selection\/failure-summary\.sh core default \{0\}' \}\}$/.exec(core.defaults.run.shell);
+  assert.ok(shell);
+  const root = mkdtempSync(join(tmpdir(), 'older-standalone-head-'));
+  t.after(() => rmSync(root, {recursive: true, force: true}));
+  writeFileSync(join(root, 'step'), 'echo standalone\n(exit 19)\n');
+  const [program, ...args] = shell[1].replace('{0}', 'step').split(' ');
+  const child = spawnSync(program, args, {cwd: root, encoding: 'utf8'});
+  assert.equal(child.status, 19); assert.equal(child.stdout, 'standalone\n');
 });
