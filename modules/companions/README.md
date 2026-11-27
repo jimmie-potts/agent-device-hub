@@ -1473,7 +1473,8 @@ A current reference can use eligible history in the same conversation. For
 activation order across callers. It uses the latest successful receipt when it
 can verify the scene against an eligible owner-backed request. A later activation
 with an unresolved outcome or a receipt without an eligible scene requires the
-owner to name a scene. A successful receipt
+owner to name a scene. Companions checks access after the tracker read and
+verifies that the same receipt is still current before dispatch. A successful receipt
 can report transmission with the physical effect still unconfirmed.
 
 | Conversation flow | Command families and tools |

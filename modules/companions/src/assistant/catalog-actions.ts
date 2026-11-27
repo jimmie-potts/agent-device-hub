@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {literalToolDeviceId, literalDeviceId, normalizedControlText} from './control-intent.js';
+import {literalToolDeviceId, literalDeviceId, normalizedControlText, type SceneReceipt} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {catalogCueReferences, catalogSelectorId, type CatalogReferenceRole} from './catalog-grounding.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
@@ -37,7 +37,7 @@ function textResult(value: unknown): string {
   if (textBytes(text) <= 4000) return text;
   return new TextDecoder().decode(new TextEncoder().encode(text).slice(0, 3950)) + '… (narrow the read to one item)';
 }
-type Proposed = {proposal: CatalogProposal; text: string; targets?: readonly (readonly string[])[]; knownTargets?: readonly (readonly string[])[]; draftRevision?: number}
+type Proposed = {proposal: CatalogProposal; text: string; targets?: readonly (readonly string[])[]; knownTargets?: readonly (readonly string[])[]; draftRevision?: number; sceneReceipt?: SceneReceipt}
   | {question: string} | {code: ErrorCode};
 type CanNameDevice = (id: string) => boolean;
 type CatalogTarget = {id: string; label: string};
@@ -47,7 +47,7 @@ export type CatalogAdmission = {
   readonly target: (id: string, source: CatalogTargetSource, alternatives: readonly CatalogTarget[], implicit?: boolean, nested?: readonly string[]) => ErrorCode | undefined;
   readonly excludedNames: (role: CatalogReferenceRole) => readonly string[];
   readonly excluded: (role: CatalogReferenceRole, id: string, label?: string) => boolean;
-  readonly lastActivatedScene: (deviceId: string, parent: TraceContext) => Promise<string | null | undefined>;
+  readonly lastActivatedScene: (deviceId: string, parent: TraceContext) => Promise<SceneReceipt | null | undefined>;
   readonly visible: (source: CatalogTargetSource, id: string) => boolean;
   readonly attachedArtwork?: (sourceRequestId: string, artworkIds: readonly string[], displays: readonly string[]) => boolean;
   readonly current: () => boolean;
@@ -236,10 +236,10 @@ export class ConversationActions {
   }
 
   async lastActivatedScene(deviceId: string,
-    candidates: readonly {requestId: string; sceneId: string; permitted: boolean}[], parent: TraceContext): Promise<string | undefined> {
-    if (candidates.length === 0) return undefined;
+    candidatesNow: () => readonly {requestId: string; sceneId: string; permitted: boolean}[], parent: TraceContext): Promise<SceneReceipt | undefined> {
     const operations = await this.#snapshot<OperationRecord>(CORE, 'operation', parent);
     if (operations === undefined) return undefined;
+    const candidates = candidatesNow();
     const relevant = operations.filter(row => row.target === deviceId && row.family === 'scene-activate');
     const ruledOut = (row: OperationRecord): boolean => row.status === 'expired' || row.status === 'rejected' ||
       row.status === 'completed' && row.result === Outcome.failed;
@@ -250,7 +250,7 @@ export class ConversationActions {
     const index = candidates.findIndex(candidate => candidate.requestId === latest.requestId);
     if (index < 0 || candidates.slice(0, index).some(candidate => !relevant.some(row => row.requestId === candidate.requestId))) return undefined;
     const candidate = candidates[index];
-    if (candidate?.permitted === true) return candidate.sceneId;
+    if (candidate?.permitted === true) return {requestId: latest.requestId, revision: latest.revision, sceneId: candidate.sceneId};
     return undefined;
   }
 
@@ -336,6 +336,7 @@ export class ConversationActions {
     if (typeof owner !== 'string' || typeof name !== 'string' || name.length === 0 || (literalId ?? name).length > 128) return {code: 'invalid-request'};
     let data: Record<string, unknown>;
     let draftRevision: number | undefined;
+    let sceneReceipt: SceneReceipt | undefined;
     if (family === 'nanoleaf-show-save') {
       const saved = await this.#saveData(call, parent, admission);
       if ('code' in saved) return saved;
@@ -392,11 +393,12 @@ export class ConversationActions {
       if (family === 'scene-activate' && typeof sceneSelector === 'string') {
         const previous = await admission?.lastActivatedScene(device.id, parent);
         if (previous !== undefined) {
-          if (previous === null || sceneSelector !== 'last-activated' || !scenes.supported || !scenes.sceneIds.includes(previous)) {
+          if (previous === null || sceneSelector !== 'last-activated' || !scenes.supported || !scenes.sceneIds.includes(previous.sceneId)) {
             return {question: 'Which saved scene would you like to activate on this light?'};
           }
           if (guard() !== undefined) return {code: 'forbidden'};
-          data = {...data, sceneId: previous};
+          sceneReceipt = previous;
+          data = {...data, sceneId: previous.sceneId};
         } else {
           if (admission !== undefined && !admission.selector('scene', sceneSelector, [device.id])) return {code: 'invalid-request'};
           data = {...data, sceneId: literalDeviceId(sceneSelector) ?? sceneSelector};
@@ -440,6 +442,7 @@ export class ConversationActions {
       }
       if (family === 'wemo-hold-release') {
         if (device.held === undefined || data.heldRequestId !== undefined && data.heldRequestId !== device.held.requestId) return {code: 'revision-conflict'};
+        if (admission?.excluded('operation', device.held.requestId) === true) return {code: 'not-found'};
         data = {...data, heldRequestId: device.held.requestId};
       } else if (device.availability !== 'available' || device.held !== undefined) return {code: 'unavailable'};
       binding = {kind: 'device', target: device.id, owner: selected.owner, configurationRevision: device.configurationRevision, generation: device.generation};
@@ -540,12 +543,14 @@ export class ConversationActions {
     const proposal = catalogProposal({family: 'catalog-action', command: family, target: binding.target, binding, data});
     if (proposal === undefined) return {code: 'invalid-request'};
     if (family === 'nanoleaf-show-save' && typeof data.showId === 'string') targets = [[data.showId]];
+    const order = family === 'pixoo-playlist-change' && object(data.change) && data.change.operation === 'order' &&
+      Array.isArray(data.change.itemIds) ? `Reorder ${String(data.change.itemIds.length)} items in playlist ${String(data.change.playlistId)} on ${binding.target}` : undefined;
     const effect = family === 'nanoleaf-show-save'
       ? `Save draft ${String(data.name)} (${String(data.showId)}) as “${String(data.versionName)}”, version ${Number(data.expectedVersion) + 1}?`
-      : deviceApproval ?? showText ?? `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
+      : deviceApproval ?? showText ?? order ?? `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
     if (effect.length > 1024) return {code: 'capacity'};
     return {proposal, text: effect, ...(targets === undefined ? {} : {targets}), ...(knownTargets === undefined ? {} : {knownTargets}),
-      ...(draftRevision === undefined ? {} : {draftRevision})};
+      ...(draftRevision === undefined ? {} : {draftRevision}), ...(sceneReceipt === undefined ? {} : {sceneReceipt})};
   }
 
   async #pixooCatalog(family: CatalogFamily, data: Record<string, unknown>, device: DeviceRecord,

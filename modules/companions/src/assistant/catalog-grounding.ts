@@ -61,8 +61,8 @@ const isCatalogReferenceRole = (value: unknown): value is CatalogReferenceRole =
   catalogReferenceRoles.some(role => role === value);
 export const isCatalogSelectorKind = (role: CatalogReferenceRole): role is CatalogSelectorKind => Object.hasOwn(ids, role);
 
-export function readCatalogReferences(value: unknown, scope: ModelControlScope): readonly CatalogReference[] | undefined {
-  if (!Array.isArray(value) || value.length > 8) return undefined;
+export function readCatalogReferences(value: unknown, scope: ModelControlScope, maximum = 8): readonly CatalogReference[] | undefined {
+  if (!Array.isArray(value) || value.length > maximum) return undefined;
   const refs: CatalogReference[] = [];
   const input: readonly unknown[] = value;
   for (const item of input) {

@@ -1,6 +1,8 @@
 import {isDeepStrictEqual} from 'node:util';
 import type {Proposal} from './history-contract.js';
 
+export type SceneReceipt = {readonly requestId: string; readonly revision: number; readonly sceneId: string};
+
 export type BoundControl = {
   readonly requestId: string;
   readonly ownerMessageIds: readonly string[];
@@ -9,6 +11,7 @@ export type BoundControl = {
   readonly text: string;
   readonly call: string;
   readonly draftRevision?: number;
+  readonly sceneReceipt?: SceneReceipt;
   readonly modelCallId?: string;
   readonly contextTargets?: readonly string[];
 };

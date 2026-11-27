@@ -23,7 +23,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, literalDeviceSubject, missingBrightness, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
+import {authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, literalDeviceSubject, missingBrightness, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, resolveModelControl, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
@@ -2282,6 +2282,7 @@ export class AssistantEngine {
     let targets: readonly (readonly string[])[] | undefined;
     let knownTargets: readonly (readonly string[])[] | undefined;
     let draftRevision: number | undefined;
+    let sceneReceipt: SceneReceipt | undefined;
     const clarificationDevices = new Set<string>();
     const currentTask = this.#task(state.taskId);
     const clarificationAccess = paid ? this.#supervisorScope(currentTask).fields : modelFields;
@@ -2337,6 +2338,7 @@ export class AssistantEngine {
         targets = selected.targets;
         knownTargets = selected.knownTargets;
         draftRevision = selected.draftRevision;
+        sceneReceipt = selected.sceneReceipt;
         if (!interpreted) {
           const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
           const matches = namedControlTargets(selected.proposal, instruction, knownTargets ?? []);
@@ -2352,7 +2354,7 @@ export class AssistantEngine {
     const proposal = question?.proposal;
     if (call !== undefined && question !== undefined && proposal != null && proposal.family !== 'coding-dispatch' && command !== 'art-request') {
       if (interpreted || call.name === SET_MODE) {
-        const bound = this.#bindCatalogControl(currentTask, proposal, call, id, state.step + 1, question.text, knownTargets, draftRevision);
+        const bound = this.#bindCatalogControl(currentTask, proposal, call, id, state.step + 1, question.text, knownTargets, draftRevision, sceneReceipt);
         if ('code' in bound) result = proposal.family === 'mode-set' && bound.code === 'revision-conflict'
           ? 'refused: revision-conflict: the Hub mode changed after the request was resolved. No change was sent.'
           : `refused: ${bound.code}`;
@@ -2603,13 +2605,29 @@ export class AssistantEngine {
       call.action?.control !== undefined && call.action.control.ownerMessageIds.every(ownerId => savedOwnerIds.has(ownerId))));
   }
 
+  #lastActivatedScene(taskId: string, modelCallId: string, deviceId: string, parent: TraceContext): Promise<SceneReceipt | undefined> {
+    return this.#catalog().lastActivatedScene(deviceId, () => {
+      const task = this.#task(taskId);
+      if (this.#currentModelControl(task, modelCallId) === undefined) return [];
+      const read = this.#fields(task.profile, 'read', 'private-conversation');
+      return this.#catalogPriorCalls(task, modelCallId).flatMap(prior => {
+        const proposal = prior.action?.control?.proposal;
+        if (proposal?.family !== 'catalog-action' || proposal.command !== 'scene-activate' || proposal.target !== deviceId ||
+          typeof proposal.data.sceneId !== 'string' || !this.#catalogFieldsPermitted(task, proposal)) return [];
+        return [{requestId: prior.id, sceneId: proposal.data.sceneId, permitted: read('operations', 'details', prior.id)}];
+      });
+    }, parent);
+  }
+
   #catalogAdmission(taskId: string, modelCallId: string, call: ToolCall): CatalogAdmission {
     const current = () => {
       const task = this.#task(taskId);
       const scope = this.#currentModelControl(task, modelCallId);
       const definition = this.#toolsFor(task).find(item => item.name === call.name);
       if (scope === undefined || definition === undefined) return undefined;
-      const refs = readCatalogReferences(call.input.references, scope);
+      // Playlist mutations can cite every item in a legacy-sized argument.
+      const maximum = call.name === catalogTool('pixoo-playlist-change') ? 256 : undefined;
+      const refs = readCatalogReferences(call.input.references, scope, maximum);
       if (refs === undefined && definition.input.required.includes('references')) return undefined;
       const roles = catalogToolReferenceRoles(call.name);
       if (refs?.some(ref => !roles.includes(ref.role)) === true) return undefined;
@@ -2688,16 +2706,8 @@ export class AssistantEngine {
         const {task, refs} = active;
         const [selection, ...others] = catalogSelections(refs, 'scene');
         if (selection?.kind !== 'last-activated' || others.length > 0) return undefined;
-        const read = this.#fields(task.profile, 'read', 'private-conversation');
-        const requestIds = this.#catalogPriorCalls(task, modelCallId).flatMap(prior => {
-          const control = prior.action?.control;
-          const proposal = control?.proposal;
-          if (proposal?.family !== 'catalog-action' || proposal.command !== 'scene-activate' || proposal.target !== deviceId ||
-            typeof proposal.data.sceneId !== 'string' || !this.#catalogFieldsPermitted(task, proposal)) return [];
-          return [{requestId: prior.id, sceneId: proposal.data.sceneId, permitted: read('operations', 'details', prior.id)}];
-        });
-        const scene = await this.#catalog().lastActivatedScene(deviceId, requestIds, parent);
-        return scene !== undefined && current() !== undefined && !catalogExcluded(refs, 'scene', scene) ? scene : null;
+        const receipt = await this.#lastActivatedScene(task.id, modelCallId, deviceId, parent);
+        return receipt !== undefined && !catalogExcluded(refs, 'scene', receipt.sceneId) ? receipt : null;
       },
       target: (id, source, alternatives, implicit = false, nested = []) => {
         const active = current();
@@ -2791,7 +2801,7 @@ export class AssistantEngine {
   }
 
   #bindCatalogControl(task: Task, proposal: BoundControl['proposal'], call: ToolCall, modelCallId: string, step: number, text: string,
-    knownTargets: readonly (readonly string[])[] | undefined, draftRevision?: number): BoundControl | {code: ErrorCode} | {clarify: readonly string[]} {
+    knownTargets: readonly (readonly string[])[] | undefined, draftRevision?: number, sceneReceipt?: SceneReceipt): BoundControl | {code: ErrorCode} | {clarify: readonly string[]} {
     const scope = this.#currentModelControl(task, modelCallId);
     if (scope === undefined) return {code: 'invalid-state'};
     if (proposal.family === 'mode-set') {
@@ -2839,7 +2849,7 @@ export class AssistantEngine {
     }
     const ownerMessageIds = scope.answer === undefined ? [scope.request.id] : [scope.request.id, scope.answer.id];
     return {requestId: `${task.id}-step-${String(step)}`, ownerMessageIds, proposal, text, call: call.id, modelCallId,
-      ...(draftRevision === undefined ? {} : {draftRevision})};
+      ...(draftRevision === undefined ? {} : {draftRevision}), ...(sceneReceipt === undefined ? {} : {sceneReceipt})};
   }
 
   #bindControl(task: Task, proposal: BoundControl['proposal'], call: ToolCall, text: string, ordinal: number,
@@ -3142,6 +3152,13 @@ export class AssistantEngine {
         if (group === undefined && direct?.modelCallId !== undefined &&
           (this.#currentModelControl(this.#task(task.id), direct.modelCallId) === undefined || !this.#catalogFieldsPermitted(task, direct.proposal))) {
           return {text: 'refused: the bound owner request is no longer current.', units: 0, disclosures: []};
+        }
+        if (direct?.sceneReceipt !== undefined && direct.modelCallId !== undefined) {
+          const receipt = await this.#lastActivatedScene(task.id, direct.modelCallId, proposal.target, parent);
+          this.#fence(active);
+          if (!isDeepStrictEqual(receipt, direct.sceneReceipt) || !this.#catalogFieldsPermitted(this.#task(task.id), proposal)) {
+            return {text: 'refused: Which saved scene would you like to activate on this light?', units: 0, disclosures: []};
+          }
         }
         const admitByMs = this.context.clock.now() + SHOW_SAVE_WINDOW_MS;
         if (proposal.family === 'catalog-action') {

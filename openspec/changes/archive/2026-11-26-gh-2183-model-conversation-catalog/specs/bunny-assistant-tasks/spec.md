@@ -35,6 +35,7 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 - **WHEN** the current request names an eligible light and refers to its last scene activation
 - **THEN** the Hub checks tracked activation order across callers for that light and selects the latest successful activation only when its scene has eligible owner-backed evidence
 - **AND** it asks which saved scene to use if a newer activation has an unresolved outcome or eligible evidence is missing or conflicts
+- **AND** the Hub rechecks the receipt identity and permission after reading the tracker and confirms that the same receipt is still current before admitting the command
 - **AND** the normal sharing, capability and revision checks still apply
 - **AND** a receipt of transmission establishes no physical effect
 

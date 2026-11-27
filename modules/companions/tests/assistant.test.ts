@@ -4941,12 +4941,16 @@ function catalogPhrases(): CatalogPhrase[] {
   ];
 }
 
-async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof world>>, operations: OperationRecord[] = []) {
+async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof world>>, operations: OperationRecord[] = [],
+  beforeOperationRead: () => void = () => {}) {
   await w.coreSync.close();
   const register = (owner: Participant, families: Record<string, ReturnType<typeof state>[]>) => owner.serveSync(Object.keys(families),
-    request => ({revision: 7, states: request.data.families.flatMap(family => family === 'operation'
-      ? operations.map(row => state('operation', row.id, row))
-      : families[family] ?? [])}));
+    request => {
+      if (request.data.families.includes('operation')) beforeOperationRead();
+      return {revision: 7, states: request.data.families.flatMap(family => family === 'operation'
+        ? operations.map(row => state('operation', row.id, row))
+        : families[family] ?? [])};
+    });
   function state(family: string, subject: string, data: {id: string; revision: number} & Record<string, unknown>, type = `org.bunny.${family}.updated`) {
     return {type, subject, dataschema: `https://bunny.invalid/events/${family}/2.0`, data};
   }
@@ -5007,6 +5011,8 @@ for (const host of ['anthropic', 'openai'] as const) {
     const delivered: {data: AssistantDispatch; valid: boolean}[] = [];
     const operationReceipts: OperationRecord[] = [];
     let sceneReceiptStatus: OperationRecord['status'] = 'completed';
+    let beforeOperationRead = () => {};
+    let receiptDenied: string | undefined;
     const policy = sharing();
     let modeDenied = false;
     let proposal: {name: string; input: Record<string, unknown>; ownerText: string} | undefined;
@@ -5038,13 +5044,14 @@ for (const host of ['anthropic', 'openai'] as const) {
             ? {id: 'scene-' + 'd'.repeat(64)}
             : query.kind === 'asset' && (query.name === 'Blue Kite' || query.id === '22222222-2222-4222-8222-222222222222')
             ? {id: '22222222-2222-4222-8222-222222222222'} : errorBody('not-found')),
-      share: query => policy(query) && !(modeDenied && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'hub'), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
+      share: query => policy(query) && !(modeDenied && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'hub') &&
+        !(receiptDenied !== undefined && query.destination === 'private-conversation' && query.source === 'operations' && query.record === receiptDenied), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
       artworkId: id, sourceRequestId: 'kite-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
         outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
           frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
       favorite: false, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false},
     })});
-    await catalogFixture(context, w, operationReceipts);
+    await catalogFixture(context, w, operationReceipts, () => beforeOperationRead());
     const validator = coreValidator();
     await w.core.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', message => {
       const validation = validator.validate(message);
@@ -5131,6 +5138,22 @@ for (const host of ['anthropic', 'openai'] as const) {
         assert.equal(typeof effect.data.startAtMs, 'number');
         assert.match(String(effect.data.momentId), /^[\da-f-]{36}$/u);
       } else assert.deepEqual(effect.data, {...(row.expected ?? row.settings), ...namedGuards});
+      if (row.family === 'wemo-hold-release') {
+        await ask('Release the hold on Bench Plug, excluding held-operation.', tool,
+          argumentsFor(row.owner, row.selector, {}),
+          [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'held-operation', 'named', 'request', 'exclude')]);
+        assert.equal(delivered.length, previous + 1, 'an excluded held operation is never filled in from device state');
+      }
+      if (row.family === 'pixoo-playlist-change') {
+        const itemIds = Array.from({length: 26}, (_, i) => `33333333-3333-4333-8333-${String(i + 1).padStart(12, '0')}`);
+        const change = {operation: 'order', playlistId: '11111111-1111-4111-8111-111111111111', revision: 7, itemIds};
+        await ask(`Reorder Evening Loop on Kitchen Display to ${itemIds.join(', ')}.`, tool,
+          argumentsFor(row.owner, row.selector, {change: {...change, playlistId: 'Evening Loop'}}),
+          [ownerReference('primary', 'Kitchen Display'), ownerReference('playlist', 'Evening Loop'),
+            ...itemIds.map(id => ownerReference('playlist-item', id))]);
+        assert.equal(delivered.length, previous + 2, 'a supported long playlist order is admitted');
+        assert.deepEqual(delivered.at(-1)?.data.data, {change});
+      }
       if (row.family === 'nanoleaf-reactive-preset-save') {
         await ask('Change id:preset-evening-glow, excluding Evening Glow.', tool,
           argumentsFor(row.owner, row.selector, {...row.settings, presetId: 'preset-evening-glow'}),
@@ -5162,10 +5185,37 @@ for (const host of ['anthropic', 'openai'] as const) {
         assert.equal(delivered.length, previous + 4);
         assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: oldScene}, 'Core receipt order supersedes Conversation task order');
 
+        const sceneRequest = 'Use the last scene I activated on Studio Wall.';
+        const latestReceipt = operationReceipts.at(-1) ?? assert.fail('latest scene receipt');
+        let reads = 0;
+        const intervening = 'intervening-scene';
+        beforeOperationRead = () => {
+          if (++reads !== 2) return;
+          operationReceipts.push({...latestReceipt, id: operationEntityId(intervening), requestId: intervening,
+            requestedBy: 'bunny/mcp/other-client', sentAtMs: latestReceipt.sentAtMs + 1});
+        };
+        assert.equal(await ask(sceneRequest, tool, useLatest, latest),
+          'refused: Which saved scene would you like to activate on this light?');
+        assert.equal(delivered.length, previous + 4, 'an operation that arrived between proposal and dispatch prevents a write');
+        assert.equal(operationReceipts.pop()?.requestId, intervening);
+
+        beforeOperationRead = () => {receiptDenied = latestReceipt.requestId;};
+        await ask(sceneRequest, tool, useLatest, latest, 'waiting');
+        assert.equal(delivered.length, previous + 4, 'revocation during the receipt read prevents a write');
+        assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which saved scene/u);
+        receiptDenied = undefined;
+        beforeOperationRead = () => {};
+
         sceneReceiptStatus = 'uncertain';
-        await ask(`Activate id:${oldScene} on Studio Wall.`, tool, argumentsFor(row.owner, row.selector, {sceneId: oldScene}),
-          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${oldScene}`)]);
-        assert.equal(delivered.length, previous + 5);
+        const answer = `Use id:${oldScene}.`;
+        proposal = {ownerText: answer, name: tool, input: {
+          ...argumentsFor(row.owner, row.selector, {sceneId: oldScene}),
+          references: [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${oldScene}`, 'named', 'answer')],
+        }};
+        assert.equal((await input(w.core, w.module(), answer, true)).status, 'accepted');
+        await until(() => delivered.length === previous + 5);
+        w.advance(1100);
+        await until(() => status(w) === 'succeeded');
         sceneReceiptStatus = 'completed';
       }
     }
