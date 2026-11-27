@@ -1118,6 +1118,13 @@ timers an event-loop turn. Real I/O deadlines stay on the host clock.
 ## Static analysis
 
 See [Static analysis](static-analysis.md#static-analysis) for the authoritative procedure.
+
+In tests and verification code, `bunny/no-wait-for-timeout` flags fixed Playwright
+sleeps. Wait for the observable result with a Playwright locator or the SDK's
+`waitForObservation`. `bunny/no-direct-chromium-launch` directs new browser
+tests to [`runJourney`](../apps/runtime/dashboard/tests/journey-runner.ts). Existing calls are recorded per file and rule.
+Prune the [adoption baseline](static-analysis.md#adoption-baseline) when removing one.
+
 The separate [CodeQL procedure](static-analysis.md#codeql-security-analysis) covers
 source-security results, permissions and the weekly scan. Its two analysis jobs
 run on ready PRs and main independently of the ten existing admission jobs.

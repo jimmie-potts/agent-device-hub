@@ -565,10 +565,37 @@ const noRawOutcomeLiteral = {
   },
 };
 
+// Keep separate rule IDs so existing waits and launches have independent per-file budgets.
+function browserTestCall(method, message, receiverMatches = () => true) {
+  return {
+    meta: {type: 'problem', schema: [], messages: {restricted: message}},
+    create(context) {
+      return {
+        CallExpression(node) {
+          const callee = unwrap(node.callee);
+          if (callee.type === 'MemberExpression' && memberName(callee) === method && receiverMatches(unwrap(callee.object), context)) {
+            context.report({node, messageId: 'restricted'});
+          }
+        },
+      };
+    },
+  };
+}
+
+function chromiumReceiver(receiver, context) {
+  if (receiver.type === 'MemberExpression') return memberName(receiver) === 'chromium';
+  if (receiver.type !== 'Identifier') return false;
+  if (receiver.name === 'chromium') return true;
+  const variable = findVariable(context.sourceCode.getScope(receiver), receiver.name);
+  return variable?.defs.some(({node}) => node.type === 'ImportSpecifier' && importedName(node) === 'chromium') ?? false;
+}
+
 export default {
   meta: {name: 'bunny'},
   rules: {
     'module-boundary': moduleBoundary,
+    'no-wait-for-timeout': browserTestCall('waitForTimeout', 'Wait for an observable condition with a Playwright locator or waitForObservation from @jimmie-potts/sdk/testing.'),
+    'no-direct-chromium-launch': browserTestCall('launch', 'Use runJourney from apps/runtime/dashboard/tests/journey-runner.ts to launch Chromium.', chromiumReceiver),
     'no-console': noConsole,
     'no-raw-error-text': noRawErrorText,
     'error-body-from-registry': errorBodyFromRegistry,

@@ -165,6 +165,7 @@ code written for the move.
 | --- | --- | --- |
 | `no-unsafe-*`, `no-explicit-any`, `restrict-*`, `no-base-to-string`, `unbound-method`, `no-redundant-type-constituents` | Untyped parsed or external data passes through code that predates the rules. Typing it means a refactor in each module, not a mechanical fix. | [#770](https://github.com/jimmie-potts/agent-device-hub/issues/770). Code that the B.U.N.N.Y. runtime replaces drops its entries when retired. |
 | `require-await`, `preserve-caught-error` | Fixes change a function's return type or an error's shape. Each needs review in its module. | #770 |
+| `bunny/no-wait-for-timeout`, `bunny/no-direct-chromium-launch` | Existing browser tests and verification helpers retain their counts per file and rule. The shared dashboard journey runner owns its Chromium launch and still checks fixed sleeps. | The owner converting each journey, under #2067. |
 | Every rule in `apps/chompi-bridge/` | The owner's CHOMPI work is active there, so adoption did not edit it. | The CHOMPI bridge owner, then [#837](https://github.com/jimmie-potts/agent-device-hub/issues/837) |
 
 ### Strict profile for new code
@@ -172,7 +173,7 @@ code written for the move.
 New code for the runtime follows a stricter profile from its first commit
 ([#867](https://github.com/jimmie-potts/agent-device-hub/issues/867)). It covers
 `apps/runtime/`, `apps/music-producer/`, `packages/sdk/`, `modules/` and the 2.0 contract sources in
-`packages/event-contracts/src/v2/`, and starts with no baseline entries. Staged
+`packages/event-contracts/src/v2/`, and starts with no baseline entries for its strict rules. The two browser-test rules above have their own adoption counts. Staged
 imported code keeps the shared rules until its module story converts it; none
 is staged now, since the Pixoo module joined the profile
 ([#843](https://github.com/jimmie-potts/agent-device-hub/issues/843)). To cover another path, add its glob to `strict` in
@@ -226,7 +227,7 @@ The local rules live in `scripts/eslint/bunny-rules.mjs`.
   that exist and still hides a finding of every rule it lifts;
 - that every TypeScript project compiling covered code keeps the five compiler
   settings, as `tsc --showConfig` reports them;
-- that covered paths have no lint baseline entries;
+- that covered paths have baseline entries only for the two browser-test rules where they apply;
 - that every workspace package uses a scope listed in `workspaceScopes`;
 - that the compiler base rejects an unchecked index and an explicit `undefined`
   optional property.

@@ -125,6 +125,17 @@ export default defineConfig(
     languageOptions: {globals: {...globals.browser}},
   },
   {
+    name: 'bunny/browser-test-calls',
+    files: ['**/{test,tests,verify}/**/*.{js,mjs,cjs,ts,tsx}', '**/*.{test,spec,browser}.{js,mjs,cjs,ts,tsx}'],
+    plugins: {bunny},
+    rules: {'bunny/no-wait-for-timeout': 'error', 'bunny/no-direct-chromium-launch': 'error'},
+  },
+  {
+    name: 'bunny/browser-test-calls/journey-runner',
+    files: ['apps/runtime/dashboard/tests/journey-runner.ts'],
+    rules: {'bunny/no-direct-chromium-launch': 'off'},
+  },
+  {
     name: 'bunny/typescript',
     files: ['**/*.{ts,tsx}'],
     extends: [tseslint.configs.recommendedTypeChecked],
