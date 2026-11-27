@@ -5144,16 +5144,20 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       const outcomes: string[] = [];
       const allScenarios: {text: string; quantity: unknown; expected?: number; current?: number; temperature?: true;
         stale?: true; boundary?: true; dispatchChange?: 'value' | 'time'; native?: true; byName?: true; unitCase?: true; correction?: string; correctedQuantity?: unknown}[] = [
-        {text: 'Set brightness to 20 nits.', quantity: {kind: 'absolute', amount: 20, literal: '20'}, correction: '25 percent.', correctedQuantity: 25, expected: 25},
+        {text: 'Set brightness to 20 nits.', quantity: {kind: 'absolute', amount: 20, literal: '20'}, correction: 'Twenty-five percent.', correctedQuantity: 25, expected: 25},
         {text: 'Set brightness to 20 milliwatts.', quantity: 20, correction: '20.', expected: 20},
         {text: 'Set brightness to twenty nits.', quantity: 20, correction: '21 percent.', correctedQuantity: 21, expected: 21},
         {text: 'Set brightness to half a watt.', quantity: 50, correction: '50%.', expected: 50},
         {text: 'Set brightness to twenty percent.', quantity: 20, unitCase: true, expected: 20},
+        {text: 'Set brightness to twenty percent.', quantity: 90, unitCase: true},
+        {text: 'Set brightness to minus twenty percent.', quantity: 20, unitCase: true},
+        {text: 'Set the one by my desk to 50%.', quantity: 50, unitCase: true, expected: 50},
         {text: 'Set brightness to 20 nits.', quantity: 20, current: 50, correction: '25%', correctedQuantity: {kind: 'increase-percent', amount: 25}},
         {text: 'Set temperature to 3200 mired.', quantity: 3200, correction: '3200 kelvin.', temperature: true, expected: 3200},
         {text: 'Set brightness to 20.', quantity: 20, unitCase: true, expected: 20},
         {text: 'Set brightness to 20 on Studio 2.', quantity: 20, byName: true, unitCase: true, expected: 20},
         {text: 'Set temperature to 3200.', quantity: 3200, temperature: true, unitCase: true, expected: 3200},
+        {text: 'Set temperature to three thousand two hundred Kelvin.', quantity: 3200, temperature: true, unitCase: true, expected: 3200},
         {text: 'Set brightness to −75%.', quantity: 75},
         {text: 'Set brightness to 1/75%.', quantity: 75},
         {text: 'Set brightness to ½%.', quantity: 50},

@@ -46,7 +46,7 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 #### Scenario: Explicit quantities keep their meaning
 
 - **WHEN** the owner names a starting value and a desired value
-- **THEN** the selected supervisor distinguishes them and the Hub validates the whole desired quantity in the registered unit.
+- **THEN** the selected supervisor distinguishes them and the Hub validates the whole desired quantity in the registered unit, including signed digits and whole numbers written in words.
 - **WHEN** a proposed absolute setting drops a sign, uses a malformed quantity, conflicts with the cited owner value or exceeds the registered bounds
 - **THEN** the Hub sends no command.
 - **WHEN** the owner supplies a numeric lighting value with a unit outside the selected capability's supported units

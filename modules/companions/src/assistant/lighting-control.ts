@@ -155,9 +155,64 @@ const QUANTITY_TOKEN = new RegExp(String.raw`(?<![\p{L}\p{N}_+−﹣－–—-])
 const WHOLE_NUMBER = /^[+-]?(?:\d+|\d{1,3}(?:(?:,\d{3})+|(?:\p{Zs}\d{3})+))(?:\.\d+)?$/u;
 const ATTACHED_QUANTITY = /^(?:[\p{N}\p{Cf}_]|[+−﹣－–—-][+−﹣－–—\p{N}-]|\s*[/⁄∕／])/u;
 const BARE_QUANTITY_END = /^(?:\s*$|\s*[.,;!?)\]](?:\s|$)|\s+(?:to|on|for|at|in|from|and|or|then|brighter|dimmer|warmer|cooler|brightness|saturation|please|now)\b|\s+of\s+(?:(?:the|its|current)\s+)*(?:brightness|temperature|level|setting|maximum|minimum)\b)/iu;
-const NUMBER_WORD = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|dozen';
-const NATURAL_AMOUNT = new RegExp(String.raw`\b(?:half|quarters?|a (?:few|couple)|(?:${NUMBER_WORD})(?:(?:[ -]| and )(?:${NUMBER_WORD}))*)\b`, 'giu');
-const NATURAL_UNIT = new RegExp(String.raw`^\s*(${UNIT_SPELLING})`, 'iu');
+const NUMBER_WORDS: Readonly<Record<string, number | undefined>> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+  hundred: 100, thousand: 1000, million: 1_000_000, billion: 1_000_000_000, dozen: 12,
+};
+const NUMBER_WORD = Object.keys(NUMBER_WORDS).join('|');
+const WRITTEN_NUMBER = new RegExp(String.raw`\b(?:(minus|negative|plus|positive)\s+)?((?:${NUMBER_WORD})(?:(?:[ -]| and )(?:${NUMBER_WORD}))*)\b`, 'giu');
+const WRITTEN_UNIT = new RegExp(String.raw`^\s*(${UNIT_SPELLING})`, 'iu');
+const QUALITATIVE_AMOUNT = /\b(?:half|(?:(?:a|one|two|three|four) )?quarters?|a (?:few|couple))\b/giu;
+
+type QuantityToken = {literal: string; value: number; unit?: QuantityUnit | 'unsupported' | undefined};
+
+function writtenValue(words: string, sign: string | undefined): number {
+  let total = 0, group = 0, tail = 0, largestRemainingScale = Number.POSITIVE_INFINITY;
+  for (const word of words.toLowerCase().split(/ and |[ -]/u)) {
+    const value = NUMBER_WORDS[word];
+    if (value === undefined) return Number.NaN;
+    if (value >= 1000) {
+      if (value >= largestRemainingScale || group + tail === 0) return Number.NaN;
+      total += (group + tail) * value;
+      largestRemainingScale = value;
+      group = 0;
+      tail = 0;
+    } else if (value === 100) {
+      if (group !== 0 || tail < 1 || tail > 9) return Number.NaN;
+      group = tail * 100;
+      tail = 0;
+    } else {
+      if (tail !== 0 && (tail < 20 || tail % 10 !== 0 || value > 9)) return Number.NaN;
+      tail += value;
+    }
+  }
+  return (sign === 'minus' || sign === 'negative' ? -1 : 1) * (total + group + tail);
+}
+
+function unitAfterWords(suffix: string): {literal: string; unit: QuantityToken['unit']} {
+  const known = WRITTEN_UNIT.exec(suffix);
+  const end = suffix.slice(known?.[0].length ?? 0);
+  if (!BARE_QUANTITY_END.test(end) && !/^\s+(?:(?:the|its) )?brightness\b/iu.test(end)) {
+    return {literal: known?.[0] ?? '', unit: 'unsupported'};
+  }
+  return {literal: known?.[0] ?? '', unit: known?.[1] === undefined ? undefined : QUANTITY_UNITS[known[1].toLowerCase()]};
+}
+
+function writtenQuantities(text: string): QuantityToken[] {
+  return [...text.matchAll(WRITTEN_NUMBER)].flatMap(match => {
+    const [, signed, words] = match;
+    if (words === undefined) return [];
+    const suffix = text.slice(match.index + match[0].length);
+    if (/^\s+quarters?\b/iu.test(suffix)) return [];
+    // In these references “one” identifies the light. It does not supply its setting.
+    if (words.toLowerCase() === 'one' && signed === undefined &&
+        /\b(?:the|this|that|which|another)\s+$/iu.test(text.slice(0, match.index)) && !WRITTEN_UNIT.test(suffix)) return [];
+    const {literal, unit} = unitAfterWords(suffix);
+    return [{literal: match[0] + literal, unit, value: writtenValue(words, signed?.toLowerCase())}];
+  });
+}
 
 function withoutLightingName(device: DeviceRecord, text: string): string {
   if (exactControlIds(text).includes(device.id)) return text;
@@ -172,7 +227,7 @@ function withoutLightingName(device: DeviceRecord, text: string): string {
   return text;
 }
 
-function quantityTokens(text: string) {
+function quantityTokens(text: string): QuantityToken[] {
   // Exact device selectors can contain numbers. The model selects quantities from the rest of the owner message.
   const clean = text.replace(/\bid:[^\s]+/giu, ' ');
   let end = 0;
@@ -194,7 +249,7 @@ function quantityTokens(text: string) {
       value: malformed ? Number.NaN : Number(signed.replace(/[,\p{Zs}]/gu, ''))}];
   });
   if (/\p{N}/u.test(clean.slice(end))) tokens.push({literal: '', unit: undefined, value: Number.NaN});
-  return tokens;
+  return [...tokens, ...writtenQuantities(clean)];
 }
 
 function numericOperation(value: unknown): value is NumericOperation {
@@ -333,12 +388,8 @@ function hasUnsupportedUnit(text: string, tokens: ReturnType<typeof quantityToke
   if (tokens.some(token => !Number.isSafeInteger(token.value))) return false;
   if (tokens.some(token => unsupported(token.unit))) return true;
   const clean = text.replace(/\bid:[^\s]+/giu, ' ');
-  return [...clean.matchAll(NATURAL_AMOUNT)].some(match => {
-    const suffix = clean.slice(match.index + match[0].length);
-    const known = NATURAL_UNIT.exec(suffix);
-    if (known?.[1] === undefined) return !BARE_QUANTITY_END.test(suffix) && !/^\s+(?:(?:the|its) )?brightness\b/iu.test(suffix);
-    return unsupported(QUANTITY_UNITS[known[1].toLowerCase()]) || !BARE_QUANTITY_END.test(suffix.slice(known[0].length));
-  });
+  return [...clean.matchAll(QUALITATIVE_AMOUNT)].some(match =>
+    unsupported(unitAfterWords(clean.slice(match.index + match[0].length)).unit));
 }
 
 export function lightingRefusal({owner, device, light}: LightingDevice, family: Family, native: boolean): ErrorCode | undefined {
