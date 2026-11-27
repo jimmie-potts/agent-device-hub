@@ -4349,7 +4349,7 @@ void test('both hosted supervisors look up owner-named devices regardless of req
   const duplicate = {...wall, id: 'duplicate-wall'};
   const hiddenAliases = [{...duplicate, id: 'hidden-duplicate'}, {...wall, id: 'hidden-alias', label: 'Studio Wall Special'}];
   let aliasesPresent = false, duplicateVisible = false;
-  let replaceOwner = false;
+  let replaceOwner = false, revokeStatus = false;
   const resultByProvider = {anthropic: [] as string[], openai: [] as string[]};
   const usage = {input_tokens: 20, output_tokens: 10};
   let lookups: {target: string; owner: string}[] = [];
@@ -4374,19 +4374,21 @@ void test('both hosted supervisors look up owner-named devices regardless of req
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic device answer.', annotations: []}]}]}));
   }});
   const standard = sharing();
+  function factsSaved(): boolean {
+    const taskId = task(w)?.taskId;
+    return taskId !== undefined && w.store().calls(taskId)
+      .some(saved => saved.namedDeviceRead?.owner === owner && saved.namedDeviceRead.id === wall.id);
+  }
   const w = await world(context, {provider: anthropic, alternateProvider: openai, tools: ['read_devices', 'control_scene_activate'],
-    share: grant => standard(grant) && !(grant.source === 'devices' && grant.record?.startsWith('hidden-') === true),
+    share: grant => standard(grant) && !(grant.source === 'devices' && (grant.record?.startsWith('hidden-') === true ||
+      revokeStatus && grant.record === wall.id && grant.field === 'status' && factsSaved())),
     dispatch: () => assert.fail('a named lookup must not dispatch')});
   const participant = w.bus.connect(owner), substitute = w.bus.connect(substituteOwner);
   context.after(async () => {await participant.close(); await substitute.close();});
   const snapshot = (records: DeviceRecord[]) => ({revision: 1, states: records.map(data => ({
     type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
   }))});
-  const ownerReplaced = () => {
-    const taskId = task(w)?.taskId;
-    return replaceOwner && taskId !== undefined &&
-      w.store().calls(taskId).some(saved => saved.namedDeviceRead?.owner === owner && saved.namedDeviceRead.id === wall.id);
-  };
+  const ownerReplaced = () => replaceOwner && factsSaved();
   await participant.serveSync(['device'], () => snapshot(ownerReplaced() ? []
     : [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])]));
   await substitute.serveSync(['device'], () => snapshot(ownerReplaced() ? [{...wall, kind: 'tidbyt'}] : []));
@@ -4425,7 +4427,7 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     assert.deepEqual(await ask('Apply Night Sky on Hidden Wall.', 'Hidden Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Missing Wall.', 'Missing Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall XL.', 'Studio Wall'), {devices: []});
-    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', ''), statusFacts);
+    assert.deepEqual(await ask('Check the status of Studio Wall.', ''), statusFacts);
     assert.deepEqual(await ask('Read id:studio-wall.', ''), statusFacts);
     const missing = {devices: [], instruction: /Retry read_devices once/u};
     const requireRepair = (facts: unknown) => {
@@ -4434,9 +4436,15 @@ void test('both hosted supervisors look up owner-named devices regardless of req
       assert.deepEqual(facts, {...missing, instruction: facts.instruction});
     };
     requireRepair(await ask('How bright is it now?', ''));
+    requireRepair(await ask('Check Studio Wall. Actually, use the other one.', ''));
+    requireRepair(await ask("I'm writing an example about Studio Wall. Which device did we use earlier?", ''));
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', '', 'auto', 'Studio Wall'), statusFacts);
     requireRepair(await ask('Read Studio Wall or Studio Wall XL.', ''));
+    requireRepair(await ask('Read Studio Wall and the light next to it.', ''));
     requireRepair(await ask('Read id:studio-wall and id:studio-wall-xl.', ''));
     requireRepair(await ask('Instead of Studio Wall, apply Dusk to Side Wall.', ''));
+    requireRepair(await ask('Check the status of Studio Wall; actually, do not read Studio Wall.', ''));
+    assert.equal((await page(w)).messages.at(-1)?.text, 'Synthetic device answer.');
     assert.deepEqual(await ask('Read Studio Wall. Never mind.', ''), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall, not Dusk.', '', 'auto', 'Studio Wall'), statusFacts);
     const beforeRepair = task(w)?.taskId;
@@ -4457,13 +4465,16 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     assert.deepEqual(JSON.parse(resultByProvider[provider].at(-1) ?? ''), statusFacts);
     assert.deepEqual(await ask('Apply Night Sky without changing Studio Wall.', 'Studio Wall'), {devices: []});
     lookups = [{owner: 'auto', target: ''}];
-    replaceOwner = true;
-    const previous = task(w)?.taskId, before = resultByProvider[provider].length;
-    assert.equal((await input(w.core, w.module(), 'Apply Night Sky on Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
-    await until(() => task(w)?.taskId !== previous && status(w) === 'failed');
-    assert.equal(task(w)?.code, 'forbidden');
-    assert.equal(resultByProvider[provider].length, before, 'the old owner facts do not cross the provider boundary');
-    replaceOwner = false;
+    for (const changed of ['owner', 'status grant'] as const) {
+      replaceOwner = changed === 'owner';
+      revokeStatus = changed === 'status grant';
+      const previous = task(w)?.taskId, before = resultByProvider[provider].length;
+      assert.equal((await input(w.core, w.module(), 'Check the status of Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
+      await until(() => task(w)?.taskId !== previous && status(w) === 'failed');
+      assert.equal(task(w)?.code, 'forbidden');
+      assert.equal(resultByProvider[provider].length, before, `facts do not reach the supervisor after the ${changed} changes`);
+      replaceOwner = revokeStatus = false;
+    }
   }
 });
 

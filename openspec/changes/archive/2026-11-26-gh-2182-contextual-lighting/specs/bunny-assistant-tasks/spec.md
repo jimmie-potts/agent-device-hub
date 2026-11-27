@@ -42,6 +42,14 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 - **WHEN** the owner asks a contextual LIFX status question with the LIFX read tool enabled
 - **THEN** Conversation reads the eligible light under the current grants without requiring or adding a lighting write tool.
 
+#### Scenario: A hosted device read omits its selector
+
+- **WHEN** the selected supervisor leaves the device selector empty and the complete current owner request binds to one permitted device
+- **THEN** the Hub reads that device and rechecks its owner, exact ID and grants before replaying the facts.
+- **WHEN** that binding is unclear
+- **THEN** the same supervisor gets one facts-free opportunity to supply an explicit selector for this request.
+- **AND** if the target remains unclear, Conversation asks which exact device the owner means before any command.
+- **AND** a cancelled read discloses no device facts. An excluded device cannot be selected via the missing-selector path.
 
 #### Scenario: Explicit quantities keep their meaning
 

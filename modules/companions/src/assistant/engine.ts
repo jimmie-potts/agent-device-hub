@@ -218,9 +218,10 @@ export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this han
 export const WAITING_PREFIX = 'Waiting to delegate';
 const jobReceipt = (job: CodingJob): string => `accepted: Coding job ${job.jobId} was queued for ${job.repository}. Updates will appear in this conversation.`;
 
+const deviceRequestClauses = (text: string) => text.trim().split(/(?<=[.!?;,])(?:\s+|$)|[\r\n]+/u).filter(Boolean);
+
 function deviceRequestSubject(text: string): string | undefined {
-  // Only the opening clause can select a read target. Its full subject must resolve locally.
-  const [opening = '', remainder] = text.trim().split(/(?<=[.!?;,])(?:\s+|$)|[\r\n]+/u, 2);
+  const [opening = '', remainder] = deviceRequestClauses(text);
   const affirmative = normalizedControlText(opening).replace(/ only$/u, '');
   const timerSubject = /^(?:is|was) (?:the )?timer for (?:the )?(.+?) (?:on|off|active|armed)$/u.exec(affirmative)?.[1]
     ?? /^(?:is|was) (?:the )?timer (?:on|off|active|armed) for (?:the )?(.+)$/u.exec(affirmative)?.[1];
@@ -241,20 +242,25 @@ const deviceLookupQuestion = 'Which exact device should I look up?';
 const deviceLookupNotResolved = JSON.stringify({devices: [], instruction: deviceLookupQuestion});
 const lookupRepair = JSON.stringify({devices: [], instruction: 'Retry read_devices once with an explicit device name or ID from the current owner request. If the target is still unclear, ask which exact device the owner means.'});
 const deviceLookupCancelled = /(?:^|[.!?;]\s+)(?:never mind|cancel (?:that|the request))[.!?]?\s*$/iu;
+type DeviceLookupStage = 'initial' | 'repair' | 'unresolved' | 'repaired' | 'answered';
 type DeviceLookupAdmission = {kind: 'named'; lookup: NamedDeviceLookup} | {kind: 'contextual'} | {kind: 'blocked'};
 
-function namedDeviceLookup(request: string, call: ToolCall): DeviceLookupAdmission {
+function namedDeviceLookup(request: string, call: ToolCall, answer: boolean): DeviceLookupAdmission {
   if (call.name !== READ_DEVICES) return {kind: 'contextual'};
   if (typeof call.input.target !== 'string' || typeof call.input.owner !== 'string') return {kind: 'blocked'};
   const target = call.input.target.trim();
   const words = normalizedControlText(request);
   if (deviceLookupCancelled.test(request)) return {kind: 'blocked'};
-  if (target === '') return exclusionsInDeviceRequest.test(words) ? {kind: 'blocked'}
-    : {kind: 'named', lookup: {owner: call.input.owner, target, request}};
+  if (target === '') {
+    const subject = answer ? literalDeviceId(request) === undefined ? words : request
+      : brightnessSubject(request) ?? deviceRequestSubject(request);
+    return subject === undefined || deviceRequestClauses(request).length !== 1 || exclusionsInDeviceRequest.test(words)
+      ? {kind: 'blocked'} : {kind: 'named', lookup: {owner: call.input.owner, target: subject, request, currentSubject: true}};
+  }
   // Exclusions apply within their clause. Scene wording and the position of a
   // contrast do not decide whether the owner cited the device for a read.
   const affirmative: string[] = [], excluded: string[] = [];
-  for (const clause of request.split(/(?<=[,;.!?])(?:\s+|$)|[\r\n]+/u)) {
+  for (const clause of deviceRequestClauses(request)) {
     const marker = /\b(?:except|rather than|instead of|not|don['’]t|without|leave)\b/iu.exec(clause);
     affirmative.push(clause.slice(0, marker?.index ?? clause.length));
     if (marker !== null) excluded.push(clause.slice(marker.index + marker[0].length));
@@ -1748,7 +1754,8 @@ export class AssistantEngine {
     const lookupAnswer = lookupAnswerId === undefined ? undefined : transcript.find(item => item.role === 'tool' &&
       'effect' in item && item.effect === lookupAnswerId && item.result === question?.answer);
     if (lookupAnswerId !== undefined && lookupAnswer !== undefined) ownerInputs.add(lookupAnswerId);
-    const deviceLookupAdmissionFor = (call: ToolCall, repairing: boolean, answered: boolean): DeviceLookupAdmission => {
+    const deviceLookupAdmissionFor = (call: ToolCall, stage: DeviceLookupStage): DeviceLookupAdmission => {
+      const repairing = stage === 'repair' || stage === 'unresolved', answered = stage === 'answered';
       if (purpose !== 'supervisor' || call.name !== READ_DEVICES) return {kind: 'contextual'};
       if (!access('conversation', 'request', requestId) || !canReadMessage(requestId)) return {kind: 'blocked'};
       let lookupRequest = request;
@@ -1757,8 +1764,8 @@ export class AssistantEngine {
             !access('conversation', 'request', lookupAnswerId) || !canReadMessage(lookupAnswerId)) return {kind: 'blocked'};
         lookupRequest = lookupAnswer.result;
       }
-      const admission = namedDeviceLookup(lookupRequest, call);
-      if (repairing && !answered && (admission.kind !== 'named' || admission.lookup.target === '')) return {kind: 'blocked'};
+      const admission = namedDeviceLookup(lookupRequest, call, answered);
+      if (repairing && !answered && (admission.kind !== 'named' || admission.lookup.currentSubject === true)) return {kind: 'blocked'};
       if (brightnessTarget !== undefined && !repairing && !answered && typeof call.input.target === 'string' &&
           call.input.target.trim() !== '' && !exclusionsInDeviceRequest.test(words) && !deviceLookupCancelled.test(request)) return {kind: 'contextual'};
       return admission;
@@ -1767,28 +1774,24 @@ export class AssistantEngine {
       local('devices', field, id) && recordedSupervisorField(this.options.share, task.profile, 'supervisor', 'devices', field, id));
     const namedReads = new Map<string, {lookup: NamedDeviceLookup | undefined; owner: string; id: string}>();
     let preceding: ToolCall | undefined;
-    let lookupRepairPending = false, lookupRepairFailed = false, lookupClarified = false;
+    let lookupStage: DeviceLookupStage = 'initial';
     for (const item of transcript) {
       if (item.role === 'assistant') {
         preceding = item.calls[0];
       } else if (item.role === 'tool' && preceding?.id === item.call && 'effect' in item && typeof item.effect === 'string') {
-        const admission = deviceLookupAdmissionFor(preceding, lookupRepairPending, lookupClarified);
+        const admission = deviceLookupAdmissionFor(preceding, lookupStage);
         const resolved = this.store.call(item.effect)?.namedDeviceRead;
         if (resolved !== undefined) namedReads.set(item.effect, {lookup: admission.kind === 'named' ? admission.lookup : undefined, ...resolved});
         if (item.name === READ_DEVICES) {
-          if (item.result === lookupRepair) lookupRepairPending = true;
-          if (item.result === deviceLookupNotResolved) lookupRepairFailed = true;
-          if (resolved !== undefined) lookupRepairPending = false;
-          if (item === lookupAnswer) {
-            lookupClarified = true;
-            lookupRepairPending = false;
-            lookupRepairFailed = false;
-          }
+          if (item.result === lookupRepair) lookupStage = 'repair';
+          if (item.result === deviceLookupNotResolved) lookupStage = 'unresolved';
+          if (lookupStage === 'repair' && resolved !== undefined) lookupStage = 'repaired';
         }
+        if (item === lookupAnswer) lookupStage = 'answered';
         preceding = undefined;
       }
     }
-    const deviceLookupAdmission = (call: ToolCall) => deviceLookupAdmissionFor(call, lookupRepairPending, lookupClarified);
+    const deviceLookupAdmission = (call: ToolCall) => deviceLookupAdmissionFor(call, lookupStage);
     const priorCatalogIds = new Set(this.store.calls(task.id).filter(call => effects.has(call.id) && call.kind === 'tool' && call.action === undefined && !namedReads.has(call.id))
       .flatMap(call => call.disclosures?.flatMap(field => field.source === 'devices' && field.record !== undefined ? [field.record] : []) ?? [])
       .filter(id => !devices.has(id)));
@@ -1813,7 +1816,7 @@ export class AssistantEngine {
       }
       return access(source, field, record);
     };
-    return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, deviceLookupAdmission, lookupRepairPending, lookupRepairFailed, lookupClarified, lookupGranted, namedReads, priorCatalogIds, resolvedCatalogDevice,
+    return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, deviceLookupAdmission, lookupStage, lookupGranted, namedReads, priorCatalogIds, resolvedCatalogDevice,
       brightnessTarget: brightnessTarget === undefined ? undefined : catalogSubject ?? brightnessTarget, selectedDevice, history};
   }
   #hostedHistory(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>): Map<string, HostedHistoryMessage> {
@@ -2439,8 +2442,8 @@ export class AssistantEngine {
       direct = savedControl;
       next = 'act';
     } else if (call !== undefined && deviceScope !== undefined &&
-        (deviceScope.lookupRepairFailed || deviceScope.lookupRepairPending &&
-          (call.name === ASK_OWNER || call.name === READ_DEVICES && deviceScope.deviceLookupAdmission(call).kind === 'blocked'))) {
+        (deviceScope.lookupStage === 'unresolved' || deviceScope.lookupStage === 'repair' &&
+          (next === 'approve' || call.name === ASK_OWNER || call.name === READ_DEVICES && deviceScope.deviceLookupAdmission(call).kind === 'blocked'))) {
       question = {id: `${state.taskId}-q${String(currentTask.questions + 1)}`, kind: 'clarification',
         text: deviceLookupQuestion, answer: null, call: call.id, proposal: null, deviceReadClarification: {requestId: deviceScope.requestId}};
     } else if (next === 'approve' && call !== undefined && lighting) {
@@ -2501,9 +2504,7 @@ export class AssistantEngine {
     } else if ((next === 'ask' || next === 'approve') && call !== undefined) {
       question = this.#question(state.taskId, call, proposalCopy, canNameDevice, id);
     }
-    if (call === undefined && (deviceScope?.lookupRepairPending === true || deviceScope?.lookupRepairFailed === true)) {
-      result = deviceLookupQuestion;
-    }
+    if (call === undefined && deviceScope?.lookupStage === 'unresolved') result = deviceLookupQuestion;
     const proposal = question?.proposal;
     if (call !== undefined && question !== undefined && proposal != null && proposal.family !== 'coding-dispatch' && command !== 'art-request') {
       if (interpreted || call.name === SET_MODE) {
@@ -3339,8 +3340,8 @@ export class AssistantEngine {
             brightnessControl: scope.brightnessTarget !== undefined, resolve: scope.resolvedCatalogDevice,
           }) ?? fail('invalid-state');
         if (scope !== undefined && namedDeviceRead === undefined && call.name === READ_DEVICES) {
-          if (scope.lookupRepairPending) text = deviceLookupNotResolved;
-          else if (!scope.lookupClarified && typeof call.input.target === 'string' && call.input.target.trim() === '' &&
+          if (scope.lookupStage === 'repair') text = deviceLookupNotResolved;
+          else if (scope.lookupStage === 'initial' && typeof call.input.target === 'string' && call.input.target.trim() === '' &&
               !deviceLookupCancelled.test(scope.request)) text = lookupRepair;
         }
         return {text, units: 0, evidence, disclosures: ledger.fields,

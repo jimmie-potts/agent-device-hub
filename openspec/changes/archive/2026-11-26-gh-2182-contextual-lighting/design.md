@@ -38,3 +38,6 @@ percentage units in prose. Conflicting numbers, ratios and incompatible units
 refuse the completed proposal. A change to the
 referenced configuration or Hub mode closes that pending command without a write.
 The LIFX read tool can establish contextual scope with no write tool enabled.
+
+
+A hosted device read with an empty selector uses the existing complete-subject binding only for a single current request. An exact ID or label must resolve to one permitted owner and device. The same supervisor gets one facts-free repair with an explicit selector when that binding is unclear. A saved successful read retains its owner and exact ID for a fresh grant and identity check before replay. A focused question and its answer stay bound to the current request. The supervisor can finish after recognizing a withdrawal without asking the owner to select a device.
