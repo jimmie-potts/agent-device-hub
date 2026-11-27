@@ -1,4 +1,5 @@
 // The browser journeys' wait for the dashboard's feed, which says what it saw when it expires (#2068).
+import {stripVTControlCharacters} from 'node:util';
 
 /** A response the page already has. */
 type SeenResponse = {status(): number};
@@ -178,6 +179,16 @@ function describe(seen: {value: Seen} | {problem: string}, requests: {value: rea
 }
 
 const firstLine = (error: unknown): string => error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error);
+
+/** Playwright starts its call log with the locator, then reports what kept the action from finishing. */
+export function browserStepError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const [message, ...lines] = stripVTControlCharacters(error.message).split('\n');
+  const calls = lines.map(line => line.trim()).filter(line => line.startsWith('- '));
+  const kept = calls.length > 3 ? [calls[0], '…', ...calls.slice(-2)] : calls;
+  return [message, ...kept].join('\n  ');
+}
+
 
 /**
  * Waits, with the page's default timeout, for `main#main[data-feed="${value}"]`. If the wait expires, its error says

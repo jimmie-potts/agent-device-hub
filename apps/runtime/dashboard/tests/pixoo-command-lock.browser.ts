@@ -1,12 +1,8 @@
 // HTTP-only uncertainty must lock every mounted control for the same target.
 import assert from 'node:assert/strict';
 import {chromium, type Page} from 'playwright';
-import {bounded, mainNow} from './feed-wait.ts';
+import {bounded, browserStepError, mainNow} from './feed-wait.ts';
 import {changes, feed, startWorld} from './harness.ts';
-
-const firstLine = (error: unknown): string => error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error);
-/** The last lines of a Playwright error's call log, which say what the action was still waiting for. */
-const lastCalls = (error: unknown): string[] => error instanceof Error ? error.message.split('\n').map(line => line.trim()).filter(line => line.startsWith('- ')).slice(-2) : [];
 
 /**
  * What the card and the advanced controls showed when a step failed (#2129): each one's status and hint lines and its
@@ -15,7 +11,7 @@ const lastCalls = (error: unknown): string[] => error instanceof Error ? error.m
  * the failure, within `bounded`'s limit.
  */
 async function shown(page: Page, sent: readonly string[]): Promise<string> {
-  const read = await bounded(() => page.evaluate(() => {
+  const surfaces = bounded(() => page.evaluate(() => {
     const text = (node: Element): string => node.textContent.replace(/\s+/g, ' ').trim();
     const surface = (root: Element | null): string => {
       if (root === null) return 'absent';
@@ -23,8 +19,12 @@ async function shown(page: Page, sent: readonly string[]): Promise<string> {
       const controls = [...root.querySelectorAll('button, input, select')].map(node => {
         const control = node as HTMLButtonElement | HTMLInputElement | HTMLSelectElement;
         // A label that holds its control also holds a select's options, which are not its name.
-        const label = control.labels?.[0], name = control.getAttribute('aria-label') ?? (control instanceof HTMLButtonElement || label === undefined ? text(control)
-          : label.textContent.replace(control.textContent, '').replace(/\s+/g, ' ').trim());
+        const label = control.labels?.[0];
+        let name = control.getAttribute('aria-label');
+        if (name === null) {
+          name = control instanceof HTMLButtonElement || label === undefined ? text(control)
+            : label.textContent.replace(control.textContent, '').replace(/\s+/g, ' ').trim();
+        }
         return `${name}${control instanceof HTMLButtonElement ? '' : `=${JSON.stringify(control.value)}`}${control.disabled ? ' (disabled)' : ''}`;
       });
       return `lines ${JSON.stringify(lines)}; controls ${JSON.stringify(controls)}`;
@@ -34,10 +34,11 @@ async function shown(page: Page, sent: readonly string[]): Promise<string> {
       player: surface(document.querySelector('section[aria-label="Pixoo player"]')), device: surface(document.querySelector('[data-device="pixoo-1"]')),
       attempts: sessionStorage.getItem('bunny-device-attempts')?.slice(0, 300) ?? null};
   }));
+  const [read, connection] = await Promise.all([surfaces, mainNow(page)]);
   const facts = 'value' in read ? [`route ${read.value.hash}`, `card: ${read.value.card}`, `advanced player: ${read.value.player}`,
     `advanced device controls: ${read.value.device}`, `retained attempts ${String(read.value.attempts)}`]
     : [`the card and the advanced controls could not be read: ${read.problem}`];
-  return [...facts, await mainNow(page), `command requests sent ${JSON.stringify(sent)}`].join('\n  ');
+  return [...facts, connection, `command requests sent ${JSON.stringify(sent)}`].join('\n  ');
 }
 const browser = await chromium.launch({headless: true});
 const results: {surface: string; direction: string; passed: boolean; reason?: string}[] = [];
@@ -51,8 +52,7 @@ try {
       // Each step names itself and what the page showed if it fails; a step that succeeds runs unchanged.
       const step = async (name: string, work: () => Promise<unknown>): Promise<void> => {
         try { await work(); } catch (error) {
-          const calls = lastCalls(error);
-          throw new Error(`${name}: ${firstLine(error)}${calls.length === 0 ? '' : ` (last call log: ${calls.join(' ')})`}\n  ${await shown(page, sent)}`, {cause: error});
+          throw new Error(`${name}: ${browserStepError(error)}\n  ${await shown(page, sent)}`, {cause: error});
         }
       };
       await page.goto(`${world.url}/${surface === 'player' ? '#/module/pixoo/player' : '#/component/pixoo-1'}`); await feed(page, 'connected');
