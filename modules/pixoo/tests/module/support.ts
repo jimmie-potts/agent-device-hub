@@ -19,7 +19,10 @@ import {Library} from '../../src/library/index.js';
 import {encodeHostedGif} from '../../src/media/index.js';
 import {FAMILIES, pixooOwnSchemas, schemaOf, type DisplayRecord} from '../../src/module/schemas.js';
 import {TICK_MS, createPixooModule, type PixooOptions} from '../../src/module/module.js';
-import {SimulatedPixoo, type SimulatedMode} from '../../src/module/transport.js';
+import {DashboardPager} from '../../src/presentation/agent-dashboard.js';
+import {renderDashboard} from '../../src/presentation/dashboard-pixels.js';
+import {monitorView} from '../../src/presentation/sources.js';
+import {frameDigest, SimulatedPixoo, type SimulatedMode} from '../../src/module/transport.js';
 
 export const DEVICE = 'pixoo-1';
 /** The module's section: a simulated Pixoo at a documentation address with the observed GIF profile. */
@@ -319,6 +322,29 @@ export class World {
     this.sessions = [record];
     await this.core.publish(`bunny.state.session.${record.id}`, {kind: 'state', ...sessionState(record)});
     return record;
+  }
+
+  /** Wait for the dashboard rendered from the published session, then return its frame digests for later comparisons. */
+  async waitForSessionDashboard(session: Session30Record, limitMs = 5000): Promise<string[]> {
+    const view = monitorView({state: 'current', revision: session.revision, sessions: [session]});
+    const digests = renderDashboard(new DashboardPager().layout(view, this.now())).map(frameDigest);
+    await this.waitForDashboard(digests, limitMs);
+    return digests;
+  }
+
+  /** A session update can reach the module before its dashboard replaces the previous picture on the device. */
+  async waitForDashboard(expected: readonly string[], limitMs = 5000): Promise<void> {
+    const matches = () => {
+      const actual = this.device.state().shown?.digests;
+      return actual?.length === expected.length && actual.every((digest, index) => digest === expected[index]) ? true : undefined;
+    };
+    try {
+      if (this.clock === undefined) await waitFor(matches, 'the session dashboard on the device', limitMs);
+      else await this.tickUntil(matches, 'the session dashboard on the device', limitMs);
+    } catch (cause) {
+      const shown = this.device.state().shown;
+      throw new Error(`Expected dashboard frames ${JSON.stringify(expected)}, device showed ${JSON.stringify(shown)}, Monitor ${JSON.stringify(this.display()?.monitor)}`, {cause});
+    }
   }
 
   /** Publishes a new playback record from the stand-in playback owner. */

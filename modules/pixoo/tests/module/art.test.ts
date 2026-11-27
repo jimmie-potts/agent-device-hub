@@ -43,18 +43,23 @@ const rgbFrame = (index: number, phase: number): Buffer => {
   for (let pixel = 0; pixel < 4096; pixel += 1) bytes.set((pixel + phase) % 2 === 0 ? [index % 256, 0, 0] : [0, index % 256, 255], pixel * 3);
   return bytes;
 };
-async function monitor(world: World): Promise<string> {
-  const mode = await accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'work'}));
-  await world.outcome(mode);
-  await world.publishSession();
-  return waitFor(() => world.device.state().shown?.digests[0], 'monitor');
+async function setWorkMode(world: World): Promise<void> {
+  await world.outcome(await accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'work'})));
+}
+
+async function monitor(world: World): Promise<string[]> {
+  await setWorkMode(world);
+  return world.waitForSessionDashboard(await world.publishSession());
 }
 
 void it('plays a labelled rain forecast with every exact art frame and leaves its staged bytes unchanged', async () => {
   const world = await World.open();
   try {
     await world.start();
-    const base = await monitor(world);
+    await setWorkMode(world);
+    // Exercise the ordering from #2101: Work can already show the empty dashboard when the session arrives.
+    await waitFor(() => world.device.state().shown ?? undefined, 'the dashboard before the first session');
+    const base = await world.waitForSessionDashboard(await world.publishSession());
     const data = content('rain-art', hostedGif(19, 8), 8);
     await world.outcome(await accepted(stage(world, data)));
     const before = await preview(world, data.compositionId);
@@ -76,7 +81,7 @@ void it('plays a labelled rain forecast with every exact art frame and leaves it
     const outcome = await world.outcome(requestId);
     assert.equal(outcome.data.result, 'succeeded');
     assert.equal(outcome.data.evidence, 'transmitted');
-    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the current Monitor base');
+    await world.waitForDashboard(base);
     assert.deepEqual(world.invalid, []);
   } finally { await world.close(); }
 });
@@ -96,7 +101,7 @@ void it('labels rain art past the former 20-frame cap within the direct route li
     const outcome = await world.outcome(requestId);
     assert.equal(outcome.data.result, 'succeeded');
     assert.equal(outcome.data.evidence, 'transmitted');
-    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the current Monitor base');
+    await world.waitForDashboard(base);
     assert.deepEqual(world.invalid, []);
   } finally { await world.close(); }
 });
@@ -257,7 +262,7 @@ void it('refuses an unknown art reference without a mood fallback', async () => 
     assert.equal(result.error.error.code, 'not-found');
     await sleep(100);
     assert.equal(world.device.state().uploads, before);
-    assert.equal(world.device.state().shown?.digests[0], shown);
+    assert.deepEqual(world.device.state().shown?.digests, shown);
   } finally { await world.close(); }
 });
 
@@ -275,7 +280,7 @@ void it('a damaged private frame fails without replacing the display with a mood
     const result = await world.outcome(await accepted(artMoment(world, data.compositionId)));
     assert.equal(result.data.result, 'failed'); assert.equal(result.data.evidence, 'none');
     assert.equal(world.device.state().uploads, writes);
-    assert.equal(world.device.state().shown?.digests[0], base);
+    assert.deepEqual(world.device.state().shown?.digests, base);
   } finally { await world.close(); }
 });
 
@@ -341,7 +346,7 @@ void it('plays all staged frames at their exact delay and returns to the current
     world.withDatabase(db => db.prepare('UPDATE pixoo_art_copies SET expires_at_ms = ? WHERE composition_id = ?').run(Date.now() - 1, data.compositionId));
     const result = await world.outcome(request);
     assert.equal(result.data.result, 'succeeded'); assert.equal(result.data.evidence, 'transmitted');
-    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'base restored');
+    await world.waitForDashboard(base);
     const expired = await artMoment(world, data.compositionId, {momentId: 'expired-art'});
     assert.ok(expired.status === 'rejected'); assert.equal(expired.error.error.code, 'not-found');
     assert.deepEqual(world.invalid, []);
@@ -388,8 +393,7 @@ void it('exact art over the status base with nothing loaded plays in Free withou
     const data = content('status-base-art', hostedGif(37, 8), 8);
     await world.outcome(await accepted(stage(world, data)));
     await world.outcome(await accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'free'})));
-    await world.publishSession();
-    const base = await waitFor(() => world.device.state().shown?.digests[0], 'the status base');
+    const base = await world.waitForSessionDashboard(await world.publishSession());
     const before = world.display()?.player;
     assert.equal(before?.state, 'idle'); assert.equal(before.intent, 'stopped'); assert.equal(before.itemId, null); assert.equal(before.playlistId, null);
     const request = await accepted(artMoment(world, data.compositionId, {coversStatus: false, priorityClass: 'flourish'}));
@@ -398,7 +402,7 @@ void it('exact art over the status base with nothing loaded plays in Free withou
     assert.equal(world.display()?.player.intent, 'stopped');
     const result = await world.outcome(request);
     assert.equal(result.data.result, 'succeeded'); assert.equal(result.data.evidence, 'transmitted');
-    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the status base back');
+    await world.waitForDashboard(base);
     assert.deepEqual(world.display()?.player, before);
     const plain = await world.request('moment-play', 'org.bunny.moment.play.requested', {momentId: 'plain-empty', mood: 'celebrate', durationMs: 1000,
       priorityClass: 'flourish', coversStatus: false, startAtMs: Date.now(), toleranceMs: 5000});
@@ -439,7 +443,7 @@ void it('a manual pause during exact art over the status base ends it, the dashb
     await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'exact art before the pause');
     await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'})));
     assert.equal((await world.outcome(request)).data.result, 'succeeded');
-    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the status base after the pause');
+    await world.waitForDashboard(base);
     assert.deepEqual([world.display()?.base, world.display()?.player.intent], ['status', 'paused']);
     const again = await accepted(artMoment(world, data.compositionId, {momentId: 'after-empty-pause'}));
     await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'exact art again');
@@ -514,7 +518,7 @@ for (const waiting of [false, true]) void it(`a status view change interrupts ${
       const ended = world.seen.find(message => message.type === 'org.bunny.moment.ended' && (message.data as MomentEnded).requestId === request)?.data as MomentEnded | undefined;
       assert.equal(ended?.ending, 'interrupted');
     }
-    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the dashboard after the view change');
+    await world.waitForDashboard(base);
     const writes = world.device.state().uploads;
     await sleep(1000);
     assert.equal(world.device.state().uploads, writes, 'the interrupted moment never replays');
@@ -679,7 +683,7 @@ void it('stages and plays exact art at the direct command boundary on the histor
       const shown = await waitFor(() => world.device.state().shown?.frames === data.frames ? world.device.state().shown : undefined, 'exact direct art');
       assert.deepEqual(shown?.delaysMs, Array<number>(data.frames).fill(100));
       assert.equal((await world.outcome(moment)).data.result, 'succeeded');
-      await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'monitor restored');
+      await world.waitForDashboard(base);
     }
   } finally { await world.close(); }
 });
