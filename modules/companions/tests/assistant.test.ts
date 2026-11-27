@@ -989,7 +989,7 @@ for (const host of ['anthropic', 'openai'] as const) {
         body.messages?.flatMap(message => message.content).filter(item => item.type === 'tool_result').at(-1)?.content;
       const read = ++calls % 2 === 1, id = `call_facts_${String(calls)}`;
       if (!read) {
-        assert.ok(result);
+        assert.ok(result !== undefined && result.length > 0);
         readings.push(result);
       }
       const tool = {name: 'read_devices', input: {owner, target: 'id:fixture-light'}};
