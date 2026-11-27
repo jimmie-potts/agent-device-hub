@@ -28,6 +28,10 @@ alignment with current project direction, accepted architecture, reusable patter
 and related work; do not restrict discovery to the issue’s original sources.
 Before any code, run the [pickup check](docs/sdlc.md#pickup-check): do not start
 an issue someone else holds in progress, in review or with an open PR.
+Prioritize maintainable code, reusable components and shared foundations under
+those scope defaults, including necessary integration and consumer adoption.
+Apply the [behavior ownership and consumer evidence check](docs/sdlc.md#consumer-evidence)
+before implementation, after material design or scope changes, and in review.
 A read-only request reports the assessment without writing.
 
 At accepted child completion, reopening, material scope/prerequisite change or

@@ -292,6 +292,32 @@ typescript.run('module-boundary types', bunny.rules['module-boundary'], {
   ],
 });
 
+const commandDecision = new RuleTester({languageOptions: {parser: tseslint.parser, parserOptions: {
+  projectService: {allowDefaultProject: ['command-text-case.tsx']}, tsconfigRootDir: root,
+}}});
+const commandCode = code => `declare const command: {text: string; locked: boolean; phase: {kind: string}};
+declare const unrelated: {text: string};
+${code}`;
+const commandCase = code => ({code: commandCode(code), filename: join(root, 'command-text-case.tsx')});
+commandDecision.run('no-command-text-decision', bunny.rules['no-command-text-decision'], {
+  valid: [
+    'const needsAttention = command.phase.kind === "refused";',
+    'const receipt = <p title={command.text}>{command.text}</p>;',
+    'const label = `Command: ${command.text}`;',
+    'function show(text: string) {return <p>{text}</p>;} show(command.text);',
+    'const found = /^Refused/.test(unrelated.text) || unrelated.text.startsWith("Not sent");',
+  ].map(commandCase),
+  invalid: [
+    'const idle = command.text === "No command sent from this page.";',
+    'const success = command.text.startsWith("Completed: succeeded");',
+    'const attention = /Refused|Not sent|Expired/.test(command.text);',
+    'const {text: receipt} = command; const refused = receipt.includes("Refused");',
+    'const receipt = command["text"]; switch (receipt) {case "Expired": break;}',
+    'const description = command.text.replace("The module observed the result.", "Placement saved.");',
+    'function hint(text: string) {return /^Refused/.exec(text)?.[0];} hint(command.text);',
+  ].map(code => ({...commandCase(code), errors: [{messageId: 'phase'}]})),
+});
+
 // The safe-error rules (Hub #953, ADR 0012 "Safe errors" and "Observability").
 const nodeGlobals = {languageOptions: {globals: {console: 'readonly', process: 'readonly', globalThis: 'readonly', JSON: 'readonly', String: 'readonly'}}};
 const withGlobals = cases => cases.map(item => ({...nodeGlobals, ...(typeof item === 'string' ? {code: item} : item)}));

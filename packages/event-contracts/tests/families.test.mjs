@@ -91,11 +91,14 @@ test('each family has one kind and one type, and its schema is built from the sh
       || (family === 'coding-progress' && dataschema === 'https://bunny.invalid/events/coding-progress/2.5')
       || (family === 'coding-work' && dataschema === 'https://bunny.invalid/events/coding-work/2.5')
       || (family === 'coding-progress' && dataschema === 'https://bunny.invalid/events/coding-progress/2.6')
+      || (['coding-endpoint', 'coding-state'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.5`)
+      || (family === 'coding-work' && dataschema === 'https://bunny.invalid/events/coding-work/2.6')
       // The conversation message queue (Hub #2030).
       || (['assistant-control', 'assistant-state'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
       // Returned steers past the queue's limit (Hub #2031).
       || (family === 'assistant-state' && ['2.3', '2.4'].some(version => dataschema === `https://bunny.invalid/events/assistant-state/${version}`))
       || (['assistant-dispatch', 'moment-play'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.3`)
+      || (family === 'assistant-dispatch' && dataschema === 'https://bunny.invalid/events/assistant-dispatch/2.4')
       // The session family's new major (Hub #1865), registered beside 2.0 and 2.1.
       || (family === 'session' && dataschema === 'https://bunny.invalid/events/session/3.0')
       // The native assistant source's versions (Hub #505).

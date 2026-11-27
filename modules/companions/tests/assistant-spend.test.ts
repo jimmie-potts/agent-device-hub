@@ -23,7 +23,7 @@ const PRICES: Record<string, ModelPrices> = {'model-a': {input: 4, output: 20, c
 const A = PRICES['model-a'] ?? assert.fail();
 const used = (input: number, output: number, cacheRead = 0): TokenUsage => ({input, output, cacheWrite: 0, cacheRead});
 const answer = (text: string, usage: TokenUsage | null): TurnReply => ({text, calls: [], stop: 'end', units: usage === null ? null : usage.input + usage.output + usage.cacheWrite + usage.cacheRead, usage});
-const read = (usage: TokenUsage | null): TurnReply => ({...answer('', usage), text: null, calls: [{id: 'call-read', name: 'read_sessions', input: {}}], stop: 'tool'});
+const read = (usage: TokenUsage | null): TurnReply => ({...answer('', usage), text: null, calls: [{id: 'call-read', name: 'read_hub_guide', input: {}}], stop: 'tool'});
 function deferred<T>() {let resolve: (value: T) => void = () => {}; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
 async function until(check: () => boolean): Promise<void> {
   for (let i = 0; i < 100; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 10));}
@@ -80,7 +80,7 @@ async function messages(w: {module: () => CompanionsModule}, profile = 'bunny'):
 void test('a paid call reserves its request bound and dearest cost before it is sent, and its reported usage replaces both', async context => {
   const first = deferred<TurnReply>();
   const provider = paid(turn => turn.transcript.length === 1 ? first.promise : answer('Nothing is running.', used(30, 9, 2000)));
-  const w = await world(context, {provider, tools: ['read_sessions']});
+  const w = await world(context, {provider, tools: ['read_hub_guide']});
   await enable(w.core, w.module()); assert.equal((await input(w.core, w.module(), 'Anything running?')).status, 'accepted');
   await until(() => provider.calls() === 1);
   const bound = inputBound(provider.inputs[0]);
@@ -147,7 +147,7 @@ void test('at a spend limit a new paid turn is refused with capacity naming the 
 void test('a model call that could pass the daily limit is refused before it is sent, after the call already sent finishes', async context => {
   const first = deferred<TurnReply>();
   const provider = paid((_input, turn) => turn === 1 ? first.promise : answer('Never sent.', used(1, 1)));
-  const w = await world(context, {provider, tools: ['read_sessions']});
+  const w = await world(context, {provider, tools: ['read_hub_guide']});
   await enable(w.core, w.module()); await input(w.core, w.module(), 'Check sessions');
   await until(() => provider.calls() === 1);
   // While the first call is in flight, a conversation-level call reports $19.80 of usage.
@@ -228,7 +228,7 @@ void test('a provider spend-limit refusal ends the turn capacity with its messag
     if (turn === 1) return read(used(10, 5));
     throw new ProviderFault('capacity', false, undefined, SPEND_LIMIT_REACHED);
   });
-  const w = await world(context, {provider, tools: ['read_sessions']});
+  const w = await world(context, {provider, tools: ['read_hub_guide']});
   await enable(w.core, w.module()); await input(w.core, w.module(), 'Check sessions');
   await until(() => task(w)?.status === 'failed');
   assert.deepEqual([task(w)?.code, task(w)?.modelCalls, task(w)?.toolCalls, provider.calls()], ['capacity', 2, 1, 2], 'no retry and no further call');

@@ -47,6 +47,39 @@ suite('the Nanoleaf module follows the core\'s sessions', () => {
 });
 
 suite('the device record', () => {
+  test('looks up a saved scene by name without returning names or reading the light', async context => {
+    const world = await ModuleWorld.open(context);
+    await world.start();
+    await world.until(() => {
+      const scenes = world.device_()?.capabilities.scenes;
+      return scenes?.supported === true && scenes.sceneIds.length > 0;
+    }, 10_000, 'saved scene survey');
+    const stored = world.query("SELECT names FROM control_scenes WHERE device='wall'")[0]?.[0];
+    assert.equal(typeof stored, 'string');
+    const names: unknown = JSON.parse(String(stored));
+    assert.ok(Array.isArray(names) && typeof names[0] === 'string');
+    const name = names[0];
+    const read = (query: Readonly<Record<string, string>>, signal = new AbortController().signal) =>
+      world.content('scene-id-by-name', {query, signal});
+    const before = world.device.state().devices[LINES_ADDRESS];
+    const known = await read({device: 'wall', name: name.toLowerCase()});
+    assert.ok(known !== undefined && !('error' in known));
+    const capabilities = world.device_()?.capabilities.scenes;
+    assert.ok(capabilities?.supported === true);
+    assert.deepEqual(JSON.parse(Buffer.from(known.bytes).toString()), {id: capabilities.sceneIds[0]});
+    const unknown = await read({device: 'wall', name: 'Unknown synthetic scene'});
+    assert.equal(unknown !== undefined && 'error' in unknown && unknown.error.code, 'not-found');
+    const wrongDevice = await read({device: 'other-light', name});
+    assert.equal(wrongDevice !== undefined && 'error' in wrongDevice && wrongDevice.error.code, 'not-found');
+    const stopped = new AbortController();
+    stopped.abort();
+    const cancelled = await read({device: 'wall', name}, stopped.signal);
+    assert.equal(cancelled !== undefined && 'error' in cancelled && cancelled.error.code, 'cancelled');
+    assert.deepEqual(world.device.state().devices[LINES_ADDRESS], before);
+    assert.equal(JSON.stringify(world.device_()).includes(name), false);
+    world.verify();
+  });
+
   test('carries the power the device reported', async context => {
     const world = await ModuleWorld.open(context);
     await world.start();

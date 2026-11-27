@@ -2,41 +2,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {SessionRow} from '../src/sessions.ts';
-import {labelAttempt, labelEvidence, labelCanSubmit} from '../src/labels.ts';
+import {labelAttempt, labelObservation, labelCanSubmit} from '../src/labels.ts';
 
 const row = {id: 'a'.repeat(64), generation: 1, revision: 4, uncertain: false} as SessionRow;
 const attempt = labelAttempt(row, 'Review', 'label-attempt-1');
-const accepted = {status: 'accepted', requestId: attempt.requestId} as const;
 const observed = {...row, revision: 5, label: {value: 'Review', origin: 'user' as const}};
 
-void test('requested, accepted and confirmed are distinct; a state arriving before the reply confirms afterward', () => {
-  assert.equal(labelEvidence(attempt, row, true), 'requested');
-  assert.equal(labelEvidence(attempt, row, true, accepted), 'accepted');
-  assert.equal(labelEvidence(attempt, observed, true), 'requested');
-  assert.equal(labelEvidence(attempt, observed, true, accepted), 'confirmed');
-  assert.equal(labelEvidence(attempt, {...observed, revision: 3}, true, accepted), 'accepted');
-  assert.equal(labelEvidence(attempt, {...observed, label: {value: 'Review', origin: 'agent'}}, true, accepted), 'accepted');
+void test('a matching owner label must be current, have user origin, and meet the revision guard', () => {
+  assert.equal(labelObservation(attempt, row, true), 'unconfirmed');
+  assert.equal(labelObservation(attempt, observed, true), 'confirmed');
+  assert.equal(labelObservation(attempt, {...observed, revision: 3}, true), 'unconfirmed');
+  assert.equal(labelObservation(attempt, {...observed, label: {value: 'Review', origin: 'agent'}}, true), 'unconfirmed');
 });
 
 void test('matching no-ops confirm at the same revision; clear needs an absent explicit label', () => {
-  assert.equal(labelEvidence(attempt, {...observed, revision: 4}, true, accepted), 'confirmed');
+  assert.equal(labelObservation(attempt, {...observed, revision: 4}, true), 'confirmed');
   const clear = labelAttempt(row, null, 'clear-attempt-1');
-  const answer = {status: 'accepted', requestId: clear.requestId} as const;
-  assert.equal(labelEvidence(clear, row, true, answer), 'confirmed');
-  assert.equal(labelEvidence(clear, observed, true, answer), 'accepted');
+  assert.equal(labelObservation(clear, row, true), 'confirmed');
+  assert.equal(labelObservation(clear, observed, true), 'unconfirmed');
 });
 
 void test('a copy that is not synced does not confirm and a replaced generation retires the attempt', () => {
-  assert.equal(labelEvidence(attempt, observed, false, accepted), 'accepted');
-  assert.equal(labelEvidence(attempt, {...observed, uncertain: true}, true, accepted), 'confirmed', 'an uncertain status does not hide a matching synced label (#1865)');
-  assert.equal(labelEvidence(attempt, {...observed, generation: 2}, true, accepted), 'retired');
-  assert.equal(labelEvidence(attempt, undefined, true, accepted), 'retired');
+  assert.equal(labelObservation(attempt, observed, false), 'unconfirmed');
+  assert.equal(labelObservation(attempt, {...observed, uncertain: true}, true), 'confirmed', 'an uncertain status does not hide a matching synced label (#1865)');
+  assert.equal(labelObservation(attempt, {...observed, generation: 2}, true), 'retired');
+  assert.equal(labelObservation(attempt, undefined, true), 'retired');
 });
 
-void test('refusal and uncertainty do not erase the captured attempt or become record confirmation', () => {
-  const conflict = {error: {code: 'revision-conflict', retryable: false}} as const;
-  assert.equal(labelEvidence(attempt, observed, true, conflict), 'refused');
-  assert.equal(labelEvidence(attempt, observed, true, {error: {code: 'uncertain-result', retryable: false}}), 'uncertain');
+void test('the attempt retains its captured request identity and revision', () => {
   assert.deepEqual(attempt, {id: row.id, generation: 1, revision: 4, label: 'Review', requestId: 'label-attempt-1'});
 });
 

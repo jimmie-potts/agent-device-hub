@@ -113,13 +113,17 @@ it('removing private access refuses its entry while local clients remain usable'
   assert.equal((await call(runtime.url + '/api/v2/build', {headers: {authorization: 'Bearer ' + TOKEN}})).status, 200);
 });
 
-async function stream(context: TestContext, url: string, headers: Record<string, string>) {
+async function stream(context: TestContext, url: string, headers: Record<string, string>, ready?: (text: string) => void) {
   let closed = false;
   const incoming = await new Promise<IncomingMessage>((resolve, reject) => {
     const sent = request(url + '/api/sdk/v1/stream', {headers}, response => {
       if (response.statusCode !== 200) { response.resume(); reject(new Error('stream status ' + response.statusCode)); return; }
       let text = '';
-      response.setEncoding('utf8').on('data', (chunk: string) => { text += chunk; if (text.includes('event: ready')) resolve(response); });
+      response.setEncoding('utf8').on('data', (chunk: string) => {
+        if (text.includes('\n\n')) return;
+        text += chunk;
+        if (text.includes('event: ready') && text.includes('\n\n')) {ready?.(text); resolve(response);}
+      });
       response.on('close', () => { closed = true; });
     });
     sent.once('error', reject).end();
@@ -176,4 +180,47 @@ it('private entry configuration requires canonical HTTPS and a digest', () => {
       .map(origin => ({...base.privateProxy, origin}))]) {
     assert.throws(() => checkEdgeSection({...base, privateProxy}), {code: 'config-invalid'});
   }
+});
+
+it('an enrolled remote coding worker reaches only its own private SDK endpoint and revocation closes it', async context => {
+  const {runtime, credentials} = await start(context);
+  const pc = 'bunny/parts/coding-worker-pc';
+  const mac = 'bunny/parts/coding-worker';
+  const pcToken = 'pc_SYNTHETIC2170';
+  const macToken = 'mac_SYNTHETIC2170';
+  const grant = (id: string, source: string, token: string) => ({id, source, digest: tokenDigest(token), scopes: [], role: 'coding-worker'});
+  const cloud = 'bunny/parts/coding-worker-cloud-synthetic';
+  const cloudToken = 'cloud_SYNTHETIC2170';
+  const grants = [grant('pc', pc, pcToken), grant('mac', mac, macToken), grant('cloud', cloud, cloudToken)];
+  const replace = async (entries: typeof grants): Promise<void> => {
+    await writeFile(credentials, JSON.stringify({schema: 'edge-credentials/1.0', credentials: entries}));
+    await runtime.reload();
+  };
+  await replace(grants);
+  const headers = {...ENTRY, authorization: 'Bearer ' + pcToken, 'bunny-source': pc};
+  let ready = '';
+  const closed = await stream(context, runtime.url, headers, text => {ready = text;});
+  const readyData = ready.match(/^data: (.+)$/mu)?.[1];
+  assert.ok(readyData !== undefined);
+  const readyFrame: unknown = JSON.parse(readyData);
+  assert.ok(readyFrame !== null && typeof readyFrame === 'object' && 'schema' in readyFrame && 'connection' in readyFrame && 'endpointCapability' in readyFrame);
+  const {schema, connection, endpointCapability} = readyFrame;
+  assert.equal(schema, 'sdk-remote/1.0');
+  assert.ok(typeof connection === 'string' && typeof endpointCapability === 'string');
+  const id = `${connection}-1`;
+  const register = (family: string, worker = headers) => call(runtime.url + '/api/sdk/v1/respond', {method: 'POST', headers: worker,
+    body: JSON.stringify({schema, connection, endpoint: endpointCapability, id, pattern: `bunny.cmd.${family}.${id}`})});
+  assert.equal((await register('coding-work', {...headers, authorization: 'Bearer ' + cloudToken, 'bunny-source': cloud})).status, 403);
+  assert.equal((await register('set-mode')).status, 403);
+  assert.equal((await register('coding-work')).status, 200);
+  await assert.rejects(stream(context, runtime.url, {...headers, 'bunny-source': mac}), {message: 'stream status 403'});
+  await assert.rejects(stream(context, runtime.url, {...headers, authorization: 'Bearer ' + macToken, 'bunny-source': mac}), {message: 'stream status 403'});
+  await stream(context, runtime.url, {authorization: 'Bearer ' + macToken, 'bunny-source': mac});
+  for (const path of ['/api/v2/build', '/mcp', '/api/v2/browser/session', '/api/v2/commands/set-mode', '/api/sdk/v1/sync', '/api/sdk/v1/subscribe']) {
+    const answer = await call(runtime.url + path, path === '/api/v2/build' ? {headers} : {method: 'POST', headers, body: '{}'});
+    assert.equal(answer.status, 403, path);
+  }
+  await replace(grants.slice(1));
+  await waitFor(closed);
+  await assert.rejects(stream(context, runtime.url, headers), {message: 'stream status 401'});
 });

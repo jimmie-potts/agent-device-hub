@@ -1,3 +1,4 @@
+import type {ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 // The action tracker's state machine (Hub #782, ADR 0012 "High-impact messages" and "Errors, effects and outcomes").
 // The core tracks each device command, moment and mode change it dispatches as one operation, from sent to accepted to
 // completed, or to rejected, expired or uncertain. This file is the whole state machine: pure functions over one
@@ -73,6 +74,7 @@ export type Operation = {
   target: string;
   /** The command's payload without its `requestId`, kept so a person can send it again as a new command (#923). Empty when omitted. */
   data: Record<string, unknown>;
+  observationBasis?: ObservationBasis;
   /** Private identity of an omitted payload, ONN text or art bytes; never an input to replay or a public operation record. */
   payload?: {status: 'omitted'; hmac: string};
   /** Who asked for the action: an authenticated caller's source, or the core part that dispatched it. */

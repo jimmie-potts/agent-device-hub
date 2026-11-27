@@ -28,7 +28,7 @@ export {
 } from './sync.js';
 export {
   ASSETS_PATH, CONTENT_PATH, MAX_ASSETS, MAX_ASSET_BYTES, MAX_PAGES, MAX_SECRETS, MAX_TOOLS, MAX_WORKER_CALLS, MODULE_API_VERSION, checkApiVersion, checkConfiguration, checkContributions,
-  checkManifest, checkModuleName, type BunnyModule, type ConfigurationCheck, type Configure, type Configured, type JsonObjectSchema,
+  checkManifest, checkModuleName, type BunnyModule, type ConfigurationCheck, type Configure, type Configured, type DeviceCommandAvailability, type JsonObjectSchema,
   type ManifestProblem, type LogFields, type Logger, type ModuleAsset, type ModuleAssetType, type ModuleContent, type ModuleContentRequest, type ModuleContext, type ModuleManifest, type ModulePage,
   type PassiveModulePage, type ReactModulePage, type TrustedEditorModulePage,
   MAX_UPLOAD_BYTES, type ModuleUpload, type ModuleUploadRequest, type ModuleUploadReply, type ModuleStagedUpload,
@@ -52,3 +52,8 @@ export {HeldEvidence, Outcome, absent, hold, merge, observed, transmitted, uncer
 export {serializedAdmission, type Fresh, type SerializedAdmission} from './admission.js';
 
 export {DiagnosticEpisodes} from './diagnostic-episodes.js';
+
+export {
+  currentObservationBasis, deviceActionFamily, deviceFacts, deviceLabel, matchingDevices, MAX_OBSERVATION_AGE_MS, observationStale, readDeviceRecords,
+  openLifxDeviceFacts, readLifxDeviceFacts, supportsDeviceAction, WEMO_OBSERVATION_AGE_MS, type LifxDeviceFacts, type OwnedDevice,
+} from './device-lookup.js';

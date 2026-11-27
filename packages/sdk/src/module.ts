@@ -83,7 +83,13 @@ const isObjectSchema = (value: unknown): value is JsonObjectSchema =>
  * or `assets`; editor script/style links resolve declared assets. Checks invoke no renderer or asset reader.
  */
 export function checkContributions(manifest: ModuleManifest): ManifestProblem | undefined {
-  const {pages, content, tools, settings, assets, upload, additionalUploads} = manifest;
+  const {pages, content, tools, settings, assets, upload, additionalUploads, deviceCommandAvailability} = manifest;
+  if (deviceCommandAvailability !== undefined && (!isObject(deviceCommandAvailability) ||
+    Object.entries(deviceCommandAvailability).some(([family, requirement]) => family.length > 64 ||
+      !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(family) ||
+      (requirement !== 'requires-available' && requirement !== 'owner-admission')))) {
+    return contributionProblem('device command availability needs command families and recognized requirements');
+  }
   if (pages === undefined && content === undefined && tools === undefined && settings === undefined && assets === undefined && upload === undefined && additionalUploads === undefined) return undefined;
   const frontendVersion = checkApiVersion(FRONTEND_VERSION, manifest.apiVersion) === undefined;
   if (assets !== undefined && !frontendVersion) return contributionProblem(`frontend pages and assets need module API ${FRONTEND_VERSION}`);
@@ -322,6 +328,8 @@ export type ModuleSettings<Config> = {
   show(config: Config): Readonly<Record<string, unknown>>;
 };
 
+export type DeviceCommandAvailability = Readonly<Record<string, 'requires-available' | 'owner-admission'>>;
+
 export type ModuleManifest<Config = unknown> = {
   /**
    * Lowercase letters and digits with single hyphens, at most 64 characters. It names the module's source
@@ -333,6 +341,8 @@ export type ModuleManifest<Config = unknown> = {
   readonly apiVersion: string;
   /** See `Configure`. Without it, the module takes no configuration and its `config` is undefined. */
   readonly configure?: Configure<Config>;
+  /** Availability for the owner's device commands. An omitted family requires an available device. */
+  readonly deviceCommandAvailability?: DeviceCommandAvailability;
   /** Its pages, at most `MAX_PAGES` (module API 1.2). */
   readonly pages?: readonly ModulePage[];
   /** Finite reviewed build assets (module API 1.3), served on the separate reserved asset route. */

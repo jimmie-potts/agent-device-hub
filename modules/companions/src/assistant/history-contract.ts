@@ -3,6 +3,9 @@ import type {CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-a
 import type {AssistantDeviceAction, AssistantProfile, AssistantProvider} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {ContextSection} from './context.js';
 import type {Mode} from '@jimmie-potts/event-contracts/v2/families';
+import type {CodingChoice, CodingDestinationChoice, CodingRequirements} from '../coding/routing.js';
+
+export type CodingPreference = {harness: CodingChoice; destination: CodingDestinationChoice; requirements?: CodingRequirements};
 
 export const HISTORY_ROWS = 16;
 /**
@@ -10,10 +13,10 @@ export const HISTORY_ROWS = 16;
  * the synced Hub-mode revision for `mode-set`, the coding worker's state revision for a delegation (Hub #502).
  */
 export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number}
-  | {family: 'coding-dispatch'; target: 'assistant'; data: {repository: string; brief: string}; expectedRevision: number}
+  | {family: 'coding-dispatch'; target: 'assistant'; data: {repository: string; brief: string; harness?: CodingChoice; destination?: CodingDestinationChoice; requirements?: CodingRequirements}; expectedRevision: number}
   | AssistantDeviceAction | CatalogProposal;
 export type ConversationAttachment = {kind: 'artwork'; requestId: string; description: string; showTargets?: string[]; admission: 'pending' | 'accepted' | 'uncertain' | 'refused'; code?: ErrorCode};
-export type ConversationMessage = {seq: number; id: string; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number; follows?: string; attachment?: ConversationAttachment};
+export type ConversationMessage = {seq: number; id: string; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number; follows?: string; attachment?: ConversationAttachment; codingRefusal?: true};
 /** A clarification for the owner, an approval decision, or a delegation waiting on the worker. */
 export type SavedQuestion = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval' | 'delegation'; proposal: Proposal | null};
 export type CurrentTask = {taskId: string; question: SavedQuestion | null};
@@ -40,7 +43,7 @@ export type ConversationList = {version: 1; profile: AssistantProfile; conversat
  * conversation's unfinished task, or that of a new message's task.
  */
 export type ContextPreview = {schema: 'assistant-context/1.0'; revision: number; profile: AssistantProfile; conversationId: string | null;
-  provider: AssistantProvider; model: string; basis: {kind: 'task'; taskId: string} | {kind: 'next-message'}; sections: readonly ContextSection[]};
+  provider: AssistantProvider; model: string; sharingConflictCount?: number; basis: {kind: 'task'; taskId: string} | {kind: 'next-message'}; sections: readonly ContextSection[]};
 
 type Cursor = {profile: AssistantProfile; conversationId: string; seq: number};
 

@@ -45,6 +45,8 @@ export type AdapterRun = {
   bounds: CodingBounds;
   signal: AbortSignal;
   session: (id: string) => void | Promise<void>;
+  /** Register an attempt-local stop only after the provider acknowledges its turn identity. */
+  namedStop?: (stop: () => void) => void;
   steering?: (steer: AdapterSteer | undefined) => void;
   observedMessage?: (messageId: string) => void;
   reportedModel?: (model: string) => void;

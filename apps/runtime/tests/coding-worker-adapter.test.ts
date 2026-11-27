@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {access, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile} from 'node:fs/promises';
+import {access, chmod, link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile} from 'node:fs/promises';
+import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, test} from 'node:test';
 import {promisify} from 'node:util';
 import type {AdapterRun, AdapterSteer} from '../src/worker/adapter.js';
-import {codexAdapter, codexArguments, codexEnvironment, verifyCodexWriterBoundary, type CodexTransport} from '../src/worker/codex-adapter.js';
+import {codexAdapter, codexArguments, codexEnvironment, openCodex, verifyCodexToolchain, verifyCodexWriterBoundary, type CodexTransport} from '../src/worker/codex-adapter.js';
+import {codexToolchainVariables, releaseCodexToolchain} from '../src/worker/codex-toolchain.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX} from '../src/worker/claude-writer.js';
 import {claudeHarness} from '../src/worker/coding-worker.js';
 
@@ -24,7 +26,7 @@ const report = {outcome: 'tested-candidate', summary: 'Reviewed the requested re
 ], findings: [], limitations: []};
 const bounds = {wallClockMs: 120_000, maxTurns: 3, budgetUsd: 2};
 const safeConfig = {mcp_servers: {}, plugins: {}, hooks: null, allow_login_shell: false, cli_auth_credentials_store: 'file',
-  forced_login_method: 'chatgpt', model_provider: 'openai', chatgpt_base_url: 'https://chatgpt.com/backend-api/', openai_base_url: 'https://api.openai.com/v1',
+  forced_login_method: 'chatgpt', model_provider: 'openai', chatgpt_base_url: 'https://chatgpt.com/backend-api/', openai_base_url: 'https://chatgpt.com/backend-api/codex',
   otel: {exporter: 'none', trace_exporter: 'none', metrics_exporter: 'none', log_user_prompt: false},
   features: {hooks: false, apps: false, plugins: false, shell_snapshot: false}};
 
@@ -43,7 +45,10 @@ type Scenario = {
   effectiveConfig?: object; auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; changeAuth?: boolean;
   rootReport?: {writableRoots?: unknown; runtimeWorkspaceRoots?: unknown};
   quotaResponse?: object; quotaReplies?: readonly (object | Promise<unknown> | Error)[]; quotaEvent?: 'initialize' | 'second-account' | 'pending-turn';
-  steerable?: boolean;
+  steerable?: boolean; interrupt?: 'confirmed' | 'wrong-turn' | 'lost' | 'rejected' | 'writer-remains' | 'late-ack' | 'auth-change' | 'pending-terminal';
+  beforeTurnAcknowledged?: () => void;
+  toolchainUnavailable?: boolean;
+  duringToolchain?: () => Promise<void>;
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
 
@@ -52,8 +57,9 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
   const requests: string[] = [], sessions: string[] = [];
   let starts = 0, accounts = 0, quotaReads = 0;
   let wireSchema: unknown;
+  let releaseInterrupt: (() => void) | undefined;
   let finishTurn: (() => void) | undefined;
-  const transport: CodexTransport = ({args, cwd, env, event, closed}) => {
+  const transport: CodexTransport = ({args, cwd, env, signal, event, closed}) => {
     finishTurn = () => {
       event('item/completed', {threadId, turnId, item: {type: 'agentMessage', text: JSON.stringify(report)}});
       event('turn/completed', {threadId, turn: {id: turnId, status: 'completed'}});
@@ -71,10 +77,13 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
     assert.ok(args.some(arg => arg.includes('.network.enabled=false')));
     assert.ok(args.some(arg => arg.includes(`${JSON.stringify(join(home, 'auth.json'))}="deny"`)));
     assert.equal(cwd, home, 'app-server starts outside the worktree');
-    assert.deepEqual(env, {PATH: '/synthetic/bin', HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'});
+    const path = env.PATH === '/synthetic/bin' ? '/synthetic/bin' : '/synthetic/toolchain:/synthetic/bin';
+    assert.deepEqual(env, {...(path === '/synthetic/bin' ? {} : codexToolchainVariables('/synthetic/toolchain')),
+      PATH: path, HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'});
     return {
       notify(method) {assert.equal(method, 'initialized');},
       close() {closed();},
+      writerStopped: () => Promise.resolve(scenario.interrupt !== 'writer-remains'),
       request(method, params) {
         requests.push(method);
         switch (method) {
@@ -114,6 +123,13 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
               queueMicrotask(() => {event('account/rateLimits/updated', {rateLimits: {...window, planType: 'enterprise'}});});
               return new Promise(() => {});
             }
+            if (scenario.beforeTurnAcknowledged !== undefined) {
+              const pending = new Promise<never>((_resolve, reject) => {
+                signal.addEventListener('abort', () => {closed(); reject(new Error('closed'));}, {once: true});
+              });
+              scenario.beforeTurnAcknowledged();
+              return pending;
+            }
             if (scenario.steerable === true) return Promise.resolve({turn: {id: turnId}});
             queueMicrotask(() => {
               if (scenario.terminal === 'lost') {closed(); return;}
@@ -126,6 +142,21 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
                 error: {codexErrorInfo: scenario.terminal}}});
             });
             return Promise.resolve({turn: {id: turnId}});
+          }
+          case 'turn/interrupt': {
+            assert.deepEqual(params, {threadId, turnId});
+            if (scenario.interrupt === 'lost') {closed(); return new Promise(() => {});}
+            const id = scenario.interrupt === 'wrong-turn' ? 'sibling' : turnId;
+            const terminal = () => {event('turn/completed', {threadId, turn: {id, status: 'interrupted'}});};
+            if (scenario.interrupt === 'pending-terminal') {
+              releaseInterrupt = terminal;
+              return Promise.resolve({});
+            }
+            terminal();
+            if (scenario.interrupt === 'wrong-turn') closed();
+            if (scenario.interrupt === 'auth-change') event('account/updated', {authMode: 'apikey'});
+            if (scenario.interrupt === 'late-ack') return new Promise<object>(resolve => {releaseInterrupt = () => {resolve({});};});
+            return scenario.interrupt === 'rejected' ? Promise.reject(new Error('refused')) : Promise.resolve({});
           }
           case 'turn/steer': {
             assert.equal(scenario.steerable, true);
@@ -144,11 +175,220 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
     };
   };
   const adapter = codexAdapter({executable: '/synthetic/codex', home}, {transport, version: () => Promise.resolve('0.163.0'),
+    toolchain: async () => {
+      if (scenario.toolchainUnavailable === true) throw new Error('synthetic toolchain unavailable');
+      await scenario.duringToolchain?.();
+      return {bin: '/synthetic/toolchain', readable: ['/synthetic/node', '/synthetic/npm', '/synthetic/git']};
+    },
     environment: {PATH: '/synthetic/bin', HOME: '/synthetic/home', OPENAI_API_KEY: 'synthetic-key', CODEX_HOME: '/untrusted/config',
       BUNNY_CODING_TOKEN: 'worker-credential', CLAUDE_CODE_OAUTH_TOKEN: 'other-provider-token', ...environment}});
-  const run = (worktree: string, callbacks?: Pick<AdapterRun, 'steering' | 'observedMessage'>) => adapter.run({worktree, brief, bounds, ...callbacks, signal: new AbortController().signal, session: id => {sessions.push(id);}});
-  return {adapter, requests, sessions, run, starts: () => starts, output: () => wireSchema, finish: () => {finishTurn?.();}};
+  const run = (worktree: string, callbacks?: Pick<AdapterRun, 'steering' | 'observedMessage' | 'namedStop'> & {signal?: AbortSignal}) => adapter.run({worktree, brief, bounds, signal: new AbortController().signal, ...callbacks, session: id => {sessions.push(id);}});
+  return {adapter, requests, sessions, run, releaseInterrupt: () => {releaseInterrupt?.();}, starts: () => starts, output: () => wireSchema, finish: () => {finishTurn?.();}};
 }
+
+void test('named Codex stop requires its exact interrupted turn, RPC acknowledgement and stopped writer', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-stop-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  for (const mode of ['confirmed', 'wrong-turn', 'lost', 'rejected', 'writer-remains', 'late-ack', 'auth-change'] as const) {
+    const trial = fixture({steerable: true, interrupt: mode});
+    let stop: (() => void) | undefined;
+    let ready: () => void = () => {};
+    const armed = new Promise<void>(resolve => {ready = resolve;});
+    const run = trial.run(cwd, {namedStop: handle => {stop = handle;}, steering: handler => {if (handler !== undefined) ready();}});
+    await armed;
+    assert.ok(stop, 'the named active Codex turn must provide a correlated stop');
+    stop(); stop();
+    const result = await run;
+    assert.equal(trial.requests.filter(method => method === 'turn/interrupt').length, 1);
+    assert.equal(result.sessionId, threadId);
+    assert.equal(result.uncertain === true, mode !== 'confirmed');
+    if (mode === 'late-ack') trial.releaseInterrupt();
+    if (mode === 'confirmed') {
+      assert.equal(result.reason, 'cancelled');
+      assert.equal(result.writerStopped, true);
+    }
+  }
+});
+
+void test('a steering message cannot reach Codex after the worker requests interruption', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-stop-steer-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const trial = fixture({steerable: true, interrupt: 'pending-terminal'});
+  let stop: (() => void) | undefined, steer: AdapterSteer | undefined, ready: () => void = () => {};
+  const armed = new Promise<void>(resolve => {ready = resolve;});
+  const run = trial.run(cwd, {namedStop: handle => {stop = handle;}, steering: handle => {steer = handle; if (handle !== undefined) ready();}});
+  await armed;
+  const admitted = steer ?? assert.fail('live steering');
+  (stop ?? assert.fail('active turn'))();
+  assert.equal(await admitted('message-1', 'Only add the requested test.'), 'unavailable');
+  assert.equal(steer, undefined);
+  assert.equal(trial.requests.includes('turn/steer'), false);
+  trial.releaseInterrupt();
+  assert.equal((await run).reason, 'cancelled');
+});
+
+void test('a stop before Codex acknowledges the active turn cannot select a turn to interrupt', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-early-stop-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const controller = new AbortController();
+  const trial = fixture({beforeTurnAcknowledged: () => {controller.abort();}});
+  const result = await trial.run(cwd, {signal: controller.signal, namedStop: () => assert.fail('No active turn acknowledgement')});
+  assert.equal(result.uncertain, true);
+  assert.equal(result.reason, 'lost');
+  assert.equal(trial.requests.includes('turn/interrupt'), false);
+});
+
+void test('Codex worker startup pins the ChatGPT subscription model route', () => {
+  const args = codexArguments('/synthetic/worktree', 'bunny-fixture', profileHome);
+  assert.deepEqual(args.filter(arg => arg.startsWith('openai_base_url=')), ['openai_base_url="https://chatgpt.com/backend-api/codex"']);
+});
+
+void test('an unavailable Codex toolchain refuses before creating the app-server transport', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-toolchain-refusal-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const worker = fixture({toolchainUnavailable: true});
+  const result = await worker.run(cwd);
+  assert.equal(result.reason, 'refused');
+  assert.match(result.summary ?? '', /Node 24 distribution with npm and Apple Command Line Tools Git/u);
+  assert.deepEqual(worker.requests, []);
+});
+
+void test('the qualified macOS Codex sandbox runs the narrow toolchain with fresh and successor worktrees',
+  {skip: process.platform !== 'darwin', timeout: 30_000}, async t => {
+    const executable = '/opt/homebrew/bin/codex';
+    const exec = promisify(execFile);
+    if (!await access(executable).then(() => true, () => false) ||
+      !await access('/Library/Developer/CommandLineTools/usr/bin/git').then(() => true, () => false)) {
+      t.skip('qualified Codex CLI or Apple Command Line Tools not present'); return;
+    }
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-toolchain-')));
+    t.after(() => rm(root, {recursive: true, force: true}));
+    const home = join(root, 'profile'), repository = join(root, 'repository'), fresh = join(root, 'fresh'), successor = join(root, 'successor');
+    const outside = join(root, 'outside'), guard = join(repository, 'package.json');
+    await Promise.all([home, repository, successor].map(path => mkdir(path, {mode: 0o700})));
+    const environment = {PATH: '/usr/bin:/bin', OPENAI_API_KEY: 'must-stay-outside'};
+    const version = await exec(executable, ['--version'], {cwd: home, env: codexEnvironment(environment, home)});
+    if (version.stdout.trim() !== 'codex-cli 0.163.0') {t.skip('the supported Codex 0.163.0 is unavailable'); return;}
+    const git = (cwd: string, ...args: string[]) => exec('/Library/Developer/CommandLineTools/usr/bin/git', args, {cwd, env: codexEnvironment(environment, home)});
+    const manifest = JSON.stringify({scripts: {pass: 'node -e "console.log(37)"', fail: 'node -e "process.exit(23)"'}});
+    for (const cwd of [repository, successor]) {
+      await git(cwd, 'init', '-q');
+      await writeFile(join(cwd, 'package.json'), manifest);
+      await git(cwd, 'add', 'package.json');
+      await git(cwd, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Initial fixture');
+    }
+    await git(repository, 'worktree', 'add', '--detach', fresh);
+    await writeFile(outside, 'private fixture file', {mode: 0o600});
+    const server = createServer(socket => {socket.destroy();});
+    t.after(() => server.close());
+    await new Promise<void>((resolve, reject) => {server.once('error', reject); server.listen(0, '127.0.0.1', resolve);});
+    const listener = server.address();
+    assert.ok(listener !== null && typeof listener !== 'string');
+    const profile = 'bunny-fixture-toolchain';
+    for (const {cwd, protectedRoot} of [{cwd: fresh, protectedRoot: undefined}, {cwd: successor, protectedRoot: repository}]) {
+      const toolchain = await verifyCodexToolchain(executable, cwd, profile, home, environment, protectedRoot);
+      const env = codexEnvironment(environment, home, toolchain);
+      assert.equal(env.OPENAI_API_KEY, undefined);
+      assert.equal(toolchain.gitView !== undefined, cwd === fresh);
+      const local = await exec(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
+        '--', '/bin/sh', '-c', [
+          'set -eu',
+          'npm run pass',
+          'status=0; npm run fail || status=$?; test "$status" = 23',
+          'printf "\\n" >> package.json',
+          'git status --short',
+          'diff_status=0; git diff --numstat --exit-code || diff_status=$?; test "$diff_status" = 1',
+          'if /bin/cat "$1" >/dev/null 2>&1 || /usr/bin/touch "$2" 2>/dev/null; then exit 1; fi',
+          'node -e \'const s=require("node:net").connect(Number(process.argv[1]),"127.0.0.1");s.on("connect",()=>process.exit(1));s.on("error", e=>process.exit(e.code==="EPERM"||e.code==="EACCES"?0:1));\' "$3"',
+          'if /bin/cat "$4" >/dev/null 2>&1; then exit 1; fi',
+          'if /usr/bin/touch "$5" 2>/dev/null; then exit 1; fi',
+        ].join('\n'), 'bunny-toolchain-fixture', outside, join(root, 'blocked-write'), String(listener.port), join(repository, '.git/config'),
+        toolchain.gitView?.readable.find(path => path.endsWith('/index')) ?? join(cwd, '.git/index')],
+        {cwd: home, env, timeout: 8000});
+      assert.match(local.stdout, /^37$/mu);
+      assert.match(local.stdout, /^ M package\.json$/mu);
+      assert.match(local.stdout, /^1\t1\tpackage\.json$/mu);
+      if (toolchain.gitView !== undefined) {
+        const wire = openCodex({executable, args: ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, protectedRoot, toolchain)],
+          cwd: home, env, signal: AbortSignal.timeout(5000), event: () => {}, closed: () => {}});
+        try {
+          await wire.request('initialize', {clientInfo: {name: 'synthetic-toolchain', version: '1.0'}, capabilities: {experimentalApi: true}});
+          wire.notify('initialized');
+          const account = await wire.request('account/read', {refreshToken: false});
+          assert.ok(typeof account === 'object' && account !== null && 'account' in account && account.account === null);
+          const result = await wire.request('command/exec', {cwd, timeoutMs: 3000, command: ['/bin/sh', '-c',
+            'test "$GIT_CONFIG_GLOBAL" = /dev/null && test "$npm_config_offline" = true && node --version && npm run pass && git status --short && GIT_EXTERNAL_DIFF=/bin/false git diff --ext-diff --numstat']});
+          assert.ok(typeof result === 'object' && result !== null && 'exitCode' in result && 'stdout' in result);
+          assert.equal(result.exitCode, 0);
+          assert.match(String(result.stdout), /^v24\./mu);
+          assert.match(String(result.stdout), /^37$/mu);
+          assert.match(String(result.stdout), /^ M package\.json$/mu);
+          assert.match(String(result.stdout), /^1\t1\tpackage\.json$/mu);
+        } finally {
+          wire.close();
+          assert.equal(await wire.writerStopped?.(), true);
+        }
+      }
+      if (protectedRoot !== undefined) assert.equal(await verifyCodexWriterBoundary(executable, cwd, home, protectedRoot, profile, env, toolchain), true);
+      await releaseCodexToolchain(toolchain);
+      if (toolchain.gitView !== undefined) {
+        assert.equal(await access(toolchain.gitView.root).then(() => true, () => false), false);
+        const retry = await verifyCodexToolchain(executable, cwd, profile, home, environment);
+        assert.notEqual(retry.gitView?.root, toolchain.gitView.root);
+        await releaseCodexToolchain(retry);
+      }
+    }
+    assert.equal(await readFile(guard, 'utf8'), manifest);
+  });
+
+void test('a linked checkout in shared temporary storage fences common metadata and refuses a staged diff',
+  {skip: process.platform !== 'darwin', timeout: 20_000}, async t => {
+    const executable = '/opt/homebrew/bin/codex', gitPath = '/Library/Developer/CommandLineTools/usr/bin/git';
+    if (!await access(executable).then(() => true, () => false) || !await access(gitPath).then(() => true, () => false)) {
+      t.skip('qualified Codex CLI or Apple Command Line Tools not present'); return;
+    }
+    const exec = promisify(execFile);
+    const root = await mkdtemp('/private/tmp/bunny-codex-common-fence-');
+    t.after(() => rm(root, {recursive: true, force: true}));
+    const home = join(root, 'profile'), repository = join(root, 'repository'), cwd = join(root, 'worktree');
+    await Promise.all([home, repository].map(path => mkdir(path, {mode: 0o700})));
+    const config = join(home, 'config.toml');
+    const marker = '[tui]\nscreen_reader_detection_done = true\n';
+    await writeFile(config, marker, {mode: 0o600});
+    const environment = {PATH: '/usr/bin:/bin'};
+    const env = codexEnvironment(environment, home);
+    const version = await exec(executable, ['--version'], {cwd: home, env});
+    if (version.stdout.trim() !== 'codex-cli 0.163.0') {t.skip('the supported Codex 0.163.0 is unavailable'); return;}
+    const read = await codexAdapter({executable, home}, {environment}).readiness();
+    assert.deepEqual(read, {installed: 'yes', signedIn: 'no', version: '0.163.0', plan: null});
+    const git = (directory: string, ...args: string[]) => exec(gitPath, args, {cwd: directory, env});
+    await git(repository, 'init', '-q');
+    await writeFile(join(repository, 'code.txt'), 'initial\n');
+    await git(repository, 'add', 'code.txt');
+    await git(repository, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Initial fixture');
+    await git(repository, 'worktree', 'add', '--detach', cwd);
+    const profile = 'bunny-fixture-shared-temp';
+    const toolchain = await verifyCodexToolchain(executable, cwd, profile, home, environment);
+    t.after(() => releaseCodexToolchain(toolchain));
+    const run = (command: string) => exec(executable, ['sandbox', '-C', cwd, '-P', profile,
+      ...codexArguments(cwd, profile, home, undefined, toolchain), '--', '/bin/sh', '-c', command, 'fixture', join(repository, '.git/config'), config],
+    {cwd: home, env: codexEnvironment(environment, home, toolchain), timeout: 5000});
+    const ordinary = await run([
+      'set -eu',
+      'if /bin/cat "$1" >/dev/null 2>&1 || /usr/bin/touch "$1" 2>/dev/null; then exit 1; fi',
+      'if /bin/cat "$2" >/dev/null 2>&1 || /usr/bin/touch "$2" 2>/dev/null || /bin/rm "$2" 2>/dev/null; then exit 1; fi',
+      'printf "unstaged\\n" > code.txt',
+      'git status --short && git diff --numstat',
+    ].join('\n'));
+    assert.match(ordinary.stdout, /^ M code\.txt$/mu);
+    assert.match(ordinary.stdout, /^1\t1\tcode\.txt$/mu);
+    await git(cwd, 'add', 'code.txt');
+    await writeFile(join(cwd, 'code.txt'), 'edited after staging\n');
+    const staged = await run('git status --short && diff_status=0; git diff -- code.txt || diff_status=$?; test "$diff_status" = 2');
+    assert.match(staged.stdout, /^MM code\.txt$/mu);
+    assert.match(staged.stderr, /requires an unstaged index/u);
+    assert.equal(await readFile(config, 'utf8'), marker);
+  });
 
 void test('Codex readiness reports only subscription fields, plan and quota without opening a thread', async () => {
   const {adapter, requests} = fixture();
@@ -214,7 +454,7 @@ void test('Codex steering stays on its current native turn and correlates only t
   assert.equal(fixtureRun.starts(), 1);
 });
 
-void test('Codex refuses effective MCP or plugin configuration before probing auth or opening a thread', async t => {
+void test('Codex refuses conflicting isolation settings before probing auth or opening a thread', async t => {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
   t.after(() => rm(cwd, {recursive: true, force: true}));
   for (const effectiveConfig of [
@@ -226,6 +466,8 @@ void test('Codex refuses effective MCP or plugin configuration before probing au
     {...safeConfig, cli_auth_credentials_store: 'keyring'},
     {...safeConfig, model_provider: 'custom'},
     {...safeConfig, chatgpt_base_url: 'https://synthetic.invalid/backend-api/'},
+    {...safeConfig, openai_base_url: 'https://api.openai.com/v1'},
+    {...safeConfig, openai_base_url: 'https://synthetic.invalid/backend-api/codex'},
     {...safeConfig, otel: {exporter: {otlp_http: {endpoint: 'https://synthetic.invalid'}}}},
     {},
   ]) {
@@ -247,6 +489,58 @@ void test('a worker profile containing user configuration refuses both entry poi
   await writeFile(join(profile, 'config.toml'), '[mcp_servers.synthetic]\ncommand = "/usr/bin/false"\n');
   const candidate = fixture({}, profile);
   assert.equal((await candidate.adapter.readiness()).signedIn, 'unknown');
+  assert.equal((await candidate.run(cwd)).reason, 'refused');
+  assert.deepEqual(candidate.requests, []);
+});
+
+void test('a private Codex TUI marker permits readiness and the next run from the same profile', async t => {
+  const profile = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-marker-')));
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => Promise.all([profile, cwd].map(path => rm(path, {recursive: true, force: true}))));
+  const config = join(profile, 'config.toml');
+  const marker = '[tui]\nscreen_reader_detection_done = true\n';
+  await writeFile(config, marker, {mode: 0o600});
+  const next = fixture({}, profile);
+  assert.equal((await next.adapter.readiness()).signedIn, 'yes');
+  assert.deepEqual((await next.run(cwd)).structured, report);
+  assert.equal(await readFile(config, 'utf8'), marker);
+});
+
+void test('Codex refuses extra, malformed, shared or aliased TUI marker files before startup', async t => {
+  const profile = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-marker-negative-')));
+  t.after(() => rm(profile, {recursive: true, force: true}));
+  const config = join(profile, 'config.toml'), original = join(profile, 'original.toml');
+  const marker = '[tui]\nscreen_reader_detection_done = false\n';
+  const refuses = async () => {
+    const candidate = fixture({}, profile);
+    assert.equal((await candidate.adapter.readiness()).signedIn, 'unknown');
+    assert.deepEqual(candidate.requests, []);
+    await rm(config);
+  };
+  for (const text of ['[tui]\nscreen_reader_detection_done = "true"\n', marker + 'foo = true\n',
+    marker + '[tui]\n', marker + ' '.repeat(64), marker + '\0']) {
+    await writeFile(config, text, {mode: 0o600});
+    await refuses();
+  }
+  await writeFile(config, marker, {mode: 0o600});
+  await chmod(config, 0o644);
+  await refuses();
+  await writeFile(original, marker, {mode: 0o600});
+  await symlink(original, config);
+  await refuses();
+  await link(original, config);
+  await refuses();
+  await writeFile(config, marker, {mode: 0o600});
+  assert.equal((await fixture({}, profile).adapter.readiness()).signedIn, 'yes');
+});
+
+void test('Codex refuses a marker replaced while the toolchain is being checked before opening the provider', async t => {
+  const profile = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-marker-change-')));
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => Promise.all([profile, cwd].map(path => rm(path, {recursive: true, force: true}))));
+  const config = join(profile, 'config.toml');
+  await writeFile(config, '[tui]\nscreen_reader_detection_done = true\n', {mode: 0o600});
+  const candidate = fixture({duringToolchain: () => writeFile(config, 'model = "synthetic"\n')}, profile);
   assert.equal((await candidate.run(cwd)).reason, 'refused');
   assert.deepEqual(candidate.requests, []);
 });

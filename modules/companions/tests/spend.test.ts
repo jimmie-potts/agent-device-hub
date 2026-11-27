@@ -40,6 +40,22 @@ void test('a reservation counts until usage is reported, and unreported usage ke
   assert.throws(() => spend.reserve(call('c1')), 'an identifier is reserved once');
 });
 
+void test('optional compaction protects ordinary spend against concurrent admissions until ordinary reservation', () => {
+  const {spend} = ledger();
+  const big = (id: string, worth: number) => call(id, worth * 200_000, 0);
+  assert.equal(spend.reserve(big('used', 15)), undefined);
+  const required = big('ordinary', 4);
+  const release = spend.holdForOptional(required, {...big('compaction', 1), purpose: 'conversation'});
+  assert.ok(release);
+  assert.equal(spend.totals().day.spentMicros, 16_000_000, 'reported spend excludes the pending ordinary hold');
+  assert.equal(spend.totals().day.limitMicros, 20_000_000, 'the public limit is unchanged during the hold');
+  assert.match(spend.reserve(big('concurrent-title', 0.5)) ?? '', /temporarily reserved/);
+  release();
+  assert.equal(spend.totals().day.spentMicros, 16_000_000, 'releasing the hold leaves reported spend intact');
+  assert.equal(spend.reserve(required), undefined);
+  assert.equal(spend.totals().day.spentMicros, 20_000_000);
+});
+
 void test('the day and the month turn over at the host zone\'s local midnight, and a call counts on the day it was reserved', () => {
   const {spend, set} = ledger(undefined, at('2026-11-22T05:59:59Z'));
   assert.equal(spend.totals().day.period, '2026-11-21', '23:59:59 local');

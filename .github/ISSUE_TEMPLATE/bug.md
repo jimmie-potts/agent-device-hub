@@ -14,7 +14,7 @@ A bug may remain standalone. See docs/issue-conventions.md.
 
 <!-- Required: actual failure, expected behavior, affected setup and versions. -->
 
-## Smallest useful implementation
+## Implementation approach and shared foundations
 
 ### Reproduction and diagnostics
 
@@ -22,7 +22,9 @@ A bug may remain standalone. See docs/issue-conventions.md.
 
 ### Scope and dependencies
 
-<!-- If known: affected behavior, actual blockers and limits of the requested fix. -->
+<!-- If known: affected behavior, shared cause, reusable components, relevant consumers,
+actual blockers and limits of the requested fix. Prefer fixing the cause in its owning
+layer and verifying affected consumers; follow docs/sdlc.md "Scope defaults". -->
 
 ## Behavior and protections to preserve
 
@@ -35,9 +37,9 @@ Answer here, with a ### subheading at most. -->
 
 ## Observable acceptance and planned evidence
 
-<!-- Required: expected result and a regression check or observation that distinguishes failure from success. Installation/device checks require a named owner and explicit authority. -->
+<!-- Required: expected result across affected consumers and a regression check or observation that distinguishes failure from success. Installation/device checks require a named owner and explicit authority. -->
 
-Delivery target: source-only
+Delivery target: [source / installed / physical; specify the intended evidence and any remaining delivery owner]
 
 ## Meaningful deferrals
 

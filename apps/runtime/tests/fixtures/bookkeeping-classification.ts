@@ -30,6 +30,7 @@ export const STATE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   'companion-speech-state/2.1': [],
   'coding-state/2.0': [], 'coding-state/2.1': [], 'coding-state/2.2': [], 'coding-state/2.3': [],
   'coding-state/2.4': [],
+  'coding-state/2.5': [],
   'music-capture-state/2.0': [], 'music-capture-state/2.1': [], 'music-capture-state/2.2': [],
   'music-lighting-state/2.0': [],
   'music-lighting-device/2.0': [],
@@ -43,7 +44,7 @@ export const STATE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   'home-layout/2.0': [], 'home-layout/2.1': [], 'home-layout/2.2': [],
   'art/2.0': [], 'art/2.1': [],
   // Each module's own families.
-  'lifx-light/2.0': ['/observed/observedAtMs'],
+  'lifx-light/2.0': ['/observed/observedAtMs'], 'lifx-light/2.1': ['/observed/observedAtMs'],
   'pixoo-display/2.0': ['/monitor/page'], 'pixoo-display/2.1': ['/monitor/page'],
   'pixoo-rendition/2.0': [], 'pixoo-rendition/2.1': [],
   'pixoo-playlist/2.0': [],

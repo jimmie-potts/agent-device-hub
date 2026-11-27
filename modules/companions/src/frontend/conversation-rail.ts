@@ -1,5 +1,5 @@
 import type {AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
-import type {SavedQuestion} from '../assistant/history-contract.js';
+import type {CodingPreference, SavedQuestion} from '../assistant/history-contract.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 
 /** The chat profiles, in the order the rail lists them. Each uses the configured model (Hub #2026), so none is labelled a demo. */
@@ -43,6 +43,7 @@ const sameList = (a: readonly string[], b: readonly string[]): boolean => a.leng
 
 export class ConversationRailStore {
   readonly #listeners = new Set<() => void>();
+  #codingDraft: {profile: AssistantProfile; preference: CodingPreference} | undefined;
   #opening: {profile: AssistantProfile; conversationId: string} | undefined;
   #state: ConversationRailState = {profile: 'bunny', open: false, questions: {}, waiting: NONE};
   readonly getSnapshot = (): ConversationRailState => this.#state;
@@ -54,6 +55,16 @@ export class ConversationRailStore {
   openConversation(profile: AssistantProfile, conversationId: string): void {
     this.#opening = {profile, conversationId};
     this.select(profile);
+  }
+  openCodingDraft(profile: AssistantProfile, preference: CodingPreference): void {
+    this.#codingDraft = {profile, preference};
+    this.select(profile);
+  }
+  takeCodingDraft(profile: AssistantProfile): CodingPreference | undefined {
+    if (this.#codingDraft?.profile !== profile) return undefined;
+    const {preference} = this.#codingDraft;
+    this.#codingDraft = undefined;
+    return preference;
   }
   takeOpening(profile: AssistantProfile): string | undefined {
     const opening = this.#opening;

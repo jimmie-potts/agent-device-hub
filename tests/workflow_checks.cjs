@@ -174,7 +174,7 @@ const YAML = require('yaml');
 
 const storyHeadings = [
   'Outcome and real setup',
-  'Smallest useful implementation',
+  'Implementation approach and shared foundations',
   'Behavior and protections to preserve',
   'Observable acceptance and planned evidence',
   'Meaningful deferrals',

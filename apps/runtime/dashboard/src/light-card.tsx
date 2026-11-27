@@ -1,5 +1,6 @@
 import React, {useEffect, useId, useRef, useState} from 'react';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {FrontendCommandView} from '@jimmie-potts/sdk/frontend';
 import type {LightingCard, LightingDevice, LightingIntent, lightCapabilities} from './lighting.ts';
 import {useHomeShape} from './home-shape-context.ts';
 import {useHomeUnfold} from './home-unfold.ts';
@@ -12,7 +13,7 @@ type Tab = 'Power' | 'Color' | 'Scenes' | 'Timer';
 const tabs: Tab[] = ['Power', 'Color', 'Scenes', 'Timer'];
 export type LightCardProps = {
   card: LightingCard; devices: readonly LightingDevice[]; capabilities: ReturnType<typeof lightCapabilities>;
-  artwork: React.ReactNode; modeChoice?: React.ReactNode; options: React.ReactNode; status: readonly {name: string; text: string; locked: boolean}[];
+  artwork: React.ReactNode; modeChoice?: React.ReactNode; options: React.ReactNode; status: readonly (FrontendCommandView & {name: string})[];
   act: (intent: LightingIntent) => void; currentObservationsOnly?: boolean;
   /** The operation records, so the Small square dial can tell a request newer than the lights' last report. */
   operations?: readonly OperationRecord[]; drag?: React.DragEventHandler<HTMLElement>; drop?: React.DragEventHandler<HTMLElement>;
@@ -73,7 +74,8 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
   const colorHue = common(colors.map(member => member?.color?.observed.status === 'known' ? member.color.observed.hue : undefined));
   const colorSaturation = common(colors.map(member => member?.color?.observed.status === 'known' ? member.color.observed.saturation : undefined));
   useEffect(() => { if (!paletteDirty) { setHue(colorHue ?? 210); setSaturation(colorSaturation ?? 75); } }, [colorHue, colorSaturation, paletteDirty]);
-  const attention = status.filter(item => item.locked || /Refused|Not sent|failed|uncertain|Conflicting/i.test(item.text));
+  const attention = status.filter(({phase, locked}) => locked || phase.kind === 'refused' ||
+    phase.kind === 'not-sent' || phase.kind === 'expired' || phase.kind === 'completed' && phase.result === 'failed');
   // While a request from this card is in progress or unresolved (sent, accepted, awaiting its reply, uncertain or
   // conflicting) the card says so, for checks that must not press before it has finished.
   const busy = status.some(item => item.locked) ? '' : undefined;

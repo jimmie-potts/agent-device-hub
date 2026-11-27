@@ -158,6 +158,8 @@ const EVENT_LEVELS = {
   'storage.cost.normal': 'info',
   // The runtime's summary of diagnostic records and spans its export lost: lost capacity is WARN (Hub #813).
   'telemetry.dropped': 'warn',
+  // The runtime dashboard contained a card's rendering fault to that card (Hub #2139): an internal fault is ERROR.
+  'dashboard.card.failed': 'error',
 } as const satisfies Record<string, DiagnosticLevel>;
 
 /** An event whose level the table owns when its record carries no registry code. */

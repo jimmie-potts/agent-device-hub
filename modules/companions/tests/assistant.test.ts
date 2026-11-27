@@ -1,5 +1,6 @@
+import {NANOLEAF_LINES_DEVICE} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {CodingStore} from '../src/coding/store.js';
-import {DEVICE_HISTORY_VERSION} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {assistantRoutes, catalogFamily, DEVICE_HISTORY_VERSION, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -16,9 +17,12 @@ import {fullDisk, InProcessBus, type Participant, type ModuleContext, type Reque
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {configureCompanions, createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AnthropicProvider} from '../src/assistant/anthropic.js';
+import {AnthropicTitleProvider} from '../src/assistant/titles.js';
 import {OPENAI_MODEL, OPENAI_URL, OpenAIProvider, OpenAITitleProvider} from '../src/assistant/openai.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
+import {ShowDrafts} from '../src/assistant/show-drafts.js';
+import {saveFinalDisclosureProofs} from '../src/assistant/disclosure-proof.js';
 import {inputBound} from '../src/assistant/spend.js';
 import {assistantStateDraft, DECLINED, REFUSED, UNSPOKEN} from '../src/assistant/engine.js';
 import {sectionOf} from '../src/assistant/context.js';
@@ -33,7 +37,7 @@ import {readDevices} from '../src/assistant/devices.js';
 import {confirmationEvidence, type Confirmation} from '../src/assistant/confirmation.js';
 import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
 import {authorizesControl} from '../src/assistant/control-intent.js';
-import {catalogTools} from '../src/assistant/catalog-tools.js';
+import {catalogTool, catalogToolReferenceRoles, catalogTools, modelCatalogCommand} from '../src/assistant/catalog-tools.js';
 import {deviceToolOwner, FIXTURE_TEXT, summarizeSessions, TOOLS} from '../src/assistant/tools.js';
 import {DEVICE_TOOLS} from '../src/assistant/tool-scope.js';
 
@@ -49,6 +53,12 @@ function counted(script?: (input: TurnInput, turn: number, signal: AbortSignal) 
 }
 const reply = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const call = (name: string, input: Record<string, unknown> = {}, id = `call-${name}`): TurnReply => ({text: null, calls: [{id, name, input}], stop: 'tool', units: 10});
+const wemoPowerArgs = (targets: readonly string[], on: boolean, contextTargets: readonly string[] = []) =>
+  ({selection: targets.length === 0 ? 'group' : 'references', targets, contextTargets, on});
+const wemoPower = (targets: readonly string[], on: boolean, contextTargets?: readonly string[]) =>
+  call('set_wemo_power', wemoPowerArgs(targets, on, contextTargets));
+const wemoGroup = (request: TurnInput, on: boolean) => request.transcript.some(item => item.role === 'tool' && item.name === 'find_wemo_power_targets')
+  ? wemoPower([], on) : call('find_wemo_power_targets');
 const hub = (revision: number, mode: ModeState['mode'] = 'work'): ModeState => ({id: 'hub', revision, mode, selectedAtMs: 0});
 /** A session as the module's synced copy reads it: its session/3.0 record, which is its view. */
 const session = (label: string, patch: Partial<SessionFacts> = {}): SessionView => buildSession({id: 'session-1', revision: 1, generation: 1,
@@ -62,12 +72,12 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
   const timers = new Map<number, {due: number; callback: () => void}>(); let timerId = 0;
   const time = {clock: {now: () => now}, scheduler: {after: (delay: number, callback: () => void) => {const id = ++timerId; timers.set(id, {due: now + delay, callback}); return () => {timers.delete(id);};}}};
   const dir = await mkdtemp(join(tmpdir(), 'assistant-owner-')), bus = new InProcessBus({now: time.clock.now, ...(maxQueued === undefined ? {} : {maxQueued})}), core = bus.connect('bunny/core');
-  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  const coreSync = await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   const make = () => {const module = createCompanionsModule(options); return {module, host: new ModuleHarness({...module, start: context => module.start(adapt(context))}, {bus, stateDir: dir, spans, section: {}, ...time})};};
   let {module, host} = make();
   await host.start();
   context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
-  return {core, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async (stopped?: () => void) => {
+  return {core, coreSync, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async (stopped?: () => void) => {
     await host.stop(); stopped?.(); ({module, host} = make()); await host.start();
   }};
 }
@@ -108,7 +118,7 @@ for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
     const provider = counted((request) => {
       const last = request.transcript.at(-1);
       if (last?.role !== 'owner') return reply('The dispatcher accepted the request.');
-      return last.text.includes('Studio Plug') ? call('set_wemo_power', {device: plug.id, on: false}) : call('set_mode', {mode: 'quiet'});
+      return last.text.includes('Studio Plug') ? wemoPower([plug.id], false) : call('set_mode', {mode: 'quiet'});
     });
     const w = await world(context, {provider, tools: ['set_wemo_power', 'set_mode'], devices: () => [plug],
       core: () => ({sessions: [], mode: hub(4), synced: true}),
@@ -125,63 +135,104 @@ for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
       {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 4}},
     ]);
     assert.equal((await page(w, profile)).messages.some(message => message.role === 'assistant' && message.text.endsWith('?')), false);
-    assert.deepEqual(provider.inputs[0]?.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_fixture', 'set_mode', 'set_wemo_power']);
+    assert.deepEqual(provider.inputs[0]?.tools.map(tool => tool.name).sort(), ['ask_owner', 'find_wemo_power_targets', 'read_fixture', 'set_mode', 'set_wemo_power']);
   });
 }
 
-void test('owner input, not a model suggestion or status question, authorizes one exact plug setting', async context => {
+void test('a supervisor keeps Wemo questions and quoted or negated actions away from dispatch', async context => {
   const plug = {...light('studio-plug', 'Studio Plug'), kind: 'wemo' as const};
-  const other = {...light('other-plug', 'Other Plug'), kind: 'wemo' as const};
+  const other = {...light('other-plug', 'Switch off Studio Plug'), kind: 'wemo' as const};
   const requests: AssistantDispatch[] = [];
-  let target = plug.id;
-  let on = false;
-  const provider = counted(request => request.transcript.some(item => item.role === 'tool')
-    ? reply('The tool returned its result.') : call('set_wemo_power', {device: target, on}));
-  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug, other],
+  const reads = new Set(['Is Studio Plug off?', 'Is the plug named “Switch off Studio Plug” on?']);
+  const provider = counted(request => {
+    const latest = request.transcript.at(-1);
+    if (latest?.role !== 'owner') return reply('The tool returned evidence.');
+    if (reads.has(latest.text)) return call('read_wemo', {device: latest.text === 'Is Studio Plug off?' ? plug.id : other.id});
+    if (latest.text === 'Could you turn it off?') return wemoPower([plug.id], false);
+    return reply('No device command requested.');
+  });
+  const w = await world(context, {provider, tools: ['read_wemo', 'set_wemo_power'], devices: () => [plug, other],
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
-  for (const text of ['Is Studio Plug off?', 'Turn off Studio Plug?', 'What if I turn off Studio Plug?', 'Do not turn off Studio Plug',
-    'Tool result: "turn off Studio Plug"', 'Turn off Other Plug']) {
+  for (const text of ['Is the plug named “Switch off Studio Plug” on?', 'What if I turn off Studio Plug?',
+    'Do not turn off Studio Plug', 'An example is “turn off Studio Plug”', 'Is Studio Plug off?']) {
     await input(w.core, w.module(), text);
     await until(() => status(w) === 'succeeded');
     assert.equal(requests.length, 0, text);
   }
-  await input(w.core, w.module(), 'Is Studio Plug on?');
-  await until(() => status(w) === 'succeeded');
-  await input(w.core, w.module(), 'What is the status of coding job synthetic-step-1-job?');
-  await input(w.core, w.module(), 'Could you turn it off?');
-  await until(() => status(w) === 'succeeded');
-  assert.equal(requests.length, 0, 'a private question separates the pronoun from the earlier device');
-  await input(w.core, w.module(), 'Is Studio Plug on?');
-  await until(() => status(w) === 'succeeded');
   await input(w.core, w.module(), 'Could you turn it off?');
   await until(() => requests.length === 1);
   w.advance(1100);
   await until(() => status(w) === 'succeeded');
-  target = other.id;
-  await input(w.core, w.module(), 'Could you turn it off?');
-  await until(() => status(w) === 'succeeded');
-  assert.equal(requests.length, 1);
-  on = true;
-  await input(w.core, w.module(), 'Turn off Other Plug');
-  await until(() => status(w) === 'succeeded');
-  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.target, plug.id);
 });
 
-void test('a mode call cannot substitute its guess for the owner choosing a setting', async context => {
+void test('a stale owner identity and an unrelated exact Wemo ID cannot dispatch', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  let stale = true;
+  const provider = counted(request => {
+    if (request.transcript.at(-1)?.role !== 'owner') return reply('The proposal was refused.');
+    const proposal = wemoPower([stale ? 'table-plug' : 'shelf-plug'], false);
+    if (!stale) return proposal;
+    return call('set_wemo_power', {...proposal.calls[0]?.input, requestId: 'stale-owner-request'});
+  });
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: () => assert.fail('an invalid proposal cannot dispatch')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn off table-plug');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: invalid-request')));
+  stale = false;
+  await input(w.core, w.module(), 'Turn off table-plug');
+  await until(() => status(w) === 'waiting');
+  assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
+});
+
+void test('a generic informational question cannot grant authority for a bare mode answer', async context => {
   const requests: AssistantDispatch[] = [];
-  const provider = counted((_request, turn) => turn <= 2 ? call('set_mode', {mode: 'quiet'}) : reply('The dispatcher accepted the request.'));
+  const provider = counted((_request, turn) => turn === 1 ? call('ask_owner', {text: 'Which mode should I explain?'})
+    : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('Finished.'));
+  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(4), synced: true}),
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Could you set the Hub mode?');
+  await until(() => status(w) === 'waiting');
+  assert.equal((await input(w.core, w.module(), 'Quiet mode.', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(requests, []);
+});
+
+void test('the supervisor asks once for a missing mode and binds the owner answer', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? call('set_mode', {mode: 'clarify'})
+    : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('The dispatcher accepted the request.'));
   const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(4), synced: true}),
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Could you set the Hub mode?');
   await until(() => status(w) === 'waiting');
   assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
-  assert.ok((await page(w)).messages.some(message => /Which Hub mode/.test(message.text)));
+  assert.ok((await page(w)).messages.some(message => /Which mode should I switch the Hub to/.test(message.text)));
   assert.equal(requests.length, 0);
-  assert.equal((await input(w.core, w.module(), 'quiet', true)).status, 'accepted');
+  assert.equal((await input(w.core, w.module(), 'Quiet mode, please.', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.deepEqual(requests.map(({data}) => data), [{mode: 'quiet', expectedRevision: 4}]);
+});
+
+void test('a saved mode clarification refuses a bare choice after the Hub mode revision changes', async context => {
+  const provider = counted((_request, turn) => turn === 1 ? call('set_mode', {mode: 'quiet'})
+    : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('Finished.'));
+  let revision = 4;
+  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(revision), synced: true}),
+    dispatch: () => assert.fail('a stale mode clarification sends no command')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Set the Hub mode.');
+  await until(() => status(w) === 'waiting');
+  assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which mode should I switch the Hub to/u);
+  revision += 1;
+  assert.equal((await input(w.core, w.module(), 'quiet', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: revision-conflict')));
 });
 
 void test('identical numbers in unrelated settings and relative commands authorize no brightness write', async context => {
@@ -204,7 +255,7 @@ void test('identical numbers in unrelated settings and relative commands authori
   assert.partialDeepStrictEqual(writes[0], {target: lamp.id, family: 'brightness-set', data: {percent: 70}});
 });
 
-void test('catalog arguments preserve the roles of color and label values', () => {
+void test('catalog arguments preserve the roles of hue and saturation', () => {
   const color = {family: 'catalog-action', command: 'lifx-color-set', target: 'desk-lamp',
     binding: {kind: 'device', owner: 'bunny/modules/lifx', target: 'desk-lamp', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}},
     data: {hue: 20, saturation: 40}} as const;
@@ -212,11 +263,6 @@ void test('catalog arguments preserve the roles of color and label values', () =
   assert.equal(authorizesControl(color, 'Set Desk lamp color to hue 20 and saturation 40', '', lamp, ''), true);
   assert.equal(authorizesControl(color, 'Set Desk lamp color to hue 40 and saturation 20', '', lamp, ''), false);
   assert.equal(authorizesControl(color, 'Set Desk lamp timer to 40 after 20 minutes', '', lamp, ''), false);
-  const rename = {family: 'catalog-action', command: 'session-label-set', target: 'kitchen',
-    binding: {kind: 'record', owner: 'bunny/core', target: 'kitchen', revision: 1}, data: {label: 'New title'}} as const;
-  assert.equal(authorizesControl(rename, 'Rename session kitchen to New title', '', [['kitchen']], ''), true);
-  assert.equal(authorizesControl(rename, 'Rename session New title to kitchen', '', [['kitchen']], ''), false);
-  assert.equal(authorizesControl(rename, 'Rename session kitchen to new title', '', [['kitchen']], ''), false);
 });
 
 void test('an exact tool ID cannot skip the owner choosing between shared catalog aliases', async context => {
@@ -249,8 +295,8 @@ void test('ordinary media requests bind the exact display and action', async con
   const base = light('office-pixoo', 'Office Pixoo');
   const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities, media: {supported: true as const, actions: ['pause' as const], playlistIds: [], renditionIds: []}}};
   const writes: AssistantDispatch[] = [];
-  const provider = counted((_request, turn) => turn % 2 === 0 ? reply('Finished.') : call('control_media_control', {
-    owner, target: device.id, arguments: '{"action":"pause"}',
+  const provider = counted((request, turn) => turn % 2 === 0 ? reply('Finished.') : call('control_media_control', {
+    owner, target: device.id, arguments: JSON.stringify({action: request.transcript.at(-1)?.role === 'owner' && turn === 1 ? 'stop' : 'pause'}),
   }));
   const w = await world(context, {provider, tools: ['control_media_control'],
     dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
@@ -270,6 +316,42 @@ void test('ordinary media requests bind the exact display and action', async con
   assert.equal(writes[0]?.family === 'catalog-action' ? writes[0].data.action : undefined, 'pause');
 });
 
+void test('a newly configured Pixoo resolves a saved playlist by name and checks its revision locally', async context => {
+  const owner = 'bunny/modules/pixoo', base = light('new-pixoo', 'Kitchen Display');
+  const playlistId = '11111111-1111-4111-8111-111111111111';
+  const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities,
+    media: {supported: true as const, actions: ['pause' as const], playlistIds: [playlistId], renditionIds: []}}};
+  let revision = 6;
+  const writes: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.')
+    : call('control_pixoo_playlist_change', {owner, target: 'Kitchen Display', arguments: JSON.stringify({
+      change: {operation: 'rename', playlistId: 'Evening loop', revision, name: 'After dinner'},
+    })}));
+  const w = await world(context, {provider, tools: ['control_pixoo_playlist_change'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device', 'pixoo-playlist'], request => ({revision: 7, states: request.data.families.includes('device')
+    ? [{type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}]
+    : [{type: 'org.bunny.pixoo-playlist.updated', subject: playlistId, dataschema: 'https://bunny.invalid/events/pixoo-playlist/2.0',
+      data: {id: playlistId, revision: 7, playlistRevision: 7, name: 'Evening loop', repeat: true, shuffle: false, items: []}}]}));
+  await control(w.core, w.module(), 'enable');
+  const ask = async (text: string) => {
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+  };
+  await ask('On the Kitchen Display, call revision six of Evening loop After dinner.');
+  assert.equal(writes.length, 0);
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === 'refused: revision-conflict'));
+  revision = 7;
+  await ask('On Kitchen Display, rename Evening loop to After dinner.');
+  assert.equal(writes.length, 1);
+  assert.partialDeepStrictEqual(writes[0], {family: 'catalog-action', command: 'pixoo-playlist-change', target: device.id,
+    binding: {kind: 'device', configurationRevision: device.configurationRevision, generation: device.generation},
+    data: {change: {operation: 'rename', playlistId, revision: 7, name: 'After dinner'}}});
+});
+
 void test('ordinary monitor requests and moments dispatch only their named settings', async context => {
   const owner = 'bunny/modules/pixoo', base = light('office-pixoo', 'Office Pixoo');
   const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities,
@@ -278,7 +360,7 @@ void test('ordinary monitor requests and moments dispatch only their named setti
   const instructions = new Map([
     ['Show Claude sessions on the office Pixoo every 3 seconds', ['control_pixoo_monitor_set', '{"filter":{"provider":"claude"},"cadenceMs":3000}']],
     ['Hide Now Playing on the office Pixoo', ['control_pixoo_now_playing_set', '{"media":"off"}']],
-    ['Play a celebrate moment on the office Pixoo for 5 seconds', ['control_moment_play', '{}']],
+    ['Play a celebrate moment on the office Pixoo for 5 seconds', ['control_moment_play', '{"mood":"celebrate","durationMs":5000}']],
   ]);
   const provider = counted(request => {
     const text = request.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? '';
@@ -331,31 +413,6 @@ void test('ambiguous device clarification omits choices denied at either destina
   assert.doesNotMatch(JSON.stringify(document), /(?:owner|model)-denied-screen/);
 });
 
-void test('showing saved art binds status visibility and the whole display set', () => {
-  const proposal = {family: 'catalog-action', command: 'art-show', target: 'hub', binding: {kind: 'fixed', owner: 'bunny/core', target: 'hub'},
-    data: {artworkId: 'kite', targets: ['pixoo', 'tidbyt'], coversStatus: false}} as const;
-  const prompt = 'Show the kite on Pixoo and Tidbyt and keep status visible';
-  assert.equal(authorizesControl(proposal, prompt, '', [['pixoo'], ['tidbyt']], ''), true);
-  assert.equal(authorizesControl({...proposal, data: {...proposal.data, coversStatus: true}}, prompt, '', [['pixoo'], ['tidbyt']], ''), false);
-  assert.equal(authorizesControl({...proposal, data: {...proposal.data, targets: ['pixoo']}}, prompt, '', [['pixoo']], ''), false);
-  const opaque = {...proposal, data: {...proposal.data, artworkId: 'kite-blue'}};
-  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite-blue'), '', [['pixoo'], ['tidbyt']], ''), true);
-  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite_blue'), '', [['pixoo'], ['tidbyt']], ''), false);
-});
-
-void test('art catalog changes bind the exact opaque ID and requested edit', () => {
-  const artworkId = 'Kite-Blue';
-  const deleteArt = {family: 'catalog-action', command: 'art-catalog-edit', target: 'art',
-    binding: {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'}, data: {action: 'delete', artworkId}} as const;
-  assert.equal(authorizesControl(deleteArt, 'Bunny, delete saved artwork Kite-Blue', '', [['art']], ''), true);
-  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork Kite_Blue', '', [['art']], ''), false);
-  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork kite-blue', '', [['art']], ''), false);
-  assert.equal(authorizesControl(deleteArt, 'Favorite saved artwork Kite-Blue', '', [['art']], ''), false);
-  const favorite = {...deleteArt, data: {action: 'favorite', artworkId, favorite: false}};
-  assert.equal(authorizesControl(favorite, 'Unfavorite artwork Kite-Blue', '', [['art']], ''), true);
-  assert.equal(authorizesControl(favorite, 'Favorite artwork Kite-Blue', '', [['art']], ''), false);
-});
-
 void test('ordinary art deletion reaches its fixed owner only for the exact selected ID', async context => {
   const writes: AssistantDispatch[] = [];
   const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_art_catalog_edit', {
@@ -382,34 +439,125 @@ void test('ordinary art deletion reaches its fixed owner only for the exact sele
   assert.deepEqual(dispatched.data, {action: 'delete', artworkId: 'Kite-Blue'});
 });
 
-void test('a seek binds the light, position and direction in an ordinary request', () => {
-  const seek = {family: 'catalog-action', command: 'music-lighting-control', target: 'wall',
-    binding: {kind: 'record', owner: 'bunny/core', target: 'wall', revision: 1},
-    data: {action: 'seek-show', generation: 'current-light-show', positionMs: 1500}} as const;
-  const wall = [['wall', 'Studio Wall']];
-  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Jump the light show to 1500 milliseconds on the Studio Wall.', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds?', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 milliseconds on the Studio Wall', '', wall, ''), false);
-  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 seconds on the Studio Ceiling', '', wall, ''), false);
-  assert.equal(authorizesControl(seek, 'Jump the light show to -1.5 seconds on the Studio Wall', '', wall, ''), false);
-});
+async function finishWemoConfirmationWindow(w: Awaited<ReturnType<typeof world>>): Promise<void> {
+  const taskId = task(w)?.taskId ?? assert.fail('saved Wemo task');
+  await until(() => w.store().calls(taskId).some(receipt => receipt.kind === 'tool' && receipt.status === 'succeeded' &&
+    receipt.action?.control?.proposal.family === 'power-set'));
+  w.advance(1001);
+}
 
-void test('an explicit Wemo group binds every target once', async context => {
+for (const host of ['anthropic', 'openai'] as const) {
+  void test(`an explicit Wemo group continues after discovery through ${host}`, async context => {
+    const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+    const requests: AssistantDispatch[] = [];
+    const payloads: string[] = [];
+    let writesAtContinuation: number | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      payloads.push(init.body);
+      const step = payloads.length;
+      if (step === 2) writesAtContinuation = requests.length;
+      const id = `call_wemo_group_${step}`;
+      const tool = step === 1 ? {name: 'find_wemo_power_targets', input: {}}
+        : step === 2 ? {name: 'set_wemo_power', input: wemoPowerArgs([], true)} : undefined;
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: tool === undefined ? [{type: 'text', text: 'Synthetic terminal reply.'}] : [{type: 'tool_use', id, ...tool}],
+          stop_reason: tool === undefined ? 'end_turn' : 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: tool === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic terminal reply.'}]}]
+          : [{type: 'function_call', id: 'fc_' + id, call_id: id, name: tool.name, arguments: JSON.stringify(tool.input)}],
+        usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+      dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), 'Please turn on all Wemo plugs.')).status, 'accepted');
+    await finishWemoConfirmationWindow(w);
+    await until(() => status(w) === 'succeeded');
+    assert.equal(writesAtContinuation, 0, 'discovery cannot dispatch a command');
+    assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
+    assert.ok(requests.every(request => request.family === 'power-set' && request.data.on));
+    assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+    for (const payload of payloads.slice(0, 2)) {
+      assert.match(payload, /at most one tool per model response/i);
+      assert.doesNotMatch(payload, /one tool per turn/i);
+      assert.match(payload, /successive responses.*same owner request/i);
+      assert.match(payload, /read-only lookup.*call set_wemo_power.*next response/i);
+    }
+    const continuation = payloads[1] ?? assert.fail('missing hosted lookup continuation');
+    assert.match(continuation, host === 'anthropic' ? /"type":"tool_result"/u : /"type":"function_call_output"/u);
+    assert.match(continuation, /desk-plug.*shelf-plug/u);
+  });
+}
+
+void test('a lost Wemo group reply preserves each dispatch receipt across restart', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
   const requests: AssistantDispatch[] = [];
-  const provider = counted(request => request.transcript.some(item => item.role === 'tool')
-    ? reply('The tool returned its result.') : call('set_wemo_power', {device: 'all wemo plugs', on: false}));
-  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
-    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool' && item.name === 'set_wemo_power')
+    ? reply('Both plugs have switched off.') : wemoGroup(request, false));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs, dispatch: data => {
+    assert.equal(w.store().confirmation(data.requestId)?.binding.target, data.target, 'receipt exists before dispatch');
+    requests.push(data);
+    return Promise.resolve(data.target === 'desk-plug'
+      ? {status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')}
+      : accepted(data.requestId));
+  }});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Turn off desk-plug');
-  await until(() => status(w) === 'succeeded');
-  assert.equal(requests.length, 0);
   await input(w.core, w.module(), 'Turn off all Wemo plugs');
-  await until(() => status(w) === 'succeeded' && requests.length === 2);
+  await finishWemoConfirmationWindow(w);
+  await until(() => status(w) === 'succeeded');
+  const ids = requests.map(request => request.requestId);
   assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
-  assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+  assert.equal(new Set(ids).size, 2);
+  await w.restart();
+  assert.deepEqual(requests.map(request => request.requestId), ids);
+  const messages = w.store().page('bunny', 0).messages.filter(message => message.role === 'assistant');
+  assert.ok(messages.some(message => /desk-plug.*outcome is unknown/s.test(message.text) &&
+    /shelf-plug.*Power request accepted/s.test(message.text)));
+  assert.ok(messages.every(message => !message.text.includes('Both plugs have switched off.')));
+});
+
+void test('restart follows Wemo group operations without repeating a write in flight', async context => {
+  const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(request => wemoGroup(request, false));
+  const inFlight = deferred<RequestResult>();
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs, dispatch: data => {
+    requests.push(data);
+    return data.target === 'shelf-plug' ? inFlight.promise : Promise.resolve(accepted(data.requestId));
+  }});
+  let available = false;
+  await w.core.serveSync(['operation'], () => {
+    const first = requests[0];
+    if (!available || first === undefined) return {revision: 0, states: []};
+    const id = operationEntityId(first.requestId);
+    const atMs = Date.now();
+    const operation: OperationRecord = {id, revision: 1, requestId: first.requestId, target: first.target,
+      kind: 'device', family: 'power-set', command: 'org.bunny.power.set.requested', requestedBy: 'bunny/modules/companions',
+      status: 'expired', sentAtMs: atMs, updatedAtMs: atMs, deadlineAtMs: atMs};
+    return {revision: 1, states: [{type: 'org.bunny.operation.updated', subject: id,
+      dataschema: 'https://bunny.invalid/events/operation/2.0', data: operation}]};
+  });
+  const wemo = w.bus.connect('bunny/modules/wemo');
+  context.after(() => wemo.close());
+  await wemo.serveSync(['device'], () => ({revision: 0, states: []}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn off all Wemo plugs');
+  await until(() => requests.length === 2);
+  const [first, second] = requests;
+  assert.ok(first && second);
+  assert.equal(w.store().confirmation(first.requestId)?.dispatchState, 'accepted');
+  assert.equal(w.store().confirmation(second.requestId)?.dispatchState, 'sending');
+  await w.restart(() => {available = true;});
+  await until(() => w.store().confirmation(first.requestId) === undefined);
+  const messages = w.store().page('bunny', 0).messages;
+  assert.ok(messages.some(message => message.id === first.requestId + '-confirmation' &&
+    message.text === 'desk-plug: The power request expired.'));
+  assert.ok(messages.some(message => message.text.includes('shelf-plug: The power request outcome is unknown.')));
+  assert.equal(w.store().confirmation(second.requestId)?.dispatchState, 'sending');
+  assert.equal(status(w), 'uncertain');
+  assert.deepEqual(requests, [first, second]);
 });
 
 void test('Conversation discovers an allowed device and answers a held-out power interval from bounded evidence', async context => {
@@ -674,9 +822,9 @@ for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true
   const owner = `bunny/modules/${kind}`;
   const display = {...light('studio-display', 'Studio Display'), kind};
   const tool = kind === 'pixoo' ? 'control_brightness_set' : 'set_wemo_power';
-  const provider = counted((_input, turn) => turn !== 1 ? reply('The command was sent.') : kind === 'pixoo'
+  const provider = counted((_request, turn) => turn !== 1 ? reply('The command was sent.') : kind === 'pixoo'
     ? call(tool, {owner, target: display.id, arguments: JSON.stringify({percent: 35})})
-    : call(tool, {device: display.id, on: true}));
+    : wemoPower([display.id], true));
   const requests: AssistantDispatch[] = [];
   const w = await world(context, {provider, tools: [tool], devices: () => [display], dispatch: data => {
     requests.push(data);
@@ -720,12 +868,12 @@ for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true
       ? {brightnessReadbacks: [{...binding, requestedPercent: 35, reading: {status: 'known', percent: 32, observedAtMs: atMs + 1}}]}
       : {powerReadbacks: [{...binding, requestedOn: true, reading: {status: 'known', on: false, observedAtMs: atMs + 1}}]})};
   });
-  if (resume) {
+  if (resume && kind === 'pixoo') {
     assert.equal(status(w), 'paused');
     assert.equal(task(w)?.taskId, originalTask);
     await control(w.core, w.module(), 'resume', originalTask);
-    await until(() => status(w) === 'succeeded');
   }
+  await until(() => status(w) === 'succeeded');
   await until(() => w.store().confirmation(requestId) === undefined);
   const duplicate = await pixoo.publish('bunny.state.device.' + display.id, {kind: 'state', ...draft()});
   await pixoo.publishMessage('bunny.state.device.' + display.id, duplicate);
@@ -733,13 +881,17 @@ for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true
   const messages = w.store().page('bunny', 0).messages;
   const original = messages.find(message => message.id === originalTask + '-result');
   assert.ok(original);
-  assert.ok(original.text.includes('The command was sent.'), 'the normal final reply remains visible');
-  assert.equal(messages.filter(message => message.follows === originalTask + '-result').length, resume ? 0 : 1);
-  assert.match(resume ? original.text : messages.find(message => message.follows !== undefined)?.text ?? '',
-    kind === 'pixoo' ? /Studio Display reports 32% brightness/ : /Studio Display reports power off/);
+  if (kind === 'pixoo') {
+    assert.ok(original.text.includes('The command was sent.'), 'the normal final reply remains visible');
+    assert.equal(messages.filter(message => message.follows === originalTask + '-result').length, resume ? 0 : 1);
+    assert.match(resume ? original.text : messages.find(message => message.follows !== undefined)?.text ?? '', /Studio Display reports 32% brightness/);
+  } else {
+    const evidence = messages.filter(message => message.id === originalTask + '-result' || message.follows === originalTask + '-result');
+    assert.match(evidence.map(message => message.text).join('\n'), /Studio Display reports power off/);
+  }
   if (!resume) assert.ok(original.text.includes(kind === 'pixoo' ? 'Brightness command sent.' : 'Power command sent.'));
   assert.equal(requests.length, 1);
-  assert.equal(provider.calls(), resume ? before + 1 : before);
+  assert.equal(provider.calls(), resume && kind === 'pixoo' ? before + 1 : before);
   assert.equal(status(w), 'succeeded');
   const turn = events.filter(event => event.turn.status === 'known' && event.turn.id === originalTask);
   assert.equal(turn.filter(event => event.event.kind === 'attention-resolved').length, 0);
@@ -825,6 +977,124 @@ function powerLimit(status: PowerLimitRecord['status'], revision = 1): PowerLimi
 
 const powerLimitDraft = (data: PowerLimitRecord) => ({type: 'org.bunny.power-limit.updated', subject: data.id,
   dataschema: 'https://bunny.invalid/events/power-limit/2.0', data});
+
+void test('Conversation reads shared device facts under its active sharing grants', async context => {
+  const now = 1_700_000_000_000, owner = 'bunny/modules/lifx';
+  const device: DeviceRecord = {...light('fixture-light', 'Fixture light'),
+    observed: {status: 'known', observedAtMs: now, power: {status: 'known', value: true},
+      brightness: {status: 'known', value: 35}}};
+  const readings: string[] = [];
+  const baseline = sharing();
+  let details = true;
+  const provider = counted((turn, step) => {
+    if (step % 2 === 1) return call('read_devices', {owner, target: 'id:fixture-light'});
+    const result = turn.transcript.at(-1);
+    assert.equal(result?.role, 'tool');
+    if (result?.role === 'tool') readings.push(result.result);
+    return reply('Read complete.');
+  });
+  const w = await world(context, {provider, tools: ['read_devices', 'control_lifx_temperature_set'],
+    share: query => baseline(query) && (details || query.source !== 'devices' || query.field !== 'details'),
+    dispatch: () => assert.fail('a facts read cannot send a device command')}, undefined, now);
+  const lamp = w.bus.connect(owner);
+  context.after(() => lamp.close());
+  const lightState = {id: device.id, revision: 1, capabilities: {color: {supported: false},
+    temperature: {supported: true, minimum: 1500, maximum: 9000}}, observed: unknown};
+  await lamp.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated', subject: device.id,
+    dataschema: DEVICE_POWER_READBACK_SCHEMA, data: device}]}));
+  await lamp.serveSync(['lifx-light'], () => ({revision: 1, states: [{type: 'org.bunny.lifx-light.updated', subject: device.id,
+    dataschema: 'https://bunny.invalid/events/lifx-light/2.0', data: lightState}]}));
+  await control(w.core, w.module(), 'enable');
+
+  assert.equal((await input(w.core, w.module(), 'What temperature range can Fixture light use?')).status, 'accepted');
+  await until(() => readings.length === 1 && status(w) === 'succeeded');
+  const allowed = JSON.parse(readings[0] ?? '{}') as {devices: {
+    id: string; name: string; actions: string[]; lastReportedAvailability: string; choices: {brightness: object};
+    observation: {freshness: string; value: DeviceRecord['observed']}; lightCapabilities: object;
+  }[]};
+  const fact = allowed.devices[0];
+  assert.equal(fact?.id, device.id);
+  assert.equal(fact?.name, device.label);
+  assert.equal(fact?.lastReportedAvailability, 'available');
+  assert.equal(fact?.observation.freshness, 'current');
+  assert.deepEqual(fact?.observation.value, device.observed);
+  assert.deepEqual(fact?.choices.brightness, {supported: true, minimum: 0, maximum: 100, unit: 'percent', step: 1});
+  assert.deepEqual(fact?.lightCapabilities, {color: {supported: false},
+    temperature: {supported: true, minimum: 1500, maximum: 9000, unit: 'kelvin', step: 1}});
+  assert.deepEqual(fact?.actions, ['lifx-temperature-set']);
+
+  details = false;
+  assert.equal((await input(w.core, w.module(), 'What are the settings of Fixture light?')).status, 'accepted');
+  await until(() => readings.length === 2 && status(w) === 'succeeded');
+  assert.deepEqual(JSON.parse(readings[1] ?? '{}'), {devices: [], unreadable: []});
+});
+
+for (const host of ['anthropic', 'openai'] as const) {
+  void test(`${host} receives exact current Kelvin facts under the device status grant`, async context => {
+    const now = 1_700_000_000_000, owner = 'bunny/modules/lifx';
+    const device: DeviceRecord = {...light('fixture-light', 'Fixture light'),
+      observed: {status: 'known', observedAtMs: now, power: {status: 'known', value: true}, brightness: {status: 'known', value: 35}}};
+    const hidden = light('hidden-light', 'PRIVATE_HIDDEN_FIXTURE');
+    const baseline = sharing(), readings: string[] = [];
+    let calls = 0, allowStatus = true;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {
+        messages?: {content: {type: string; content?: string}[]}[];
+        input?: {type?: string; output?: string}[];
+      };
+      const result = body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output ??
+        body.messages?.flatMap(message => message.content).filter(item => item.type === 'tool_result').at(-1)?.content;
+      const read = ++calls % 2 === 1, id = `call_facts_${String(calls)}`;
+      if (!read) {
+        assert.ok(result !== undefined && result.length > 0);
+        readings.push(result);
+      }
+      const tool = {name: 'read_devices', input: {owner, target: 'id:fixture-light'}};
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: read ? [{type: 'tool_use', id, ...tool}] : [{type: 'text', text: 'Read complete.'}],
+          stop_reason: read ? 'tool_use' : 'end_turn', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: read
+          ? [{type: 'function_call', id: `fc_${id}`, call_id: id, name: tool.name, arguments: JSON.stringify(tool.input)}]
+          : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Read complete.'}]}],
+          usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['read_devices', 'control_lifx_temperature_set'],
+      devices: source => source === owner ? [device, hidden] : [],
+      share: query => baseline(query) && !(query.destination === 'external-model' && query.source === 'devices' &&
+        (query.field === 'details' || query.record === hidden.id || query.field === 'status' && !allowStatus)),
+      dispatch: () => assert.fail('device discovery sends no command')}, undefined, now);
+    const lamp = w.bus.connect(owner);
+    context.after(() => lamp.close());
+    await lamp.serveSync(['device'], () => ({revision: 1, states: [device, hidden].map(row => ({type: 'org.bunny.device.updated', subject: row.id,
+      dataschema: DEVICE_POWER_READBACK_SCHEMA, data: row}))}));
+    await lamp.serveSync(['lifx-light'], () => ({revision: 1, states: [{type: 'org.bunny.lifx-light.updated', subject: device.id,
+      dataschema: 'https://bunny.invalid/events/lifx-light/2.1',
+      data: {id: device.id, revision: 1, capabilities: {color: {supported: false}, temperature: {supported: true, minimum: 2700, maximum: 6500}},
+        observed: {status: 'known', observedAtMs: now, hue: 0, saturation: 0, brightness: 35, kelvin: 3600}}}]}));
+    await control(w.core, w.module(), 'enable');
+
+    assert.equal((await input(w.core, w.module(), 'Set id:fixture-light to its warmest setting.')).status, 'accepted');
+    await until(() => readings.length === 1 && status(w) === 'succeeded');
+    const supplied = JSON.parse(readings[0] ?? '{}') as {devices: {id: string; lastReportedAvailability: string; actions: string[];
+      observationBases: {kind: string; observedAtMs: number; value: number}[];
+      lightCapabilities: {temperature: {minimum: number; maximum: number; unit: string}};
+    }[]};
+    const [facts] = supplied.devices;
+    assert.deepEqual(supplied.devices.map(row => row.id), [device.id]);
+    assert.equal(facts?.lastReportedAvailability, 'available');
+    assert.deepEqual(facts?.actions, ['lifx-temperature-set']);
+    assert.deepEqual(facts?.lightCapabilities.temperature, {supported: true, minimum: 2700, maximum: 6500, unit: 'kelvin', step: 1});
+    assert.deepEqual(facts?.observationBases, [{kind: 'temperature', observedAtMs: now, value: 3600}]);
+    assert.doesNotMatch(readings[0] ?? '', /PRIVATE_HIDDEN_FIXTURE|hidden-light|configurationRevision|generation|lastTransmissionAtMs/u);
+
+    allowStatus = false;
+    assert.equal((await input(w.core, w.module(), 'Set id:fixture-light to its warmest setting.')).status, 'accepted');
+    await until(() => readings.length === 2 && status(w) === 'succeeded');
+    assert.deepEqual(JSON.parse(readings[1] ?? '{}'), {devices: []});
+  });
+}
 
 void test('Conversation reads a Wemo maximum-on deadline and recovers a lost copy through both read tools', async context => {
   const plug: DeviceRecord = {...light(PLUG_ID, 'Test plug'), kind: 'wemo', observed: {
@@ -931,9 +1201,519 @@ void test('maximum-on read distinguishes every core status and only counts down 
   }
 });
 
+void test('typed Wemo proposals dispatch a named pair and then only its referred plug', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const provider = counted((_request, turn) => {
+    return turn === 1 ? wemoPower(['id:table-plug', 'id:shelf-plug'], true) : wemoPower(['id:shelf-plug'], false);
+  });
+  const commands: AssistantDispatch[] = [];
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: owner => owner === WEMO_OWNER ? plugs : [],
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Let’s get the table plug and shelf plug running.');
+  await until(() => status(w) === 'succeeded' || w.store().confirmations().length === 2);
+  assert.deepEqual(commands.map(command => command.target), ['table-plug', 'shelf-plug']);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'Actually, kill the second one.');
+  await until(() => status(w) === 'succeeded' || commands.length === 3);
+  assert.deepEqual(commands.flatMap(command => command.family === 'power-set' ? [[command.target, command.data.on]] : []),
+    [['table-plug', true], ['shelf-plug', true], ['shelf-plug', false]]);
+  assert.equal(new Set(commands.map(command => command.requestId)).size, 3);
+});
+
+for (const host of ['anthropic', 'openai'] as const) for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
+  void test(`Wemo pair and follow-up through ${host} for ${profile}`, async context => {
+    const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+    const commands: AssistantDispatch[] = [];
+    const pair = 'I need id:table-plug and id:shelf-plug running.';
+    const question = 'Is shelf plug on?';
+    const follow = 'Cut power to the plug we just checked, please.';
+    const compare = 'Switch off id:table-plug and leave id:shelf-plug as it is.';
+    const choose = (request: string) => request === pair ? {name: 'set_wemo_power', input: wemoPowerArgs(['table-plug', 'shelf-plug'], true)}
+      : request === question ? {name: 'read_wemo', input: {device: 'shelf-plug'}}
+        : request === follow ? {name: 'set_wemo_power', input: wemoPowerArgs(['shelf-plug'], false)}
+          : request === compare ? {name: 'set_wemo_power', input: wemoPowerArgs(['table-plug'], false, ['id:shelf-plug'])} : undefined;
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'synthetic-messages', transport: (_url, init) => {
+      const body = JSON.parse(init.body) as {messages: {role: string; content: {type: string; text?: string}[]}[]};
+      const request = body.messages.filter(message => message.role === 'user').flatMap(message => message.content).at(-1);
+      const tool = request?.type === 'text' ? choose(request.text ?? '') : undefined;
+      return Promise.resolve(new Response(JSON.stringify({content: tool === undefined ? [{type: 'text', text: 'The tool returned its evidence.'}]
+        : [{type: 'tool_use', id: 'toolu_wemo_fixture', ...tool}], stop_reason: tool === undefined ? 'end_turn' : 'tool_use',
+      usage: {input_tokens: 40, output_tokens: 16}})));
+    }}) : new OpenAIProvider({model: OPENAI_MODEL, effort: 'medium', key: 'synthetic-responses', transport: (_url, init) => {
+      const body = JSON.parse(init.body) as {input: {role?: string; type?: string; content?: string}[]};
+      const last = body.input.at(-1);
+      const tool = last?.role === 'user' ? choose(last.content ?? '') : undefined;
+      const output = tool === undefined ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'The tool returned its evidence.'}]}]
+        : [{type: 'function_call', id: 'fc_wemo_fixture', call_id: 'call_wemo_fixture', name: tool.name, arguments: JSON.stringify(tool.input)}];
+      return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 16}})));
+    }});
+    const w = await world(context, {provider, tools: ['read_wemo', 'set_wemo_power'],
+      devices: owner => owner === WEMO_OWNER ? plugs : [],
+      dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+    const send = (text: string) => input(w.core, w.module(), text, false, randomUUID(), {profile});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await send(pair)).status, 'accepted');
+    await finishWemoConfirmationWindow(w);
+    await until(() => status(w) === 'succeeded');
+    assert.deepEqual(commands.map(command => command.target), ['table-plug', 'shelf-plug']);
+    assert.equal((await send(question)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(commands.length, 2);
+    assert.equal((await send('What kinds of things can you help with?')).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(commands.length, 2);
+    assert.equal((await send(follow)).status, 'accepted');
+    await until(() => commands.length === 3 || status(w) === 'succeeded');
+    assert.deepEqual(commands.flatMap(command => command.family === 'power-set' ? [[command.target, command.data.on]] : []),
+      [['table-plug', true], ['shelf-plug', true], ['shelf-plug', false]]);
+    w.advance(1100);
+    await until(() => status(w) === 'succeeded');
+    assert.equal((await send(compare)).status, 'accepted');
+    await until(() => commands.length === 4);
+    await finishWemoConfirmationWindow(w);
+    await until(() => status(w) === 'succeeded');
+    assert.deepEqual(commands.map(command => command.target), ['table-plug', 'shelf-plug', 'shelf-plug', 'table-plug']);
+    const result = (await page(w, profile)).messages.filter(message => message.role === 'assistant').at(-1)?.text ?? '';
+    assert.match(result, /Power request accepted/);
+    assert.match(result, /shelf-plug: No power command was sent/);
+  });
+}
+
+void test('Wemo target discovery admits a relative description without an owner label or ID', async context => {
+  const plugs = [
+    {...light('table-plug', 'Reading nook'), kind: 'wemo' as const},
+    {...light('shelf-plug', 'PRIVATE_HIDDEN_FIXTURE'), kind: 'wemo' as const},
+  ];
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((request, turn) => {
+    if (turn === 1) return call('find_wemo_power_targets');
+    const lookup = request.transcript.at(-1);
+    assert.equal(lookup?.role, 'tool');
+    assert.match(lookup?.role === 'tool' ? lookup.result : '', /Reading nook \(table-plug\)/);
+    assert.doesNotMatch(lookup?.role === 'tool' ? lookup.result : '', /PRIVATE_HIDDEN_FIXTURE|shelf-plug/);
+    return wemoPower(['id:table-plug'], false);
+  });
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    share: query => query.record !== 'shelf-plug',
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Can you cut the power by the armchair?');
+  await until(() => commands.length === 1 || status(w) === 'waiting' || status(w) === 'succeeded');
+  assert.deepEqual(commands.map(command => command.target), ['table-plug']);
+});
+
+void test('a Wemo group cannot silently add an undisclosed plug to a named request', async context => {
+  const plugs = [
+    {...light('table-plug', 'Reading nook'), kind: 'wemo' as const},
+    {...light('shelf-plug', 'Kitchen shelf'), kind: 'wemo' as const},
+  ];
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower([], false) : reply('No group action taken.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: () => assert.fail('an unresolved group cannot dispatch')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Cut power to Reading nook.');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: invalid-request')));
+});
+
+for (const host of ['anthropic', 'openai'] as const) for (const lookup of ['read_devices', 'find_wemo_power_targets'] as const) {
+  void test(`exact Wemo power read before dispatch through ${host} with ${lookup}`, async context => {
+    const plugs = [{...light('fixture-plug', 'Matching Label'), kind: 'wemo' as const},
+      {...light('other-plug', 'Matching Label'), kind: 'wemo' as const},
+      {...light('unrelated-plug', 'Separate Lamp'), kind: 'wemo' as const}];
+    const misleading = [light('lookalike', 'ID Fixture Plug Suffix'), light('literal-lookalike', 'ID Fixture Plug')];
+    const commands: AssistantDispatch[] = [];
+    const reads: string[] = [];
+    let step = 0;
+    const toolIds = (result: string): string[] => lookup === 'read_devices'
+      ? (JSON.parse(result) as {devices: {id: string}[]}).devices.map(device => device.id)
+      : [...result.matchAll(/\(([a-z-]+)\)/gu)].map(match => match[1] ?? '');
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {
+        messages?: {content: {type: string; content?: string}[]}[];
+        input?: {type?: string; output?: string}[];
+      };
+      const result = body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output ??
+        body.messages?.flatMap(message => message.content).filter(item => item.type === 'tool_result').at(-1)?.content;
+      const stage = step++;
+      if (stage === 1 && result !== undefined) {
+        reads.push(result);
+        if (lookup === 'read_devices' && toolIds(result).join() === 'fixture-plug') {
+          const data = JSON.parse(result) as {devices: {actions: string[]; hold: unknown; configurationRevision: number;
+            generation: DeviceRecord['generation']; choices: {power: object}; maximumOnLimit: unknown}[]};
+          const row = data.devices[0];
+          assert.deepEqual(row?.actions, ['power-set']);
+          assert.deepEqual(row?.choices.power, {supported: true});
+          assert.equal(row?.hold, null);
+          assert.equal(row?.configurationRevision, plugs[0]?.configurationRevision);
+          assert.deepEqual(row?.generation, plugs[0]?.generation);
+          assert.notEqual(row?.maximumOnLimit, undefined);
+        }
+      }
+      const tool = stage === 0 ? {name: lookup, input: lookup === 'read_devices' ? {owner: 'auto', target: ''} : {}}
+        : stage === 1 && result !== undefined && toolIds(result).join() === 'fixture-plug'
+          ? {name: 'set_wemo_power', input: wemoPowerArgs(['fixture-plug'], false)} : undefined;
+      const id = stage === 0 ? 'call_fixture_read' : 'call_fixture_write';
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: tool === undefined ? [{type: 'text', text: 'Synthetic terminal reply.'}] : [{type: 'tool_use', id, ...tool}],
+          stop_reason: tool === undefined ? 'end_turn' : 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: tool === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic terminal reply.'}]}]
+          : [{type: 'function_call', id: 'fc_' + id, call_id: id, name: tool.name, arguments: JSON.stringify(tool.input)}],
+        usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['read_devices', 'set_wemo_power'],
+      devices: owner => owner === WEMO_OWNER ? plugs : owner === 'bunny/modules/lifx' ? misleading : [],
+      dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+    const plugOwner = w.bus.connect(WEMO_OWNER);
+    const otherOwner = w.bus.connect('bunny/modules/lifx');
+    context.after(async () => {await plugOwner.close(); await otherOwner.close();});
+    await otherOwner.serveSync(['device'], () => ({revision: 1, states: misleading.map(device => ({
+      type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}))}));
+    await plugOwner.serveSync(['device'], () => ({revision: 1, states: plugs.map(device => ({
+      type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}))}));
+    await control(w.core, w.module(), 'enable');
+    for (const [prompt, ids] of [
+      ['Turn off id:fixture-plug_suffix.', []],
+      ['Turn off Matching Label.', lookup === 'read_devices' ? [] : ['fixture-plug', 'other-plug']],
+      ['Cut power to the one near where we read.', lookup === 'read_devices' ? [] : ['fixture-plug', 'other-plug', 'unrelated-plug']],
+      ['Turn off id:not-registered.', []],
+      ['Turn off id:fixture-plug.', ['fixture-plug']],
+      ['Turn off (id:fixture-plug).', ['fixture-plug']],
+    ] as const) {
+      const prior = task(w)?.taskId;
+      const previousWrites = commands.length;
+      step = 0;
+      assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+      await until(() => task(w)?.taskId !== prior && (commands.length > previousWrites || status(w) === 'succeeded'));
+      if (commands.length > previousWrites) await finishWemoConfirmationWindow(w);
+      await until(() => status(w) === 'succeeded');
+      assert.deepEqual(toolIds(reads.at(-1) ?? assert.fail('missing device tool output')), ids);
+      assert.deepEqual(commands.slice(previousWrites).flatMap(command => command.family === 'power-set' ? [[command.target, command.data.on]] : []),
+        ids.join() === 'fixture-plug' ? [['fixture-plug', false]] : []);
+    }
+  });
+}
+
+void test('an owner’s explicit Wemo IDs must be targets or acknowledged context', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const commands: AssistantDispatch[] = [];
+  let compare = false;
+  const provider = counted(request => request.transcript.at(-1)?.role !== 'owner' ? reply('No unresolved action was sent.')
+    : wemoPower(['id:table-plug'], false, compare ? ['id:shelf-plug'] : []));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Switch off id:table-plug and id:shelf-plug.');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(commands.length, 0);
+  compare = true;
+  await input(w.core, w.module(), 'Switch off id:table-plug. Leave id:shelf-plug alone.');
+  await until(() => commands.length === 1 || status(w) === 'succeeded');
+  assert.deepEqual(commands.map(command => command.target), ['table-plug']);
+});
+
+void test('an explicit Wemo Answer prevents both group and list expansion', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => {
+    if (turn === 1) return call('find_wemo_power_targets');
+    if (turn === 2) return call('ask_owner', {text: 'Which Wemo plug should I switch off?'});
+    if (turn === 3) return wemoPower([], false);
+    if (turn === 4) return wemoPower(['table-plug', 'shelf-plug'], false);
+    return wemoPower(['table-plug'], false);
+  });
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Could you switch a Wemo plug off?');
+  await until(() => status(w) === 'waiting');
+  assert.equal(commands.length, 0);
+  await input(w.core, w.module(), 'id:table-plug', true);
+  await until(() => commands.length === 1 || status(w) === 'waiting' || status(w) === 'succeeded');
+  assert.deepEqual(commands.map(command => command.target), ['table-plug']);
+  await finishWemoConfirmationWindow(w);
+  assert.equal((await page(w)).messages.filter(message => message.text.includes('refused: the plug selection is still unclear')).length, 2);
+});
+
+void test('a context-only tag cannot swap the only current Wemo target for an earlier one', async context => {
+  const plugs = [
+    {...light('table-plug', 'Reading nook'), kind: 'wemo' as const},
+    {...light('shelf-plug', 'Kitchen shelf'), kind: 'wemo' as const},
+  ];
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => {
+    if (turn === 1) return reply('The previous subject was Kitchen shelf (shelf-plug).');
+    if (turn === 2) return wemoPower(['id:shelf-plug'], false, ['id:table-plug']);
+    return wemoPower(['id:table-plug'], false, ['id:shelf-plug']);
+  });
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'What is the status of the kitchen shelf?');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'Turn off id:table-plug.');
+  await until(() => status(w) === 'waiting');
+  assert.equal(commands.length, 0);
+  await control(w.core, w.module(), 'cancel', task(w)?.taskId);
+  await input(w.core, w.module(), 'Leave id:shelf-plug alone. Turn off id:table-plug.');
+  await until(() => commands.length === 1 || status(w) === 'succeeded');
+  assert.deepEqual(commands.map(command => command.target), ['table-plug']);
+  await finishWemoConfirmationWindow(w);
+  await until(() => status(w) === 'succeeded');
+  const result = (await page(w)).messages.filter(message => message.role === 'assistant').at(-1)?.text ?? '';
+  assert.match(result, /shelf-plug: No power command was sent/);
+});
+
+void test('a current Wemo ID cannot inherit a second target from earlier history', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? reply('We were discussing shelf-plug.')
+    : turn === 2 ? wemoPower(['table-plug', 'shelf-plug'], false) : reply('The proposal was refused.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Which one is shelf-plug?');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'Switch off only id:table-plug.');
+  await until(() => commands.length > 0 || status(w) === 'waiting' || status(w) === 'succeeded');
+  assert.deepEqual(commands, []);
+});
+
+for (const suffix of ['_other', '.extra']) {
+  void test(`a Wemo Answer refuses an unregistered ID with the suffix ${suffix}`, async context => {
+    const plug = {...light('table-plug'), kind: 'wemo' as const};
+    const commands: AssistantDispatch[] = [];
+    const provider = counted((_request, turn) => turn === 1 ? call('ask_owner', {text: 'Which Wemo plug?'})
+      : turn === 2 ? wemoPower(['id:table-plug'], false) : reply('The proposal was refused.'));
+    const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
+      dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+    await control(w.core, w.module(), 'enable');
+    await input(w.core, w.module(), 'Could you switch one Wemo plug off?');
+    await until(() => status(w) === 'waiting');
+    await input(w.core, w.module(), `id:table-plug${suffix}`, true);
+    await until(() => commands.length > 0 || status(w) === 'succeeded');
+    assert.deepEqual(commands, []);
+  });
+}
+
+void test('a mixed Wemo request needs each target ID before sending either command', async context => {
+  const plugs = [
+    {...light('table-plug', 'Reading nook'), kind: 'wemo' as const},
+    {...light('shelf-plug', 'Kitchen shelf'), kind: 'wemo' as const},
+  ];
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['table-plug'], false)
+    : wemoPower(['table-plug', 'shelf-plug'], false));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Switch off id:table-plug and Kitchen shelf.');
+  await until(() => status(w) === 'waiting');
+  assert.equal(commands.length, 0);
+  assert.match(JSON.stringify((await page(w)).currentTask?.question), /id:<device-id>/u);
+  await input(w.core, w.module(), 'id:table-plug and id:shelf-plug.', true);
+  await until(() => commands.length === 2);
+  assert.deepEqual(commands.map(command => command.target), ['table-plug', 'shelf-plug']);
+  await finishWemoConfirmationWindow(w);
+});
+
+void test('an unknown context-only Wemo ID blocks the whole proposal', async context => {
+  const plug = {...light('table-plug'), kind: 'wemo' as const};
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['table-plug'], false, ['id:missing-plug'])
+    : reply('The proposal was refused.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
+    dispatch: () => assert.fail('an unknown explicit ID prevents dispatch')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Switch off id:table-plug. Leave id:missing-plug alone.');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: not-found')));
+});
+
+void test('synthetic Wemo follow-up can refer to a plug first named in an earlier assistant reply', async context => {
+  const plug = {...light('table-plug', 'Reading nook'), kind: 'wemo' as const};
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((request, turn) => {
+    if (turn === 1) return call('find_wemo_power_targets');
+    if (turn === 2) return reply('The reading nook device is Reading nook (table-plug).');
+    if (turn === 3) return reply('I can also answer questions.');
+    assert.match(JSON.stringify(request.context), /Reading nook/);
+    return wemoPower(['id:table-plug'], false);
+  });
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Which device is by the armchair?');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'What else can you help with?');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'Cut power to that one, please.');
+  await until(() => commands.length === 1 || status(w) === 'waiting' || status(w) === 'succeeded');
+  assert.deepEqual(commands.map(command => command.target), ['table-plug']);
+});
+
+void test('a revoked Wemo clarification ID stays out of later synthetic history', async context => {
+  const targets = ['revoked-plug', 'visible-plug'];
+  const plugs = targets.map(id => ({...light(id, 'Reading plug'), kind: 'wemo' as const}));
+  let revoked = false;
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['Reading plug'], true) : reply('No action requested.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    share: query => !revoked || query.record !== 'revoked-plug',
+    dispatch: () => assert.fail('ambiguous or unrelated request cannot dispatch')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on Reading plug.');
+  await until(() => status(w) === 'waiting');
+  assert.match(JSON.stringify((await page(w)).currentTask?.question), /revoked-plug/);
+  await control(w.core, w.module(), 'cancel', task(w)?.taskId);
+  revoked = true;
+  await input(w.core, w.module(), 'What can you help with?');
+  await until(() => status(w) === 'succeeded');
+  assert.doesNotMatch(JSON.stringify(provider.inputs.at(-1)), /revoked-plug/);
+});
+
+void test('Wemo asks once for a duplicate label and accepts an exact ID answer', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id, 'Reading plug'), kind: 'wemo' as const}));
+  const commands: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['id:table-plug'], true) : wemoPower(['id:shelf-plug'], true));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Get the Reading plug going.');
+  await until(() => status(w) === 'waiting');
+  assert.equal(commands.length, 0, 'the model cannot choose one of the duplicate labels');
+  await input(w.core, w.module(), 'id:shelf-plug', true);
+  await until(() => commands.length === 1 || status(w) === 'succeeded' || status(w) === 'waiting');
+  assert.deepEqual(commands.map(command => command.target), ['shelf-plug']);
+});
+
+void test('a Wemo steer stops the unsent part of a pair and preserves the first receipt', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const pending = deferred<RequestResult>();
+  const sent: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['table-plug', 'shelf-plug'], true) : reply('I will leave it alone.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {sent.push(data); return pending.promise;}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on table-plug and shelf-plug.');
+  await until(() => sent.length === 1);
+  assert.equal((await input(w.core, w.module(), 'Leave shelf-plug alone.', false, randomUUID(),
+    {action: 'steer', taskId: task(w)?.taskId})).status, 'accepted');
+  pending.resolve(accepted(sent[0]?.requestId ?? assert.fail('first request')));
+  await finishWemoConfirmationWindow(w);
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(sent.map(command => command.target), ['table-plug']);
+  const text = (await page(w)).messages.map(message => message.text).join('\n');
+  assert.match(text, /table-plug: Power request accepted/);
+  assert.match(text, /shelf-plug: New owner input arrived/);
+  assert.match(text, /I will leave it alone/);
+});
+
+void test('restart keeps a steered Wemo clarification despite an earlier accepted receipt', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id, 'Reading plug'), kind: 'wemo' as const}));
+  const pending = deferred<RequestResult>();
+  const sent: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['id:table-plug'], true) :
+    turn === 2 ? call('ask_owner', {text: 'Which Reading plug should I turn off?'}) : wemoPower(['id:shelf-plug'], false));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {sent.push(data); return sent.length === 1 ? pending.promise : Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on id:table-plug.');
+  await until(() => sent.length === 1);
+  const original = sent[0] ?? assert.fail('original request');
+  const taskId = task(w)?.taskId ?? assert.fail('original task');
+  assert.equal((await input(w.core, w.module(), 'Turn off the Reading plug.', false, randomUUID(),
+    {action: 'steer', taskId})).status, 'accepted');
+  pending.resolve(accepted(original.requestId));
+  await until(() => w.store().calls(taskId).some(receipt => receipt.kind === 'tool' && receipt.status === 'succeeded'));
+  w.advance(1001);
+  await until(() => status(w) === 'waiting');
+  const question = task(w)?.questionId;
+  assert.equal(typeof question, 'string');
+  assert.equal(w.store().confirmation(original.requestId)?.dispatchState, 'accepted');
+  await w.restart();
+  assert.equal(status(w), 'waiting');
+  assert.equal(task(w)?.questionId, question);
+  assert.deepEqual(sent, [original]);
+  await input(w.core, w.module(), 'Turn off id:shelf-plug.', true);
+  await until(() => sent.length === 2);
+  assert.equal(sent[1]?.target, 'shelf-plug');
+  assert.notEqual(sent[1]?.requestId, original.requestId);
+});
+
+void test('a Wemo pair waits together for timely child readbacks', async context => {
+  const plugs = ['table-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const sent: AssistantDispatch[] = [];
+  const provider = counted(() => wemoPower(plugs.map(plug => plug.id), true));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {sent.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const atMs = Date.now();
+  const wemo = w.bus.connect('bunny/modules/wemo');
+  context.after(() => wemo.close());
+  await wemo.serveSync(['device'], () => ({revision: 0, states: []}));
+  await w.core.serveSync(['operation'], () => ({revision: 0, states: []}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on table-plug and shelf-plug.');
+  await until(() => sent.length === 2 && w.store().calls(task(w)?.taskId ?? '').some(receipt => receipt.kind === 'tool' && receipt.status === 'succeeded'));
+  assert.equal(status(w), 'running', 'both child confirmations have an in-turn window');
+  for (const [index, dispatch] of sent.entries()) {
+    const plug = plugs[index] ?? assert.fail('registered target');
+    const {requestId} = dispatch;
+    const id = operationEntityId(requestId);
+    const operation: OperationRecord = {id, revision: index + 1, requestId, target: dispatch.target,
+      kind: 'device', family: 'power-set', command: 'org.bunny.power.set.requested', requestedBy: 'bunny/modules/companions',
+      status: 'completed', result: 'succeeded', evidence: 'transmitted', sentAtMs: atMs, updatedAtMs: atMs, deadlineAtMs: atMs + 1000};
+    await w.core.publish('bunny.state.operation.' + id, {kind: 'state', type: 'org.bunny.operation.updated', subject: id,
+      dataschema: 'https://bunny.invalid/events/operation/2.0', data: operation});
+    await wemo.publish('bunny.state.device.' + plug.id, {kind: 'state', type: 'org.bunny.device.updated', subject: plug.id,
+      dataschema: DEVICE_POWER_READBACK_SCHEMA, data: {...plug, revision: index + 1, powerReadbacks: [{requestId,
+        configurationRevision: plug.configurationRevision, generation: plug.generation, transmittedAtMs: atMs,
+        requestedOn: true, reading: {status: 'known', on: true, observedAtMs: atMs + 1}}]}});
+  }
+  await until(() => status(w) === 'succeeded');
+  const result = (await page(w)).messages.find(message => message.id === task(w)?.taskId + '-result');
+  assert.match(result?.text ?? '', /table-plug reports power on/);
+  assert.match(result?.text ?? '', /shelf-plug reports power on/);
+});
+
+void test('a Wemo pair reports the held target and dispatches the available target once', async context => {
+  const available = {...light('table-plug'), kind: 'wemo' as const};
+  const held = {...light('shelf-plug'), kind: 'wemo' as const, held: {requestId: 'prior-power', heldAtMs: 1}};
+  const sent: AssistantDispatch[] = [];
+  const w = await world(context, {provider: counted(() => wemoPower(['table-plug', 'shelf-plug'], true)), tools: ['set_wemo_power'],
+    devices: () => [available, held], dispatch: data => {sent.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on table-plug and shelf-plug.');
+  await finishWemoConfirmationWindow(w);
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(sent.map(command => command.target), ['table-plug']);
+  const text = (await page(w)).messages.map(message => message.text).join('\n');
+  assert.match(text, /table-plug: Power request accepted/);
+  assert.match(text, /shelf-plug: The power request was refused: unavailable/);
+});
+
+void test('a Wemo proposal cannot move to a different Hub mode revision', async context => {
+  const plug = {...light('table-plug'), kind: 'wemo' as const};
+  const pending = deferred<TurnReply>();
+  let mode = hub(1);
+  const provider = counted((_request, turn) => turn === 1 ? pending.promise : reply('The original request was refused.'));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
+    core: () => ({sessions: [], mode, synced: true}), dispatch: () => assert.fail('stale mode proposal cannot dispatch')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Switch off table-plug.');
+  await until(() => provider.calls() === 1);
+  mode = hub(2, 'quiet');
+  pending.resolve(wemoPower(['table-plug'], false));
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: revision-conflict')));
+});
+
 void test('a direct Wemo power request preserves the exact plug, owner and guards', async context => {
   const plug: DeviceRecord = {...light('table-plug', 'Table plug'), kind: 'wemo'};
-  const provider = counted((_input, turn) => turn === 1 ? call('set_wemo_power', {device: 'Table plug', on: true}) : reply('Done.'));
+  const provider = counted((_request, turn) => turn === 1 ? wemoPower(['Table plug'], true) : reply('Done.'));
   const commands: AssistantDispatch[] = [];
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
     dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
@@ -957,7 +1737,7 @@ void test('a direct Wemo power request preserves the exact plug, owner and guard
 
 void test('duplicate Wemo labels ask for an exact plug before proposing power', async context => {
   const plugs = ['first-plug', 'second-plug'].map(id => ({...light(id, 'Table plug'), kind: 'wemo'}));
-  const provider = counted(() => call('set_wemo_power', {device: 'Table plug', on: true}));
+  const provider = counted(() => wemoPower(['Table plug'], true));
   const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
     dispatch: () => assert.fail('ambiguous Wemo power cannot be dispatched')});
   await control(w.core, w.module(), 'enable');
@@ -982,7 +1762,7 @@ void test('a Wemo hold refuses a power proposal without dispatch', async context
 void test('revoking Wemo control during clarification survives restart', async context => {
   const tools = ['set_wemo_power'];
   const records = ['table-plug', 'another-device'].map(id => ({...light(id, 'Shared desk device'), kind: 'wemo' as const}));
-  const provider = counted((_request, turn) => turn <= 2 ? call('set_wemo_power', {device: turn === 1 ? 'Shared desk device' : 'table-plug', on: false}) : reply('The tool gave its result.'));
+  const provider = counted((_request, turn) => turn <= 2 ? wemoPower([turn === 1 ? 'Shared desk device' : 'table-plug'], false) : reply('The tool gave its result.'));
   const w = await world(context, {provider, tools, devices: () => records,
     dispatch: () => assert.fail('the revoked tool cannot dispatch')});
   await control(w.core, w.module(), 'enable');
@@ -1068,8 +1848,9 @@ void test('Conversation pages through large show catalogs and can read a saved t
 
 void test('ordinary light-show seek dispatches once with the active generation and exact position', async context => {
   const requests: AssistantDispatch[] = [];
-  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_music_lighting_control', {
-    owner: 'bunny/core', target: 'wall', arguments: '{"action":"seek-show","positionMs":1500,"generation":"model-supplied-generation"}',
+  const provider = counted((request, turn) => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_music_lighting_control', {
+    owner: 'bunny/core', target: 'wall', arguments: JSON.stringify({action: 'seek-show', positionMs: turn === 1 ? -2000 : 1500,
+      generation: 'model-supplied-generation'}),
   }));
   const w = await world(context, {provider, tools: ['control_music_lighting_control'], dispatch: data => {
     requests.push(data);
@@ -1081,7 +1862,7 @@ void test('ordinary light-show seek dispatches once with the active generation a
       startedAtMs: 1000, show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0}}, last: null},
   }]}));
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Seek the light show on wall to 2 seconds');
+  await input(w.core, w.module(), 'Seek the light show on wall to two seconds before the start');
   await until(() => status(w) === 'succeeded');
   assert.equal(requests.length, 0);
   await input(w.core, w.module(), 'Could you seek the light show on wall to 1.5 seconds?');
@@ -1334,10 +2115,10 @@ void test('Reachy and MicroDuck use the configured provider with their own curat
     [['reachy', `You are Reachy, the owner's home assistant. ${persona('reachy').character} Answer in one to three short sentences.`],
       ['microduck', `You are MicroDuck, the owner's home assistant. ${persona('microduck').character} Answer in one to three short sentences.`]]);
   assert.match(sectionOf(provider.inputs[1]?.context ?? assert.fail('MicroDuck call'), 'personality').text ?? '', /English text is intended meaning, never spoken English\./);
-  for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'read_sessions', 'set_lifx_power'], 'every companion receives the configured tools');
+  for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'set_lifx_power'], 'each companion receives the same model-safe tools');
   assert.equal((await input(w.core, w.module(), 'Synthetic bunny request')).status, 'accepted');
   await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === 'bunny')?.status === 'succeeded');
-  assert.deepEqual(provider.inputs[2]?.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'read_sessions', 'set_lifx_power'], 'B.U.N.N.Y. is offered every listed tool');
+  assert.deepEqual(provider.inputs[2]?.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'set_lifx_power'], 'B.U.N.N.Y. receives the same projection');
   assert.deepEqual(TOOLS.filter(tool => deviceToolOwner(tool.name) !== undefined).map(tool => tool.name).sort(), [...DEVICE_TOOLS].sort(), 'the shared scope names every device tool');
   assert.equal(w.module().inspectAssistant()?.provider, 'anthropic');
   // A test or harness may still give one profile the labelled synthetic provider; the others keep the configured one.
@@ -1736,7 +2517,7 @@ void test('a refusal is offered to speech, a result over the spoken bound stays 
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
 });
 
-void test('Responses never substitutes an older owner excerpt for the latest private job question', async context => {
+void test('Responses keeps permitted history while omitting revoked and private job questions', async context => {
   const bodies: string[] = [];
   const allow = sharing();
   let denied: string | undefined;
@@ -1746,7 +2527,7 @@ void test('Responses never substitutes an older owner excerpt for the latest pri
       content: [{type: 'output_text', text: 'Fixture answer.', annotations: []}]}], usage: {input_tokens: 10, output_tokens: 3}})));
   }});
   const w = await world(context, {provider, share: query => allow(query) && !(denied !== undefined && query.record === denied &&
-    query.destination === 'openai-supervisor' && query.field === 'excerpt')});
+    query.destination === 'external-model' && query.field === 'excerpt')});
   await control(w.core, w.module(), 'enable');
   const ask = async (text: string, profile = 'bunny') => {
     const latest = () => w.module().inspectAssistant()?.tasks.find(row => row.profile === profile);
@@ -1763,14 +2544,14 @@ void test('Responses never substitutes an older owner excerpt for the latest pri
   const deniedTask = await ask('Synthetic newly revoked owner statement.');
   denied = deniedTask + '-prompt';
   await ask('Repeat my last message.');
-  assert.doesNotMatch(bodies.at(-1) ?? '', /newly revoked|earlier owner statement|private to Reachy/u);
+  assert.doesNotMatch(bodies.at(-1) ?? '', /newly revoked|private to Reachy/u);
   denied = undefined;
   await ask(earlier);
   const sent = bodies.length;
   await ask('What is the status of coding job synthetic-step-1-job?');
   assert.equal(bodies.length, sent);
   await ask('Repeat my last message.');
-  assert.doesNotMatch(bodies.at(-1) ?? '', /earlier owner statement|private to Reachy|step-1-job|Private owner question/u);
+  assert.doesNotMatch(bodies.at(-1) ?? '', /private to Reachy|step-1-job|Private owner question/u);
 });
 
 void test('resuming a local job status request commits its reply before a later paid queue refusal', async context => {
@@ -1878,6 +2659,11 @@ void test('an approved delegation is handed to the worker once, the turn finishe
   assert.equal((await input(w.core, w.module(), 'Please delegate: add a test')).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.match(JSON.stringify((await page(w)).messages), /No coding worker is connected right now/);
+  turn = 0;
+  assert.equal((await input(w.core, w.module(), 'Run a test on cloud.')).status, 'accepted');
+  await until(() => status(w) === 'succeeded' && provider.calls() >= 4);
+  assert.match(JSON.stringify((await page(w)).messages), /Cloud coding is disabled/);
+  assert.equal(work.length, 0);
   assert.equal((await workerPart.request(`bunny.cmd.coding-endpoint.${endpointId}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0', data: {requestId: 'enable-1', action: 'enable'}}, {timeoutMs: 5000})).status, 'accepted');
   await until(() => w.module().inspectCoding()?.availability === 'available');
   turn = 0;
@@ -2302,18 +3088,6 @@ void test('an ordinary multi-display show clarifies duplicate labels despite the
   assert.deepEqual(writes[0]?.family === 'catalog-action' ? writes[0].data.targets : undefined, ['display-green', 'browser']);
 });
 
-void test('saving a show binds the explicitly requested draft revision and immutable version name', () => {
-  const proposal = {family: 'catalog-action', command: 'nanoleaf-show-save', target: 'shows',
-    binding: {kind: 'fixed', owner: 'bunny/modules/nanoleaf', target: 'shows'}, data: {
-      name: 'Dawn test', showId: 'show-synthetic', versionName: 'First version',
-    }} as const;
-  const owners = [['show-synthetic']];
-  const request = 'Save draft Dawn test (show-synthetic) revision 1 as First version';
-  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, false, 1), true);
-  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, false, 2), false);
-  assert.equal(authorizesControl(proposal, request.replace('First version', 'Other version'), '', owners, '', [], false, false, 1), false);
-});
-
 void test('a failed compound turn reports the saved artwork and exact rejected display action', async context => {
   const requests: AssistantDispatch[] = [];
   const provider = counted((_input, turn) => {
@@ -2504,15 +3278,17 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     if (body.input.some(item => item.content === 'PRIVATE_SUPERSEDED_SUBJECT')) return superseded.promise;
     if (body.input.some(item => item.content === 'Synthetic provider spend refusal')) return Promise.resolve(new Response(null, {status: 429}));
     if (body.input.some(item => item.content === 'Synthetic lost reply')) return Promise.reject(new Error('synthetic transport reset'));
+    const ownerRequest = body.input.find(item => item.role === 'user')?.content;
     let output: unknown[];
     if (body.tools.length === 0) return pendingTitle.promise;
     if (body.input.length === 1 && body.input[0]?.content === 'Is Studio Plug on?') return pendingRead.promise;
     if (body.input.some(item => item.content === 'New synthetic topic')) output = [message('A fresh topic.')];
     else if (body.input.some(item => item.type === 'function_call_output')) output = [message('I checked the tool result.')];
-    else if (init.body.includes('What is the status of catalog-plug')) output = [functionCall('read_devices', {target: 'catalog-plug', owner: 'bunny/modules/pixoo'})];
-    else if (init.body.includes('Turn off Catalog Plug')) output = [functionCall('control_power_set', {target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
-    else if (init.body.includes('What color is it')) output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
-    else if (init.body.includes('Turn off Studio Plug') || init.body.includes('Could Studio Plug be off')) output = [reasoning, functionCall('set_wemo_power', {device: 'studio-plug', on: false})];
+    else if (ownerRequest === 'What is the status of catalog-plug?') output = [functionCall('read_devices', {target: 'catalog-plug', owner: 'bunny/modules/pixoo'})];
+    else if (ownerRequest === 'Turn off Catalog Plug') output = [functionCall('control_power_set', {target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
+    else if (ownerRequest === 'What color is it?') output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
+    else if (ownerRequest === 'Turn off Studio Plug') output = [reasoning, functionCall('set_wemo_power',
+      wemoPowerArgs(['studio-plug'], false))];
     else output = [reasoning, functionCall('read_wemo', {device: 'studio-plug'})];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage})));
   }};
@@ -2521,8 +3297,9 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     anthropicBodies.push(init.body);
     const body = JSON.parse(init.body) as {messages: {role: string; content: Record<string, unknown>[]}[]};
     const first = body.messages[0]?.content[0]?.text;
-    const tool = first === 'Is Studio Plug on?' ? {name: 'read_wemo', input: {device: 'studio-plug'}}
-      : first === 'Turn off Studio Plug' || first === 'Could Studio Plug be off?' ? {name: 'set_wemo_power', input: {device: 'studio-plug', on: false}}
+    const tool = first === 'Is Studio Plug on?' || first === 'Could Studio Plug be off?' ? {name: 'read_wemo', input: {device: 'studio-plug'}}
+      : first === 'Turn off Studio Plug' ? {name: 'set_wemo_power',
+        input: wemoPowerArgs(['studio-plug'], false)}
       : first === 'What color is it?' ? {name: 'ask_owner', input: {text: 'Which item?'}} : undefined;
     const answered = body.messages.some(message => message.content.some(block => block.type === 'tool_result'));
     const use = tool !== undefined && !answered;
@@ -2630,8 +3407,8 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   assert.equal(countCommands(), requestsBefore);
   await startAnthropic('Could Studio Plug be off?');
   await until(() => bunnyTask()?.status === 'succeeded');
-  assert.equal(countCommands(), requestsBefore, 'same status question refuses a proposed mutation');
-  assert.match(anthropicBodies.at(-1) ?? '', /refused/);
+  assert.equal(countCommands(), requestsBefore, 'same status question causes no mutation');
+  assert.match(anthropicBodies.at(-1) ?? '', /tool_result/);
   await startAnthropic('Turn off Studio Plug');
   await until(() => countCommands() === requestsBefore + 1);
   w.advance(1200);
@@ -2663,6 +3440,610 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
 
 });
 
+
+void test('model sharing conflicts are visible only through permitted private context reads', async context => {
+  const base = sharing([{caller: 'companion', companion: 'bunny', destination: 'anthropic', purpose: 'prompt',
+    source: 'knowledge', field: 'text', record: 'PRIVATE_CONFLICT', allow: true}]);
+  let allowed = true;
+  const share = Object.assign((query: ShareQuery) => base(query) && (allowed ||
+    (query.destination !== 'private-conversation' || query.source !== 'conversation' || query.field !== 'details')), {conflicts: base.conflicts ?? 0});
+  const w = await world(context, {share});
+  const read = () => w.module().manifest.content?.('assistant-context', {query: {profile: 'bunny'}, signal: new AbortController().signal});
+  const result = await read();
+  assert.ok(result !== undefined && !('error' in result));
+  const detail = Buffer.from(result.bytes).toString();
+  assert.match(detail, /"sharingConflictCount":1/);
+  assert.doesNotMatch(detail, /PRIVATE_CONFLICT/);
+  allowed = false;
+  assert.deepEqual(await read(), errorBody('forbidden'));
+});
+
+void test('hosted turns use the same bounded conversation context for each companion', async context => {
+  const captured = {anthropic: [] as string[], openai: [] as string[]};
+  const outputs = {anthropic: [] as string[], openai: [] as string[]};
+  const titlePrompts = {anthropic: [] as string[], openai: [] as string[]};
+  const followUp = 'How bright is the second one?';
+  const compare = 'Compare Desk Lamp and Hall Lamp.';
+  const unrelated = 'Tell me a joke about paper.';
+  const args = {device: 'hall'};
+  const anthropic = new AnthropicProvider({key: 'configured-key-canary', transport: (_url, init) => {
+    assert.doesNotMatch(init.body, /configured-key-canary/);
+    const body = JSON.parse(init.body) as {system: {text: string}[]; messages: {content: {text?: string; type?: string; content?: string}[]}[]};
+    captured.anthropic.push(body.system.map(block => block.text).join('\n'));
+    const result = body.messages.flatMap(item => item.content).find(block => block.type === 'tool_result')?.content;
+    if (result !== undefined) outputs.anthropic.push(result);
+    const read = result === undefined && body.messages[0]?.content[0]?.text === followUp;
+    return Promise.resolve(Response.json({content: read ? [{type: 'tool_use', id: 'read', name: 'read_lifx', input: args}]
+      : [{type: 'text', text: 'Synthetic reply.'}], stop_reason: read ? 'tool_use' : 'end_turn',
+      usage: {input_tokens: 20, output_tokens: 10}}));
+  }});
+  const response = (output: unknown[]) => Promise.resolve(Response.json({status: 'completed', output, usage: {input_tokens: 20, output_tokens: 10}}));
+  const message = (text: string) => ({type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]});
+  const openai = new OpenAIProvider({key: 'configured-key-canary', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    assert.doesNotMatch(init.body, /configured-key-canary/);
+    const body = JSON.parse(init.body) as {instructions: string; input: {content?: string; type?: string; output?: string}[]};
+    captured.openai.push(body.instructions);
+    const result = body.input.find(item => item.type === 'function_call_output')?.output;
+    if (result !== undefined) outputs.openai.push(result);
+    if (result === undefined && body.input[0]?.content === followUp) return response([{type: 'function_call', id: 'fc_read',
+      call_id: 'call_read', name: 'read_lifx', arguments: JSON.stringify(args)}]);
+    return response([message('Synthetic reply.')]);
+  }});
+  const titleProvider = new AnthropicTitleProvider({key: 'configured-key-canary', transport: (_url, init) => {
+    assert.doesNotMatch(init.body, /configured-key-canary/);
+    const body = JSON.parse(init.body) as {messages: {content: string}[]};
+    titlePrompts.anthropic.push(JSON.stringify(body.messages));
+    return Promise.resolve(Response.json({content: [{type: 'text', text: 'Fixture controls'}], stop_reason: 'end_turn', usage: {input_tokens: 10, output_tokens: 4}}));
+  }});
+  const openAITitleProvider = new OpenAITitleProvider({key: 'configured-key-canary', model: OPENAI_MODEL, transport: (_url, init) => {
+    assert.doesNotMatch(init.body, /configured-key-canary/);
+    const body = JSON.parse(init.body) as {input: unknown};
+    titlePrompts.openai.push(JSON.stringify(body.input));
+    return response([message('Fixture controls')]);
+  }});
+  const commonPreference = sharing((['bunny', 'reachy', 'microduck'] as const).flatMap(companion =>
+    (['label', 'text'] as const).map(field => ({caller: 'companion', companion, destination: 'external-model',
+      purpose: 'prompt', source: 'preferences', field, record: 'Shared fixture preference', allow: true}))));
+  const w = await world(context, {provider: anthropic, alternateProvider: openai, titleProvider, openAITitleProvider, tools: ['read_lifx'], share: commonPreference,
+    devices: owner => owner === 'bunny/modules/lifx' ? [light('desk', 'Desk Lamp'), light('hall', 'Hall Lamp'), light('private-device', 'PRIVATE_DEVICE')] : []});
+  const preferences = new PreferenceStore(w.host().moduleDatabase() ?? assert.fail('preference store'));
+  preferences.apply({action: 'create', title: 'Fixture preference', text: 'PRIVATE_PREFERENCE', expectedRevision: preferences.revision()}, Date.now());
+  preferences.apply({action: 'create', title: 'Shared fixture preference', text: 'Owner-approved fixture preference.', expectedRevision: preferences.revision()}, Date.now());
+  await control(w.core, w.module(), 'enable');
+  for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
+    for (const provider of ['anthropic', 'openai'] as const) {
+      const priorTitles = titlePrompts[provider].length;
+      for (const text of [compare, followUp, unrelated]) {
+        const previous = w.module().inspectAssistant()?.tasks.find(task => task.profile === profile)?.taskId;
+        assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {provider, profile})).status, 'accepted');
+        await until(() => w.module().inspectAssistant()?.tasks.some(task => task.profile === profile && task.taskId !== previous && task.status === 'succeeded') === true);
+      }
+      assert.match(captured[provider].at(-1) ?? '', /Owner-approved fixture preference/);
+      assert.match(captured[provider].at(-2) ?? '', /Compare Desk Lamp and Hall Lamp/);
+      assert.match(captured[provider].at(-1) ?? '', /Compare Desk Lamp and Hall Lamp/);
+      assert.doesNotMatch(captured[provider].at(-1) ?? '', /PRIVATE_PREFERENCE|PRIVATE_DEVICE/);
+      assert.match(outputs[provider].at(-1) ?? '', /Hall Lamp \(hall\)/);
+      assert.doesNotMatch(outputs[provider].at(-1) ?? '', /Desk Lamp|PRIVATE_DEVICE/);
+      await until(() => titlePrompts[provider].length > priorTitles);
+      assert.match(titlePrompts[provider][priorTitles] ?? '', /Compare Desk Lamp and Hall Lamp/);
+      assert.equal((await input(w.core, w.module(), '', false, randomUUID(), {action: 'new-conversation', profile, text: undefined})).status, 'accepted');
+    }
+  }
+  assert.deepEqual(outputs.anthropic, outputs.openai);
+  assert.doesNotMatch(JSON.stringify(titlePrompts), /Owner-approved fixture preference/);
+  assert.doesNotMatch(JSON.stringify({captured, titlePrompts}), /PRIVATE_PREFERENCE|PRIVATE_DEVICE/);
+});
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`a revoked common request grants no send or opaque replay on ${name}`, async context => {
+    const baseline = sharing();
+    let revoked: string | undefined, revokeAtSizing = true, calls = 0;
+    const provider: ModelProvider = {name, model: name === 'openai' ? OPENAI_MODEL : 'claude-sonnet-5-5',
+      inputUnits: turn => {
+        if (revokeAtSizing) {
+          const message = turn.transcript.find(item => item.role === 'owner')?.text;
+          assert.equal(message, 'Revoke after assembly.');
+          const started = task(w)?.taskId ?? assert.fail('task id');
+          revoked = `${started}-prompt`;
+        }
+        return 10_000;
+      },
+      turn: () => {calls += 1; return Promise.resolve(call('ask_owner', {text: 'Which lamp?'}, 'fixture-ask'));}};
+    const w = await world(context, {provider,
+      share: query => baseline(query) && !(query.destination === 'external-model' && query.field === 'request' && query.record === revoked)});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), 'Revoke after assembly.')).status, 'accepted');
+    await until(() => status(w) === 'failed');
+    assert.equal(task(w)?.code, 'forbidden');
+    assert.equal(calls, 0);
+
+    revokeAtSizing = false;
+    assert.equal((await input(w.core, w.module(), 'Allow a clarification.')).status, 'accepted');
+    await until(() => status(w) === 'waiting');
+    const waiting = task(w) ?? assert.fail('waiting for an answer');
+    await w.restart();
+    revoked = `${waiting.taskId}-prompt`;
+    assert.equal((await input(w.core, w.module(), 'Hall Lamp.', true, randomUUID(),
+      {taskId: waiting.taskId, questionId: waiting.questionId})).status, 'accepted');
+    await until(() => status(w) === 'failed');
+    assert.equal(task(w)?.code, 'forbidden');
+    assert.equal(calls, 1, 'the resumed task did not disclose its saved transcript');
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} keeps a related prior answer and sends every newly admitted steer`, async context => {
+    const seen: {owner: string[]; instructions: string}[] = [];
+    const previousPrompt = 'Give me the synthetic orbital report.';
+    const previousAnswer = 'A sapphire sensor tracks the fictional ORBITAL_FIXTURE vehicle.';
+    const followUp = 'Explain the sapphire sensor.';
+    const advicePrompt = 'Suggest a way to remember recurring chores.';
+    const advice = 'Try setting a recurring alarm.';
+    const desk = 'What is the brightness of Desk Lamp?';
+    const hall = 'What is the brightness of Hall Lamp?';
+    const deskAnswer = 'Desk Lamp reported a reading. DESK_PRIVATE_SENTINEL.';
+    const heldPrompt = 'Wait with this first synthetic subject.';
+    const heldModel = deferred<Response>();
+    const respond = (text: string) => Promise.resolve(Response.json(name === 'anthropic'
+      ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage: {input_tokens: 20, output_tokens: 10}}
+      : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}],
+        usage: {input_tokens: 20, output_tokens: 10}}));
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {system?: {text: string}[]; instructions?: string; input?: {role: string; content: string; type?: string}[];
+        messages?: {role: string; content: {type: string; text?: string}[]}[]};
+      const owner = body.messages?.filter(item => item.role === 'user').flatMap(item => item.content.flatMap(block =>
+        block.type === 'text' && block.text !== undefined ? [block.text] : [])) ?? body.input?.filter(item => item.role === 'user').map(item => item.content) ?? [];
+      seen.push({owner, instructions: body.system?.map(block => block.text).join('\n') ?? body.instructions ?? ''});
+      if (owner[0] === heldPrompt) return heldModel.promise;
+      if (owner[0] === desk) {
+        const result = body.messages?.some(item => item.content.some(block => block.type === 'tool_result')) === true ||
+          body.input?.some(item => item.type === 'function_call_output') === true;
+        if (result) return respond(deskAnswer);
+        return Promise.resolve(Response.json(name === 'anthropic'
+          ? {content: [{type: 'tool_use', id: 'read_desk', name: 'read_lifx', input: {device: 'desk'}}],
+            stop_reason: 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+          : {status: 'completed', output: [{type: 'function_call', id: 'fc_read_desk', call_id: 'read_desk',
+            name: 'read_lifx', arguments: '{"device":"desk"}'}], usage: {input_tokens: 20, output_tokens: 10}}));
+      }
+      return respond(owner[0] === previousPrompt ? previousAnswer : owner[0] === advicePrompt ? advice : 'Synthetic reply.');
+    };
+    const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const baseline = sharing();
+    let revoked: string | undefined;
+    const w = await world(context, {provider, tools: ['read_lifx'],
+      devices: owner => owner === 'bunny/modules/lifx' ? [light('desk', 'Desk Lamp'), light('hall', 'Hall Lamp')] : [],
+      share: query => baseline(query) && !(query.destination === 'external-model' &&
+      query.field === 'request' && query.record === revoked)});
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string) => {
+      const prior = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+      await until(() => task(w)?.taskId !== prior && status(w) === 'succeeded');
+      return task(w)?.taskId ?? assert.fail('task');
+    };
+    const origin = await ask(previousPrompt);
+    await ask(followUp);
+    assert.match(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'the earlier permitted answer reaches the new task');
+    revoked = `${origin}-prompt`;
+    await ask(followUp);
+    assert.doesNotMatch(seen.at(-1)?.instructions ?? '', /ORBITAL_FIXTURE/, 'the prior answer cannot bypass its original request grant');
+    await ask(advicePrompt);
+    await ask('Could you remind me what you recommended?');
+    assert.match(seen.at(-1)?.instructions ?? '', /Try setting a recurring alarm/, 'a follow-up keeps the earlier answer without matching its wording');
+    await ask('Who is Ada?');
+    assert.match(seen.at(-1)?.instructions ?? '', /Try setting a recurring alarm/, 'the permitted timeline is the same after a topic change');
+    await ask(desk);
+    await ask(hall);
+    assert.match(seen.at(-1)?.instructions ?? '', /DESK_PRIVATE_SENTINEL/,
+      'permitted prior device facts are preserved as history after a device change');
+
+    assert.equal((await input(w.core, w.module(), heldPrompt)).status, 'accepted');
+    await until(() => seen.at(-1)?.owner[0] === heldPrompt);
+    const taskId = task(w)?.taskId ?? assert.fail('steered task');
+    const steers = ['First unread owner update.', 'Second unread owner update.'];
+    for (const text of steers) assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {action: 'steer', taskId})).status, 'accepted');
+    heldModel.resolve(await respond('PRIVATE_SUPERSEDED_FIXTURE'));
+    await until(() => status(w) === 'succeeded');
+    assert.deepEqual(seen.at(-1)?.owner, steers, 'all unread steer messages arrive in order in the next model request');
+    assert.doesNotMatch(JSON.stringify(seen.at(-1)), /PRIVATE_SUPERSEDED_FIXTURE|first synthetic subject/);
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} rolls chronological history, compacts a reusable prefix, and invalidates edited or denied sources`, async context => {
+    const ordinary: string[] = [], compactions: string[] = [];
+    const old = 'Set the weekend reminder for Saturday at seven. ORIGINAL_SCHEDULE.';
+    const revised = 'Set the weekend reminder for Sunday at eight. REVISED_SCHEDULE.';
+    const unresolved = 'Confirm who will supply the timer batteries.';
+    const originReply = 'I saved that plan. SAVED_PRIVATE_ORIGIN_REPLY.';
+    const usage = {input_tokens: 20, output_tokens: 10};
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {system?: {text: string}[]; instructions?: string; tools: unknown[]};
+      const instructions = body.system?.map(block => block.text).join('\n') ?? body.instructions ?? '';
+      const compaction = instructions.startsWith('Summarize the supplied older conversation exchanges');
+      let text = 'Synthetic reply acknowledging the owner’s update.';
+      if (compaction) {
+        assert.deepEqual(body.tools ?? [], []);
+        compactions.push(init.body);
+        const decision = init.body.includes('REVISED_SCHEDULE') ? revised : init.body.includes('ORIGINAL_SCHEDULE') ? old : 'Other daily details were discussed.';
+        text = JSON.stringify({decisions: [decision], openQuestions: init.body.includes(unresolved) ? [unresolved] : [], references: [], corrections: []});
+      } else {
+        if (ordinary.length === 0) text = originReply;
+        ordinary.push(init.body);
+      }
+      return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage}
+        : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}], usage}));
+    };
+    const adapter = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const provider: ModelProvider & {inputWindow: number} = {name, model: adapter.model, inputWindow: 115_000,
+      contextInputUnits: input => adapter.contextInputUnits(input), turn: (input, signal) => adapter.turn(input, signal)};
+    const baseline = sharing();
+    let revoked: string | undefined;
+    const w = await world(context, {provider, share: query => baseline(query) && !(query.destination === 'external-model' &&
+      query.field === 'excerpt' && query.record === revoked)});
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string) => {
+      const before = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+      await until(() => task(w)?.taskId !== before && status(w) === 'succeeded');
+      return task(w)?.taskId ?? assert.fail('task');
+    };
+    const origin = await ask(old + ' ' + unresolved);
+    const filler = (index: number) => `Synthetic exchange ${String(index)}. ${'The household note describes a separate daily plan. '.repeat(20)}`;
+    for (let index = 0; index < 26; index += 1) await ask(filler(index));
+    const before = ordinary.at(-1) ?? '';
+    assert.match(before, /ORIGINAL_SCHEDULE/);
+    assert.ok((before.match(/\[message /g)?.length ?? 0) > 48, 'history crosses the former message ceiling');
+    assert.ok(before.indexOf('Synthetic exchange 0') < before.indexOf('Synthetic exchange 20'));
+    assert.equal(compactions.length, 0);
+
+    provider.inputWindow = 15_000;
+    await ask('Which day did we decide on for the weekend reminder?');
+    assert.equal(compactions.length, 1);
+    assert.match(compactions[0] ?? '', /ORIGINAL_SCHEDULE/);
+    assert.doesNotMatch(compactions[0] ?? '', /Which day did we decide on/);
+    const after = ordinary.at(-1) ?? '';
+    assert.match(after, /Summary of older exchanges.*ORIGINAL_SCHEDULE.*Recent exchanges.*Synthetic exchange 25/s);
+    assert.match(after, /Confirm who will supply the timer batteries/);
+    assert.ok(after.includes(filler(25).trimEnd()), 'the most recent owner message is verbatim');
+    assert.doesNotMatch(after, /Synthetic exchange 0\./);
+    const savedSummary = w.store().lastHistoryCompaction(task(w)?.conversationId ?? '');
+    assert.equal(savedSummary?.status, 'succeeded');
+    assert.equal(w.store().savedMessage(origin, `${origin}-prompt`)?.text, old + ' ' + unresolved);
+    await w.restart();
+    provider.inputWindow = 60_000;
+    await ask('And what time was it?');
+    assert.equal(compactions.length, 1, 'the same authorized prefix is reused after restart');
+    assert.match(ordinary.at(-1) ?? '', /Summary of older exchanges.*ORIGINAL_SCHEDULE/s);
+    provider.inputWindow = 18_000;
+    for (let index = 26; index < 55 && compactions.length < 2; index += 1) await ask(filler(index));
+    assert.equal(compactions.length, 2, 'a growing conversation compacts another portion without starting over');
+    assert.match(compactions[1] ?? '', /Summary of earlier exchanges.*ORIGINAL_SCHEDULE/s);
+    assert.ok(!(compactions[1] ?? '').includes(`${origin}-prompt`), 'incremental compaction uses the validated summary, not its original raw prefix');
+
+    revoked = `${origin}-prompt`;
+    await ask('Check the weekend plan again.');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE/, 'a denied source invalidates the persisted summary');
+    revoked = undefined;
+    w.store().messages.correct(`${origin}-prompt`, {kind: 'literal', text: revised, language: 'en'});
+    await ask('What is the corrected weekend plan?');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE|SAVED_PRIVATE_ORIGIN_REPLY/);
+    assert.ok((await page(w)).messages.some(message => message.text === originReply), 'correcting an input preserves the saved reply in private history');
+    assert.match(ordinary.at(-1) ?? '', /REVISED_SCHEDULE/, 'a correction is the new source for history or compaction');
+    assert.equal(w.store().savedMessage(origin, `${origin}-prompt`)?.text, revised, 'compaction keeps local records independent of the summary');
+    w.store().messages.remove(`${origin}-prompt`, Date.now());
+    await ask('Give me the current notes.');
+    assert.doesNotMatch(ordinary.at(-1) ?? '', /ORIGINAL_SCHEDULE|REVISED_SCHEDULE|SAVED_PRIVATE_ORIGIN_REPLY/, 'removal invalidates derived history');
+    assert.ok((await page(w)).messages.some(message => message.text === originReply), 'removing an input preserves the saved reply in private history');
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} refuses oversized required owner input and native continuation before spend or transport`, async context => {
+    const bodies: string[] = [];
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      bodies.push(init.body);
+      return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: [{type: 'tool_use', id: 'tool_read', name: 'read_lifx', input: {device: 'desk'}}], stop_reason: 'tool_use', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: [{type: 'function_call', id: 'fc_read', call_id: 'tool_read',
+          name: 'read_lifx', arguments: '{"device":"desk"}'}], usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const adapter = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const provider: ModelProvider & {inputWindow: number} = {name, model: adapter.model, inputWindow: 9_000,
+      contextInputUnits: input => adapter.contextInputUnits(input), turn: (input, signal) => {
+        // Give the native continuation exactly the required first request's budget.
+        provider.inputWindow = adapter.contextInputUnits(input);
+        return adapter.turn(input, signal);
+      }};
+    const w = await world(context, {provider, tools: ['read_lifx'], devices: () => [light('desk', 'Desk Lamp')]});
+    await control(w.core, w.module(), 'enable');
+    const spendRows = () => w.host().moduleDatabase()?.prepare('SELECT id FROM assistant_spend').all().length;
+    const original = 'Retain the whole owner message. '.repeat(350).trimEnd();
+    assert.equal((await input(w.core, w.module(), original)).status, 'accepted');
+    await until(() => status(w) === 'failed');
+    assert.equal(task(w)?.code, 'capacity');
+    assert.deepEqual(bodies, []);
+    assert.equal(spendRows(), 0);
+    assert.ok((await page(w)).messages.some(message => message.text === original));
+
+    assert.equal((await input(w.core, w.module(), '', false, randomUUID(), {action: 'new-conversation', text: undefined})).status, 'accepted');
+    provider.inputWindow = 100_000;
+    const before = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), 'What is the brightness of Desk Lamp?')).status, 'accepted');
+    await until(() => task(w)?.taskId !== before && status(w) === 'failed');
+    assert.equal(task(w)?.code, 'capacity');
+    assert.equal(bodies.length, 1);
+    assert.equal(spendRows(), 1, 'only the sent first call consumes a reservation');
+  });
+}
+
+for (const name of ['anthropic', 'openai'] as const) {
+  void test(`${name} checks origin device grants for privately displayed and spoken derived replies`, async context => {
+    const phrase = 'The test device reported a reading. ORIGIN_FACT.';
+    const repeated = 'The earlier reading was recorded. DERIVED_FACT.';
+    const read = 'What is the brightness of Desk Lamp?';
+    const quote = 'What did the earlier reading say?';
+    const bodies: string[] = [];
+    const offers: SpokenReply[] = [];
+    const usage = {input_tokens: 20, output_tokens: 10};
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      bodies.push(init.body);
+      const first = init.body.includes(read) && !init.body.includes(quote) && !init.body.includes('tool_result') && !init.body.includes('function_call_output');
+      if (first) return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: [{type: 'tool_use', id: 'read_desk', name: 'read_lifx', input: {device: 'desk'}}], stop_reason: 'tool_use', usage}
+        : {status: 'completed', output: [{type: 'function_call', id: 'fc_read_desk', call_id: 'read_desk',
+          name: 'read_lifx', arguments: '{"device":"desk"}'}], usage}));
+      const text = init.body.includes(quote) ? init.body.includes(phrase) ? repeated : 'No previous reading.' : phrase;
+      return Promise.resolve(Response.json(name === 'anthropic' ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage}
+        : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}], usage}));
+    };
+    const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const baseline = sharing();
+    let revoked: 'private-conversation' | 'conversation-speech' | undefined;
+    const w = await world(context, {provider, tools: ['read_lifx'], devices: owner => owner === 'bunny/modules/lifx' ? [light('desk', 'Desk Lamp')] : [],
+      speak: offer => {offers.push(offer);}, share: query => baseline(query) && !(query.destination === revoked &&
+        query.source === 'devices' && query.field === 'status' && query.record === 'desk')});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), read)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    const first = task(w)?.taskId ?? assert.fail('origin task');
+    assert.ok(w.store().calls(first).some(call => call.disclosures?.some(field =>
+      field.source === 'devices' && field.field === 'status' && field.record === 'desk') === true));
+    assert.equal((await input(w.core, w.module(), quote)).status, 'accepted');
+    await until(() => task(w)?.taskId !== first && status(w) === 'succeeded');
+    const derived = task(w)?.taskId ?? assert.fail('derived task');
+    const messageId = `${derived}-result`;
+    assert.match(bodies.at(-1) ?? '', /ORIGIN_FACT/);
+    assert.ok((await page(w)).messages.some(message => message.text === repeated));
+    assert.ok(offers.some(offer => offer.messageId === messageId));
+
+    revoked = 'conversation-speech';
+    const spoken = offers.length;
+    assert.equal((await control(w.core, w.module(), 'speak', derived, randomUUID(), {messageId})).status, 'rejected');
+    assert.equal(offers.length, spoken);
+    assert.ok((await page(w)).messages.some(message => message.text === repeated), 'speech revocation keeps private display available');
+
+    revoked = 'private-conversation';
+    await w.restart();
+    assert.doesNotMatch(JSON.stringify(await page(w)), /ORIGIN_FACT|DERIVED_FACT/);
+    assert.equal((await control(w.core, w.module(), 'speak', derived, randomUUID(), {messageId})).status, 'rejected');
+    assert.equal(offers.length, spoken);
+  });
+
+  for (const permission of ['unchanged', 'gained', 'lost'] as const) {
+    void test(`${name} rebuilds synced mode during compaction with ${permission} permission`, async context => {
+      const pending = deferred<Response>(), ordinary: string[] = [];
+      let started = false, mode = hub(1), allowed = permission !== 'gained';
+      const policy = sharing();
+      const response = (text: string) => Response.json(name === 'anthropic'
+        ? {content: [{type: 'text', text}], stop_reason: 'end_turn', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: [{type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]}],
+          usage: {input_tokens: 20, output_tokens: 10}});
+      const transport = (_url: string, init: {body: string}): Promise<Response> => {
+        if (init.body.includes('Summarize the supplied older conversation exchanges')) {
+          started = true;
+          return pending.promise;
+        }
+        ordinary.push(init.body);
+        return Promise.resolve(response('Synthetic reply.'));
+      };
+      const adapter = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+        : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+      const provider: ModelProvider & {inputWindow: number} = {name, model: adapter.model, inputWindow: 115_000,
+        contextInputUnits: input => adapter.contextInputUnits(input), turn: (input, signal) => adapter.turn(input, signal)};
+      const w = await world(context, {provider, core: () => ({sessions: [], mode, synced: true}),
+        share: query => policy(query) && !(query.destination === 'external-model' && query.source === 'devices' &&
+          query.field === 'status' && query.record === 'hub' && !allowed)});
+      await control(w.core, w.module(), 'enable');
+      for (let index = 0; index < 8; index += 1) {
+        const earlier = task(w)?.taskId;
+        assert.equal((await input(w.core, w.module(), `Earlier exchange ${String(index)}. ${'The recent note describes a daily plan. '.repeat(60)}`)).status, 'accepted');
+        await until(() => task(w)?.taskId !== earlier && status(w) === 'succeeded');
+      }
+      provider.inputWindow = 14_000;
+      const earlier = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), 'What is the Hub mode now?')).status, 'accepted');
+      await until(() => started);
+      mode = hub(2, 'quiet');
+      allowed = permission !== 'lost';
+      pending.resolve(response(JSON.stringify({decisions: ['Keep the daily plan.'], openQuestions: [], references: [], corrections: []})));
+      await until(() => task(w)?.taskId !== earlier && status(w) === 'succeeded');
+      assert.doesNotMatch(ordinary.at(-1) ?? '', /The Hub mode is work now/);
+      assert.equal((ordinary.at(-1) ?? '').includes('The Hub mode is quiet now.'), permission !== 'lost');
+    });
+  }
+}
+
+void test('latest Conversation paging skips denied rows and stops after the visible lookahead', async context => {
+  const checked: string[] = [];
+  const policy = sharing();
+  const w = await world(context, {share: query => {
+    if (query.destination === 'private-conversation' && query.field === 'text' && query.record?.startsWith('page-fixture-') === true) {
+      checked.push(query.record);
+      if (query.record === 'page-fixture-34' || query.record === 'page-fixture-32') return false;
+    }
+    return policy(query);
+  }});
+  const store = w.store();
+  const saved = store.newTask('bunny', 'Seeded private Conversation.');
+  saved.status = 'succeeded';
+  store.save(saved);
+  for (let index = 1; index <= 36; index += 1) {
+    const id = `page-fixture-${String(index)}`;
+    store.message(saved, id, 'owner', id, Date.now());
+  }
+  const first = await page(w, 'bunny', 'recent');
+  assert.deepEqual(first.messages.map(message => message.id),
+    Array.from({length: 18}, (_, index) => index + 19).filter(index => index !== 32 && index !== 34)
+      .map(index => `page-fixture-${String(index)}`));
+  assert.deepEqual(checked, Array.from({length: 19}, (_, index) => `page-fixture-${String(36 - index)}`));
+});
+
+void test('a 1001-turn Conversation keeps the latest reply readable and speakable, with current origin grants', async context => {
+  const offers: SpokenReply[] = [];
+  const baseline = sharing();
+  let denied: 'private-conversation' | 'conversation-speech' | undefined;
+  const provider: ModelProvider = {name: 'openai', model: OPENAI_MODEL, turn: () => assert.fail('private reads must not contact the model')};
+  const w = await world(context, {provider, speak: offer => {offers.push(offer);}, share: query => baseline(query) &&
+    !(query.destination === denied && query.source === 'devices' && query.field === 'status' && query.record === 'proof-desk')});
+  await control(w.core, w.module(), 'enable');
+  const store = w.store();
+  const history: {id: string; revision: number}[] = [];
+  const latestText = 'The retained origin detail is still available.';
+  const now = Date.now();
+  let taskId = '';
+  store.database.exec('BEGIN');
+  try {
+    for (let index = 0; index <= 1000; index += 1) {
+      const saved = store.newTask('bunny', 'Retain the synthetic reading.', {provider: 'openai', model: OPENAI_MODEL, variant: ''});
+      saved.status = 'succeeded';
+      saved.modelCalls = 1;
+      taskId = saved.id;
+      const promptId = `${taskId}-prompt`, resultId = `${taskId}-result`;
+      store.save(saved);
+      store.message(saved, promptId, 'owner', saved.prompt, now + index);
+      store.message(saved, resultId, 'assistant', index === 1000 ? latestText : 'Synthetic intermediate answer.', now + index);
+      store.saveCall({version: 1, id: `${taskId}-step-0`, taskId, runId: 'fixture', ordinal: 0, kind: 'model', status: 'succeeded',
+        result: '{}', units: 1, reservedMs: 0, elapsedMs: 0, reservedUnits: 1, traceparent: '',
+        disclosures: [{source: 'conversation', field: 'request', record: promptId},
+          ...(index === 0 ? [{source: 'devices', field: 'status', record: 'proof-desk'} as const] : [])],
+        ...(index === 0 ? {} : {historySources: history})});
+      // The origin uses the released direct ledger. Later tasks use normal finalization.
+      if (index > 0) saveFinalDisclosureProofs(store, saved);
+      history.push({id: promptId, revision: 1}, {id: resultId, revision: 1});
+    }
+    store.database.exec('COMMIT');
+  } catch (error) {
+    store.database.exec('ROLLBACK');
+    throw error;
+  }
+
+  const messageId = `${taskId}-result`;
+  const speak = () => control(w.core, w.module(), 'speak', taskId, randomUUID(), {messageId});
+  const visible = (await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText);
+  const speech = (await speak()).status;
+  assert.deepEqual({visible, speech}, {visible: true, speech: 'accepted'});
+  assert.equal(offers.at(-1)?.text, latestText);
+
+  denied = 'conversation-speech';
+  assert.equal((await speak()).status, 'rejected');
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
+
+  denied = 'private-conversation';
+  await w.restart();
+  assert.ok(!(await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
+  assert.equal((await speak()).status, 'rejected');
+  assert.equal(offers.length, 1);
+
+  denied = undefined;
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === latestText));
+  assert.equal((await speak()).status, 'accepted');
+});
+
+void test('missing proof withholds an unpublished derived reply while released direct history remains usable', async context => {
+  const requests: TurnInput[] = [];
+  const provider: ModelProvider = {name: 'openai', model: OPENAI_MODEL, turn: request => {
+    requests.push(request);
+    return Promise.resolve(reply('Fresh synthetic reply.'));
+  }};
+  const w = await world(context, {provider});
+  await control(w.core, w.module(), 'enable');
+  const store = w.store(), now = Date.now();
+  const origin = store.newTask('bunny', 'Old saved owner message.', {provider: 'openai', model: OPENAI_MODEL, variant: ''});
+  const append = (saved: typeof origin, text: string, historySources?: {id: string; revision: number}[]) => {
+    saved.status = 'succeeded';
+    saved.modelCalls = 1;
+    store.save(saved);
+    const id = `${saved.id}-result`;
+    store.message(saved, `${saved.id}-prompt`, 'owner', saved.prompt, now);
+    store.message(saved, id, 'assistant', text, now);
+    store.saveCall({version: 1, id: `${saved.id}-step-0`, taskId: saved.id, runId: 'fixture', ordinal: 0, kind: 'model', status: 'succeeded',
+      result: '{}', units: 1, reservedMs: 0, elapsedMs: 0, reservedUnits: 1, traceparent: '',
+      disclosures: [{source: 'conversation', field: 'request', record: `${saved.id}-prompt`}],
+      ...(historySources === undefined ? {} : {historySources})});
+    return id;
+  };
+  const oldId = append(origin, 'RELEASED_DIRECT_REPLY');
+  const missing = store.newTask('bunny', 'A saved follow-up.', origin.supervisor);
+  const missingId = append(missing, 'UNPROVEN_DERIVED_REPLY', [{id: oldId, revision: 1}]);
+  await w.restart();
+  const saved = (await page(w, 'bunny', 'recent')).messages;
+  assert.ok(saved.some(message => message.id === oldId));
+  assert.ok(!saved.some(message => message.id === missingId));
+  assert.equal(w.store().savedMessage(missing.id, missingId)?.text, 'UNPROVEN_DERIVED_REPLY');
+  assert.equal((await control(w.core, w.module(), 'speak', missing.id, randomUUID(), {messageId: missingId})).status, 'rejected');
+
+  assert.equal((await input(w.core, w.module(), 'Check our prior exchange.')).status, 'accepted');
+  await until(() => task(w)?.taskId !== missing.id && status(w) === 'succeeded');
+  assert.match(JSON.stringify(requests.at(-1)), /RELEASED_DIRECT_REPLY/);
+  assert.doesNotMatch(JSON.stringify(requests.at(-1)), /UNPROVEN_DERIVED_REPLY/);
+});
+
+for (const failure of ['uncertain', 'provider-capacity'] as const) {
+  void test(`optional compaction preserves provider spend and unknown-retry boundaries on ${failure}`, async context => {
+    let compacted = 0, ordinary = 0;
+    const provider: ModelProvider & {inputWindow: number} = {name: 'openai', model: OPENAI_MODEL, inputWindow: 30_000,
+      contextInputUnits: input => Buffer.byteLength(JSON.stringify(input)),
+      turn: input => {
+        if (input.instructions.startsWith('Summarize the supplied older conversation exchanges')) {
+          compacted += 1;
+          return Promise.reject(failure === 'uncertain' ? new ProviderFault('unavailable', true)
+            : new ProviderFault('capacity', false, undefined, 'The provider spend limit was reached.'));
+        }
+        ordinary += 1;
+        return Promise.resolve(reply('Synthetic reply.'));
+      }};
+    const w = await world(context, {provider});
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string, terminal: 'succeeded' | 'failed' = 'succeeded') => {
+      const before = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+      await until(() => task(w)?.taskId !== before && status(w) === terminal);
+    };
+    for (let index = 0; index < 7; index += 1) await ask(`Synthetic observation ${String(index)}. ${'A bounded report. '.repeat(52)}`);
+    provider.inputWindow = 4_500;
+    await ask('Check the plan again.', failure === 'uncertain' ? 'succeeded' : 'failed');
+    assert.equal(compacted, 1);
+    if (failure === 'provider-capacity') {
+      assert.equal(task(w)?.code, 'capacity');
+      assert.equal(ordinary, 7, 'a hard provider refusal stops the ordinary send');
+    } else {
+      assert.equal(ordinary, 8, 'an uncertain optional call leaves the allowed recent-tail path');
+      await w.restart();
+      await ask('Check the plan after restart.');
+      assert.equal(compacted, 1, 'an ambiguous prefix is not automatically charged again');
+      assert.equal(ordinary, 9);
+      provider.inputWindow = 5_500;
+      for (let index = 0; index < 8 && compacted === 1; index += 1) await ask(`Distinct future exchange ${String(index)}. ${'A fresh note. '.repeat(80)}`);
+      assert.equal(compacted, 2, 'a distinct bounded prefix can compact after an earlier uncertain call');
+    }
+  });
+}
 
 void test('Responses device reads bind the affirmative subject without widening it', async context => {
   const cases = [
@@ -2712,7 +4093,7 @@ for (const kind of ['timer', 'brightness'] as const) {
     const plugs = [plug, otherPlug, ...duplicatePlugs];
     const tool = kind === 'timer' ? 'read_wemo' : 'read_devices';
     let target = kind === 'timer' ? 'Test Plug' : display.id;
-    let denied: 'private-conversation' | 'openai-supervisor' | undefined;
+    let denied: 'private-conversation' | 'external-model' | undefined;
     const baseline = sharing();
     const share = (query: ShareQuery) => baseline(query) && !(query.destination === denied &&
       query.source === 'devices' && query.field === 'label' && query.record === (kind === 'timer' ? plug.id : display.id));
@@ -2754,7 +4135,7 @@ for (const kind of ['timer', 'brightness'] as const) {
     const known = kind === 'timer' ? /maximum-on limit is enabled.*Time remaining at this read: about 2 hours 4 minutes/isu : /"brightness":\{"status":"known","value":37\}/u;
     const missing = kind === 'timer' ? /not-found/u : /"devices":\[\]/u;
     for (const profile of ['bunny', 'reachy', 'microduck']) assert.match(await ask(prompt, profile), known, profile);
-    for (const side of ['private-conversation', 'openai-supervisor'] as const) {
+    for (const side of ['private-conversation', 'external-model'] as const) {
       denied = side;
       assert.match(await ask(prompt), missing);
     }
@@ -2879,16 +4260,16 @@ void test('Responses history requires one exact device and current summary grant
   }});
   const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
     sent.push(init.body);
-    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
     const result = body.input.find(item => item.type === 'function_call_output')?.output;
     if (result !== undefined) results.push(result);
-    const output = result === undefined
+    const output = result === undefined && body.tools.some(tool => tool.name === 'read_device_history')
       ? [{type: 'function_call', id: 'fc_history', call_id: 'call_history', name: 'read_device_history', arguments: JSON.stringify(args)}]
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic history answer.', annotations: []}]}];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 40}})));
   }});
   const share = (query: ShareQuery) => baseline(query) && !(query.source === 'devices' && query.field === 'summary' && query.record === target &&
-    (denied === 'local' && query.destination === 'private-conversation' || denied === 'remote' && query.destination === 'openai-supervisor'));
+    (denied === 'local' && query.destination === 'private-conversation' || denied === 'remote' && query.destination === 'external-model'));
   const w = await world(context, {provider, openAITitleProvider: titleProvider, timeZone: 'UTC', share, tools: ['read_device_history'],
     devices: owner => owner === WEMO_OWNER ? [{...light('plug', 'Hall Plug'), kind: 'wemo'}]
       : [light(target, 'Desk Lamp'), light('other', 'Hall Lamp'), light('first', 'Shared Name'), light('second', 'Shared Name')],
@@ -2937,7 +4318,9 @@ void test('Responses history requires one exact device and current summary grant
   assert.match(lastChange, /"lastChange":\{"atMs":1795521600001,"from":"off","to":"on"\}/);
   assert.doesNotMatch(lastChange, /seq|durations/);
   assert.match(await ask('How long was Desk Lamp on from 2026-11-31T12:00:00Z to 2026-12-01T13:00:00Z?'), /forbidden/);
-  assert.match(await ask('Tell me a synthetic joke.'), /forbidden/);
+  const noHistoryRead = results.length;
+  await ask('Tell me a synthetic joke.');
+  assert.equal(results.length, noHistoryRead, 'an unrelated request is not offered the history tool');
   assert.equal(reads, 2);
   assert.equal(results.filter(value => value.includes('"on":421')).length, 1);
   assert.ok(titles.length > 0);
@@ -2958,6 +4341,189 @@ void test('Responses history requires one exact device and current summary grant
   assert.doesNotMatch(sent.join(' '), /PRIVATE_EVIDENCE_ID|PRIVATE_OPERATION_ID/);
 });
 
+
+void test('both hosted supervisors look up owner-named devices regardless of request wording', async context => {
+  const owner = 'bunny/modules/nanoleaf', substituteOwner = 'bunny/modules/tidbyt';
+  const wall: DeviceRecord = {...light('studio-wall', 'Studio Wall'), kind: 'nanoleaf', availability: 'unavailable'};
+  const devices = [wall, {...wall, id: 'hidden-wall', label: 'Hidden Wall'}, {...wall, id: 'studio-wall-xl', label: 'Studio Wall XL'}];
+  const duplicate = {...wall, id: 'duplicate-wall'};
+  const hiddenAliases = [{...duplicate, id: 'hidden-duplicate'}, {...wall, id: 'hidden-alias', label: 'Studio Wall Special'}];
+  let aliasesPresent = false, duplicateVisible = false;
+  let replaceOwner = false, originalReads = 0, substituteReads = 0;
+  const resultByProvider = {anthropic: [] as string[], openai: [] as string[]};
+  const usage = {input_tokens: 20, output_tokens: 10};
+  let lookups: {target: string; owner: string}[] = [];
+  const anthropic = new AnthropicProvider({key: 'fixture', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {messages: {content: {type: string; content?: string}[]}[]};
+    const latest = body.messages.flatMap(item => item.content).filter(block => block.type === 'tool_result');
+    const result = latest.at(-1)?.content;
+    if (result !== undefined) resultByProvider.anthropic.push(result);
+    const args = lookups[latest.length];
+    return Promise.resolve(Response.json({content: args !== undefined
+      ? [{type: 'tool_use', id: `named-device-${latest.length}`, name: 'read_devices', input: args}]
+      : [{type: 'text', text: 'Synthetic device answer.'}], stop_reason: args !== undefined ? 'tool_use' : 'end_turn', usage}));
+  }});
+  const openai = new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const latest = body.input.filter(item => item.type === 'function_call_output');
+    const result = latest.at(-1)?.output;
+    if (result !== undefined) resultByProvider.openai.push(result);
+    const args = lookups[latest.length];
+    return Promise.resolve(Response.json({status: 'completed', usage, output: args !== undefined
+      ? [{type: 'function_call', id: `fc_named_device_${latest.length}`, call_id: `named-device-${latest.length}`, name: 'read_devices', arguments: JSON.stringify(args)}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic device answer.', annotations: []}]}]}));
+  }});
+  const standard = sharing();
+  const w = await world(context, {provider: anthropic, alternateProvider: openai, tools: ['read_devices', 'control_scene_activate'],
+    share: grant => standard(grant) && !(grant.source === 'devices' && grant.record?.startsWith('hidden-') === true),
+    dispatch: () => assert.fail('a named lookup must not dispatch')});
+  const participant = w.bus.connect(owner), substitute = w.bus.connect(substituteOwner);
+  context.after(async () => {await participant.close(); await substitute.close();});
+  const snapshot = (records: DeviceRecord[]) => ({revision: 1, states: records.map(data => ({
+    type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+  }))});
+  await participant.serveSync(['device'], () => snapshot(replaceOwner && ++originalReads > 1 ? []
+    : [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])]));
+  await substitute.serveSync(['device'], () => snapshot(replaceOwner && ++substituteReads > 1 ? [{...wall, kind: 'tidbyt'}] : []));
+  await control(w.core, w.module(), 'enable');
+  for (const provider of ['anthropic', 'openai'] as const) {
+    const ask = async (prompt: string, selector: string, selectedOwner = 'auto', after?: string) => {
+      lookups = [{target: selector, owner: selectedOwner}];
+      if (after !== undefined) lookups.push({target: after, owner: selectedOwner});
+      const previous = task(w)?.taskId, before = resultByProvider[provider].length;
+      assert.equal((await input(w.core, w.module(), prompt, false, randomUUID(), {provider})).status, 'accepted');
+      await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+      assert.equal(resultByProvider[provider].length, before + lookups.length);
+      const facts: unknown = JSON.parse(resultByProvider[provider].at(-1) ?? '');
+      return facts;
+    };
+    const statusFacts: unknown = await ask('What is the status of Studio Wall?', 'Studio Wall');
+    assert.partialDeepStrictEqual(statusFacts, {devices: [{owner, id: wall.id, name: wall.label, lastReportedAvailability: wall.availability}]});
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Set Studio Wall to Dusk instead of Northern Lights.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Instead of Northern Lights, apply Dusk on Studio Wall.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Instead of Studio Wall, apply Dusk to Side Wall.', 'Studio Wall'), {devices: []});
+    assert.deepEqual(await ask('Set Studio Wall to Missing Scene, not Dusk.', 'Studio Wall', owner), statusFacts);
+    assert.deepEqual(await ask('Set Studio Wall or Missing Wall to Dusk.', 'Missing Wall', 'auto', 'Studio Wall'), statusFacts);
+    const comparison = 'Set Studio Wall to Studio Wall Special.';
+    assert.deepEqual(await ask(comparison, 'Studio Wall'), statusFacts);
+    aliasesPresent = true;
+    assert.deepEqual(await ask(comparison, 'Studio Wall'), statusFacts);
+    aliasesPresent = false;
+    duplicateVisible = true;
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), {devices: []});
+    duplicateVisible = false;
+    assert.deepEqual(await ask('Apply Night Sky on id:studio-wall.', 'id:studio-wall'), statusFacts);
+    assert.deepEqual(await ask('Apply Night Sky on id:studio-wall id:studio-wall-xl.', 'id:studio-wall'), {devices: []});
+    assert.deepEqual(await ask('Read id:studio-wall; read id:studio-wall-xl.', 'id:studio-wall'), statusFacts);
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Hidden Wall'), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Hidden Wall.', 'Hidden Wall'), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Missing Wall.', 'Missing Wall'), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall XL.', 'Studio Wall'), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', ''), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky without changing Studio Wall.', 'Studio Wall'), {devices: []});
+    lookups = [{owner: 'auto', target: 'Studio Wall'}];
+    replaceOwner = true;
+    originalReads = 0;
+    substituteReads = 0;
+    const previous = task(w)?.taskId, before = resultByProvider[provider].length;
+    assert.equal((await input(w.core, w.module(), 'Apply Night Sky on Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'failed');
+    assert.equal(task(w)?.code, 'forbidden');
+    assert.equal(resultByProvider[provider].length, before, 'the old owner facts do not cross the provider boundary');
+    replaceOwner = false;
+  }
+});
+
+void test('both hosted supervisors disclose requested power timestamps only while detail sharing holds', async context => {
+  const source = 'bunny/modules/lifx', target = 'desk';
+  const day = Date.parse('2026-11-25T00:00:00Z'), fromAtMs = day - 86_400_000;
+  const onAt = fromAtMs + 200, offAt = fromAtMs + 621;
+  const aggregate = 'How long was Desk Lamp on yesterday?';
+  const timestamps = 'Show on/off timestamps for Desk Lamp yesterday.';
+  const justOn = 'When did Desk Lamp turn on yesterday?';
+  const args = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
+  const captures = {anthropic: {requests: [] as string[], results: [] as string[]}, openai: {requests: [] as string[], results: [] as string[]}};
+  const usage = {input_tokens: 20, output_tokens: 10};
+  const anthropic = new AnthropicProvider({key: 'fixture', transport: (_url, init) => {
+    const capture = captures.anthropic;
+    capture.requests.push(init.body);
+    const body = JSON.parse(init.body) as {messages: {content: {type: string; content?: string}[]}[]};
+    const result = body.messages.flatMap(item => item.content).find(block => block.type === 'tool_result')?.content;
+    if (result !== undefined) capture.results.push(result);
+    return Promise.resolve(Response.json({content: result === undefined ? [{type: 'tool_use', id: 'read_history', name: 'read_device_history', input: args}]
+      : [{type: 'text', text: 'Synthetic history answer.'}], stop_reason: result === undefined ? 'tool_use' : 'end_turn', usage}));
+  }});
+  const openai = new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const capture = captures.openai;
+    capture.requests.push(init.body);
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const result = body.input.find(item => item.type === 'function_call_output')?.output;
+    if (result !== undefined) capture.results.push(result);
+    return Promise.resolve(Response.json({status: 'completed', usage, output: result === undefined
+      ? [{type: 'function_call', id: 'fc_read_history', call_id: 'read_history', name: 'read_device_history', arguments: JSON.stringify(args)}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic history answer.', annotations: []}]}]}));
+  }});
+  let revokeAfterRead = false, revoked = false, reads = 0;
+  let deniedDiscovery: 'private-conversation' | 'external-model' | undefined;
+  const localDetailsDenied = sharing([{caller: 'owner', companion: 'bunny', destination: 'private-conversation',
+    purpose: 'read', source: 'devices', field: 'details', record: target, allow: false}]);
+  let legacyLocalDenial = false;
+  const baseline = sharing();
+  const w = await world(context, {provider: anthropic, alternateProvider: openai, timeZone: 'UTC', tools: ['read_device_history'],
+    share: query => (legacyLocalDenial ? localDetailsDenied : baseline)(query) && !(query.destination === deniedDiscovery && query.source === 'devices' && query.field === 'index') &&
+      !(revoked && query.destination === 'external-model' && query.source === 'devices' &&
+      query.field === 'details' && query.record === target),
+    devices: owner => owner === source ? [light(target, 'Desk Lamp'), light('other', 'Hall Lamp')] : [],
+    dispatch: () => assert.fail('history sends no device command'),
+    deviceHistory: query => {
+      reads += 1;
+      assert.deepEqual(query, {source, target, fromAtMs, toAtMs: day});
+      if (revokeAfterRead) revoked = true;
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 155, complete: true, durations: {on: 421, off: 86_399_379, unknown: 200},
+        lastChange: {atMs: offAt, seq: 154, from: 'on', to: 'off'}, evidence: [
+          {seq: 153, messageId: 'PRIVATE_EVIDENCE_ON', atMs: onAt, confirmedThroughMs: offAt, kind: 'observation', power: 'on'},
+          {seq: 154, messageId: 'PRIVATE_EVIDENCE_OFF', atMs: offAt, confirmedThroughMs: day, kind: 'observation', power: 'off'},
+        ], links: [{requestId: 'PRIVATE_HISTORY_OPERATION', observationSeq: 154, sentSeq: 151, transmissionOutcomeSeq: 152,
+          transmittedAtMs: fromAtMs}]};
+    }}, undefined, day + 5000);
+  await control(w.core, w.module(), 'enable');
+  const interval = {fromAtMs, toAtMs: day};
+  for (const provider of ['anthropic', 'openai'] as const) {
+    const capture = captures[provider];
+    const ask = async (prompt: string, terminal: 'succeeded' | 'failed' = 'succeeded') => {
+      const previous = task(w)?.taskId;
+      const before = capture.requests.length;
+      assert.equal((await input(w.core, w.module(), prompt, false, randomUUID(), {provider})).status, 'accepted');
+      await until(() => task(w)?.taskId !== previous && status(w) === terminal);
+      assert.equal(capture.requests.length, before + (terminal === 'succeeded' ? 2 : 1));
+      return capture.results.at(-1) ?? '';
+    };
+    assert.deepEqual(JSON.parse(await ask(aggregate)), {interval, complete: true, durations: {on: 421, off: 86_399_379, unknown: 200}});
+    assert.deepEqual(JSON.parse(await ask(timestamps)), {interval, complete: true, unknownMs: 200,
+      evidence: [{atMs: onAt, power: 'on'}, {atMs: offAt, power: 'off'}], next: null, capped: false});
+    assert.deepEqual(JSON.parse(await ask(justOn)), {interval, complete: true, unknownMs: 200, evidence: [{atMs: onAt, power: 'on'}], next: null, capped: false});
+    for (const destination of ['private-conversation', 'external-model'] as const) {
+      deniedDiscovery = destination;
+      assert.equal(await ask(aggregate), 'refused: forbidden');
+      assert.equal(await ask(timestamps), 'refused: forbidden');
+    }
+    deniedDiscovery = undefined;
+    legacyLocalDenial = true;
+    assert.equal(await ask(aggregate), 'refused: forbidden');
+    assert.equal(await ask(timestamps), 'refused: forbidden');
+    legacyLocalDenial = false;
+    const resultCount = capture.results.length;
+    revokeAfterRead = true;
+    await ask(timestamps, 'failed');
+    assert.equal(task(w)?.code, 'forbidden');
+    assert.equal(capture.results.length, resultCount);
+    revokeAfterRead = false;
+    revoked = false;
+    assert.doesNotMatch(capture.requests.join('\n'), /PRIVATE_EVIDENCE|PRIVATE_HISTORY_OPERATION|confirmedThroughMs|observationSeq/u);
+  }
+  assert.equal(reads, 8);
+});
 
 void test('an unpinned legacy task and queue remain readable without resuming on a synthetic host', async context => {
   const earlier = counted(() => call('ask_owner', {text: 'Which option?'}));
@@ -3011,36 +4577,17 @@ void test('an unpinned legacy task and queue remain readable without resuming on
   assert.equal(w.store().task(task(w)?.taskId ?? '')?.supervisor?.provider, 'synthetic');
 });
 
-void test('Claude uses only the owner-bound history tool and two pages from the same local day', async context => {
+void test('Messages uses the owner-bound aggregate and excludes private evidence fields', async context => {
   const day = Date.parse('2026-11-02T00:00:00Z');
   const source = 'bunny/modules/lifx';
-  const empty = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
-  const prompt = 'How long was Desk Lamp on yesterday?';
-  const pages: {next: string | null; capped: boolean; evidence: {atMs: number; kind: string}[]}[] = [];
+  const inputFields = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
   const turns: TurnInput[] = [];
   let reads = 0;
   const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: request => {
     const latest = request.transcript.filter(item => item.role === 'owner').at(-1)?.text;
     if (latest === 'PRIVATE_PRIOR_TOPIC') return Promise.resolve(reply('PRIVATE_PRIOR_REPLY'));
     turns.push(request);
-    const results = request.transcript.filter(item => item.role === 'tool');
-    const result = results.at(-1)?.result ?? '';
-    if (latest !== prompt) return Promise.resolve(result === ''
-      ? call('read_device_history', empty) : reply('No resolved device history.'));
-    switch (results.length) {
-      case 0: return Promise.resolve(call('read_device_history', {...empty, source: WEMO_OWNER, target: 'hall'}));
-      case 1: return Promise.resolve(call('read_device_history', empty));
-      case 2: {
-        const page = JSON.parse(result) as (typeof pages)[number];
-        pages.push(page);
-        return Promise.resolve(call('read_device_history', {...empty, cursor: page.next}));
-      }
-      case 3: {
-        pages.push(JSON.parse(result) as (typeof pages)[number]);
-        return Promise.resolve(call('read_device_history', empty));
-      }
-      default: return Promise.resolve(reply('Synthetic scoped answer.'));
-    }
+    return Promise.resolve(request.transcript.some(item => item.role === 'tool') ? reply('Synthetic scoped answer.') : call('read_device_history', inputFields));
   }};
   const w = await world(context, {provider, timeZone: 'UTC', tools: ['read_devices', 'read_device_history'],
     devices: owner => owner === source ? [light('desk', 'Desk Lamp'), light('a', 'Duplicated'), light('b', 'Duplicated')]
@@ -3052,31 +4599,21 @@ void test('Claude uses only the owner-bound history tool and two pages from the 
       const {fromAtMs, toAtMs} = query;
       return {schema: DEVICE_HISTORY_VERSION, query, boundary: 25, complete: true, lastChange: null,
         durations: {on: 100, off: 0, unknown: toAtMs - fromAtMs - 100}, links: [],
-        evidence: Array.from({length: 25}, (_, seq) => ({seq, messageId: 'PRIVATE_ROW', atMs: fromAtMs + seq - 1,
-          confirmedThroughMs: fromAtMs + seq + 1, power: 'on', kind: 'observation'}))};
+        evidence: [{seq: 1, messageId: 'PRIVATE_ROW', atMs: fromAtMs + 1, confirmedThroughMs: fromAtMs + 2, power: 'on', kind: 'observation'}]};
     }}, undefined, day + 1000);
   await control(w.core, w.module(), 'enable');
-  const ask = async (text: string) => {
+  for (const text of ['PRIVATE_PRIOR_TOPIC', 'How long was Desk Lamp on yesterday?', 'How long was Duplicated on yesterday?',
+    'How long was Desk Lamp on from 2026-02-30T00:00:00Z to 2026-03-01T00:00:00Z?']) {
     const previous = task(w)?.taskId;
     assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
     await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
-  };
-  await ask('PRIVATE_PRIOR_TOPIC');
-  await ask(prompt);
+  }
+  const result = turns[1]?.transcript.find(item => item.role === 'tool')?.result ?? assert.fail('missing aggregate');
+  assert.deepEqual(JSON.parse(result), {interval: {fromAtMs: day - 86_400_000, toAtMs: day}, complete: true, durations: {on: 100, off: 0, unknown: 86_399_900}});
   assert.equal(reads, 1);
-  assert.deepEqual(pages.map(page => page.evidence.length), [12, 12]);
-  assert.deepEqual(pages[0]?.evidence[0], {atMs: day - 86_400_000, confirmedThroughMs: day - 86_400_000 + 1,
-    kind: 'continuation', power: 'on'});
-  assert.equal(typeof pages[0]?.next, 'string');
-  assert.equal(pages[1]?.next, null);
-  assert.equal(pages[1]?.capped, true);
-  assert.match(JSON.stringify(turns.at(-1)?.transcript), /history page limit reached/u);
-  assert.doesNotMatch(JSON.stringify(turns), /PRIVATE_|"seq"|"boundary"|"links"/u);
-  assert.ok(turns.every(turn => turn.tools.length === 1 && turn.tools[0]?.name === 'read_device_history'));
-  await ask('How long was Duplicated on yesterday?');
-  await ask('How long was Desk Lamp on from 2026-02-30T00:00:00Z to 2026-03-01T00:00:00Z?');
   assert.match(JSON.stringify(turns.at(-1)?.transcript), /refused: forbidden/u);
-  assert.equal(reads, 1);
+  assert.doesNotMatch(JSON.stringify(turns), /PRIVATE_ROW|"seq"|"boundary"|"links"/u);
+  assert.ok(turns.every(turn => turn.tools.length === 1 && turn.tools[0]?.name === 'read_device_history'));
 });
 
 void test('Claude keeps the history scope when registry labels change after model admission', async context => {
@@ -3103,7 +4640,7 @@ void test('Claude keeps the history scope when registry labels change after mode
   assert.equal(turns.length, 1);
 });
 
-void test('Claude keeps a named history question private when the history tool is disabled', async context => {
+void test('Messages offers no history read when the history tool is disabled', async context => {
   const turns: TurnInput[] = [];
   const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: request => {
     turns.push(request);
@@ -3118,11 +4655,12 @@ void test('Claude keeps a named history question private when the history tool i
   await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
   assert.equal(turns[0]?.tools.some(tool => tool.name === 'read_devices'), true);
   assert.deepEqual(turns[1]?.tools, []);
-  assert.doesNotMatch(JSON.stringify(turns[1]), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
+  assert.match(JSON.stringify(turns[1]), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
+  assert.doesNotMatch(JSON.stringify(turns[1]?.transcript), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
 });
 
 for (const invalidation of ['device registry remap', 'local owner-message revocation', 'local device status revocation'] as const) {
-  void test(`Claude withholds a saved page on ${invalidation}`, async context => {
+  void test(`Messages withholds a saved history aggregate on ${invalidation}`, async context => {
     const source = 'bunny/modules/lifx';
     const allowed = sharing();
     const turns: TurnInput[] = [];
@@ -3150,5 +4688,1161 @@ for (const invalidation of ['device registry remap', 'local owner-message revoca
     await until(() => status(w) === 'succeeded' || status(w) === 'failed');
     assert.equal(reads, 1);
     assert.doesNotMatch(JSON.stringify(turns), /device-history\/1\.0/u);
+  });
+}
+
+void test('Responses resolves an exact brightness instruction before sending one guarded command', async context => {
+  const owner = 'bunny/modules/pixoo', target = 'fixture-display';
+  const display: DeviceRecord = {...light(target, 'Test Display'), kind: 'pixoo'};
+  const unsupported: DeviceRecord = {...display, id: 'unsupported-display',
+    capabilities: {...display.capabilities, brightness: {supported: false}}};
+  const devices = [display, unsupported, {...display, id: 'private-other', label: 'PRIVATE_OTHER_DISPLAY'},
+    {...display, id: 'shared-a', label: 'Shared Display'}, {...display, id: 'shared-b', label: 'Shared Display'}];
+  const requests: AssistantDispatch[] = [], lookup: string[] = [];
+  let modelCalls = 0, replayedReceipts = 0;
+  let pixooReads = 0, staleAtRead = Number.POSITIVE_INFINITY;
+  let active = {id: target, attempt: true, repeat: false, wrongAmount: false, bypassLookup: false};
+  let readOwner = 'auto', writeOwner = owner, readTarget = '', writeTarget: string | undefined;
+  let denied: 'private-conversation' | 'external-model' | undefined;
+  let outcome: 'accepted' | 'revoke-after-acceptance' | 'uncertain' = 'accepted';
+  let deniedReceipt: {destination: 'private-conversation' | 'conversation-speech'; requestId: string} | undefined;
+  const spoken: string[] = [];
+  const standard = sharing();
+  const share = (grant: ShareQuery) => standard(grant) && !(grant.destination === denied &&
+    grant.source === 'devices' && grant.record === target && (grant.field === 'status' || grant.field === 'label')) &&
+    !(deniedReceipt !== undefined && grant.destination === deniedReceipt.destination && grant.source === 'operations' &&
+      grant.field === 'details' && grant.record === deniedReceipt.requestId);
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    modelCalls += 1;
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
+    assert.ok(body.tools.some(tool => tool.name === 'control_brightness_set'));
+    const results = body.input.filter(item => item.type === 'function_call_output').map(item => item.output ?? '');
+    if (results.some(result => /^The brightness|^accepted:/u.test(result))) replayedReceipts += 1;
+    const tool = (name: string, args: Record<string, unknown>, id: string) =>
+      [{type: 'function_call', id: 'fc_'+id, call_id: id, name, arguments: JSON.stringify(args)}];
+    const control = (id: string) => tool('control_brightness_set', {owner: writeOwner, target: writeTarget ?? active.id,
+      arguments: JSON.stringify({percent: active.wrongAmount ? 82 : 37})}, id);
+    const done = [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic answer.', annotations: []}]}];
+    if (results.length === 1) lookup.push(results[0] ?? '');
+    const followed = results.at(-1);
+    const output = results.length === 0 ? tool('read_devices', {owner: readOwner, target: readTarget}, 'lookup')
+      : results.length === 1 && active.attempt && (active.bypassLookup || results[0]?.includes(JSON.stringify(active.id)) === true) ? control('first')
+      : followed === 'yes' || followed === 'id:fixture-display' || followed === 'other-display' || followed === 'maybe fixture-display'
+        ? control(`follow-${String(results.length)}`) : results.length === 2 && active.repeat ? control('repeated') : done;
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
+  }});
+  const w = await world(context, {provider, share, tools: ['read_devices', 'control_brightness_set'],
+    speak: reply => {spoken.push(reply.text);},
+    dispatch: data => {
+      requests.push(data);
+      if (outcome === 'revoke-after-acceptance') denied = 'external-model';
+      return Promise.resolve(outcome === 'uncertain' ? {status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')} : accepted(data.requestId));
+    }});
+  const participant = w.bus.connect(owner);
+  context.after(() => participant.close());
+  await participant.serveSync(['device'], () => {
+    pixooReads += 1;
+    const selected = pixooReads >= staleAtRead ? devices.filter(device => device.id !== target) : devices;
+    return {revision: 1, states: selected.map(data => ({
+      type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+    }))};
+  });
+  await control(w.core, w.module(), 'enable');
+  const ask = async (text: string, profile = 'bunny') => {
+    const current = () => w.module().inspectAssistant()?.tasks.find(item => item.profile === profile);
+    const before = current()?.taskId, beforeDispatch = requests.length;
+    assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
+    await until(() => current()?.taskId !== before && (current()?.status === 'succeeded' || current()?.status === 'waiting' || requests.length > beforeDispatch));
+    if (requests.length > beforeDispatch) w.advance(1200);
+    await until(() => current()?.status === 'succeeded' || current()?.status === 'waiting');
+  };
+  active = {...active, repeat: true};
+  for (const [index, profile] of ['bunny', 'reachy', 'microduck'].entries()) {
+    readOwner = index === 2 ? owner : 'auto';
+    readTarget = ['', target, `id:${target}`][index] ?? '';
+    writeTarget = index === 0 ? target : `id:${target}`;
+    await ask(`Set id:${target} brightness to 37%`, profile);
+    assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+    assert.match(lookup.at(-1) ?? '', /"controls":\["control_brightness_set"\]/u);
+    assert.doesNotMatch(lookup.at(-1) ?? '', /PRIVATE_OTHER_DISPLAY|configurationRevision|generation|observation/u);
+    assert.equal(requests.length, index + 1);
+    const sent = requests.at(-1);
+    assert.ok(sent?.family === 'catalog-action');
+    assert.equal(sent.target, target);
+    assert.equal(sent.command, 'brightness-set');
+    assert.equal(sent.data.percent, 37);
+    assert.deepEqual(sent.binding, {kind: 'device', target, owner, configurationRevision: display.configurationRevision, generation: display.generation});
+    const receipt = w.store().call(sent.requestId);
+    assert.equal(receipt?.kind, 'tool');
+    assert.match(receipt?.result ?? '', /^accepted: the command entered the tracked dispatcher/u);
+    assert.equal(receipt?.action?.control?.ownerMessageIds.length, 1);
+    const saved = (await page(w, profile)).messages.filter(message => message.id.startsWith(`${receipt?.taskId}-`) && message.role === 'assistant');
+    assert.equal(saved.length, 1);
+    assert.match(saved[0]?.text ?? '', /brightness request accepted/i);
+    assert.doesNotMatch(saved[0]?.text ?? '', /reports 37%/u);
+    assert.equal(w.module().inspectAssistant()?.tasks.find(item => item.profile === profile)?.status, 'succeeded');
+  }
+  // An explicit ID cannot resolve through a label, even when the owner-bound device has that label.
+  devices[0] = {...display, label: 'id:foreign'};
+  readTarget = 'id:foreign';
+  await ask(`Set id:${target} brightness to 37%`);
+  assert.equal(lookup.at(-1), '{"devices":[]}');
+  readTarget = `id:${target}`;
+  readOwner = 'bunny/modules/lifx';
+  await ask(`Set id:${target} brightness to 37%`);
+  assert.equal(lookup.at(-1), '{"devices":[]}');
+  readOwner = 'auto';
+  writeOwner = 'bunny/modules/lifx';
+  await ask(`Set id:${target} brightness to 37%`);
+  assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+  assert.equal(requests.length, 3);
+  writeOwner = owner;
+  writeTarget = 'id:foreign';
+  await ask(`Set id:${target} brightness to 37%`);
+  assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+  assert.equal(requests.length, 3);
+  devices[0] = display;
+  readTarget = '';
+  writeTarget = undefined;
+  active = {...active, repeat: false, wrongAmount: true};
+  await ask('Set fixture-display brightness to 37%');
+  assert.equal(requests.length, 3);
+  active = {...active, id: 'private-other', wrongAmount: false, bypassLookup: true};
+  await ask('Set fixture-display brightness to 37%');
+  assert.equal(requests.length, 3);
+  active = {...active, id: 'unsupported-display', bypassLookup: false};
+  await ask('Set unsupported-display brightness to 37%');
+  assert.match(lookup.at(-1) ?? '', /"controls":\[\]/u);
+  assert.equal(requests.length, 3);
+  active = {...active, id: 'shared-a', attempt: false};
+  await ask('Set Shared Display brightness to 37%');
+  assert.equal(lookup.at(-1), '{"devices":[]}');
+  active = {...active, id: target};
+  for (const destination of ['private-conversation', 'external-model'] as const) {
+    denied = destination;
+    await ask('Set fixture-display brightness to 37%');
+    assert.equal(lookup.at(-1), '{"devices":[]}');
+  }
+  denied = undefined;
+  active = {...active, attempt: true};
+  await ask('What is the currently reported brightness of fixture-display?');
+  assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+  assert.equal(requests.length, 3);
+  devices.push({...display, id: 'literal-label', label: `id:${target}`});
+  active = {...active, attempt: false};
+  for (readTarget of ['', `id:${target}`, target]) {
+    await ask(`What is the current brightness of id:${target}?`);
+    assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+    assert.doesNotMatch(lookup.at(-1) ?? '', /literal-label/u);
+  }
+  for (const destination of ['private-conversation', 'external-model'] as const) {
+    denied = destination;
+    await ask(`What is the current brightness of id:${target}?`);
+    assert.equal(lookup.at(-1), '{"devices":[]}');
+  }
+  assert.equal(requests.length, 3);
+  denied = undefined;
+  readTarget = '';
+  devices.pop();
+  active = {...active, attempt: true};
+  devices.push({...unsupported, id: 'unsupported-alias', label: target});
+  active = {...active, id: target, bypassLookup: true};
+  await ask('Set fixture-display brightness to 37%', 'reachy');
+  assert.equal(lookup.at(-1), '{"devices":[]}');
+  assert.equal(requests.length, 3);
+  const reachy = () => w.module().inspectAssistant()?.tasks.find(item => item.profile === 'reachy');
+  for (const response of ['yes', 'other-display', 'maybe fixture-display']) {
+    const questionId = reachy()?.questionId;
+    assert.equal((await input(w.core, w.module(), response, true, randomUUID(),
+      {profile: 'reachy', taskId: reachy()?.taskId, questionId})).status, 'accepted');
+    await until(() => requests.length > 3 || reachy()?.status === 'waiting' && reachy()?.questionId !== questionId);
+    assert.equal(requests.length, 3);
+  }
+  const resolve = async () => {
+    assert.equal((await input(w.core, w.module(), 'id:fixture-display', true, randomUUID(),
+      {profile: 'reachy', taskId: reachy()?.taskId, questionId: reachy()?.questionId})).status, 'accepted');
+  };
+  staleAtRead = pixooReads + 3;
+  await resolve();
+  await until(() => reachy()?.status === 'succeeded');
+  assert.equal(requests.length, 3, 'the selected ID disappeared after proposal and must not dispatch');
+  staleAtRead = Number.POSITIVE_INFINITY;
+  devices.push({...display, id: 'supported-alias', label: target});
+  await ask('Set fixture-display brightness to 37%', 'reachy');
+  assert.equal(reachy()?.status, 'waiting');
+  await resolve();
+  await until(() => requests.length === 4);
+  w.advance(1200);
+  await until(() => reachy()?.status === 'succeeded');
+  assert.equal(requests[3]?.target, target);
+  assert.equal(replayedReceipts, 0);
+  const resultId = `${reachy()?.taskId}-result`;
+  const result = () => page(w, 'reachy', 'recent').then(value => value.messages.filter(message => message.id === resultId));
+  assert.equal((await result()).length, 1);
+  const reachyTaskId = reachy()?.taskId ?? assert.fail('Reachy saved the task');
+  const requestId = requests[3]?.requestId ?? assert.fail('Reachy saved the receipt');
+  const speakResult = () => control(w.core, w.module(), 'speak', reachyTaskId, randomUUID(), {messageId: resultId});
+  assert.equal((await speakResult()).status, 'accepted');
+  assert.match(spoken.at(-1) ?? '', /brightness request accepted/i);
+  const offered = spoken.length;
+  for (const destination of ['private-conversation', 'conversation-speech'] as const) {
+    deniedReceipt = {destination, requestId};
+    assert.equal((await result())[0]?.text === 'The request finished. Details are unavailable.', destination === 'private-conversation');
+    const refused = await speakResult();
+    assert.equal(refused.status, 'rejected');
+    if (refused.status === 'rejected') assert.equal(refused.error.error.code, 'forbidden');
+    assert.equal(spoken.length, offered, 'receipt details cannot reach the spoken sink after either grant is revoked');
+  }
+  deniedReceipt = undefined;
+  denied = 'private-conversation';
+  assert.deepEqual((await result()).map(message => message.text), ['The request finished. Details are unavailable.']);
+  denied = undefined;
+  const priorModelCalls = modelCalls;
+  await w.restart();
+  assert.equal(requests.length, 4, 'startup must not send a second command');
+  assert.equal(modelCalls, priorModelCalls, 'startup must not replay the accepted turn to the supervisor');
+  assert.equal((await result()).length, 1);
+  await ask('Set id:fixture-display brightness to 37%', 'reachy');
+  assert.equal(requests.length, 5, 'a literal ID in the original instruction bypasses colliding labels');
+  assert.equal(requests[4]?.target, target);
+  outcome = 'revoke-after-acceptance';
+  await ask('Set id:fixture-display brightness to 37%', 'reachy');
+  assert.equal(requests.length, 6);
+  assert.equal(reachy()?.status, 'succeeded');
+  const privatePage = await page(w, 'reachy', 'recent');
+  assert.deepEqual(privatePage.messages.filter(message => message.id === `${reachy()?.taskId}-result`).map(message => message.text),
+    ['The request finished. Details are unavailable.']);
+  denied = undefined;
+  outcome = 'uncertain';
+  assert.equal((await input(w.core, w.module(), 'Set id:fixture-display brightness to 37%', false, randomUUID(), {profile: 'reachy'})).status, 'accepted');
+  await until(() => reachy()?.status === 'uncertain');
+  assert.equal(requests.length, 7);
+  const priorUnknown = modelCalls;
+  await w.restart();
+  assert.equal(requests.length, 7, 'an uncertain write must never be resent');
+  assert.equal(modelCalls, priorUnknown, 'startup does not replay an uncertain write');
+  const unknownPage = await page(w, 'reachy', 'recent');
+  assert.equal(unknownPage.messages.some(message => message.id === `${reachy()?.taskId}-result`), false);
+  outcome = 'accepted';
+  active = {...active, id: 'shared-a', bypassLookup: true};
+  await ask('Set Shared Display brightness to 37%');
+  const question = (await page(w)).currentTask?.question;
+  assert.equal(question?.kind, 'clarification');
+  assert.doesNotMatch(JSON.stringify(question), /shared-a|shared-b/u);
+  assert.equal(requests.length, 7);
+});
+
+void test('a scoped brightness lookup supports the typed LIFX tool and refuses a cross-owner alias', async context => {
+  const lifx = 'bunny/modules/lifx', pixoo = 'bunny/modules/pixoo';
+  const exact = light('fixture-lifx', 'Fixture LIFX');
+  const requests: AssistantDispatch[] = [], evidence: string[] = [];
+  let alias = false, pixooReads = 0, aliasAtRead = Number.POSITIVE_INFINITY;
+  let revokeAtRead = Number.POSITIVE_INFINITY;
+  const standard = sharing();
+  const share = (grant: ShareQuery) => standard(grant) && !(pixooReads >= revokeAtRead &&
+    grant.destination === 'private-conversation' && grant.source === 'conversation' && grant.field === 'text' &&
+    grant.record?.endsWith('-prompt') === true);
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
+    const results = body.input.filter(item => item.type === 'function_call_output');
+    assert.deepEqual(body.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'set_lifx_brightness']);
+    const write = results.length === 1;
+    if (write) evidence.push(results[0]?.output ?? '');
+    const output = results.length <= 1 ? [{type: 'function_call', id: write ? 'fc_set' : 'fc_read', call_id: write ? 'set' : 'read',
+      name: write ? 'set_lifx_brightness' : 'read_devices',
+      arguments: JSON.stringify(write ? {device: `id:${exact.id}`, percent: 37} : {target: `id:${exact.id}`, owner: 'auto'})}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic result.', annotations: []}]}];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
+  }});
+  const w = await world(context, {provider, share, tools: ['read_devices', 'set_lifx_brightness'],
+    devices: owner => owner === lifx ? [exact] : [],
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const register = async (source: string, rows: () => DeviceRecord[]) => {
+    const participant = w.bus.connect(source);
+    context.after(() => participant.close());
+    await participant.serveSync(['device'], () => ({revision: 1, states: rows().map(data => ({
+      type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+    }))}));
+  };
+  await register(lifx, () => [exact]);
+  await register(pixoo, () => {
+    pixooReads += 1;
+    return alias || pixooReads >= aliasAtRead ? [{...light('private-alias', exact.id), kind: 'pixoo'}] : [];
+  });
+  await control(w.core, w.module(), 'enable');
+  const prompt = 'Set fixture-lifx brightness to 37%';
+  assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+  await until(() => requests.length === 1);
+  w.advance(1200);
+  await until(() => status(w) === 'succeeded');
+  assert.match(evidence[0] ?? '', /"controls":\["set_lifx_brightness"\]/u);
+  assert.deepEqual(requests[0]?.data, {percent: 37, expectedConfigurationRevision: exact.configurationRevision, expectedGeneration: exact.generation});
+  aliasAtRead = pixooReads + 3;
+  const beforeLateAlias = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+  await until(() => task(w)?.taskId !== beforeLateAlias && status(w) === 'succeeded');
+  assert.match(evidence.at(-1) ?? '', /"controls":\["set_lifx_brightness"\]/u);
+  assert.equal(requests.length, 1, 'a new alias before dispatch must remain blocked');
+  aliasAtRead = Number.POSITIVE_INFINITY;
+  revokeAtRead = pixooReads + 3;
+  const beforeRevoke = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+  await until(() => task(w)?.taskId !== beforeRevoke && status(w) === 'succeeded');
+  assert.ok(pixooReads >= revokeAtRead);
+  assert.equal(requests.length, 1, 'revoking the original message during the final lookup blocks dispatch');
+  assert.match(JSON.stringify(await page(w, 'bunny', 'recent')), /No command was sent/u);
+  revokeAtRead = Number.POSITIVE_INFINITY;
+  alias = true;
+  const prior = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+  await until(() => task(w)?.taskId !== prior && status(w) === 'waiting');
+  assert.equal(evidence.at(-1), '{"devices":[]}');
+  assert.doesNotMatch(JSON.stringify((await page(w)).currentTask?.question), /private-alias/u);
+  assert.equal(requests.length, 1);
+});
+
+void test('Claude reads an explicit device ID within its current grants when a label has the same text', async context => {
+  const owner = 'bunny/modules/pixoo', id = 'fixture-display';
+  const records = [light(id, 'Main display'), light('other-display', `id:${id}`)].map(row => ({...row, kind: 'pixoo' as const}));
+  let selector = `id:${id}`, source = owner, denied = false;
+  const selections: string[] = [];
+  const provider = new AnthropicProvider({key: 'fake', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {messages: {content: {type: string; content?: string}[]}[]};
+    const result = body.messages.flatMap(message => message.content).find(block => block.type === 'tool_result');
+    if (result?.content !== undefined) selections.push(result.content);
+    return Promise.resolve(Response.json({content: result === undefined
+      ? [{type: 'tool_use', id: 'read', name: 'read_devices', input: {owner: source, target: selector}}]
+      : [{type: 'text', text: 'The lookup is complete.'}],
+    stop_reason: result === undefined ? 'tool_use' : 'end_turn', usage: {input_tokens: 20, output_tokens: 20}}));
+  }});
+  const standard = sharing();
+  const w = await world(context, {provider, tools: ['read_devices', 'control_brightness_set'],
+    share: query => standard(query) && !(denied && query.destination === 'external-model' && query.source === 'devices' &&
+      query.field === 'status' && query.record === id),
+    dispatch: () => assert.fail('A catalog read must not send a command')});
+  const pixoo = w.bus.connect(owner);
+  context.after(() => pixoo.close());
+  await pixoo.serveSync(['device'], () => ({revision: 1, states: records.map(data => ({
+    type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+  }))}));
+  await control(w.core, w.module(), 'enable');
+  const ask = async (prompt: string) => {
+    const prior = task(w)?.taskId;
+    const before = selections.length;
+    assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+    await until(() => task(w)?.taskId !== prior && status(w) === 'succeeded');
+    assert.equal(selections.length, before + 1);
+    const result = JSON.parse(selections[before] ?? '') as {devices: {id: string; owner: string}[]};
+    return result.devices.map(device => [device.owner, device.id]);
+  };
+  assert.deepEqual(await ask(`Set id:${id} brightness to 37%`), [[owner, id]]);
+  source = 'auto';
+  assert.deepEqual(await ask(`What is the current brightness of id:${id}?`), [[owner, id]]);
+  denied = true;
+  assert.deepEqual(await ask(`Check the reported brightness of id:${id}.`), []);
+  denied = false;
+  source = 'bunny/modules/lifx';
+  assert.deepEqual(await ask(`Check the status of id:${id}.`), []);
+  source = owner;
+  selector = id;
+  assert.deepEqual(await ask('Check Main display status.'), [[owner, id]]);
+});
+
+for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], ['anthropic', 'microduck'],
+  ['openai', 'bunny'], ['openai', 'reachy'], ['openai', 'microduck']] as const) {
+  void test(`${name} ${profile} catalog admission offers playback and draft tools while refusing denied or stale writes`, async context => {
+    const playback = 'control_playback_control', edit = 'edit_light_show_cue';
+    const offered = new Set<string>();
+    const bodies: string[] = [];
+    const usage = {input_tokens: 20, output_tokens: 10};
+    let proposal: {name: string; input: Record<string, unknown>} | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      bodies.push(init.body);
+      const body = JSON.parse(init.body) as {tools: {name: string}[]};
+      for (const tool of body.tools) offered.add(tool.name);
+      const candidate = proposal;
+      proposal = undefined;
+      const selected = candidate !== undefined && body.tools.some(tool => tool.name === candidate.name) ? candidate : undefined;
+      return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: selected === undefined ? [{type: 'text', text: 'Synthetic supervisor reply.'}]
+          : [{type: 'tool_use', id: 'catalog_call', ...selected}], stop_reason: selected === undefined ? 'end_turn' : 'tool_use', usage}
+        : {status: 'completed', output: selected === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic supervisor reply.', annotations: []}]}]
+          : [{type: 'function_call', id: 'fc_catalog_call', call_id: 'catalog_call', name: selected.name, arguments: JSON.stringify(selected.input)}], usage}));
+    };
+    const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const calls: AssistantDispatch[] = [];
+    const policy = sharing();
+    let denied = true, deniedDraft = false, extraSpeaker = false, deniedSpeaker = false;
+    const w = await world(context, {provider, share: query => policy(query) && !(query.destination === 'private-conversation' &&
+      (denied && query.source === 'playback' || deniedDraft && query.source === 'shows' ||
+        deniedSpeaker && query.source === 'playback' && query.record === 'hall-speaker')),
+      tools: [playback, 'read_playback', edit, 'read_light_shows'],
+      dispatch: request => {calls.push(request); return Promise.resolve(accepted(request.requestId));}});
+    const owner = w.bus.connect('bunny/modules/playback');
+    context.after(() => owner.close());
+    await owner.serveSync(['playback'], () => ({revision: 7, states: (extraSpeaker ? ['desk-speaker', 'hall-speaker', 'north-hall-speaker'] : ['desk-speaker']).map(id => ({
+      type: 'org.bunny.playback.updated', subject: id, dataschema: 'https://bunny.invalid/events/playback/2.0',
+      data: {id, revision: 7, availability: 'available', playback: {status: 'known', player: 'playing', controls: ['pause', 'play'], title: 'PRIVATE_PLAYBACK_TITLE'}},
+    }))}));
+    const drafts = new ShowDrafts(w.host().moduleDatabase() ?? assert.fail('open database'));
+    assert.ok('text' in drafts.create({name: 'Desk show', starter: 'warm'}));
+    const summary = drafts.list(0, 1, '', () => true)[0] ?? assert.fail('saved draft');
+    assert.ok('text' in drafts.create({name: 'Red Dawn', starter: 'ocean'}));
+    const red = drafts.list(0, 2, '', () => true).find(item => item.name === 'Red Dawn') ?? assert.fail('second saved draft');
+    const redBefore = drafts.read(red.id);
+    const before = drafts.read(summary.id) ?? assert.fail('current draft');
+    const cue = before.value.timeline.cues[0]?.id ?? assert.fail('starter cue');
+    const stale = {draftId: summary.id, revision: summary.revision - 1, cue, changes: '{"intensity":0.25}'};
+    assert.deepEqual(drafts.edit(stale), {code: 'revision-conflict'});
+
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string, next: NonNullable<typeof proposal>, claimed?: ReturnType<typeof ownerReference> | readonly ReturnType<typeof ownerReference>[]) => {
+      const previous = task(w)?.taskId;
+      const draftReference = ['Desk show', 'Red Dawn', `id:${summary.id}`].find(value => text.includes(value));
+      const subject = ['hall-speaker', 'missing-speaker', 'desk speaker', 'music', 'a different speaker'].find(value => text.includes(value));
+      const exact = /id:[^ ]*/u.exec(text)?.[0]?.replace(/[.]$/u, '');
+      const references = next.name === edit ? [ownerReference('draft', draftReference ?? 'unavailable'), ownerReference('cue', 'first cue')]
+        : next.name !== playback ? [] : subject !== undefined || exact !== undefined ? [ownerReference('primary', exact ?? subject ?? '')]
+          : [ownerReference('primary', 'it', 'prior')];
+      proposal = next.name === edit || next.name === playback ? {...next, input: {...next.input, references: claimed === undefined ? references : 'role' in claimed ? [claimed] : claimed}} : next;
+      assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
+      await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+      assert.equal(proposal, undefined, 'the fake transport received the owner turn');
+    };
+    await ask('Is the desk speaker paused? Please leave it alone.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'desk-speaker', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 0, 'a status question and explicit denial cause zero dispatches');
+
+    await ask('Tone down the first cue in revision zero of my Desk show draft.', {name: edit, input: stale});
+    assert.deepEqual(drafts.read(summary.id), before, 'the stale edit changes neither the revision nor the draft');
+    assert.equal(calls.length, 0, 'a private draft edit never dispatches to a device');
+
+    await ask('Read the Red Dawn draft.', {name: 'read_light_shows', input: {view: 'drafts', id: red.id, offset: 0}});
+    await ask(`Edit the first cue on id:${summary.id}.`, {name: edit,
+      input: {...stale, draftId: 'Red Dawn', revision: red.revision, cue: '1'}});
+    assert.deepEqual(drafts.read(red.id), redBefore, 'an earlier valid draft cannot replace the current explicit draft ID');
+    assert.deepEqual(drafts.read(summary.id), before, 'a mismatched draft proposal never silently redirects the write');
+
+    const expected = [playback, 'read_playback', edit, 'read_light_shows'];
+    assert.deepEqual(expected.filter(tool => !offered.has(tool)), [], 'the hosted adapter receives enabled catalog tools');
+    denied = false;
+    await ask('Give the music a break, please.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'auto', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0]?.data, {action: 'pause'});
+    assert.ok(calls[0]?.family === 'catalog-action');
+    assert.deepEqual(calls[0].binding, {kind: 'record', owner: 'bunny/modules/playback', target: 'desk-speaker', revision: 7});
+    await ask('Actually, let it carry on.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'auto', arguments: '{"action":"play"}'}});
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1]?.target, calls[0].target);
+    assert.deepEqual(calls[1]?.data, {action: 'play'});
+    await ask('Pause a different speaker.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'other-speaker', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 2, 'an unknown target never enters dispatch');
+    for (const selector of ['???', 'bad/path', '', 'a'.repeat(64), '11111111-1111-4111-8111-111111111111']) {
+      await ask(`Pause id:${selector}.`, {name: playback,
+        input: {owner: 'bunny/modules/playback', target: 'desk-speaker', arguments: '{"action":"pause"}'}});
+    }
+    assert.equal(calls.length, 2, 'an unaccounted complete selector never falls back to the previously selected speaker');
+    extraSpeaker = true;
+    await ask('Pause id:desk-speaker.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'hall-speaker', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 2, 'a different existing playback record never enters dispatch');
+    const pause = (target: string) => ({name: playback,
+      input: {owner: 'bunny/modules/playback', target, arguments: '{"action":"pause"}'}});
+    const misleading = [
+      ['Pause that Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Missing Speaker')],
+      ['Pause North Hall Speaker.', 'hall-speaker', ownerReference('primary', 'Hall Speaker')],
+      ['Instead of Desk Speaker, pause Hall Speaker.', 'desk-speaker', ownerReference('primary', 'Hall Speaker')],
+      ['Pause the other speaker like that one.', 'desk-speaker', ownerReference('primary', 'the other speaker')],
+      ['Instead of Desk Speaker, pause Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Missing Speaker')],
+      ['Pause Missing Speaker instead of Desk Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker', 'named', 'request', 'exclude')],
+      ['Pause Desk Speaker versus Missing Speaker.', 'desk-speaker', [ownerReference('primary', 'Desk Speaker'), ownerReference('primary', 'Missing Speaker')]],
+      ['Pause Missing Speaker, rather than the music.', 'desk-speaker', ownerReference('primary', 'music', 'named', 'request', 'exclude')],
+    ] as const;
+    const substitutions: string[] = [];
+    for (const [utterance, target, reference] of misleading) {
+      const before = calls.length;
+      await ask(utterance, pause(target), reference);
+      if (calls.length !== before) substitutions.push(utterance);
+    }
+    assert.deepEqual(substitutions, [], 'misclassified names, partial names and unrelated references never select the prior speaker');
+    const excludeDesk = ownerReference('primary', 'Desk Speaker', 'named', 'request', 'exclude');
+    await ask('Pause Missing Speaker, not Desk Speaker.', pause('desk-speaker'),
+      [ownerReference('primary', 'Missing Speaker'), excludeDesk]);
+    assert.equal(calls.length, 2, 'a missing selection cannot dispatch to the excluded speaker');
+    await ask('Instead of Desk Speaker, pause Hall Speaker.', pause('hall-speaker'),
+      [ownerReference('primary', 'Hall Speaker'), excludeDesk]);
+    assert.equal(calls.at(-1)?.target, 'hall-speaker');
+    assert.equal(calls.length, 3, 'a valid contrast dispatches to the selected speaker once');
+    deniedSpeaker = true;
+    for (const speaker of ['hall-speaker', 'missing-speaker']) {
+      await ask(`Pause ${speaker}.`, {name: playback,
+        input: {owner: 'bunny/modules/playback', target: 'auto', arguments: '{"action":"pause"}'}});
+      const latest = (await page(w, profile, 'recent')).messages.filter(message => message.role === 'tool').at(-1);
+      assert.equal(latest?.text, 'refused: not-found');
+    }
+    assert.equal(calls.length, 3, 'denied and absent selections never redirect to the visible speaker');
+
+    await ask('Make the first cue in the Desk show draft half as bright.', {name: edit,
+      input: {...stale, draftId: 'Desk show', revision: summary.revision, cue: '1'}});
+    assert.equal(drafts.read(summary.id)?.revision, summary.revision + 1);
+    assert.equal(drafts.read(summary.id)?.value.timeline.cues[0]?.intensity, 0.25);
+    await ask(`Edit cue id:${cue} in Desk show, excluding the first cue.`, {name: edit,
+      input: {...stale, draftId: 'Desk show', revision: summary.revision + 1, cue}},
+    [ownerReference('draft', 'Desk show'), ownerReference('cue', `id:${cue}`),
+      ownerReference('cue', 'first cue', 'named', 'request', 'exclude')]);
+    assert.equal(drafts.read(summary.id)?.revision, summary.revision + 1, 'a cue excluded by ordinal cannot change by ID');
+    assert.equal(calls.length, 3, 'private cue edit never sends a device command');
+    assert.doesNotMatch(bodies.join(' '), /PRIVATE_PLAYBACK_TITLE|Draft Desk show \(/u);
+    assert.ok((await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
+    deniedDraft = true;
+    assert.ok(!(await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
+    deniedSpeaker = false;
+    await ask('Pause North Hall Speaker.', pause('north-hall-speaker'), ownerReference('primary', 'North Hall Speaker'));
+    assert.equal(calls.length, 4);
+    assert.equal(calls.at(-1)?.target, 'north-hall-speaker', 'the complete longer name still selects its own record');
+  });
+}
+
+function ownerReference(role: string, quote: string, kind = 'named', source = 'request', disposition = 'select') {
+  return {role, quote, kind, source, disposition};
+}
+
+type CatalogPhrase = {
+  family: CatalogFamily;
+  say: string;
+  owner: string;
+  selector: string;
+  target: string;
+  settings: Record<string, unknown>;
+  expected?: Record<string, unknown>;
+  refuse: {say: string; selector?: string; settings?: Record<string, unknown>; owner?: string; code: string};
+};
+
+void test('natural catalog corpus covers every migrated command', () => {
+  assert.deepEqual(catalogPhrases().map(row => row.family).concat('nanoleaf-show-save').sort(),
+    Object.keys(assistantRoutes).filter(catalogFamily).filter(modelCatalogCommand).sort());
+});
+
+function catalogPhrases(): CatalogPhrase[] {
+  const core = 'bunny/core', nanoleaf = 'bunny/modules/nanoleaf', pixoo = 'bunny/modules/pixoo';
+  const wall = 'studio-wall', screen = 'new-pixoo', noticeId = 'a'.repeat(64);
+  const playlistId = '11111111-1111-4111-8111-111111111111', renditionId = 'b'.repeat(64);
+  const assetId = '22222222-2222-4222-8222-222222222222';
+  const wrongWall = {say: 'Make that change on the spare wall panel instead.', selector: 'spare-wall', code: 'not-found'};
+  const wrongScreen = {say: 'Make that change on the spare display instead.', selector: 'spare-screen', code: 'not-found'};
+  const onWall = (family: CatalogFamily, say: string, settings: CatalogPhrase['settings'], refuse: CatalogPhrase['refuse'] = wrongWall,
+    expected?: CatalogPhrase['expected']): CatalogPhrase =>
+    ({family, say, settings, refuse, owner: nanoleaf, selector: 'Studio Wall', target: wall, ...(expected === undefined ? {} : {expected})});
+  const onScreen = (family: CatalogFamily, say: string, settings: CatalogPhrase['settings'], refuse: CatalogPhrase['refuse'] = wrongScreen,
+    expected?: CatalogPhrase['expected']): CatalogPhrase =>
+    ({family, say, settings, refuse, owner: pixoo, selector: 'Kitchen Display', target: screen, ...(expected === undefined ? {} : {expected})});
+  const record = (family: CatalogFamily, say: string, selector: string, settings: CatalogPhrase['settings'], target = selector,
+    owner = core, refuse: CatalogPhrase['refuse'] = {say: 'Apply that to the other entry instead.', selector: 'unknown-record', code: 'not-found'}): CatalogPhrase =>
+    ({family, say, settings, refuse, owner, selector, target});
+  return [
+    onWall('device-mode-set', 'Switch Studio Wall to free mode.', {mode: 'free'}),
+    onWall('scene-activate', 'Put Northern Lights on Studio Wall.', {sceneId: 'Northern Lights'},
+       {say: 'Use id:scene-' + 'c'.repeat(64) + ' on Studio Wall.', settings: {sceneId: 'scene-' + noticeId}, code: 'not-found'},
+      {sceneId: 'scene-' + noticeId}),
+    onWall('moment-play', 'Give Studio Wall five seconds of celebration.', {mood: 'celebrate', durationMs: 5000},
+      {say: 'Give Studio Wall two hours of celebration.', settings: {mood: 'celebrate', durationMs: 7_200_000}, code: 'invalid-request'}),
+    onWall('nanoleaf-animation-play', 'Play Ocean on Studio Wall.', {animation: {preset: 'ocean'}}),
+    onWall('nanoleaf-wall-edit', 'Rotate Studio Wall a quarter turn.', {edit: {kind: 'settings', settings: {rotation: 90}}}),
+    record('nanoleaf-machine-edit', 'Use project style for Desk Lines machine status.', 'Desk Lines',
+      {edit: {kind: 'settings', settings: {style: 'project'}}}, NANOLEAF_LINES_DEVICE, nanoleaf,
+      {say: 'Use project style for Studio Wall machine status.', selector: 'Studio Wall', code: 'unsupported-capability'}),
+    record('nanoleaf-favorite-edit', 'Rename the Desk Lines favorite Evening to Dusk.', 'Desk Lines',
+      {edit: {kind: 'animation.rename', name: 'Evening', newName: 'Dusk'}}, NANOLEAF_LINES_DEVICE, nanoleaf,
+      {say: 'Rename the Studio Wall favorite Evening to Dusk.', selector: 'Studio Wall', code: 'unsupported-capability'}),
+    onWall('nanoleaf-notice-acknowledge', 'Acknowledge notice ' + noticeId + ' for synthetic-task on Studio Wall.', {task: 'synthetic-task', noticeId}),
+    onScreen('media-start', 'Start the Evening Loop playlist on Kitchen Display.', {playlistId: 'Evening Loop'}, wrongScreen, {playlistId}),
+    onScreen('media-control', 'Could you pause the media on Kitchen Display?', {action: 'pause'}),
+    onScreen('pixoo-media-show', 'Play the Blue Kite rendition once on Kitchen Display.', {renditionId: 'Blue Kite', playback: {mode: 'plays', totalPlays: 1}},
+      wrongScreen, {renditionId, playback: {mode: 'plays', totalPlays: 1}}),
+    onScreen('pixoo-monitor-set', 'Show Claude sessions on Kitchen Display every three seconds.', {filter: {provider: 'claude'}, cadenceMs: 3000}),
+    onScreen('pixoo-now-playing-set', 'Hide Now Playing on Kitchen Display.', {media: 'off'}),
+    onScreen('pixoo-moments-set', 'Let moments cover status on Kitchen Display.', {overStatus: true}),
+    onScreen('pixoo-playlist-change', 'Rename Evening Loop to Last Light on Kitchen Display.', {change: {operation: 'rename', playlistId: 'Evening Loop', name: 'Last Light'}},
+      {say: 'Rename revision six of Evening Loop to Last Light on Kitchen Display.', settings: {change: {operation: 'rename', playlistId: 'Evening Loop', revision: 6, name: 'Last Light'}}, code: 'revision-conflict'},
+      {change: {operation: 'rename', playlistId, revision: 7, name: 'Last Light'}}),
+    onScreen('pixoo-asset-change', 'Render the Blue Kite original again for Kitchen Display.', {change: {operation: 'render', assetId: 'Blue Kite'}},
+      {say: 'Render original id:33333333-3333-4333-8333-333333333333 on Kitchen Display.', settings: {change: {operation: 'render', assetId}}, code: 'not-found'},
+      {change: {operation: 'render', assetId}}),
+    onScreen('pixoo-notice-dismiss', 'Dismiss fixture-notice for session ' + noticeId + ' on Kitchen Display.', {session: noticeId, noticeId: 'fixture-notice'}),
+    record('wemo-hold-release', 'Release the hold on Bench Plug.', 'Bench Plug', {}, 'bench-plug', 'bunny/modules/wemo',
+      {say: 'Release the hold from an older operation on Bench Plug.', settings: {heldRequestId: 'old-operation'}, code: 'invalid-request'}),
+    record('mode-override-set', 'Keep Studio Wall in free mode regardless of Hub mode.', 'Studio Wall', {mode: 'free'}, wall, core,
+      {say: 'Keep id:studio-wall in free mode.', selector: 'id:wall-right', code: 'not-found'}),
+    record('notice-clear', 'Clear all notices for the Writing session.', 'Writing', {noticeId: null}, noticeId),
+    record('session-label-set', 'Call the Writing session Revised chapter.', 'Writing', {label: 'Revised chapter'}, noticeId),
+    record('inbox-handle', 'Dismiss Inbox item fixture-inbox.', 'fixture-inbox', {action: 'dismiss'}),
+    record('home-layout-set', 'Clear my custom desktop and phone Home ordering.', 'home', {layouts: {desktop: [], phone: []}}),
+    record('lighting-layout-set', 'Clear my saved room lighting groups and assignments.', 'lighting', {layout: {rooms: [], assignments: [], groups: [], home: null}}),
+    record('playback-layout-set', 'Remove the custom placements for Music cards.', 'playback', {assignments: []}),
+    record('playback-control', 'Give the music a break, please.', 'auto', {action: 'pause'}, 'desk-speaker', 'bunny/modules/playback',
+      {say: 'Pause music on the spare speaker.', selector: 'spare-speaker', code: 'not-found'}),
+    record('volcano-session-gap', 'Set Volcano’s session gap to half an hour.', 'Volcano', {gapMinutes: 30}, 'volcano', 'bunny/modules/volcano'),
+    record('art-catalog-edit', 'Favorite the saved artwork ' + playlistId + '.', 'art', {action: 'favorite', artworkId: playlistId, favorite: true}, 'art', 'bunny/modules/art',
+      {say: 'Favorite it in the other art catalog.', selector: 'other-catalog', code: 'forbidden'}),
+    record('art-show', 'Show retained-kite on the Browser.', 'hub', {artworkId: 'retained-kite', targets: ['browser']}, 'hub', core,
+      {say: 'Show missing-kite on the Browser.', settings: {artworkId: 'missing-kite', targets: ['browser']}, code: 'not-found'}),
+    record('music-lighting-control', 'Jump to one and a half seconds in the wall light show.', 'wall', {action: 'seek-show', positionMs: 1500}, 'wall', core,
+      {say: 'Jump to two seconds before the wall light show starts.', settings: {action: 'seek-show', positionMs: -2000}, code: 'invalid-request'}),
+    record('nanoleaf-reactive-preset-save', 'Save the ambient blue recipe as Evening Glow.', 'reactive-presets',
+      {name: 'Evening Glow', recipe: {rendererVersion: 1, effect: 'ambient', palette: ['#1122ff']}}, 'reactive-presets', nanoleaf,
+      {say: 'Save Evening Glow against revision six.', settings: {name: 'Evening Glow', expectedRevision: 6, recipe: {rendererVersion: 1, effect: 'ambient', palette: ['#1122ff']}}, code: 'revision-conflict'}),
+  ];
+}
+
+async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof world>>, operations: OperationRecord[] = [],
+  beforeOperationRead: () => void = () => {}, pixooState: () => Pick<DeviceRecord, 'availability' | 'held'> = () => ({availability: 'available'}),
+  sharedLampPresent: () => boolean = () => true) {
+  await w.coreSync.close();
+  type States = ReturnType<typeof state>[];
+  const register = (owner: Participant, families: Record<string, States | (() => States)>) => owner.serveSync(Object.keys(families),
+    request => {
+      if (request.data.families.includes('operation')) beforeOperationRead();
+      return {revision: 7, states: request.data.families.flatMap(family => {
+        if (family === 'operation') return operations.map(row => state('operation', row.id, row));
+        const entries = families[family];
+        return typeof entries === 'function' ? entries() : entries ?? [];
+      })};
+    });
+  function state(family: string, subject: string, data: {id: string; revision: number} & Record<string, unknown>, type = `org.bunny.${family}.updated`) {
+    return {type, subject, dataschema: `https://bunny.invalid/events/${family}/2.0`, data};
+  }
+  function connect(owner: string) {
+    const participant = w.bus.connect(`bunny/modules/${owner}`);
+    context.after(() => participant.close());
+    return participant;
+  }
+  const device = (data: DeviceRecord) => ({...state('device', data.id, data), dataschema: DEVICE_READBACK_SCHEMA});
+  const wall = light('studio-wall', 'Studio Wall'), screen = light('new-pixoo', 'Kitchen Display');
+  const hash = 'a'.repeat(64), renditionId = 'b'.repeat(64);
+  const playlistId = '11111111-1111-4111-8111-111111111111', assetId = '22222222-2222-4222-8222-222222222222';
+  await Promise.all([
+    register(connect('lifx'), {device: [device({...light('fixture-lifx-shared', 'Shared Lamp'), kind: 'lifx',
+      capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']}}})]}),
+    register(connect('tidbyt'), {device: []}),
+    register(connect('wemo'), {device: [device({...light('bench-plug', 'Bench Plug'), kind: 'wemo', availability: 'unavailable',
+      held: {requestId: 'held-operation', heldAtMs: 1000}})]}),
+    register(connect('nanoleaf'), {
+      device: () => [device({...light(NANOLEAF_LINES_DEVICE, 'Desk Lines'), kind: 'nanoleaf'}),
+        device({...wall, kind: 'nanoleaf', capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']},
+        scenes: {supported: true, sceneIds: ['scene-' + hash, 'scene-' + 'd'.repeat(64)]},
+        moments: {supported: true, moods: ['celebrate'], maxDurationMs: 10000, coversStatus: false}}}),
+      ...['wall-left', 'wall-right'].map(id => {
+        const shared = light(id, 'Shared Wall');
+        return device({...shared, kind: 'nanoleaf', capabilities: {...shared.capabilities, modes: {supported: true, values: ['free']}}});
+      }), ...(sharedLampPresent() ? [device({...light('fixture-nanoleaf-shared', 'Shared Lamp'), kind: 'nanoleaf',
+        capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']}}})] : [])],
+      'nanoleaf-shows': [state('nanoleaf-shows', 'shows', {id: 'shows', revision: 7, shows: []})],
+      'nanoleaf-reactive-presets': [state('nanoleaf-reactive-presets', 'reactive-presets',
+        {id: 'reactive-presets', revision: 7, presets: [{presetId: 'preset-evening-glow', name: 'Evening Glow'}]})],
+    }),
+    register(connect('pixoo'), {
+      device: () => [device({...screen, ...pixooState(), kind: 'pixoo', capabilities: {...screen.capabilities,
+        media: {supported: true, actions: ['pause'], playlistIds: [playlistId], renditionIds: [renditionId]}}})],
+      'pixoo-playlist': [state('pixoo-playlist', playlistId, {id: playlistId, revision: 7, playlistRevision: 7, name: 'Evening Loop'})],
+      'pixoo-rendition': [state('pixoo-rendition', renditionId, {id: renditionId, revision: 7, name: 'Blue Kite', assetId, compatible: true})],
+    }),
+    register(connect('volcano'), {'volcano-status': [state('volcano-status', 'volcano', {id: 'volcano', revision: 7, label: 'Volcano', configurationRevision: 7})]}),
+    register(connect('playback'), {playback: [state('playback', 'desk-speaker', {id: 'desk-speaker', revision: 7, availability: 'available',
+      playback: {status: 'known', controls: ['pause', 'play'], player: 'playing'}})]}),
+    register(connect('art'), {art: [state('art', 'art', {id: 'art', revision: 7, jobs: [], artworks: []})]}),
+    register(w.core, {
+      mode: [state('mode', 'hub', hub(7))],
+      session: [state('session', hash, {...session('Writing'), id: hash, revision: 7})],
+      'inbox-item': [state('inbox-item', 'fixture-inbox', {id: 'fixture-inbox', revision: 7})],
+      'home-layout': [state('home-layout', 'home', {id: 'home', revision: 7})],
+      'lighting-layout': [state('lighting-layout', 'lighting', {id: 'lighting', revision: 7})],
+      'playback-layout': [state('playback-layout', 'playback', {id: 'playback', revision: 7})],
+      'music-lighting-state': [state('music-lighting-state', 'wall', {id: 'wall', revision: 7, session: {
+        status: 'active', generation: 'active-show', show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0},
+      }}, 'org.bunny.music-lighting.updated')],
+      operation: [],
+    }),
+  ]);
+}
+
+for (const host of ['anthropic', 'openai'] as const) {
+  void test(`${host} natural catalog phrases validate through the Hub command boundary`, async context => {
+    const phrases = catalogPhrases();
+    const delivered: {data: AssistantDispatch; valid: boolean}[] = [];
+    const operationReceipts: OperationRecord[] = [];
+    let sceneReceiptStatus: OperationRecord['status'] = 'completed';
+    let beforeOperationRead = () => {};
+    let receiptDenied: string | undefined;
+    let pixooState: Pick<DeviceRecord, 'availability' | 'held'> = {availability: 'available'};
+    let sharedLamp: 'visible' | 'hidden' | 'absent' = 'visible';
+    const policy = sharing();
+    let modeDenied = false;
+    type InputSchema = TurnInput['tools'][number]['input'];
+    type OfferedTool = {name: string; description: string; input_schema?: InputSchema; parameters?: InputSchema};
+    let offeredScene: OfferedTool | undefined;
+    let proposal: {name: string; input: Record<string, unknown>; ownerText: string} | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {tools?: OfferedTool[]; input?: unknown[]; messages?: unknown[]};
+      const candidate = proposal;
+      proposal = undefined;
+      if (candidate !== undefined) {
+        assert.match(JSON.stringify(body.messages ?? body.input), new RegExp(candidate.ownerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
+        const offered = body.tools?.find(tool => tool.name === candidate.name);
+        assert.ok(offered, candidate.name);
+        if (candidate.name === catalogTool('scene-activate')) offeredScene = offered;
+      }
+      const usage = {input_tokens: 20, output_tokens: 10, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: candidate === undefined ? [{type: 'text', text: 'The tool returned its evidence.'}]
+          : [{type: 'tool_use', id: 'catalog_phrase', name: candidate.name, input: candidate.input}],
+        stop_reason: candidate === undefined ? 'end_turn' : 'tool_use', usage}
+        : {status: 'completed', output: candidate === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'The tool returned its evidence.', annotations: []}]}]
+          : [{type: 'function_call', id: 'fc_catalog_phrase', call_id: 'catalog_phrase', name: candidate.name, arguments: JSON.stringify(candidate.input)}], usage}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['set_mode', 'create_light_show_draft', 'edit_light_show_cue', 'save_light_show',
+      ...phrases.map(row => catalogTool(row.family))], core: () => ({mode: hub(7), sessions: [], synced: true}),
+      readCatalogIdentity: query => Promise.resolve(
+        query.kind === 'scene' && query.deviceId === 'studio-wall' && query.name === 'Northern Lights'
+          ? {id: 'scene-' + 'a'.repeat(64)}
+          : query.kind === 'scene' && query.deviceId === 'studio-wall' && query.name === 'Dusk'
+            ? {id: 'scene-' + 'd'.repeat(64)}
+            : query.kind === 'asset' && (query.name === 'Blue Kite' || query.id === '22222222-2222-4222-8222-222222222222')
+            ? {id: '22222222-2222-4222-8222-222222222222'} : errorBody('not-found')),
+      share: query => policy(query) && !(modeDenied && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'hub') &&
+        !(receiptDenied !== undefined && query.destination === 'private-conversation' && query.source === 'operations' && query.record === receiptDenied) &&
+        !(sharedLamp === 'hidden' && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'fixture-nanoleaf-shared'), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
+      artworkId: id, sourceRequestId: 'kite-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
+        outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
+          frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
+      favorite: false, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false},
+    })});
+    await catalogFixture(context, w, operationReceipts, () => beforeOperationRead(), () => pixooState, () => sharedLamp !== 'absent');
+    const validator = coreValidator();
+    await w.core.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', message => {
+      const validation = validator.validate(message);
+      delivered.push({data: message.data, valid: validation.ok && message.source === 'bunny/modules/companions'});
+      if (validation.ok && message.data.family === 'catalog-action' && message.data.command === 'scene-activate') {
+        const {requestId, target} = message.data;
+        const now = 10 + Math.max(1000, ...operationReceipts.map(row => row.sentAtMs));
+        operationReceipts.push({id: operationEntityId(requestId), revision: 1, requestId, target, kind: 'device',
+          family: 'scene-activate', command: 'org.bunny.scene.activate.requested', requestedBy: message.source,
+          status: sceneReceiptStatus, ...(sceneReceiptStatus === 'completed' ? {result: 'succeeded', evidence: 'transmitted'} : {}),
+          sentAtMs: now, updatedAtMs: now, deadlineAtMs: now + 1000});
+      }
+      if (pixooState.availability !== 'available' && message.data.family === 'catalog-action' &&
+        message.data.command === 'pixoo-media-show') return errorBody('unavailable');
+      return validation.ok ? {status: 'accepted'} : {error: validation.error};
+    });
+    await w.core.respond<{action: 'dismiss'; expectedRevision: number}>('bunny.cmd.inbox-handle.fixture-inbox', message => {
+      const validation = validator.validate(message);
+      const {subject, data, id} = message;
+      delivered.push({valid: validation.ok && message.source === 'bunny/modules/companions', data: {
+        family: 'catalog-action', command: 'inbox-handle', requestId: id, target: subject,
+        binding: {kind: 'record', owner: 'bunny/core', target: subject, revision: data.expectedRevision}, data: {action: data.action},
+      }});
+      return validation.ok ? {status: 'accepted'} : {error: validation.error};
+    });
+    await control(w.core, w.module(), 'enable');
+    const ask = async (ownerText: string, name: string, args: Record<string, unknown>, selection?: ReturnType<typeof ownerReference>[],
+      expectedStatus = 'succeeded') => {
+      const prior = task(w)?.taskId, writes = delivered.length;
+      const nested = typeof args.arguments === 'string' ? JSON.parse(args.arguments) as Record<string, unknown> : {};
+      const change = nested.change as {assetId?: string; playlistId?: string} | undefined;
+      const refs: ReturnType<typeof ownerReference>[] = [];
+      const cite = (role: string, candidates: unknown[]) => {
+        const exact = candidates.find(value => typeof value === 'string' && ownerText.includes(value));
+        if (typeof exact === 'string') refs.push(ownerReference(role, exact));
+      };
+      cite('primary', ['id:studio-wall', 'id:new-pixoo', 'Studio Wall', 'Desk Lines', 'Kitchen Display', 'Bench Plug',
+        'spare wall panel', 'spare display', 'spare speaker', 'Writing', 'fixture-inbox', 'Volcano',
+        'music', 'wall', 'Browser', 'Shared Wall', 'id:wall-left', 'id:wall-right']);
+      cite('artwork', [nested.artworkId]);
+      cite('scene', [nested.sceneId]);
+      cite('playlist', [nested.playlistId, change?.playlistId]);
+      cite('asset', [change?.assetId]);
+      cite('rendition', [nested.renditionId]);
+      cite('draft', [args.draftId]);
+      cite('notice', [nested.noticeId]);
+      cite('session', [nested.session, nested.task]);
+      cite('operation', [nested.heldRequestId, ownerText.includes('older operation') ? 'older operation' : undefined]);
+      cite('favorite', [(nested.edit as {name?: string} | undefined)?.name]);
+      cite('preset', [nested.presetId, nested.name]);
+      if (name === 'edit_light_show_cue') cite('cue', ['first cue']);
+      proposal = {ownerText, name, input: name === 'set_mode' || name === 'ask_owner' || name === 'create_light_show_draft' ? args
+        : {...args, references: selection ?? refs.filter(ref => catalogToolReferenceRoles(name).some(role => role === ref.role))}};
+      const accepted = await input(w.core, w.module(), ownerText);
+      assert.equal(accepted.status, 'accepted', `${ownerText} ${JSON.stringify(accepted)}`);
+      await until(() => task(w)?.taskId !== prior && (delivered.length > writes || status(w) === 'succeeded' || status(w) === 'failed' || status(w) === 'waiting'));
+      if (delivered.length > writes) w.advance(1100);
+      await until(() => status(w) === 'succeeded' || status(w) === 'failed' || status(w) === 'waiting');
+      assert.equal(status(w), expectedStatus, `${name}: ${ownerText}`);
+      assert.equal(proposal, undefined, ownerText);
+      return (await page(w, 'bunny', 'recent')).messages.filter(message => message.role === 'tool').at(-1)?.text;
+    };
+    const argumentsFor = (owner: string, target: string, settings: Record<string, unknown>) => ({owner, target, arguments: JSON.stringify(settings)});
+    for (const row of phrases) {
+      const tool = catalogTool(row.family);
+      const previous = delivered.length;
+      const refusal = await ask(row.refuse.say, tool, argumentsFor(row.refuse.owner ?? row.owner, row.refuse.selector ?? row.selector,
+        row.refuse.settings ?? row.settings));
+      assert.equal(delivered.length, previous, row.family);
+      assert.equal(refusal, `refused: ${row.refuse.code}`, row.family);
+      await ask(row.say, tool, argumentsFor(row.owner, row.selector, row.settings));
+      assert.equal(delivered.length, previous + 1, row.family);
+      const write = delivered[previous];
+      assert.ok(write?.valid === true, row.family);
+      const effect = write.data;
+      assert.ok(effect.family === 'catalog-action', row.family);
+      assert.equal(effect.command, row.family);
+      assert.equal(effect.target, row.target);
+      assert.equal(effect.binding.owner, row.owner);
+      const namedGuards = row.family === 'wemo-hold-release' ? {heldRequestId: 'held-operation'} :
+        row.family === 'nanoleaf-reactive-preset-save' ? {presetId: 'preset-evening-glow', expectedRevision: 7} :
+          row.family === 'music-lighting-control' ? {generation: 'active-show'} :
+            row.family === 'art-show' ? {guards: []} : {};
+      if (row.family === 'moment-play') {
+        assert.partialDeepStrictEqual(effect.data, {...row.settings, priorityClass: 'flourish', coversStatus: false, toleranceMs: 2000});
+        assert.equal(typeof effect.data.startAtMs, 'number');
+        assert.match(String(effect.data.momentId), /^[\da-f-]{36}$/u);
+      } else assert.deepEqual(effect.data, {...(row.expected ?? row.settings), ...namedGuards});
+      if (row.family === 'media-start') {
+        const outsidePreview = '44444444-4444-4444-8444-444444444444';
+        await ask(`Start id:${outsidePreview} on Kitchen Display.`, tool,
+          argumentsFor(row.owner, row.selector, {playlistId: outsidePreview}),
+          [ownerReference('primary', 'Kitchen Display'), ownerReference('playlist', `id:${outsidePreview}`)]);
+        assert.equal(delivered.length, previous + 2, 'an exact playlist outside the preview reaches the owner writer');
+        assert.deepEqual(delivered.at(-1)?.data.data, {playlistId: outsidePreview});
+      }
+      if (row.family === 'wemo-hold-release') {
+        await ask('Release the hold on Bench Plug, excluding held-operation.', tool,
+          argumentsFor(row.owner, row.selector, {}),
+          [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'held-operation', 'named', 'request', 'exclude')]);
+        assert.equal(delivered.length, previous + 1, 'an excluded held operation is never filled in from device state');
+        assert.equal(await ask('Release the hold from old-operation on Bench Plug.', tool, argumentsFor(row.owner, row.selector, {}),
+          [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'old-operation')]), 'refused: not-found');
+        assert.equal(delivered.length, previous + 1, 'an omitted operation argument cannot substitute the current hold for an earlier cited operation');
+        await ask('Release the hold for id:held-operation on Bench Plug.', tool, argumentsFor(row.owner, row.selector, {}),
+          [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'id:held-operation')]);
+        assert.equal(delivered.length, previous + 2, 'a cited exact current operation can supply the omitted argument');
+        assert.deepEqual(delivered.at(-1)?.data.data, {heldRequestId: 'held-operation'});
+      }
+      if (row.family === 'pixoo-playlist-change') {
+        const itemIds = Array.from({length: 26}, (_, i) => `33333333-3333-4333-8333-${String(i + 1).padStart(12, '0')}`);
+        const change = {operation: 'order', playlistId: '11111111-1111-4111-8111-111111111111', revision: 7, itemIds};
+        await ask(`Reorder Evening Loop on Kitchen Display to ${itemIds.join(', ')}.`, tool,
+          argumentsFor(row.owner, row.selector, {change: {...change, playlistId: 'Evening Loop'}}),
+          [ownerReference('primary', 'Kitchen Display'), ownerReference('playlist', 'Evening Loop'),
+            ...itemIds.map(id => ownerReference('playlist-item', id))]);
+        assert.equal(delivered.length, previous + 2, 'a supported long playlist order is admitted');
+        assert.deepEqual(delivered.at(-1)?.data.data, {change});
+      }
+      if (row.family === 'nanoleaf-reactive-preset-save') {
+        await ask('Change id:preset-evening-glow, excluding Evening Glow.', tool,
+          argumentsFor(row.owner, row.selector, {...row.settings, presetId: 'preset-evening-glow'}),
+          [ownerReference('preset', 'id:preset-evening-glow'), ownerReference('preset', 'Evening Glow', 'named', 'request', 'exclude')]);
+        assert.equal(delivered.length, previous + 1, 'a preset excluded by label cannot change by ID');
+      }
+      if (row.family === 'scene-activate') {
+        assert.ok(offeredScene);
+        const schema = host === 'anthropic' ? offeredScene.input_schema : offeredScene.parameters;
+        assert.ok(schema);
+        assert.deepEqual([...schema.required].sort(), ['arguments', 'owner', 'references', 'target']);
+        assert.equal(schema.properties.arguments?.type, 'string');
+        assert.match(schema.properties.arguments?.description ?? '', /exact scene name, exact scene ID, or "last-activated"/u);
+        assert.match(offeredScene.description, /resolves.*selected light.*current grants/u);
+        assert.match(offeredScene.description, /missing or ambiguous.*clarification.*sends nothing/iu);
+        const oldScene = 'scene-' + 'a'.repeat(64), dusk = 'scene-' + 'd'.repeat(64);
+        await ask('Set Studio Wall to Dusk instead of Northern Lights.', tool, argumentsFor(row.owner, row.selector, {sceneId: 'Dusk'}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Dusk'),
+            ownerReference('scene', 'Northern Lights', 'named', 'request', 'exclude')]);
+        assert.equal(delivered.length, previous + 2);
+        assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: dusk});
+        assert.equal(await ask(`Set Studio Wall to id:${dusk}, exclude Dusk.`, tool,
+          argumentsFor(row.owner, row.selector, {sceneId: dusk}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${dusk}`),
+            ownerReference('scene', 'Dusk', 'named', 'request', 'exclude')]), 'refused: not-found');
+        assert.equal(delivered.length, previous + 2, 'excluded names cannot dispatch through aliases of the same scene');
+        assert.equal(await ask('Set Studio Wall to Missing Scene, not Dusk.', tool, argumentsFor(row.owner, row.selector, {sceneId: 'Missing Scene'}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Missing Scene'),
+            ownerReference('scene', 'Dusk', 'named', 'request', 'exclude')]), 'refused: not-found');
+        assert.equal(delivered.length, previous + 2, 'a missing named scene sends no command and the excluded scene is not substituted');
+        const useLatest = argumentsFor(row.owner, row.selector, {sceneId: 'last-activated'});
+        const latest = [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')];
+        await ask('Use the last scene I activated on Studio Wall.', tool, useLatest, latest);
+        assert.equal(delivered.length, previous + 3);
+        assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: dusk}, 'the latest successful activation wins on this target');
+
+        const earlier = operationReceipts[0] ?? assert.fail('earlier scene receipt');
+        const later = operationReceipts.at(-1) ?? assert.fail('later scene receipt');
+        earlier.sentAtMs = later.sentAtMs + 1;
+        await ask('Use the last scene I activated on Studio Wall.', tool, useLatest, latest);
+        assert.equal(delivered.length, previous + 4);
+        assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: oldScene}, 'Core receipt order supersedes Conversation task order');
+
+        const sceneRequest = 'Use the last scene I activated on Studio Wall.';
+        const latestReceipt = operationReceipts.at(-1) ?? assert.fail('latest scene receipt');
+        let reads = 0;
+        const intervening = 'intervening-scene';
+        beforeOperationRead = () => {
+          if (++reads !== 2) return;
+          operationReceipts.push({...latestReceipt, id: operationEntityId(intervening), requestId: intervening,
+            requestedBy: 'bunny/mcp/other-client', sentAtMs: latestReceipt.sentAtMs + 1});
+        };
+        assert.equal(await ask(sceneRequest, tool, useLatest, latest),
+          'refused: Which saved scene would you like to activate on this light?');
+        assert.equal(delivered.length, previous + 4, 'an operation that arrived between proposal and dispatch prevents a write');
+        assert.equal(operationReceipts.pop()?.requestId, intervening);
+
+        beforeOperationRead = () => {receiptDenied = latestReceipt.requestId;};
+        await ask(sceneRequest, tool, useLatest, latest, 'waiting');
+        assert.equal(delivered.length, previous + 4, 'revocation during the receipt read prevents a write');
+        assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which saved scene/u);
+        receiptDenied = undefined;
+        beforeOperationRead = () => {};
+
+        sceneReceiptStatus = 'uncertain';
+        const answer = `Use id:${oldScene}.`;
+        proposal = {ownerText: answer, name: tool, input: {
+          ...argumentsFor(row.owner, row.selector, {sceneId: oldScene}),
+          references: [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${oldScene}`, 'named', 'answer')],
+        }};
+        assert.equal((await input(w.core, w.module(), answer, true)).status, 'accepted');
+        await until(() => delivered.length === previous + 5);
+        w.advance(1100);
+        await until(() => status(w) === 'succeeded');
+        sceneReceiptStatus = 'completed';
+      }
+    }
+
+    const lampsStart = delivered.length;
+    const lampsTool = catalogTool('device-mode-set');
+    const mode = {mode: 'free'};
+    const lifxOwner = 'bunny/modules/lifx';
+    const nanoleafOwner = 'bunny/modules/nanoleaf';
+    const lifxId = 'id:fixture-lifx-shared';
+    const nanoleafId = 'id:fixture-nanoleaf-shared';
+    const lampRequest = 'Set Shared Lamp to free mode.';
+    const unqualified = [ownerReference('primary', 'Shared Lamp')];
+    await ask(lampRequest, lampsTool, argumentsFor(lifxOwner, 'Shared Lamp', mode), unqualified, 'waiting');
+    assert.equal(delivered.length, lampsStart, 'the model owner cannot resolve two visible devices with the same label');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which device/u);
+
+    const chooseLamp = `Use ${lifxId}.`;
+    proposal = {ownerText: chooseLamp, name: lampsTool, input: {
+      ...argumentsFor(lifxOwner, lifxId, mode),
+      references: [ownerReference('primary', lifxId, 'named', 'answer')],
+    }};
+    assert.equal((await input(w.core, w.module(), chooseLamp, true)).status, 'accepted');
+    await until(() => delivered.length === lampsStart + 1 && status(w) === 'succeeded');
+    assert.equal(delivered.at(-1)?.data.target, 'fixture-lifx-shared');
+
+    await ask('Set LIFX Shared Lamp to free mode.', lampsTool, argumentsFor(lifxOwner, 'Shared Lamp', mode),
+      [ownerReference('primary', 'LIFX Shared Lamp')]);
+    assert.equal(delivered.length, lampsStart + 2, 'a verbatim owner-qualified label resolves without another question');
+    assert.equal(delivered.at(-1)?.data.target, 'fixture-lifx-shared');
+    assert.equal(await ask(`Set ${lifxId} to free mode.`, lampsTool, argumentsFor(nanoleafOwner, lifxId, mode),
+      [ownerReference('primary', lifxId)]), 'refused: not-found');
+    assert.equal(delivered.length, lampsStart + 2, 'an exact ID cannot be dispatched through a false owner claim');
+
+    for (const presence of ['hidden', 'absent'] as const) {
+      sharedLamp = presence;
+      const before = delivered.length;
+      await ask(lampRequest, lampsTool, argumentsFor(lifxOwner, 'Shared Lamp', mode), unqualified);
+      assert.equal(delivered.length, before + 1, 'one visible match is unambiguous');
+      assert.equal(delivered.at(-1)?.data.target, 'fixture-lifx-shared');
+      assert.equal(await ask(`Set ${nanoleafId} to free mode.`, lampsTool, argumentsFor(nanoleafOwner, nanoleafId, mode),
+        [ownerReference('primary', nanoleafId)]), 'refused: not-found');
+      assert.equal(delivered.length, before + 1, 'hidden and absent exact targets have the same refusal');
+    }
+    sharedLamp = 'visible';
+
+    const offlineStart = delivered.length;
+    pixooState = {availability: 'unavailable'};
+    const pixooSettings = phrases.filter(({family}) => family === 'pixoo-now-playing-set' || family === 'pixoo-moments-set');
+    assert.equal(pixooSettings.length, 2);
+    for (const row of pixooSettings) {
+      const before = delivered.length;
+      await ask(row.say, catalogTool(row.family), argumentsFor(row.owner, row.selector, row.settings));
+      assert.equal(delivered.length, before + 1, `${row.family} reaches the tracked dispatcher while offline`);
+      assert.partialDeepStrictEqual(delivered.at(-1)?.data, {family: 'catalog-action', command: row.family,
+        target: row.target, binding: {kind: 'device', owner: row.owner}, data: row.settings});
+    }
+    assert.equal(delivered.length, offlineStart + 2, 'offline local preference writes reach the tracked dispatcher');
+    const media = phrases.find(({family}) => family === 'pixoo-media-show') ?? assert.fail('media fixture');
+    assert.equal(await ask(media.say, catalogTool(media.family), argumentsFor(media.owner, media.selector, media.settings)),
+      'refused: unavailable');
+    assert.equal(delivered.length, offlineStart + 3, 'the tracked dispatcher decides whether the physical write may proceed');
+
+    pixooState = {...pixooState, held: {requestId: 'pixoo-hold', heldAtMs: 1000}};
+    for (const row of pixooSettings) {
+      assert.equal(await ask(row.say, catalogTool(row.family), argumentsFor(row.owner, row.selector, row.settings)),
+        'refused: unavailable');
+    }
+    assert.equal(delivered.length, offlineStart + 3, 'owner-local preferences send no command under a hold');
+    pixooState = {availability: 'available'};
+
+    const assetId = '22222222-2222-4222-8222-222222222222';
+    const assetTool = catalogTool('pixoo-asset-change');
+    const deleteAsset = (id: string, owner = 'bunny/modules/pixoo') =>
+      argumentsFor(owner, 'new-pixoo', {change: {operation: 'delete', assetId: id}});
+    const priorWrites = delivered.length;
+    await ask(`Delete asset id:${assetId} on id:new-pixoo.`, assetTool, deleteAsset(assetId, 'bunny/modules/nanoleaf'),
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', `id:${assetId}`)]);
+    for (const name of ['Sunrise', 'Missing Sunrise']) {
+      const refusal = await ask(`Delete asset ${name} on id:new-pixoo.`, assetTool, deleteAsset(assetId),
+        [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', name)]);
+      assert.equal(refusal, 'refused: invalid-request', name);
+    }
+    const redirected = await ask('Delete asset Missing Sunrise on id:new-pixoo, then show it.', assetTool, deleteAsset(assetId),
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'Missing Sunrise')]);
+    assert.equal(redirected, 'refused: invalid-request');
+    for (const modifier of ['named Missing Sunrise', 'called “Missing Sunrise”', '“Missing Sunrise”', 'Missing Sunrise', ', Missing Sunrise,']) {
+      const result = await ask(`Delete that asset${modifier.startsWith(',') ? '' : ' '}${modifier} on id:new-pixoo.`, assetTool, deleteAsset(assetId),
+        [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'Missing Sunrise')]);
+      assert.equal(result, 'refused: invalid-request', modifier);
+    }
+    assert.equal(delivered.length, priorWrites, 'neither a replacement name nor an unrelated trailing pronoun selects the previous original');
+    const playlistTool = catalogTool('pixoo-playlist-change');
+    assert.equal(await ask('Delete the Morning Loop playlist on Kitchen Display.', playlistTool,
+      argumentsFor('bunny/modules/pixoo', 'Kitchen Display', {change: {operation: 'delete', playlistId: '11111111-1111-4111-8111-111111111111'}}),
+      [ownerReference('primary', 'Kitchen Display'), ownerReference('playlist', 'Morning Loop')]), 'refused: invalid-request');
+    const sceneTool = catalogTool('scene-activate');
+    assert.equal(await ask('Activate Old Sunrise on Studio Wall.', sceneTool,
+      argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: 'scene-' + 'a'.repeat(64)}),
+      [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Old Sunrise')]), 'refused: invalid-request');
+    assert.equal(delivered.length, priorWrites, 'ordinary current scene and playlist names cannot inherit stale IDs');
+    await ask('Delete it on id:new-pixoo.', assetTool, deleteAsset(assetId),
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'it', 'prior')]);
+    assert.equal(delivered.length, priorWrites + 1);
+    assert.deepEqual(delivered[priorWrites]?.data.data, {change: {operation: 'delete', assetId}});
+
+    const prior = delivered.length;
+    const drafts = new ShowDrafts(w.host().moduleDatabase() ?? assert.fail('draft database'));
+    await ask('Create an ocean draft without a name.', 'create_light_show_draft', {name: '', starter: 'ocean'});
+    assert.deepEqual(drafts.list(0, 1, '', () => true), []);
+    await ask('Start a draft named Blue Hour with the ocean timeline.', 'create_light_show_draft', {name: 'Blue Hour', starter: 'ocean'});
+    const draft = drafts.list(0, 1, '', () => true)[0] ?? assert.fail('created Blue Hour draft');
+    await ask('In revision zero of Blue Hour set the first cue to 40 percent.', 'edit_light_show_cue',
+      {draftId: 'Blue Hour', revision: 0, cue: '1', changes: '{"intensity":0.4}'});
+    assert.equal(drafts.read(draft.id)?.revision, draft.revision);
+    await ask('In that draft, dim the first cue to 40 percent.', 'edit_light_show_cue',
+      {draftId: 'Blue Hour', revision: -1, cue: '1', changes: '{"intensity":0.4}'},
+      [ownerReference('draft', 'that draft', 'prior'), ownerReference('cue', 'first cue')]);
+    const current = drafts.read(draft.id) ?? assert.fail('edited Blue Hour draft');
+    assert.equal(current.revision, draft.revision + 1);
+    assert.equal(current.value.timeline.cues[0]?.intensity, 0.4);
+    assert.equal(delivered.length, prior, 'drafting is local');
+
+    assert.equal(await ask('Save the old revision of Blue Hour as First Cut.', 'save_light_show',
+      {draftId: 'Blue Hour', revision: draft.revision, versionName: 'First Cut'}), 'refused: revision-conflict');
+    assert.equal(delivered.length, prior);
+    await ask('Save the current Blue Hour draft as First Cut.', 'save_light_show',
+      {draftId: 'Blue Hour', revision: -1, versionName: 'First Cut'});
+    assert.equal(delivered.length, prior + 1);
+    const saved = delivered[prior];
+    assert.ok(saved?.valid === true);
+    assert.partialDeepStrictEqual(saved.data, {family: 'catalog-action', command: 'nanoleaf-show-save', target: 'shows',
+      data: {showId: draft.id, timeline: current.value.timeline, versionName: 'First Cut', expectedVersion: 0}});
+
+    modeDenied = true;
+    assert.equal(await ask('Switch the Hub to quiet for a while.', 'set_mode', {mode: 'quiet'}), 'refused: forbidden');
+    assert.equal(delivered.length, prior + 1);
+    modeDenied = false;
+    const switchIntent = (actionQuote: string, actionWord: string, modeQuote?: string) =>
+      ({kind: 'switch', actionQuote, actionWord, ...(modeQuote === undefined ? {} : {modeQuote})});
+    assert.match(await ask('Is the Hub in work mode?', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
+    assert.match(await ask('Can you explain quiet mode?', 'set_mode', {mode: 'quiet'}) ?? '', /^refused: this control needs a clear current owner request/u);
+    assert.match(await ask('Set the Hub to free mode.', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
+    const modeStatus = 'Is the Hub in work mode?';
+    assert.match(await ask(modeStatus, 'set_mode', {mode: 'work', intent: switchIntent(modeStatus, 'Is', 'work')}) ?? '',
+      /^refused: this control needs a clear current owner request/u);
+    const discussMode = 'Can you explain quiet mode?';
+    await ask(discussMode, 'set_mode', {mode: 'clarify', intent: switchIntent(discussMode, 'explain')});
+    assert.match(await ask('Can you explain quiet mode?', 'set_mode',
+      {mode: 'quiet', intent: switchIntent('switch to quiet', 'switch', 'quiet')}) ?? '', /^refused: this control needs a clear current owner request/u);
+    const polite = host === 'anthropic' ? 'I would like you to switch the Hub to quiet mode.' : 'Please switch the mode to quiet.';
+    assert.match(await ask(polite, 'set_mode', {mode: 'free', intent: switchIntent(polite, 'switch', 'quiet')}) ?? '',
+      /^refused: this control needs a clear current owner request/u);
+    assert.equal(delivered.length, prior + 1, 'a status read or a different requested mode authorizes no write');
+    await ask('Can you switch to quiet?', 'set_mode', {mode: 'quiet'});
+    assert.equal(delivered.length, prior + 2);
+    assert.ok(delivered[prior + 1]?.valid === true);
+    assert.partialDeepStrictEqual(delivered[prior + 1]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 7}});
+    await ask(polite, 'set_mode', {mode: 'quiet', intent: switchIntent(polite, 'switch', 'quiet')});
+    assert.equal(delivered.length, prior + 3);
+
+    const incompleteMode = host === 'anthropic' ? 'Switch the mode' : 'Change the mode to';
+    const modeAnswer = 'Free mode, please.';
+    await ask(incompleteMode, 'ask_owner', {text: 'Which mode should I explain?'}, undefined, 'waiting');
+    await w.restart();
+    await until(() => status(w) === 'waiting');
+    proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free', intent: switchIntent(modeAnswer, 'Free', 'Free')}};
+    assert.equal((await input(w.core, w.module(), modeAnswer, true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(delivered.length, prior + 3, 'an informational answer cannot fill in a mode after restart');
+
+    await ask(incompleteMode, 'set_mode', {mode: 'clarify', intent: switchIntent(incompleteMode, host === 'anthropic' ? 'Switch' : 'Change')}, undefined, 'waiting');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which mode should I switch the Hub to/u);
+    assert.equal(delivered.length, prior + 3, 'the model cannot fill in a missing mode');
+    await w.restart();
+    await until(() => status(w) === 'waiting');
+    proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free'}};
+    assert.equal((await input(w.core, w.module(), modeAnswer, true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(delivered.length, prior + 4);
+    assert.partialDeepStrictEqual(delivered[prior + 3]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'free', expectedRevision: 7}});
+
+    const ambiguous = 'Put Shared Wall in free mode.';
+    const modeTool = catalogTool('device-mode-set');
+    proposal = {ownerText: ambiguous, name: modeTool, input: {...argumentsFor('bunny/modules/nanoleaf', 'Shared Wall', {mode: 'free'}),
+      references: [ownerReference('primary', 'Shared Wall')]}};
+    assert.equal((await input(w.core, w.module(), ambiguous)).status, 'accepted');
+    await until(() => status(w) === 'waiting');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which device/);
+    assert.equal(delivered.length, prior + 4, 'an ambiguous device sends no command');
+
+    const answer = 'Use id:wall-right.';
+    proposal = {ownerText: answer, name: modeTool, input: {...argumentsFor('bunny/modules/nanoleaf', 'id:wall-right', {mode: 'free'}),
+      references: [ownerReference('primary', 'id:wall-right', 'named', 'answer')]}};
+    assert.equal((await input(w.core, w.module(), answer, true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(delivered.length, prior + 5);
+    assert.ok(delivered[prior + 4]?.valid === true);
+    assert.partialDeepStrictEqual(delivered[prior + 4]?.data, {family: 'catalog-action', command: 'device-mode-set', target: 'wall-right',
+      binding: {kind: 'device', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}}, data: {mode: 'free'}});
+    const beforeUnknown = delivered.length;
+    await ask('Use the last scene I activated on Studio Wall.', sceneTool,
+      argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: 'last-activated'}),
+      [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')], 'waiting');
+    assert.equal(delivered.length, beforeUnknown, 'an uncertain newer activation does not fall back to an older receipt');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which saved scene/u);
+
+    const scene = 'scene-' + 'd'.repeat(64);
+    const explicit = `Use id:${scene}.`;
+    proposal = {ownerText: explicit, name: sceneTool, input: {
+      ...argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: scene}),
+      references: [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${scene}`, 'named', 'answer')],
+    }};
+    assert.equal((await input(w.core, w.module(), explicit, true)).status, 'accepted');
+    await until(() => delivered.length === beforeUnknown + 1);
+    w.advance(1100);
+    await until(() => status(w) === 'succeeded');
+    const tracked = operationReceipts.at(-1) ?? assert.fail('clarified scene receipt');
+    const requestId = 'other-client-activation';
+    operationReceipts.push({...tracked, id: operationEntityId(requestId), requestId, requestedBy: 'bunny/mcp/other-client',
+      sentAtMs: tracked.sentAtMs + 1, updatedAtMs: tracked.updatedAtMs + 1});
+    await ask('Use the last scene I activated on Studio Wall.', sceneTool,
+      argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: 'last-activated'}),
+      [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')], 'waiting');
+    assert.equal(delivered.length, beforeUnknown + 1, 'a newer activation from another client prevents a stale substitution');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which saved scene/u);
   });
 }

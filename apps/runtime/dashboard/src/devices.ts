@@ -1,6 +1,7 @@
 // General device controls copied onto the 2.0 contracts (Hub #922). No device transport lives in the browser.
 import type {DeviceCommand, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {frontendCommandView, type FrontendCommandView} from '@jimmie-potts/sdk/frontend';
 import type {BrowserAction} from './actions.ts';
 
 type Intent<C> = C extends {family: infer F; data: infer D} ? {family: F; data: Omit<D, 'requestId' | 'expectedConfigurationRevision' | 'expectedGeneration'>} : never;
@@ -42,23 +43,18 @@ export function deviceAction(record: DeviceRecord, intent: DeviceIntent, request
 }
 
 /** A tracked outcome is distinct from desired state and transport acceptance. A late definitive outcome unlocks it. */
-export function operationView(operation: OperationRecord): {text: string; locked: boolean} {
+export function operationView(operation: OperationRecord): FrontendCommandView {
   const code = operation.error?.code;
   switch (operation.status) {
-    case 'sent': return {text: 'Requested. Waiting for acceptance.', locked: true};
-    case 'accepted': return {text: 'Accepted. Waiting for completion.', locked: true};
-    case 'rejected': return {text: `Refused${code === undefined ? '' : ` (${code})`} without changing state.`, locked: false};
-    case 'expired': return {text: 'Expired before the command reached its owner. Nothing was sent to the device.', locked: false};
-    case 'conflict': return {text: 'Conflicting outcomes. Controls are locked until the operation is resolved.', locked: true};
-    case 'uncertain': return {text: 'Uncertain result. The command may have taken effect; it was not sent again.', locked: true};
-    case 'completed': {
-      if (operation.result === 'uncertain' || operation.result === 'conflict') return {text: 'Uncertain result. The command may have taken effect; it was not sent again.', locked: true};
-      if (operation.result === 'succeeded' && (operation.family === 'mode-set' || operation.family === 'mode-override-set')) return {text: 'Choice saved. Device results are separate.', locked: false};
-      if (operation.result === 'succeeded' && operation.family === 'art-show') return {text: 'Show handed off. Each surface has its own result below.', locked: false};
-      const effect = operation.evidence === 'observed' ? 'The module observed the result.'
-        : operation.evidence === 'transmitted' ? 'Transmitted; physical effect was not observed.' : 'No evidence of a device effect.';
-      return {text: `Completed: ${operation.result ?? 'unknown'}${code === undefined ? '' : ` (${code})`}. ${effect}`, locked: false};
-    }
+    case 'sent': return frontendCommandView({kind: 'requested'});
+    case 'accepted': return frontendCommandView({kind: 'accepted'});
+    case 'rejected': return frontendCommandView({kind: 'refused', code});
+    case 'expired': return frontendCommandView({kind: 'expired'});
+    case 'conflict': return frontendCommandView({kind: 'conflict'});
+    case 'uncertain': return frontendCommandView({kind: 'uncertain'});
+    case 'completed':
+      if (operation.result === 'uncertain' || operation.result === 'conflict') return frontendCommandView({kind: 'uncertain'});
+      return frontendCommandView({kind: 'completed', result: operation.result, family: operation.family, code, evidence: operation.evidence});
   }
 }
 

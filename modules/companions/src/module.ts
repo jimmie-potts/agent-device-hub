@@ -1,3 +1,4 @@
+import {codingRequirementsFromOwner, codingResourceGrants, type CodingResourceGrant} from './coding/resource-policy.js';
 import {readSpeechQualification} from './speech/qualification.js';
 import type {SpeechQualification} from './speech-qualification.js';
 import {replyRefusal, speechRefusal} from './presentation-policy.js';
@@ -35,9 +36,10 @@ const stateDraft = (data: CompanionState): StateDraft<CompanionState> => ({type:
 const receiptKey = (event: CompanionOpportunity): string => createHash('sha256').update(`${event.context}:${event.origin.source}:${event.origin.id}:${event.cue}`).digest('hex');
 type DeviceHistoryRead = NonNullable<AssistantOptions['deviceHistory']>;
 type RetainedArtworkRead = NonNullable<AssistantOptions['retainedArtwork']>;
+type CatalogIdentityRead = NonNullable<AssistantOptions['readCatalogIdentity']>;
 export const isCompanionsModule = (module: BunnyModule): module is CompanionsModule =>
   module.manifest.name === 'companions' && 'setArtCatalog' in module && typeof module.setArtCatalog === 'function';
-export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtworkRead): void; setDeviceHistory(read: DeviceHistoryRead): void; inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; stopCodingJob(jobId: string, operationId: string): Promise<Reply>; pending(): number};
+export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtworkRead): void; setDeviceHistory(read: DeviceHistoryRead): void; setCatalogIdentity(read: CatalogIdentityRead): void; inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; stopCodingJob(jobId: string, operationId: string): Promise<Reply>; pending(): number};
 /** The name under the section's `secrets` of the file holding the hosted provider's API key. */
 export const API_KEY_SECRET = 'anthropic-api-key';
 export const OPENAI_KEY_SECRET = 'openai-responses-api-key';
@@ -47,7 +49,7 @@ export const OPENAI_KEY_SECRET = 'openai-responses-api-key';
  * tool names, prices and local monthly spend guard; a hosted provider needs its key file under `secrets`. The one provider and model serve every profile,
  * B.U.N.N.Y., Reachy and MicroDuck (Hub #2026). An empty section keeps every default and makes no network call.
  */
-export type CompanionsConfig = {readonly sharing?: readonly SharingGrant[]; readonly assistant: {readonly tools: readonly string[]; readonly historyTimeZone?: string} &
+export type CompanionsConfig = {readonly codingResources?: readonly CodingResourceGrant[]; readonly sharing?: readonly SharingGrant[]; readonly assistant: {readonly tools: readonly string[]; readonly historyTimeZone?: string} &
   ({readonly provider: 'synthetic'} | {readonly provider: 'anthropic' | 'openai'; readonly model: string; readonly effort: Effort;
     readonly titleModel: string; readonly prices: PriceTable; readonly monthlyLimitMicros: number;
     readonly openAI?: {readonly model: string; readonly effort: Effort}})};
@@ -97,10 +99,12 @@ function supportedTimeZone(value: unknown): value is string {
   }
 }
 export function configureCompanions(section: unknown): Configured<CompanionsConfig> | ErrorBody {
-  if (!isObject(section) || !only(section, ['assistant', 'secrets', 'sharing'])) return refuse('the companions section has only assistant, secrets and sharing');
+  if (!isObject(section) || !only(section, ['assistant', 'secrets', 'sharing', 'codingResources'])) return refuse('the companions section has only assistant, secrets, sharing and codingResources');
   const grants = parseSharingGrants(section.sharing);
   if (grants === undefined) return refuse('sharing must list valid field grants');
-  const configuredSharing = grants.length === 0 ? {} : {sharing: grants};
+  const resources = codingResourceGrants(section.codingResources);
+  if (resources === undefined) return refuse('codingResources must list allowed destinations for each named resource');
+  const configuredSharing = {...(grants.length === 0 ? {} : {sharing: grants}), ...(resources.length === 0 ? {} : {codingResources: resources})};
   const assistant = section.assistant === undefined ? {} : section.assistant;
   if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'titleModel', 'tools', 'prices', 'monthlyLimit', 'openAI', 'historyTimeZone'])) return refuse('assistant has only provider, model, effort, titleModel, tools, prices, monthlyLimit, openAI and historyTimeZone');
   const {historyTimeZone} = assistant;
@@ -151,12 +155,14 @@ export function createCompanionsModule(options: CompanionsOptions = {}): Compani
     upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
     setArtCatalog: read => {engine.retainedArtwork = read;},
     setDeviceHistory: read => {engine.deviceHistory = read;},
+    setCatalogIdentity: read => {engine.catalogIdentity = read;},
     start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), inspectSpeech: () => engine.speech?.inspect(), inspectCoding: () => engine.coding?.inspect(),
     stopCodingJob: (jobId, operationId) => engine.coding?.stopJob(jobId, operationId) ?? Promise.resolve(errorBody('unavailable')), pending: () => engine.pending()};
 }
 class Companions {
   retainedArtwork: RetainedArtworkRead | undefined;
   deviceHistory: DeviceHistoryRead | undefined;
+  catalogIdentity: CatalogIdentityRead | undefined;
   speech: SpeechCoordinator | undefined;
   coding: CodingCoordinator | undefined;
   assistant: AssistantEngine | undefined;
@@ -248,14 +254,17 @@ class Companions {
     // A waiting hand-off is sent only while its task still waits on it, so a cancel that the coordinator missed, as during
     // a stop, still sends nothing.
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
-      briefRefusal: brief => this.assistant === undefined ? 'unverified-supervisor' : this.assistant.codingBriefRefusal(brief),
+      allowResource: (_brief, resource, destination) => (context.config as CompanionsConfig | undefined)?.codingResources?.some(
+        grant => grant.kind === resource.kind && grant.id === resource.id && grant.destinations.includes(destination)) === true,
+      briefRefusal: brief => this.assistant === undefined ? 'unverified-supervisor' : this.assistant.codingBriefRefusal(brief, null),
+      allowDestination: (brief, destination) => this.assistant !== undefined && this.assistant.codingBriefRefusal(brief, destination) === undefined,
       jobQueued: (job, add, parent) => this.assistant?.codingJobQueued(job, add, parent),
       jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
       jobVisible: (job, companion) => this.assistant?.canReadCodingJob(companion, job) === true,
       legacyOperationVisible: ({companion, taskId, operationId}) => this.assistant?.canReadLegacyCodingOperation(companion, taskId, operationId) === true,
       jobBriefVisible: (job, companion) => this.assistant?.canReadCodingJobBrief(companion, job) === true,
-      allowMessage: (job, companion) => this.assistant?.canMessageCodingJob(companion, job) === true,
+      allowMessage: (job, companion, destination) => this.assistant?.canMessageCodingJob(companion, job, destination) === true,
       awaits: taskId => {
         const task = this.assistant?.store.task(taskId);
         return task !== undefined && !['succeeded', 'failed', 'cancelled'].includes(task.status) && task.question?.kind === 'delegation' && task.question.answer === null;
@@ -266,10 +275,12 @@ class Companions {
     // An approved hand-off goes to the core now when its companion's slot is free, or waits for it (Hub #2028).
     const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => coding.handOff(data, parent));
     this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context), share,
+      readCatalogIdentity: (query, timeoutMs) => (this.catalogIdentity ?? this.options.readCatalogIdentity)?.(query, timeoutMs) ?? Promise.resolve(errorBody('unavailable')),
       deviceHistory: query => (this.deviceHistory ?? this.options.deviceHistory)?.(query) ?? errorBody('unavailable'),
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries,
       // The owner's knowledge notes reach a companion's context only once the owner turns them on for it (Hub #2029).
       knowledge: () => this.knowledge?.store.active().entries ?? [], speak,
+      codingRequirements: text => codingRequirementsFromOwner(text, (context.config as CompanionsConfig | undefined)?.codingResources),
       coding: this.options.coding ?? (() => coding.endpoint()), delegate, backgroundCoding: this.options.delegate === undefined, codingJob: requestId => coding.jobForAttempt(requestId), codingJobRead: (...args) => coding.jobRead(...args), stopCodingJob: (jobId, operationId) => coding.prepareStop(jobId, operationId),
       readJobStatus: jobId => coding.jobs('', true, jobId).jobs[0],
       continueCodingJob: (data, parent) => coding.prepareContinuation(data, parent),
@@ -361,7 +372,7 @@ class Companions {
         }, request);
       }
       return context.sdk.request('bunny.cmd.assistant-dispatch.assistant',
-        {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data}, request);
+        {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.observationBasis !== undefined ? '2.4' : data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data}, request);
     });
     const prices = options.prices ?? (assistant !== undefined && assistant.provider !== 'synthetic' ? assistant.prices : undefined);
     const monthlyLimitMicros = options.monthlyLimitMicros ?? (assistant !== undefined && assistant.provider !== 'synthetic' ? assistant.monthlyLimitMicros : undefined);

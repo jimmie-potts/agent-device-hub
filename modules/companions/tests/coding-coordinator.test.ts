@@ -3,12 +3,12 @@ import {test, type TestContext} from 'node:test';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingDispatch, type CodingHarnessReadiness, type CodingProgress, type CodingReadiness, type CodingResult, type CodingState, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingDestination, type CodingDispatch, type CodingHarnessReadiness, type CodingProgress, type CodingReadiness, type CodingResult, type CodingState, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, Outbox, type Command, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import {CodingCoordinator, GRACE_MS, SETUP_MS, START_MS, describeResult, type HandOffAnswer} from '../src/coding/coordinator.js';
+import {CodingCoordinator, GRACE_MS, SETUP_MS, START_MS, describeResult, type HandOffAnswer, type CodingSeams} from '../src/coding/coordinator.js';
 import {initializeRevision} from '../src/revision.js';
 import {slotBusy} from '../src/frontend/coding-status.js';
 const parent = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
@@ -19,7 +19,7 @@ async function until(check: () => boolean): Promise<void> {
 const result = (): CodingResult => ({outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'b'.repeat(40), changedFiles: ['scripts/readout.mjs'],
   checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: [], summary: 'Added the generator and its test.', sessionId: 'session-1', usage: {turns: 9, costUsd: 0.3, durationMs: 120000}});
 async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleContext = context => context,
-  mayShare: (taskId: string, repository: string) => boolean = () => true) {
+  mayShare: (taskId: string, repository: string) => boolean = () => true, seams: CodingSeams = {}) {
   let now = Date.now();
   const timers = new Set<{at: number; run(): void}>();
   const clock = {now: () => now}, scheduler = {after: (ms: number, run: () => void) => {const timer = {at: now + ms, run}; timers.add(timer); return () => {timers.delete(timer);};}};
@@ -34,7 +34,8 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
   let coreReply: 'forward' | 'refuse' | 'held' | 'held-forward' | 'lost-answer' = 'forward', release = (): void => {};
   const dispatched: string[] = [];
   await core.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
-    const selectionId = published.at(-1)?.data.selectionId;
+    const state = published.at(-1)?.data;
+    const selectionId = state?.workers?.find(item => item.endpointId === command.data.endpointId)?.selectionId ?? state?.selectionId;
     dispatched.push(command.data.requestId);
     if (coreReply === 'refuse') return errorBody('unavailable');
     // A held dispatch is answered only when the test releases it, by refusal, after the module that sent it stopped.
@@ -60,7 +61,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     const outbox = new Outbox({sdk: context.sdk, database: context.database(), clock, validator, log: context.log, trace: context.trace});
     // A task's companion is in its synthetic ID here; the module reads it from the engine's saved task.
     engine = new CodingCoordinator(context, outbox, (taskId, text, given, _evidence, startup) => {deliveries.push({taskId, text, parent: given, startup}); return Promise.resolve();},
-      {briefRefusal: ({taskId, repository}) => mayShare(taskId, repository) ? undefined : 'grant-denied', companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
+      {...seams, briefRefusal: ({taskId, repository}) => mayShare(taskId, repository) ? undefined : 'grant-denied', companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
         legacyOperationVisible: ({taskId, operationId}) => operationId === `${taskId}-step-1`,
         // A task waits on its hand-off until the test ends it, as a cancel the coordinator never heard of would.
         awaits: taskId => {if (unreadable.has(taskId)) throw new Error('synthetic store read failure'); return !finished.has(taskId);}, sent: taskId => {sent.push(taskId);}});
@@ -69,7 +70,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
   let host = make(); await host.start();
   t.after(async () => {await host.stop(); await Promise.all([core.close(), worker.close(), gateway.close(), module.close()]); await rm(dir, {recursive: true, force: true});});
   let n = 0;
-  return {owner: () => engine ?? assert.fail('started'), work, deliveries, outcomes, dispatched, finished, unreadable, sent, busy: (companion: CodingCompanion) => slotBusy(engine?.inspect(), companion), refuseWork: () => {workReply = 'capacity';}, core: (mode: typeof coreReply) => {coreReply = mode;}, release: () => {release();},
+  return {bus, clock, owner: () => engine ?? assert.fail('started'), work, deliveries, outcomes, dispatched, finished, unreadable, sent, busy: (companion: CodingCompanion) => slotBusy(engine?.inspect(), companion), refuseWork: () => {workReply = 'capacity';}, core: (mode: typeof coreReply) => {coreReply = mode;}, release: () => {release();},
     // An approved hand-off from a companion's task, bound to the endpoint revision the proposal saw.
     handOff: (taskId: string, expectedRevision = engine?.endpoint().revision ?? 0): Promise<HandOffAnswer> => (engine ?? assert.fail('started')).handOff({requestId: `${taskId}-step-1`, taskId,
       companion: /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny', repository: 'agent-device-hub', brief: 'Add a test.', expectedRevision}, parent),
@@ -682,4 +683,173 @@ void test('the coding-run receiver refuses a held explicit dispatch from a previ
     const start = w.work[0]?.data;
     assert.ok(start?.action === 'start' && start.harness === 'codex' && start.operationId === 'task-fresh-codex-step-1');
   } finally {w.release();}
+});
+
+void test('Mac and PC keep their own coding attempt, permission, stop and result after a peer disconnects', async t => {
+  let pcAllowed = true;
+  const w = await world(t, undefined, undefined, {allowDestination: (_brief, target) => target === 'mac' || target === 'pc' && pcAllowed});
+  const revision = 'd'.repeat(40);
+  const declare = async (destination: CodingDestination, pressure: 'high' | 'normal') => {
+    const source = destination === 'mac' ? CODING_WORKER_SOURCE : `${CODING_WORKER_SOURCE}-${destination}`;
+    const edge = w.bus.connect(source), endpoint = `fixture-${destination}`;
+    const harness: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', signedIn: 'yes', plan: 'plus', version: '1',
+      limits: null, limitsObservedAtMs: null, checkedAtMs: w.clock.now(), capabilities: {steering: 'live', resume: 'saved-session', review: true}};
+    const answer = await edge.request(`bunny.cmd.coding-endpoint.${endpoint}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpoint,
+      dataschema: 'https://bunny.invalid/events/coding-endpoint/2.5', data: {requestId: `register-${destination}`, action: 'enable', capacity: 'uncapped',
+        harnesses: [harness], worker: {os: destination === 'pc' ? 'windows' : 'macos', toolchains: ['node24'],
+          repositories: [{name: 'agent-device-hub', revision}], pressure, testSlots: destination === 'mac' ? 4 : 8}}}, {timeoutMs: 5000});
+    assert.equal(answer.status, 'accepted');
+    return edge;
+  };
+  const mac = await declare('mac', 'high'), pc = await declare('pc', 'normal');
+  const admit = (id: string, destination: 'pc' | 'mac' | 'auto', windows = false) => w.owner().handOff({taskId: id, companion: 'bunny',
+    conversationId: 'synthetic-room', requestId: id, repository: 'agent-device-hub', brief: 'Run the fixture check.', expectedRevision: w.owner().endpoint().revision,
+    choice: 'codex', destination, requirements: {revision, ...(windows ? {os: 'windows' as const} : {})}}, parent);
+  const report = (edge: typeof pc, endpoint: string, operationId: string, status: 'started' | 'completed') =>
+    edge.publish(`bunny.event.coding-progress.${endpoint}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpoint,
+      dataschema: 'https://bunny.invalid/events/coding-progress/2.3', data: status === 'started' ? {operationId, status, harness: 'codex',
+        sessionId: `session-${operationId}`, setup: 'ready'} : {operationId, status, harness: 'codex', result: {...result(),base:revision}}}, {parent});
+  const first = await admit('first', 'auto', true), second = await admit('second', 'mac');
+  assert.equal(first.status, 'queued'); assert.equal(second.status, 'queued');
+  await until(() => w.work.filter(c => c.data.action === 'start').length === 2);
+  assert.deepEqual(w.work.map(c => [c.data.operationId, c.subject, c.data.action === 'start' && c.data.revision]).sort(),
+    [['first','fixture-pc',revision],['second','fixture-mac',revision]]);
+  const dispatched = w.owner().jobDetail('first-job')?.attempts[0];
+  assert.equal(dispatched?.selectedDestination, 'pc');
+  assert.equal(dispatched?.actualDestination, undefined, 'sending a start is not a worker observation');
+  await admit('first', 'auto', true);
+  await report(pc, 'fixture-pc', 'first', 'started'); await report(mac, 'fixture-mac', 'second', 'started');
+  await until(() => w.owner().jobs().jobs.every(job => job.status === 'started'));
+  assert.equal(w.owner().jobDetail('first-job')?.attempts[0]?.actualDestination, 'pc');
+  assert.equal(w.owner().jobDetail('first-job')?.requestedDestination, 'auto');
+  await pc.publish('bunny.event.coding-progress.fixture-pc', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: 'fixture-pc',
+    dataschema: 'https://bunny.invalid/events/coding-progress/2.6', data: {operationId:'first',status:'native-client',clients:['terminal'],state:'available',observedAtMs:w.clock.now()}}, {parent});
+  assert.equal(w.owner().jobs().jobs.find(job => job.jobId === 'first-job')?.nativeClient, undefined);
+  await admit('pc-native', 'pc');
+  await until(() => w.work.some(command => command.data.operationId === 'pc-native'));
+  await report(pc, 'fixture-pc', 'pc-native', 'started');
+  await report(pc, 'fixture-pc', 'pc-native', 'completed');
+  await until(() => w.owner().jobDetail('pc-native-job')?.attempts[0]?.status === 'completed');
+  await pc.publish('bunny.event.coding-progress.fixture-pc', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: 'fixture-pc',
+    dataschema: 'https://bunny.invalid/events/coding-progress/2.6', data: {operationId: 'pc-native',status: 'native-client',clients:['terminal'],state:'available',observedAtMs:w.clock.now()}}, {parent});
+  assert.deepEqual(w.owner().prepareNativeClient({action: 'open-native-terminal', jobId: 'pc-native-job', operationId: 'pc-native',requestId: 'open-pc'}, parent), {code: 'unsupported-capability'});
+  assert.equal(w.owner().jobs().jobs.find(job => job.jobId === 'pc-native-job')?.nativeClient, undefined);
+  pcAllowed = false;
+  const denied = await admit('third', 'pc'); assert.equal(denied.status, 'rejected');
+  assert.match(denied.status === 'rejected' ? denied.error.error.detail ?? '' : '', /permission.*mac/iu);
+  await w.lost('fixture-pc'); await until(() => w.owner().jobDetail('first-job')?.attempts[0]?.status === 'uncertain');
+  const steer = w.owner().prepareMessage({jobId:'second-job',operationId:'second',requestId:'message-second',text:'Continue the synthetic check.'},parent);
+  assert.ok('committed' in steer); await steer.committed();
+  assert.equal(w.work.at(-1)?.subject,'fixture-mac');
+  await report(mac, 'fixture-mac', 'second', 'completed');
+  await until(() => w.owner().jobDetail('second-job')?.attempts[0]?.status === 'completed');
+  await w.restart();
+  assert.equal(w.owner().jobDetail('first-job')?.attempts[0]?.actualDestination,'pc');
+  assert.equal(w.owner().jobDetail('second-job')?.attempts[0]?.actualDestination,'mac');
+  assert.equal(w.work.filter(c => c.data.action === 'start').length,3);
+});
+
+void test('a refused or unanswered worker start retains selection without claiming an execution host after restart', async t => {
+  for (const refusal of [true, false]) {
+    const w = await world(t);
+    await w.control('enable');
+    if (refusal) w.refuseWork();
+    const reply = await w.owner().handOff({requestId: 'pending', taskId: 'task', companion: 'bunny', conversationId: 'fixture',
+      repository: 'agent-device-hub', brief: 'Run a synthetic check.', expectedRevision: w.owner().endpoint().revision}, parent);
+    assert.equal(reply.status, 'queued');
+    await until(() => w.work.length === 1);
+    if (refusal) await until(() => w.owner().jobDetail('pending-job')?.attempts[0]?.status === 'failed');
+    await w.restart();
+    const attempt = w.owner().jobDetail('pending-job')?.attempts[0];
+    assert.equal(attempt?.status, refusal ? 'failed' : 'uncertain');
+    assert.equal(attempt?.selectedDestination, 'mac');
+    assert.equal(attempt?.actualDestination, undefined);
+    assert.equal(w.work.length, 1);
+  }
+});
+
+void test('a declared cloud worker needs scoped workspace authority at admission and before tracked start', async t => {
+  const {CloudQualification} = await import('../src/coding/cloud-qualification.js');
+  let qualification: InstanceType<typeof CloudQualification> | undefined;
+  let sharing = true, steeringAllowed = true;
+  const w = await world(t, undefined, undefined, {
+    allowDestination: () => sharing, allowResource: () => true, allowMessage: () => steeringAllowed,
+    allowCloud: (scope, now) => qualification?.allows(scope, now) === true,
+  });
+  const destination = 'cloud-fixture', endpointId = 'fixture-cloud', revision = 'd'.repeat(40);
+  const edge = w.bus.connect(`${CODING_WORKER_SOURCE}-${destination}`);
+  t.after(() => edge.close());
+  const codex: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', signedIn: 'yes', plan: 'plus', version: '1',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: w.clock.now(), capabilities: {steering: 'live', resume: 'saved-session', review: true}};
+  assert.equal((await edge.request(`bunny.cmd.coding-endpoint.${endpointId}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpointId,
+    dataschema: 'https://bunny.invalid/events/coding-endpoint/2.5', data: {requestId: 'register-cloud', action: 'enable', capacity: 'uncapped',
+      harnesses: [{...codex, harness: 'claude-code'}, codex], worker: {os: 'linux', toolchains: ['node24'],
+        repositories: [{name: 'agent-device-hub', revision}], pressure: 'normal', testSlots: 2}}}, {timeoutMs: 5000})).status, 'accepted');
+  const selectionId = w.owner().inspect().workers?.find(worker => worker.endpointId === endpointId)?.selectionId;
+  assert.ok(selectionId !== undefined && selectionId.length > 0);
+  const operation = {destination, repository: 'agent-device-hub', revision, harness: 'codex' as const} as const;
+  const admit = (requestId: string, requested: CodingDestination | 'cloud' | 'auto', requirements?: {resource: {kind: 'installation' | 'device-proximity'; id: string}}) =>
+    w.owner().handOff({requestId, taskId: requestId, conversationId: 'synthetic-room', companion: 'bunny', repository: operation.repository,
+      brief: 'Run a fixture check.', expectedRevision: w.owner().endpoint().revision, destination: requested, requirements: {revision, ...requirements}}, parent);
+  assert.equal((await admit('no-lease', 'auto')).status, 'rejected');
+  const unavailable = await admit('no-lease', 'cloud');
+  assert.equal(unavailable.status, 'rejected');
+  assert.match(unavailable.status === 'rejected' ? unavailable.error.error.detail ?? '' : '', /unavailable or expired/);
+  assert.deepEqual(w.dispatched, []);
+  const qualify = async (operationId: string) => {
+    const subject = {...operation, operationId};
+    const allowance = {computeMs: 30_000, storageBytes: 1_000_000, chargeMicros: 0, expiresAtMs: w.clock.now() + 1000};
+    qualification = new CloudQualification({
+      accepts: () => true,
+      launch: () => Promise.resolve({...subject, endpointId, selectionId, workspaceId: 'workspace', enforced: allowance}),
+      teardown: (workspaceId, owner) => Promise.resolve({workspaceId, operationId: owner, workspaceRemoved: true, writerStopped: true, chargeMicros: 0}),
+    }, w.clock.now);
+    assert.equal(await qualification.launch(subject, {...subject, ...allowance}), true);
+  };
+  await qualify('expires-in-flight');
+  w.core('held-forward');
+  assert.equal((await admit('expires-in-flight', 'cloud')).status, 'queued');
+  await until(() => w.dispatched.includes('expires-in-flight'));
+  try {
+    await w.advance(1000);
+  } finally {w.release();}
+  await until(() => w.owner().jobDetail('expires-in-flight-job')?.attempts[0]?.status === 'failed');
+  assert.equal(w.work.length, 0, 'a lease that expired after tracked dispatch cannot disclose a brief');
+  assert.equal(await qualification?.cleanup(), true);
+  w.core('forward');
+  await qualify('exact');
+  sharing = false;
+  assert.equal((await admit('exact', destination)).status, 'rejected');
+  sharing = true;
+  assert.equal((await admit('exact', destination, {resource: {kind: 'installation', id: 'mac-runtime'}})).status, 'rejected');
+  assert.equal((await admit('exact', 'auto', {resource: {kind: 'device-proximity', id: 'fixture-display'}})).status, 'rejected');
+  assert.equal((await admit('different-job', 'cloud')).status, 'rejected');
+  assert.equal(w.work.length, 0);
+  assert.equal((await admit('exact', 'auto')).status, 'queued');
+  await until(() => w.work.length === 1);
+  const start = w.work[0]?.data;
+  assert.ok(start?.action === 'start');
+  assert.equal(start.harness, 'codex', 'Auto must choose the authorized harness even when Claude is fresh');
+  assert.equal(start.revision, revision);
+  await edge.publish('bunny.event.coding-progress.fixture-cloud', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpointId,
+    dataschema: 'https://bunny.invalid/events/coding-progress/2.3', data: {operationId: 'exact', status: 'started', harness: 'codex',
+      sessionId: 'session-exact', setup: 'ready'}}, {parent});
+  await until(() => w.owner().jobDetail('exact-job')?.attempts[0]?.status === 'started');
+  const message = (requestId: string) => w.owner().prepareMessage({jobId: 'exact-job', operationId: 'exact', requestId, text: 'Synthetic steer.'}, parent);
+  steeringAllowed = false;
+  assert.deepEqual(message('steer-denied'), {code: 'forbidden'});
+  steeringAllowed = true;
+  const steering = message('steer-in-scope');
+  assert.ok('committed' in steering);
+  await steering.committed();
+  assert.equal(w.work.at(-1)?.data.action, 'message');
+  const delayed = message('steer-delayed');
+  assert.ok('committed' in delayed);
+  await w.advance(1000);
+  await delayed.committed();
+  assert.equal(w.work.filter(command => command.data.action === 'message').length, 1);
+  await w.lost(endpointId);
+  await until(() => w.owner().jobDetail('exact-job')?.attempts[0]?.status === 'uncertain');
+  assert.equal(w.work.filter(command => command.data.action === 'start').length, 1);
+  assert.equal(await qualification?.cleanup(), true);
 });

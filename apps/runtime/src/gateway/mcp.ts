@@ -1,3 +1,4 @@
+import {observationBasis, type ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 // MCP on the runtime (Hub #835), through `packages/mcp` unchanged: each module's read tools from its manifest, named
 // `<module>_<tool>`, the core's operator action, `core_recover_approval`, which sends the 2.0 `approval-recover`
 // command, and `core_send_command`, which sends a device's command, a moment or a mode change through the core's
@@ -10,7 +11,7 @@ import {
   type McpHandler, type ServiceExtension,
 } from '@jimmie-potts/device-mcp';
 import {RETRYABLE, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {noSpans, startSpan, type ModuleTool, type SpanRecorder} from '@jimmie-potts/sdk';
+import {noSpans, startSpan, type deviceFacts, type ModuleTool, type SpanRecorder, type TraceContext} from '@jimmie-potts/sdk';
 import {Ajv2020, type ValidateFunction} from 'ajv/dist/2020.js';
 import type {ActionAnswer} from '../core/tracker.js';
 import {CORE_MODULE, ContributionFailed, ModuleUnavailable, type HostedModule} from '../host.js';
@@ -38,6 +39,10 @@ const resultSchema = (output: object, id: string): JsonSchema => ({
   properties: {result: {...output, $id: id}, error: ERROR_DETAIL},
 });
 
+export type DeviceLookupResult = {devices: readonly (ReturnType<typeof deviceFacts> | {
+  owner: string; id: string; name: string; lastReportedAvailability: string;
+})[]; unreadable: readonly string[]} | {matches: readonly {owner: string; id: string}[]; guidance: string; unreadable: readonly string[]};
+
 /** What the MCP gateway asks of the runtime: its modules, a call in a module's flow, and the core's recovery. */
 export type McpHost = {
   modules: () => readonly HostedModule[];
@@ -45,7 +50,8 @@ export type McpHost = {
   /** Sends `approval-recover` to the core as the credential's source; resolves with the reply or a refusal. */
   recover: (credentialId: string, input: {session: string; turnId: string; expectedRevision: number; requestId?: string}) => Promise<{status: 'accepted'; requestId: string} | ErrorBody>;
   /** Sends one action through the core's dispatcher as the credential's source (#782); resolves with its answer. */
-  dispatch: (credentialId: string, input: {family: string; target: string; data: Record<string, unknown>; requestId?: string}) => Promise<ActionAnswer>;
+  dispatch: (credentialId: string, input: {family: string; target: string; data: Record<string, unknown>; requestId?: string; observationBasis?: ObservationBasis}) => Promise<ActionAnswer>;
+  lookup: (credentialId: string, input: {owner: string; target: string}, parent: TraceContext) => Promise<DeviceLookupResult | ErrorBody>;
   access: Access;
   scheduler: {after: (delayMs: number, callback: () => void) => () => void};
   /** Records a module read tool's call as a `bunny.feed.read` span, as the gateway's content reads are (Hub #813). */
@@ -154,6 +160,42 @@ function recoverTool(host: McpHost): ServiceExtension {
   };
 }
 
+function deviceLookupTool(host: McpHost): ServiceExtension {
+  return {
+    inputSchema: {type: 'object', additionalProperties: false, properties: {
+      owner: {type: 'string', maxLength: 256}, target: {type: 'string', maxLength: 131},
+    }},
+    outputSchema: resultSchema({type: 'object'}, 'urn:bunny:tool:core:device_lookup:output'),
+    scope: 'read',
+    description: 'Read configured devices from their current owner records. Omit target to list devices, or pass its label or exact id:<device-id>. Omit owner to search all admitted device owners. Read a device before building its command.',
+    annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true},
+    async invoke(args, context) {
+      const owner = typeof args.owner === 'string' ? args.owner : 'auto';
+      const target = typeof args.target === 'string' ? args.target : '';
+      const span = startSpan(host.trace ?? noSpans, 'bunny.feed.read', {
+        kind: 'server', attributes: {'http.route': '/mcp', 'http.request.method': 'POST', 'bunny.module': CORE_MODULE},
+      });
+      try {
+        const result = await host.lookup(context.principalId, {owner, target}, span.context);
+        if ('error' in result) {
+          span.end('error');
+          return failure(result);
+        }
+        if (host.holdsSecret(JSON.stringify(result))) {
+          span.end('error');
+          return failure(errorBody('internal'));
+        }
+        return {data: {result}};
+      } catch {
+        span.end('error');
+        return failure(errorBody('internal'));
+      } finally {
+        span.end();
+      }
+    },
+  };
+}
+
 /**
  * The core's dispatcher as an MCP action (#782): one device command, moment or mode change, tracked from sent to its
  * outcome. Its answer is the owner's reply, `accepted`, or a refusal; an uncertain result is never retried.
@@ -165,6 +207,11 @@ function commandTool(host: McpHost, handling = false): ServiceExtension {
       properties: {
         family: {type: 'string', pattern: '^[a-z][a-z0-9]*(-[a-z0-9]+)+$', maxLength: 64}, target: {type: 'string', pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 128},
         data: {type: 'object'}, requestId: {type: 'string', pattern: ID},
+        observationBasis: {type: 'object', additionalProperties: false, required: ['kind', 'observedAtMs', 'value'], properties: {
+          kind: {enum: ['brightness', 'temperature']},
+          observedAtMs: {type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER},
+          value: {type: 'integer', minimum: 0, maximum: 65535},
+        }},
       },
     },
     outputSchema: resultSchema({
@@ -175,7 +222,9 @@ function commandTool(host: McpHost, handling = false): ServiceExtension {
     description: handling ? 'Only on explicit user request, dismiss one inbox item or send its saved command again as a new tracked operation. Pass its current revision. Handling does not release a held device. Never retry automatically.' : 'Only on the user\'s explicit request, send one command to one device, such as power-set {"on": true}, brightness-set {"percent": 40} '
       + 'or playback-control {"action": "pause"}, or label a session with session-label-set {"label": "Name", "expectedRevision": 1} '
       + '(null clears the label), through the core, which tracks it until its outcome. family is the command family, target the device\'s '
-      + 'routing ID or qualified session ID, and data the command\'s payload without a requestId. accepted means the owner took responsibility; read its state to confirm the change. '
+      + "routing ID or qualified session ID, and data the command's payload without a requestId. Use core_device_lookup for device choices and current guards. "
+      + 'For a relative change, pass the exact observation basis returned by lookup, plus device guards in data. '
+      + 'accepted means the owner took responsibility; read its state to confirm the change. '
       + 'Never retry an uncertain or failed result automatically, and never reuse a requestId for another command.',
     annotations: {readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true},
     async invoke(args, context) {
@@ -186,7 +235,13 @@ function commandTool(host: McpHost, handling = false): ServiceExtension {
       const {family, target, data, requestId} = selected as {family: string; target: string; data: Record<string, unknown>; requestId?: string};
       if (family.startsWith('bb8-')) return failure(errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'}));
       if (Object.hasOwn(data, 'requestId')) return failure(errorBody('invalid-request', {detail: 'the command\'s payload names no requestId; pass it beside data'}));
-      const answer = await host.dispatch(credential.id, {family, target, data, ...(requestId === undefined ? {} : {requestId})});
+      const basis = observationBasis(args.observationBasis);
+      if (args.observationBasis !== undefined && (basis === undefined ||
+        (basis.kind === 'brightness' ? family !== 'brightness-set' : family !== 'lifx-temperature-set'))) {
+        return failure(errorBody('invalid-request', {detail: 'the observation basis must match the device command'}));
+      }
+      const answer = await host.dispatch(credential.id, {family, target, data, ...(requestId === undefined ? {} : {requestId}),
+        ...(basis === undefined ? {} : {observationBasis: basis})});
       return 'error' in answer ? failure(answer) : {data: {result: answer}};
     },
   };
@@ -205,6 +260,7 @@ export function createGatewayMcp(host: McpHost, hosts: readonly string[]): McpHa
     const extensions: Record<string, ServiceExtension> = {};
     for (const tool of module.manifest.tools ?? []) extensions[tool.name] = readTool(host, module.name, tool, ajv.compile(tool.output));
     if (module.name === 'core') {
+      extensions.device_lookup = deviceLookupTool(host);
       extensions.recover_approval = recoverTool(host);
       extensions.send_command = commandTool(host);
       extensions.set_mode = modeTool(host, resultSchema);

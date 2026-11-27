@@ -1639,6 +1639,14 @@ post one profile 1.8 record and one span to the Collector, read them back
 through Grafana's Loki and Tempo proxies, then `down -v`. Hosted CI runs the
 export test with the runtime suites; it does not boot the stack.
 
+Shared device lookup and command admission use the existing Runtime unit tests,
+SDK and Companions CI groups. After the root build, run
+`node --test apps/runtime/dist/tests/shared-device-control.test.js` for the
+authenticated MCP client and Companions SDK dispatch against a disposable
+registered light. The Companions suite covers the model tool's view under
+sharing grants. Run shared type, lint, workflow, event, SDK and MCP checks as
+described in [runtime verification](../apps/runtime/DEVELOPMENT.md#runtime-checks).
+
 ### Runtime test layers
 
 See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) for the authoritative procedure.
@@ -1948,7 +1956,13 @@ network access.
 ## Runtime dashboard checks
 
 Pull request App verification runs the runtime dashboard's smoke check and some
-of its browser journeys. The full suite, `npm run test:runtime-dashboard:browser`,
+of its browser journeys. The smoke check renders expired, refused and
+uncertain layout and light outcomes in an isolated page in the existing
+browser. After a build, run
+`node apps/runtime/dashboard/tests/control-projections.ts` for that case and
+the retained command identity and lock checks. The runtime dashboard unit
+suite covers command phase, display wording and lock mapping. The full suite,
+`npm run test:runtime-dashboard:browser`,
 runs locally and, since
 [#1942](https://github.com/jimmie-potts/agent-device-hub/issues/1942), in the
 Runtime dashboard browser suite workflow (`runtime-dashboard-browser.yml`) on a
@@ -3149,6 +3163,21 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+For the Conversation catalog, run the root build and type check, JavaScript lint,
+the Companions suite, and the workflow checks. After building, the catalog
+admission cases can be isolated with
+`node --test --test-name-pattern='catalog admission|newly configured Pixoo' modules/companions/dist/tests/assistant.test.js`.
+The hosted catalog phrase cases also exercise Hub mode. They cover a direct
+polite request, an informational reply after restart, and an answer to the
+Hub's saved switch question after restart.
+The `apps/runtime/dist/tests/assistant-dispatch.test.js` suite checks the same
+typed payloads, revision guards and refusals through the tracked command path.
+These checks use synthetic adapters and disposable owner records. The
+Nanoleaf and Pixoo module suites cover their owner-local name lookups. The
+Runtime's `catalog-identity.test.js` checks the fixed owner references,
+bounded replies and timeout.
+
+
 After the root build, `npm run test:companions:built` exercises an owner asking
 for one coding job’s status while a synthetic worker is running. Its Conversation
 fixtures also verify the saved answer after restart, a changed attempt, revoked
@@ -3160,6 +3189,12 @@ core history and MCP readers. The Companion suite also exercises Responses
 summary scope, mismatched queries, title isolation and revocation before the
 next provider call. Their existing CI commands discover these files.
 The fixture writes only its disposable store and uses no device or hosted model.
+
+For model-interpreted Wemo control, run the root build, typecheck, lint and
+workflow checks, then run the Companions suite. Its existing CI module job
+exercises the typed proposal through the Companions engine at the dispatch
+boundary with synthetic plugs. The runtime suite and Wemo suite cover the
+tracked dispatcher and its writer. No hosted model or physical plug is needed.
 
 The Conversation maximum-on read uses a disposable Companions engine with
 synthetic Wemo and core SDK records. After the root build, the
@@ -3725,5 +3760,15 @@ After the root build, run `npm run test:companions:built`,
 The companion tests use scripted responses to run the same task and device
 guard through hosted selection, then resume an interrupted Responses task
 with its opaque items. They verify the title projection and the shared
-spend ledger with reported and uncertain usage. The disposable browser
+spend ledger with reported and uncertain usage. The same suite decodes the
+Messages and Responses fixtures for shared Conversation context and grant
+revocation. The existing Companions CI job runs these tests in
+`npm run test:companions:built`. The disposable browser
 journey uses fixture supervisors to send one task to each selected provider.
+
+Cloud coding qualification (#2172) uses a disposable provider double and the
+existing coding coordinator fixture. After the root build, run
+`node scripts/native-test.mjs test:companions:built`. Existing CI discovers
+these cases in the Companions suite. They exercise admission through the common
+selector, expiry, uncertain workspace effects and verified teardown. The
+fixtures have no provider credentials and incur zero infrastructure cost.

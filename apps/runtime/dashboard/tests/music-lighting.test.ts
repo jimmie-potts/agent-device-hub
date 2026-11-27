@@ -111,13 +111,14 @@ void test('status, endings and outcomes keep saved, reported and restored eviden
     'Nothing was put back and nothing more was written. Nothing restarts automatically.');
   assert.doesNotMatch(unstreamable, /write or read failed/);
   assert.match(endingText({generation: 'g', reason: 'device', restoration: 'none', atMs: 1, code: 'unavailable'}), /a light write or read failed \(unavailable\)/);
-  assert.equal(controlText('Completed: succeeded. The module observed the result.'), 'Completed: succeeded. The core saved it; the light reports separately.');
-  assert.match(controlText('Refused (unsupported-capability) without changing state.'), /Only Music.app capture/);
-  assert.equal(controlText('Accepted. Waiting for completion.'), 'Accepted. Waiting for completion.');
-  assert.equal(workText('Completed: succeeded. Transmitted; physical effect was not observed.'), 'Completed: succeeded. Written to the light; the physical effect was not observed.');
-  assert.match(workText('Refused (invalid-state).', 'Music is playing a different library item.'), /different library item/);
-  assert.match(workText('Refused (unavailable).', 'Play the Music item and wait for a fresh position.'), /fresh position/);
-  assert.equal(workText('Refused (unavailable).', 'Private source path'), 'Refused (unavailable).');
+  const observed = {kind: 'completed', result: 'succeeded', family: 'work-test', evidence: 'observed', code: undefined} as const;
+  assert.equal(controlText(observed), 'Completed: succeeded. The core saved it; the light reports separately.');
+  assert.match(controlText({kind: 'refused', code: 'unsupported-capability'}), /Only Music.app capture/);
+  assert.equal(controlText({kind: 'accepted'}), 'Accepted. Waiting for completion.');
+  assert.equal(workText({...observed, evidence: 'transmitted'}), 'Completed: succeeded. Written to the light; the physical effect was not observed.');
+  assert.match(workText({kind: 'refused', code: 'invalid-state'}, 'Music is playing a different library item.'), /different library item/);
+  assert.match(workText({kind: 'refused', code: 'unavailable'}, 'Play the Music item and wait for a fresh position.'), /fresh position/);
+  assert.equal(workText({kind: 'refused', code: 'unavailable'}, 'Private source path'), 'Refused (unavailable) without changing state.');
 });
 
 void test('the browser derives the same work ID as the core', async () => {

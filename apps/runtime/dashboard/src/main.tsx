@@ -45,6 +45,7 @@ import {PlaybackWorkspace} from './playback-workspace.tsx';
 import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
 import {ModuleFrontend, ModulePageView} from './module-page.tsx';
+import {CardBoundary} from './card-boundary.tsx';
 import {moduleCard} from './module-cards.ts';
 import {PixooDisplay} from '@jimmie-potts/pixoo/frontend';
 import {TidbytDisplay} from '@jimmie-potts/tidbyt/frontend';
@@ -356,9 +357,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
               live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'volcano' && module.state === 'running' && module.serves.includes('volcano-status')) === true}/>
             : record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?<WemoDeviceCard record={record} owner={copy.owner}
             live={state.feed==='connected'&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1} control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}
-            limit={{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}/>
+            limit={{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshPowerLimits}}/>
           : <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
-            control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}:{})} compact={route.kind === 'home'}/>);
+            control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshPowerLimits}}:{})} compact={route.kind === 'home'}/>);
   // The Home backdrop source follows the art module through the module frontend's scope condition.
   const artRunning = runtime.modules?.some(module => module.name === 'art' && module.state === 'running') === true;
   const artConnected = state.feed === 'connected' && !runtime.catalogFailed && artRunning;
@@ -435,8 +436,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       <ShellNavigation route={route} hardware={hardwareModule(runtime)} ownRow={pinnable.has(address) || (workspace && conversations)} devices={{open: menu, menuId: 'devices-menu', button: devicesRow,
         toggle: () => { if (menu) closeMenu('row'); else setMenu(true); }, show: () => { setMenu(true); }}}/>
       <PinnedPages route={route} fallback={devicesRow}/>
-      {conversations && <div className="rail-conversations"><ModuleFrontend module="companions" connection={connection} connected={state.feed === 'connected' && !runtime.catalogFailed}
-        control={false} operations={[]} operationsLive={false} Component={ConversationRail}/></div>}
+      {conversations && <div className="rail-conversations"><CardBoundary id="part:conversations" name="Conversations" face="rail"><ModuleFrontend module="companions" connection={connection} connected={state.feed === 'connected' && !runtime.catalogFailed}
+        control={false} operations={[]} operationsLive={false} Component={ConversationRail}/></CardBoundary></div>}
       <div className="sidebar-foot">
         <div className="rail-foot-row">
           <nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}><RailIcon name="settings"/><span className="rail-text">Settings</span></NavLink></nav>
@@ -460,17 +461,18 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       {route.kind === 'lighting-brand' && <FeatureNavigation route={route} runtime={runtime}/>}
       {route.kind === 'home' && <section aria-label="Home">
         {/* Decodes the presented artwork for Home's backdrop while the art module runs; it draws nothing itself (#1928). */}
-        {artRunning && <ModuleFrontend module="art" connection={connection} connected={artConnected} control={false} operations={[]} operationsLive={false} Component={ArtBackdropSource}/>}
+        {artRunning && <CardBoundary id="part:art-backdrop" name="Artwork backdrop" face="hidden"><ModuleFrontend module="art" connection={connection} connected={artConnected} control={false} operations={[]} operationsLive={false} Component={ArtBackdropSource}/></CardBoundary>}
         {notice !== undefined && <p role="alert" className="warning" data-glass-veil>{notice}</p>}
         <HomeLayout runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive}
           attention={rows.some(row => row.attention.length > 0)} inbox={inboxItems.length > 0} renderCard={place} renderHero={hero} refresh={connection.refreshDevices}/>
       </section>}
-      <DeviceDirectory runtime={runtime} connected={state.feed === 'connected'} active={route.kind === 'devices'}/>
-      {route.kind === 'settings' && <section aria-label="Settings"><header className="page"><h1>Settings</h1></header>
+      {/* Always mounted, shown on its route: a failure shows there and draws nothing elsewhere. */}
+      <CardBoundary id="page:devices" name="Devices" face={route.kind === 'devices' ? 'page' : 'hidden'}><DeviceDirectory runtime={runtime} connected={state.feed === 'connected'} active={route.kind === 'devices'}/></CardBoundary>
+      {route.kind === 'settings' && <CardBoundary id="page:settings" name="Settings" face="page"><section aria-label="Settings"><header className="page"><h1>Settings</h1></header>
         <div className="settings-grid"><article className="card"><h2>Connections</h2><p className="hint">Connection evidence, running build and operator tools.</p><NavLink route={{kind: 'connections'}}>Connections</NavLink></article>
           <article className="card"><h2>Browser session</h2><FeedIndicator state={state} now={now} control={runtime.control}/><div className="actions"><button type="button" className="secondary" onClick={disconnect}>Disconnect</button></div></article>
           <ArtThemeSettings/><article className="card"><PlacesNav links={links}/></article></div>
-      </section>}
+      </section></CardBoundary>}
       {route.kind !== 'home' && <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
       {route.kind === 'component' && <section aria-label="Devices">
         {selectedDevice && route.kind === 'component' && <><header className="page"><h1 data-glass-veil>{pinnable.get(address)?.name ?? nameOf(runtime, route.id)}</h1><PinToggle route={route}/></header>
@@ -480,7 +482,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         {runtime.copies.filter(copy => copy.family === 'device' && !copy.synced).map(copy => <p className="warning" key={copy.owner}>{copy.owner}: device records unavailable or stale{copy.refused === undefined ? '' : ` (${copy.refused})`}.</p>)}
         {runtime.modules !== undefined && devices.length === 0 && <p className="hint">No device records are available.</p>}
         <div className="cards">{devices.map(({record, copy}) => <div key={`${copy.owner}:${record.id}`} hidden={route.kind === 'component' && record.id !== route.id} data-glass-panel={displayPage ? record.id : undefined}>
-          {deviceCard({record, copy})}
+          <CardBoundary id={`component:${record.id}`} name={nameOf(runtime, record.id)}>{() => deviceCard({record, copy})}</CardBoundary>
         </div>)}</div>
       </section>}
       {route.kind !== 'home' && <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
@@ -491,14 +493,14 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         </header>
         {!workspace && <FeatureNavigation route={route} runtime={runtime}/>}
         {/* A display's page is one glass panel (#1950); other module pages keep their layout as it was. */}
-        {(view => displayPage ? <div data-glass-panel={selectedPage.id}>{view}</div> : view)(<ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule}
-          page={selectedPage} frontends={FRONTENDS} connection={connection} connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>)}
+        {(view => displayPage ? <div data-glass-panel={selectedPage.id}>{view}</div> : view)(<CardBoundary id={`module:${selectedModule.name}/${selectedPage.id}`} name={selectedPage.title}><ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule}
+          page={selectedPage} frontends={FRONTENDS} connection={connection} connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/></CardBoundary>)}
       </section>}
-      {route.kind === 'companions' && <CompanionsPage runtime={runtime}/>}
-      {route.kind === 'habitat' && <HabitatPage views={state.sessions.views} live={live}/>}
-      {route.kind === 'timeline' && <Timeline connected={state.feed === 'connected'}/>}
-      {route.kind === 'automation' && <AutomationPage connection={connection} live={state.feed === 'connected'} control={runtime.control}/>}
-      {route.kind === 'connections' && <ConnectionsPage state={state} now={now} links={links}/>}
+      {route.kind === 'companions' && <CardBoundary id="page:companions" name="Companions" face="page"><CompanionsPage runtime={runtime}/></CardBoundary>}
+      {route.kind === 'habitat' && <CardBoundary id="page:habitat" name="Habitat" face="page"><HabitatPage views={state.sessions.views} live={live}/></CardBoundary>}
+      {route.kind === 'timeline' && <CardBoundary id="page:timeline" name="Timeline" face="page"><Timeline connected={state.feed === 'connected'}/></CardBoundary>}
+      {route.kind === 'automation' && <CardBoundary id="page:automation" name="Automation" face="page"><AutomationPage connection={connection} live={state.feed === 'connected'} control={runtime.control}/></CardBoundary>}
+      {route.kind === 'connections' && <CardBoundary id="page:connections" name="Connections" face="page"><ConnectionsPage state={state} now={now} links={links}/></CardBoundary>}
       {!known && awaitsRecords(route, runtime) && <section aria-label="Loading page"><div className="empty"><h2>Loading this page…</h2></div></section>}
       {!known && !awaitsRecords(route, runtime) && <section aria-label="Not found"><div className="empty">
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>
