@@ -58,9 +58,9 @@ function requestedPower(input: string): {on: boolean; subject: string} | undefin
   return undefined;
 }
 
-export function powerSubject(text: string): string | undefined {
+export function explicitPowerRequest(text: string): {on: boolean; subject: string} | undefined {
   const words = explicitWords(text);
-  return words === undefined ? undefined : requestedPower(words)?.subject;
+  return words === undefined ? undefined : requestedPower(words);
 }
 
 const brightnessAfterTarget = /^(?:set|change) (.+?) brightness (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u;
@@ -91,9 +91,10 @@ export function brightnessSubject(text: string): string | undefined {
   return literalDeviceSubject(text, subject);
 }
 
-export function missingBrightness(text: string): boolean {
+export function missingBrightnessSubject(text: string): string | undefined {
   const words = explicitWords(text);
-  return words !== undefined && /^(?:set|change) .+ brightness(?: to| at)?$/u.test(words);
+  const subject = words === undefined ? undefined : /^(?:set|change) (.+) brightness(?: to| at)?$/u.exec(words)?.[1];
+  return subject === undefined ? undefined : literalDeviceSubject(text, optionalArticle(subject));
 }
 const optionalArticle = (value: string) => value.replace(/^(?:the|my) /u, '');
 const matchNumber = (expression: RegExp, input: string, requested: unknown): {subject: string} | undefined => {

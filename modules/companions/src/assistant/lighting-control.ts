@@ -3,7 +3,7 @@ import {assistantRoutes, type CatalogProposal, type ObservationBasis} from '@jim
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {catalogCommand} from './catalog-tools.js';
-import {containsControlValue, normalizedControlText} from './control-intent.js';
+import {containsControlValue, literalDeviceId, missingBrightnessSubject, normalizedControlText} from './control-intent.js';
 import {currentObservationBasis, deviceLabel, type LifxDeviceFacts, type OwnedDevice} from '@jimmie-potts/sdk';
 import {controlReferenceIds, exactControlIds, resolveModelControl, type ControlReference, type ControlResolution, type ModelControlScope} from './model-control.js';
 import {SET_LIFX_BRIGHTNESS, SET_LIFX_POWER} from './tool-scope.js';
@@ -337,7 +337,7 @@ type LightingValue = {kind: 'ready'; setting: Settings; observationBasis?: Obser
   | {kind: 'refused'; code: ErrorCode}
   | {kind: 'unchanged'; value: number; unit: QuantityUnit; atBoundary: boolean}
   | {kind: 'missing-saturation'; hue: number; unsupportedUnit?: true}
-  | {kind: 'quantity-clarification'; unit: QuantityUnit; operation: Quantity['kind'] | 'color'; reason: 'unit' | 'sign'};
+  | {kind: 'quantity-clarification'; unit: QuantityUnit; operation: Quantity['kind'] | 'color'; reason: 'unit' | 'sign' | 'missing'};
 
 export function lightingValue(row: LightingDevice, scope: ModelControlScope, intent: SettingIntent, now: number,
   previous?: LightingClarification): LightingValue {
@@ -383,6 +383,13 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   if (range === undefined) return {kind: 'refused', code: 'unavailable'};
   if (!range.supported) return {kind: 'refused', code: 'unsupported-capability'};
   const {minimum, maximum} = range;
+  if (brightness && previous === undefined) {
+    const subject = missingBrightnessSubject(scope.request.text);
+    if (subject !== undefined && (literalDeviceId(subject) === row.device.id ||
+        [row.device.id, deviceLabel(row.device)].some(name => normalizedControlText(name) === subject))) {
+      return {kind: 'quantity-clarification', unit, operation: 'absolute', reason: 'missing'};
+    }
+  }
   const supplied = answer === undefined ? [] : quantityTokens(answer);
   const useAnswer = answer !== undefined && (supplied.length > 0 || previous?.kind === 'quantity-clarification');
   const source = useAnswer ? answer : request;

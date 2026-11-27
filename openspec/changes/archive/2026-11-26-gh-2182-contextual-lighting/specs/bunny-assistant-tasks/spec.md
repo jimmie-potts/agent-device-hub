@@ -9,6 +9,8 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 - **WHEN** the owner sets a configured light's brightness, refers back to the light to change a supported setting, and asks how the light is set
 - **THEN** each valid setting change reaches the exact light once through its registered writer
 - **AND** the status question reads the known setting under the current grants and sends no write.
+- **WHEN** a recognized status question produces a setting command, or a proposed power value conflicts with an explicit owner power setting
+- **THEN** the Hub refuses the proposed command before dispatch.
 
 #### Scenario: Ineligible or ambiguous proposal
 

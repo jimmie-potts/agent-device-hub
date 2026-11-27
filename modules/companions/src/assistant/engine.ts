@@ -23,7 +23,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, hubModeChoice, literalDeviceId, missingBrightness, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
+import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, explicitPowerRequest, hubModeChoice, literalDeviceId, missingBrightnessSubject, missingMode, namedControlTargets, normalizedControlText, type BoundControl, type SceneReceipt} from './control-intent.js';
 import {lightingControl, lightingFamily, lightingReference, lightingRefusal, lightingValue, planLightingControl, qualifiedLightingOwner, resolveLightingTarget, updateLightingGrounding, type LightingControlScope, type LightingDevice, type LightingClarification, type LightingQuestion} from './lighting-control.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, resolveModelControl, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
@@ -220,7 +220,7 @@ const jobReceipt = (job: CodingJob): string => `accepted: Coding job ${job.jobId
 
 const deviceRequestClauses = (text: string) => text.trim().split(/(?<=[.!?;,])(?:\s+|$)|[\r\n]+/u).filter(Boolean);
 
-function deviceRequestSubject(text: string): string | undefined {
+function deviceRequestSubject(text: string, onlyRead = false): string | undefined {
   const [opening = '', remainder] = deviceRequestClauses(text);
   const affirmative = normalizedControlText(opening).replace(/ only$/u, '');
   const timerSubject = /^(?:is|was) (?:the )?timer for (?:the )?(.+?) (?:on|off|active|armed)$/u.exec(affirmative)?.[1]
@@ -230,10 +230,16 @@ function deviceRequestSubject(text: string): string | undefined {
     ?? /^(?:please )?(?:show|check|read) (?:me )?(?:the )?(?:currently )?(?:reported )?(?:status|state|brightness|power) (?:of|for) (?:the )?(.+)$/u.exec(affirmative)?.[1]
     ?? /^(?:please )?(?:show|check|read) (?:me )?(?:the )?(.+?) (?:status|state|brightness|power)$/u.exec(affirmative)?.[1]
     ?? /^(?:please )?(?:(?:list|show|check|read) (?:the )?(.+)|(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available))$/u.exec(affirmative)?.slice(1).find(value => value !== undefined);
-  const subject = readSubject ?? powerSubject(text);
-  if (subject === undefined || remainder !== undefined && deviceGroup(subject) !== undefined) return undefined;
+  const subject = readSubject ?? (onlyRead ? undefined : explicitPowerRequest(text)?.subject);
+  if (subject === undefined || remainder !== undefined && (onlyRead || deviceGroup(subject) !== undefined)) return undefined;
   const id = exactControlIds(opening).find(id => literalDeviceId(`id:${id}`) === id && normalizedControlText(`id:${id}`) === subject);
   return id === undefined ? subject : `id:${id}`;
+}
+
+function matchesDeviceRequestSubject(subject: string | undefined, device: DeviceRecord): boolean {
+  if (subject === undefined) return false;
+  const literal = literalDeviceId(subject);
+  return literal === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === literal;
 }
 
 const exclusionsInDeviceRequest = /\b(?:except|rather than|instead of|not|don t|without|leave)\b/u;
@@ -1708,18 +1714,14 @@ export class AssistantEngine {
     const brightnessTarget = purpose === 'supervisor' ? brightnessSubject(request) : undefined;
     const subject = brightnessTarget ?? (purpose === 'supervisor' ? deviceRequestSubject(request) : undefined);
     const group = brightnessTarget === undefined ? deviceGroup(subject) : undefined;
-    const named = (name: string | undefined, device: DeviceRecord): boolean => {
-      const literal = name === undefined ? undefined : literalDeviceId(name);
-      return literal === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === name) : device.id === literal;
-    };
-    const exact = configured.filter(({device}) => named(subject, device));
+    const exact = configured.filter(({device}) => matchesDeviceRequestSubject(subject, device));
     const mentioned = (text: string) => {
       const words = normalizedControlText(text);
       if (exclusionsInDeviceRequest.test(words)) return [];
       const explicit = text.match(/(?:^|\s)id:([a-z0-9-]{1,128})(?=\s|[?!.;,]|$)/gu) ?? [];
       return configured.flatMap(entry => {
         const label = deviceLabel(entry.device);
-        const commonLabel = configured.filter(other => named(normalizedControlText(label), other.device)).length !== 1;
+        const commonLabel = configured.filter(other => matchesDeviceRequestSubject(normalizedControlText(label), other.device)).length !== 1;
         const position = explicit.some(value => value.trim() === `id:${entry.device.id}`) ? words.indexOf(`id ${normalizedControlText(entry.device.id)}`)
           : !commonLabel && containsControlValue(text, label) ? words.indexOf(normalizedControlText(label)) : -1;
         return position < 0 ? [] : [{...entry, position}];
@@ -2602,10 +2604,10 @@ export class AssistantEngine {
       const task = this.#task(taskId);
       const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
       const answer = task.question?.kind === 'clarification' ? task.question.answer : null;
-      if (call.name === SET_LIFX_BRIGHTNESS && answer === null && missingBrightness(instruction)) {
+      if (call.name === SET_LIFX_BRIGHTNESS && answer === null && missingBrightnessSubject(instruction) !== undefined) {
         return {id, text: 'What brightness percentage do you want?', answer: null, kind: 'clarification', call: call.id, proposal: null};
       }
-      const subject = powerSubject(instruction);
+      const subject = explicitPowerRequest(instruction)?.subject;
       const addressed = subject !== undefined && answer === null ? devices?.filter(device =>
         subject === normalizedControlText(device.id) || subject === normalizedControlText(deviceLabel(device))) : undefined;
       const selected = addressed !== undefined && addressed.length > 1 ? {matches: addressed} : chooseDevice(devices, call.input.device, call.name === SET_LIFX_BRIGHTNESS);
@@ -2734,6 +2736,15 @@ export class AssistantEngine {
     }
     const row = rows.find(candidate => candidate.device.id === result.targets[0]);
     if (row === undefined || input.owner !== 'auto' && row.owner !== input.owner) return 'refused: not-found';
+    const instruction = scope.request.text;
+    if (matchesDeviceRequestSubject(deviceRequestSubject(instruction, true), row.device)) {
+      return 'refused: the owner asked for device status. Read the current setting without sending a command.';
+    }
+    if (input.setting.family === 'power-set') {
+      const explicit = explicitPowerRequest(instruction);
+      if (explicit !== undefined && matchesDeviceRequestSubject(deviceRequestSubject(instruction), row.device) &&
+          explicit.on !== input.setting.on) return 'refused: the proposed power setting conflicts with the owner request.';
+    }
     const native = call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS;
     const refusal = lightingRefusal(row, input.setting.family, native);
     if (refusal !== undefined) return `refused: ${refusal}`;
