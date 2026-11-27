@@ -1447,5 +1447,6 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 
 - **WHEN** the current owner asks to activate a saved Nanoleaf scene on an eligible light or change an original Pixoo asset by name
 - **THEN** Companions resolves the name through the selected owner and binds its opaque ID before using the existing tracked command
+- **AND** both hosted adapters tell the supervisor that the scene argument accepts the owner's exact saved name, an exact scene ID, or the explicit last-activated reference
 - **AND** private catalog names and records remain out of the hosted supervisor's results
-- **AND** an ambiguous match prompts for clarification and sends no command
+- **AND** a missing scene or an ambiguous match prompts for clarification and sends no command

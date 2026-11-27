@@ -90,9 +90,12 @@ export const catalogTools = [
     family === 'art-show' ? 'Show the requested saved artwork on all requested display targets. Use hub and bunny/core, with artworkId and targets. Keep status visible with coversStatus=false when requested.'
       : family === 'music-lighting-control' ? 'Use start-show with showId and version on an eligible Nanoleaf light, or stop, pause-show, resume-show, or seek-show for the current generation. Use bunny/core.'
       : family === 'moment-play' ? 'Play a named mood on a configured display. For an immediate moment, supply mood and durationMs and optionally palette and coversStatus. Ask for a missing display, mood or duration.'
+      : family === 'scene-activate' ? 'Activate the saved scene the owner requests. Use the scene name directly when the owner gives one. The Hub resolves it on the selected light under current grants. If the scene is missing or ambiguous, ask the owner for clarification. The Hub sends nothing for an unresolved scene.'
         : `Run ${family} on a configured, supported target only when requested in the current owner turn. Interpret ordinary language; never ask the owner for a JSON payload.`, {
     owner: text('The exact owner source returned by the read tool.'), target: text(family === 'playback-control' ? 'Use the requested playback ID, or auto for the unique presented playback record.' : family === 'brightness-set' ? 'Use the device ID returned by read_devices. id:<device-id> also selects that exact ID. An unambiguous label is accepted.' : 'Exact target ID, or its label if unambiguous.'),
-    arguments: text(`JSON object with the appropriate owner command fields: ${assistantRoutes[family].fields}. Do not supply revision or generation guards.`),
+    arguments: text(family === 'scene-activate'
+      ? 'JSON object with sceneId. Supply the owner’s exact scene name, exact scene ID, or "last-activated" when the owner asks for the last activation on the selected light. Include the matching scene reference. The Hub supplies revision and generation guards.'
+      : `JSON object with the appropriate owner command fields: ${assistantRoutes[family].fields}. Do not supply revision or generation guards.`),
   })),
 ] satisfies readonly ToolDefinition[];
 export const isCatalogTool = (name: string): boolean => catalogTools.some(tool => tool.name === name);
