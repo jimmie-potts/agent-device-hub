@@ -181,6 +181,14 @@
       "count": 1
     }
   },
+  "apps/chompi-bridge/verify/tests/page.browser.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 3
+    }
+  },
   "apps/dashboard/src/art/nanoleaf.ts": {
     "@typescript-eslint/no-base-to-string": {
       "count": 1
@@ -218,6 +226,86 @@
     },
     "@typescript-eslint/restrict-plus-operands": {
       "count": 1
+    }
+  },
+  "apps/dashboard/tests/art.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 9
+    }
+  },
+  "apps/dashboard/tests/browser.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 7
+    }
+  },
+  "apps/dashboard/tests/local-controllers.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/dashboard/tests/matrix.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 19
+    }
+  },
+  "apps/dashboard/tests/moments.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/dashboard/tests/pixoo-media.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 3
+    }
+  },
+  "apps/dashboard/tests/pixoo-refresh.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 1
+    }
+  },
+  "apps/dashboard/tests/preview-places.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/dashboard/tests/retirement.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/dashboard/tests/session-metadata.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/dashboard/tests/smoke.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/dashboard/tests/trusted.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/dashboard/tests/wispr.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 2
     }
   },
   "apps/hub/src/automation.ts": {
@@ -386,6 +474,510 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 7
+    }
+  },
+  "apps/hub/verify/tests/proof.test.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 1
+    }
+  },
+  "apps/hub/verify/tests/qualify-reset.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 1
+    }
+  },
+  "apps/hub/verify/tests/runs.test.mjs": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/art-backdrop-journey.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/art-notice-journey.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/art-schedule-journey.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/art-selection-journey.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/art-show-journey.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/art-theme.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/art.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/automation.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 2
+    }
+  },
+  "apps/runtime/dashboard/tests/card-consistency.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/card-errors.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 4
+    }
+  },
+  "apps/runtime/dashboard/tests/card-watch-run.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/companion-cards.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/companion-session.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/companions.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/control-projections.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/controls.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/conversation-art.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/conversation-context.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/conversation-history.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/conversation-queue.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/conversation-rail.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/conversation-steer.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/conversation-upload.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/conversation-workspace.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/devices-glass.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 5
+    }
+  },
+  "apps/runtime/dashboard/tests/devices-menu.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/failed-turn.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/fuse-journey.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 8
+    }
+  },
+  "apps/runtime/dashboard/tests/habitat.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 7
+    }
+  },
+  "apps/runtime/dashboard/tests/home-glass.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 9
+    }
+  },
+  "apps/runtime/dashboard/tests/home-hero.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 3
+    }
+  },
+  "apps/runtime/dashboard/tests/home-idle.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/home-layout.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/home-paging.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/hub-mode.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/inbox-history.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/lifx-conversation.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/light-dial-journey.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 2
+    }
+  },
+  "apps/runtime/dashboard/tests/lighting.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/microduck-vendor.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/microduck.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/mode-overrides-journey.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/music-visualizer.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 4
+    }
+  },
+  "apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/notice-clear.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 2
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-animated-media.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 3
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-bitmap-owners.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 2
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-card-reread.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-cards.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-command-lock.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-confirmation.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-library.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-monitor.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-pages.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-player.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-playlists.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-preview.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 2
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-settings.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/pixoo-upload.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/playback-artwork.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/reachy-vendor.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/reachy.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/read-receipts.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/roborock.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/session-label.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/shell.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/show-conversation.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/smoke.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/speech-readiness.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/speech.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 2
+    }
+  },
+  "apps/runtime/dashboard/tests/tidbyt-card.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/timeline-card.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/trusted.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/tv.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/volcano.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/wemo.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    },
+    "bunny/no-wait-for-timeout": {
+      "count": 1
+    }
+  },
+  "apps/runtime/dashboard/tests/wispr.browser.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/verify/art-browser.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 2
+    }
+  },
+  "apps/runtime/verify/art-gallery.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 5
+    }
+  },
+  "apps/runtime/verify/art-schedule-browser.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 7
+    }
+  },
+  "apps/runtime/verify/art-theme.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 5
+    }
+  },
+  "apps/runtime/verify/conversation-workspace.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 5
+    }
+  },
+  "apps/runtime/verify/mac-codex.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 3
+    }
+  },
+  "apps/runtime/verify/pixoo-art-browser.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 2
+    }
+  },
+  "apps/runtime/verify/pixoo-command-limits-browser.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 2
+    }
+  },
+  "apps/runtime/verify/shared-art-browser.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 2
+    }
+  },
+  "apps/runtime/verify/speech-browser.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 7
+    }
+  },
+  "apps/runtime/verify/tests/pixoo-command-limits.test.ts": {
+    "bunny/no-direct-chromium-launch": {
+      "count": 1
+    }
+  },
+  "apps/runtime/verify/tidbyt-art-browser.ts": {
+    "bunny/no-wait-for-timeout": {
+      "count": 3
     }
   },
   "apps/wispr-collector/src/config.ts": {
@@ -641,6 +1233,11 @@
   },
   "packages/observability/src/index.ts": {
     "@typescript-eslint/require-await": {
+      "count": 1
+    }
+  },
+  "packages/observability/tests/contract.browser.mjs": {
+    "bunny/no-direct-chromium-launch": {
       "count": 1
     }
   },

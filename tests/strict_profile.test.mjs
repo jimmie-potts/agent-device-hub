@@ -40,6 +40,42 @@ test('the strict rules cover new code and skip old code', async () => {
   }
 });
 
+test('browser test rules flag new fixed waits and Chromium launches on test and verification paths', async () => {
+  const eslint = new ESLint({cwd: root});
+  const code = `import {chromium as browser} from 'playwright';
+    export function check(page, chromium, playwright) {
+      page.waitForTimeout(10);
+      page?.['waitForTimeout'](10);
+      chromium.launch();
+      playwright['chromium']?.['launch']();
+      browser.launch();
+      page.waitForFunction(() => true);
+      playwright.firefox.launch();
+    }`;
+  const wait = 'bunny/no-wait-for-timeout', launch = 'bunny/no-direct-chromium-launch';
+  for (const file of ['tests/fixture.mjs', 'apps/hub/verify/probe.mjs', 'modules/example/src/probe.test.mjs',
+    'fixtures/probe.spec.mjs', 'fixtures/probe.browser.mjs', 'apps/chompi-bridge/verify/tests/probe.mjs']) {
+    const [result] = await eslint.lintText(code, {filePath: join(root, file)});
+    const reports = result.messages.filter(message => [wait, launch].includes(message.ruleId)).map(message => message.ruleId);
+    assert.deepEqual(reports, [wait, wait, launch, launch, launch], file);
+  }
+  for (const [file, source, count] of [
+    ['fixture.test.cjs', "const {chromium: browser} = require('playwright'); browser.launch();", 1],
+    ['fixture.test.mjs', "const {chromium: browser} = await import('playwright-core'); browser.launch();", 1],
+    ['fixture.test.mjs', "import {chromium as launcher} from 'another-library'; launcher.launch();", 0],
+    ['fixture.test.cjs', "const {chromium: launcher} = require('another-library'); launcher.launch();", 0],
+  ]) {
+    const [result] = await eslint.lintText(source, {filePath: join(root, file)});
+    assert.equal(result.messages.filter(message => message.ruleId === launch).length, count, source);
+  }
+  const shared = await eslint.calculateConfigForFile(join(root, 'apps/runtime/dashboard/tests/journey-runner.ts'));
+  assert.ok(on(shared, wait));
+  assert.ok(!severity(shared, launch));
+  const production = await eslint.calculateConfigForFile(join(root, 'apps/runtime/src/a.ts'));
+  assert.ok(!severity(production, wait));
+  assert.ok(!severity(production, launch));
+});
+
 // The profile block's reach is fixed: the strict globs and module JavaScript, minus staged code and the test globs that
 // docs/static-analysis.md "Safe-error rules" lists. Widening `ignores` or narrowing `files` needs this test changed too.
 test('the safe-error profile block covers exactly the documented files', () => {
@@ -217,14 +253,17 @@ test('every TypeScript project that compiles covered code has the strict compile
   }
 });
 
-test('covered paths have no lint baseline, and every workspace package is scoped', () => {
-  // No rule has a baseline under the profile. The outcome-word rule's hits here were converted to `Outcome.*` when the
-  // rule was narrowed to claim positions (Hub #1187), so its remaining baseline is outside the covered paths.
+test('covered paths baseline only the adopted browser test rules, and every workspace package is scoped', async () => {
   const suppressions = JSON.parse(readFileSync(join(root, 'eslint-suppressions.json'), 'utf8'));
-  const inCovered = Object.entries(suppressions)
-    .filter(([file]) => covered.some(dir => file.startsWith(dir + '/')) && !staged.some(dir => file.startsWith(dir + '/')))
-    .flatMap(([file, rules]) => Object.keys(rules).map(rule => `${file}: ${rule}`));
-  assert.deepEqual(inCovered, []);
+  const eslint = new ESLint({cwd: root});
+  const browserRules = ['bunny/no-wait-for-timeout', 'bunny/no-direct-chromium-launch'];
+  for (const [file, rules] of Object.entries(suppressions)) {
+    if (!covered.some(dir => file.startsWith(dir + '/')) || staged.some(dir => file.startsWith(dir + '/'))) continue;
+    const config = await eslint.calculateConfigForFile(join(root, file));
+    for (const rule of Object.keys(rules)) {
+      assert.ok(browserRules.includes(rule) && on(config, rule), `${file}: unexpected baseline for ${rule}`);
+    }
+  }
   // The module boundary treats other scopes as third-party, so every workspace package must use a listed scope.
   const workspaces = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).workspaces;
   const manifests = workspaces.flatMap(pattern => globSync(`${pattern}/package.json`, {cwd: root}));

@@ -565,10 +565,54 @@ const noRawOutcomeLiteral = {
   },
 };
 
+// Keep separate rule IDs so existing waits and launches have independent per-file budgets.
+function browserTestCall(method, message, receiverMatches = () => true) {
+  return {
+    meta: {type: 'problem', schema: [], messages: {restricted: message}},
+    create(context) {
+      return {
+        CallExpression(node) {
+          const callee = unwrap(node.callee);
+          if (callee.type === 'MemberExpression' && memberName(callee) === method && receiverMatches(unwrap(callee.object), context)) {
+            context.report({node, messageId: 'restricted'});
+          }
+        },
+      };
+    },
+  };
+}
+
+const playwrightPackages = new Set(['playwright', 'playwright-core', '@playwright/test', 'playwright/test']);
+
+// The local name in each ESLint definition identifies the binding, including a renamed destructured property.
+function importsChromium({node, name, parent}) {
+  if (node.type === 'ImportSpecifier') {
+    return importedName(node) === 'chromium' && playwrightPackages.has(literal(parent.source));
+  }
+  if (node.type !== 'VariableDeclarator' || node.id.type !== 'ObjectPattern') return false;
+  const init = unwrap(node.init);
+  const load = init?.type === 'AwaitExpression' ? unwrap(init.argument) : init;
+  let source;
+  if (load?.type === 'ImportExpression') source = load.source;
+  if (load?.type === 'CallExpression' && load.callee.type === 'Identifier' && load.callee.name === 'require') source = load.arguments[0];
+  return playwrightPackages.has(literal(source)) && node.id.properties.some(property =>
+    property.type === 'Property' && keyName(property) === 'chromium' && property.value === name);
+}
+
+function chromiumReceiver(receiver, context) {
+  if (receiver.type === 'MemberExpression') return memberName(receiver) === 'chromium';
+  if (receiver.type !== 'Identifier') return false;
+  if (receiver.name === 'chromium') return true;
+  const variable = findVariable(context.sourceCode.getScope(receiver), receiver.name);
+  return variable?.defs.some(importsChromium) ?? false;
+}
+
 export default {
   meta: {name: 'bunny'},
   rules: {
     'module-boundary': moduleBoundary,
+    'no-wait-for-timeout': browserTestCall('waitForTimeout', 'Wait for an observable condition with a Playwright locator or waitForObservation from @jimmie-potts/sdk/testing.'),
+    'no-direct-chromium-launch': browserTestCall('launch', 'Use runJourney from apps/runtime/dashboard/tests/journey-runner.ts to launch Chromium.', chromiumReceiver),
     'no-console': noConsole,
     'no-raw-error-text': noRawErrorText,
     'error-body-from-registry': errorBodyFromRegistry,
