@@ -112,6 +112,14 @@ export function createPixooModule(options: PixooOptions): BunnyModule<PixooConfi
   return {
     manifest: {
       name: PIXOO_MODULE, apiVersion: '1.3', configure: section => configurePixoo(section, {simulated: options.transport.simulated}),
+      deviceCommandAvailability: {
+        [FAMILIES.monitor]: 'owner-admission',
+        [FAMILIES.nowPlaying]: 'owner-admission',
+        [FAMILIES.moments]: 'owner-admission',
+        [FAMILIES.playlistChange]: 'owner-admission',
+        [FAMILIES.assetChange]: 'owner-admission',
+        [FAMILIES.dismiss]: 'owner-admission',
+      },
       pages: [{id: 'playlists', title: 'Playlists', presentation: 'react'}, {id: 'library', title: 'Library', presentation: 'react'},
         {id: 'player', title: 'Player', presentation: 'react'}, {id: 'monitor', title: 'Monitor', presentation: 'react'},
         {id: 'settings', title: 'Settings', presentation: 'react'}],

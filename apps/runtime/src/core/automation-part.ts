@@ -176,6 +176,7 @@ export class AutomationPart implements CorePart {
   }
   #device(id: string): DeviceRecord | undefined {return this.#deviceMessage(id, false)?.data;}
   currentDevice(id: string): Message<DeviceRecord> | undefined {return this.#deviceMessage(id, true);}
+  registeredDevice(id: string): AutomationDevice | undefined {return this.#configured.find(target => target.id === id);}
   /** One SDK copy per qualified owner supplies the initial snapshot and resyncs after gaps. */
   #followDevices(): void {
     const handle=this.#handle;

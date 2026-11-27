@@ -1,16 +1,25 @@
+import type {DeviceCommandAvailability, ModuleManifest} from '@jimmie-potts/sdk';
 import type {QualifiedModeModule} from './mode-participants.js';
 /** Host admission only. Current capability and availability still come from the named owner's SDK copy. */
-export type AutomationDevice={readonly id:string;readonly owner:string};
+export type AutomationDevice={readonly id:string;readonly owner:string;readonly commandAvailability?:DeviceCommandAvailability};
 export function checkAutomationDevices(devices:readonly AutomationDevice[]):readonly AutomationDevice[] {
   const ids=new Set<string>();
-  return Object.freeze(devices.map(({id,owner})=>{
+  return Object.freeze(devices.map(({id,owner,commandAvailability})=>{
     if(id.length>128 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || !/^bunny\/modules\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(owner) || ids.has(id))
       throw new Error('invalid-automation-devices');
-    ids.add(id);return Object.freeze({id,owner});
+    ids.add(id);return Object.freeze({id,owner,...(commandAvailability===undefined?{}:{commandAvailability:Object.freeze({...commandAvailability})})});
   }));
 }
-export function automationDevices(modules:readonly QualifiedModeModule[],deviceOwners:readonly string[]):readonly AutomationDevice[] {
-  const owners=new Set(deviceOwners);
-  return checkAutomationDevices(modules.flatMap(module=>module.admitted && owners.has(`bunny/modules/${module.name}`)
-    ?module.devices.map(id=>({id,owner:`bunny/modules/${module.name}`})):[]));
+type QualifiedDeviceModule = QualifiedModeModule & {readonly manifest?: Pick<ModuleManifest, 'deviceCommandAvailability'>};
+
+export function automationDevices(modules: readonly QualifiedDeviceModule[], deviceOwners: readonly string[]): readonly AutomationDevice[] {
+  const owners = new Set(deviceOwners);
+  return checkAutomationDevices(modules.flatMap(module => {
+    const owner = `bunny/modules/${module.name}`;
+    if (!module.admitted || !owners.has(owner)) return [];
+    const availability = module.manifest?.deviceCommandAvailability;
+    return module.devices.map(id => ({
+      id, owner, ...(availability === undefined ? {} : {commandAvailability: availability}),
+    }));
+  }));
 }

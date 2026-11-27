@@ -1,6 +1,8 @@
 import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceAction, type AssistantDeviceOwner} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {Cancel, ModuleContext, SyncedCopy, TraceContext} from '@jimmie-potts/sdk';
+import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS,
+  type Cancel, type ModuleContext, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
+export {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS} from '@jimmie-potts/sdk';
 import {literalToolDeviceId} from './control-intent.js';
 import type {ToolCall} from './provider.js';
 import {READ_BYTES, SET_LIFX_POWER} from './tools.js';
@@ -88,7 +90,6 @@ export class AssistantDeviceCopy {
   }
 }
 
-export const deviceLabel = (device: DeviceRecord): string => device.label?.slice(0, 128) ?? device.id;
 const normalized = (name: string): string => name.trim().toLowerCase().replace(/[\s-]+/g, '-');
 type Selection = {device: DeviceRecord} | {matches: readonly DeviceRecord[]} | {code: 'invalid-request' | 'not-found' | 'unavailable'};
 
@@ -104,13 +105,6 @@ export function chooseDevice(devices: readonly DeviceRecord[] | undefined, name:
   return matches.length === 1 && matches[0] !== undefined ? {device: matches[0]} : {matches};
 }
 
-// LIFX treats a reading older than 30 seconds as due for an on-demand refresh.
-export const MAX_OBSERVATION_AGE_MS = 30_000;
-export const WEMO_OBSERVATION_AGE_MS = 15_000;
-export function observationStale({observed, lastTransmission}: DeviceRecord, now: number, maxAgeMs: number): boolean {
-  return observed.status === 'known' && (observed.observedAtMs > now || now - observed.observedAtMs >= maxAgeMs ||
-    (lastTransmission.status === 'known' && observed.observedAtMs < lastTransmission.transmittedAtMs));
-}
 export function readDevices(devices: readonly DeviceRecord[] | undefined, name: unknown, nowMs: number,
   owner: AssistantDeviceOwner = ASSISTANT_LIGHT_OWNER, display?: DeviceReadDisplay): string {
   const wemo = owner === ASSISTANT_WEMO_OWNER;
