@@ -86,6 +86,11 @@ await runJourney('Room models', {lighting: true}, async (run, world) => {
   console.log(JSON.stringify({journey:'private-room-model',selections:true,reportedPower:true,unbound:true,stale:true,restartNoReplay:true,uncertainNoReplay:true,webglFallback:true,touchPinch:true,physical:false}));
   await run.closeContext(context);
   assert.deepEqual(errors,[]);
+  run.step('Prepare the furnished apartment');
+  const apartment = await run.startWorld({lighting: true});
+  await apartmentJourney(run, apartment);
+  await run.closeWorld(apartment);
+  run.step('Prepare apartment presence');
+  const presence = await run.startWorld({lighting: true, presence: true});
+  await apartmentPresenceJourney(run, presence);
 }, 'software-webgl');
-await runJourney('Apartment', {lighting: true}, apartmentJourney, 'software-webgl');
-await runJourney('Apartment presence', {lighting: true, presence: true}, apartmentPresenceJourney, 'software-webgl');
