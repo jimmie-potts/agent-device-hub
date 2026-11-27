@@ -24,6 +24,13 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 - **AND** the Hub checks each cited source and resolves current named targets in their owner-local permitted records before dispatch
 - **AND** absent, inaccessible, ambiguous or conflicting named targets send no command and require clarification
 
+#### Scenario: Visible command-capable devices share a label across owners
+
+- **WHEN** a current target name matches visible devices under different owners for the requested command
+- **THEN** the Hub requires a current exact ID or an owner-qualified name, or asks for clarification before dispatch
+- **AND** a model-supplied owner alone cannot resolve the collision
+- **AND** hidden devices are excluded before matching and their absence does not change the visible result
+
 #### Scenario: The owner selects one target and excludes another
 
 - **WHEN** the current request selects one named target and rules out another

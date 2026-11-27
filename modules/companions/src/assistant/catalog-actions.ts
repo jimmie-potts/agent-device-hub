@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {literalToolDeviceId, literalDeviceId, normalizedControlText, type SceneReceipt} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
-import {catalogCueReferences, catalogSelectorId, type CatalogReferenceRole} from './catalog-grounding.js';
+import {catalogCueReferences, catalogQuoteNames, catalogSelectorId, type CatalogReferenceRole} from './catalog-grounding.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {ART_SHOW_EFFECTS_FAMILY, acceptsArtRendition, artDestination, artShowSurfaces, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
@@ -40,7 +40,7 @@ function textResult(value: unknown): string {
 type Proposed = {proposal: CatalogProposal; text: string; targets?: readonly (readonly string[])[]; knownTargets?: readonly (readonly string[])[]; draftRevision?: number; sceneReceipt?: SceneReceipt}
   | {question: string} | {code: ErrorCode};
 type CanNameDevice = (id: string) => boolean;
-type CatalogTarget = {id: string; label: string};
+type CatalogTarget = {id: string; label: string; owner?: string};
 type CatalogTargetSource = 'artwork' | 'devices' | 'operations' | 'playback' | 'sessions' | 'shows' | 'status';
 export type CatalogAdmission = {
   readonly selector: (kind: CatalogReferenceRole, selector: string, contextIds?: readonly string[]) => boolean;
@@ -366,7 +366,8 @@ export class ConversationActions {
       const found = matchingDevices(eligible, name, owner, literalId);
       const selected = found[0];
       const nested = nestedSelectors(family, data);
-      const alternatives = eligible.map(row => ({id: row.device.id, label: deviceLabel(row.device)}));
+      const alternatives = (admission === undefined ? eligible : visible.filter(row => row === selected || permitsDevice(route, row.device)))
+        .map(({owner, device}) => ({owner, id: device.id, label: deviceLabel(device)}));
       if (found.length > 1 && selected !== undefined) {
         const result = admission?.target(selected.device.id, 'devices', alternatives, false, nested);
         if (result !== undefined && result !== 'invalid-state') return {code: 'not-found'};
@@ -378,9 +379,10 @@ export class ConversationActions {
       knownTargets = visible.filter(row => permitsDevice(route, row.device)).map(row => [row.device.id, deviceLabel(row.device)]);
       const guard = () => admission?.target(device.id, 'devices', alternatives, false, nested);
       const refused = guard();
-      if (refused !== undefined) return refused === 'invalid-state'
-        ? {question: deviceClarification('device', alternatives.map(item => item.id), canNameDevice)}
-        : {code: refused};
+      if (refused !== undefined) {
+        const matching = alternatives.filter(item => catalogQuoteNames(deviceLabel(device), item.id, item.label));
+        return refused === 'invalid-state' ? {question: deviceClarification('device', matching.map(item => item.id), canNameDevice)} : {code: refused};
+      }
       if (admission !== undefined && !citedNestedIdentity(family, data, admission)) return {code: 'invalid-request'};
       if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
       if (selected.owner === 'bunny/modules/pixoo') {
@@ -622,7 +624,7 @@ export class ConversationActions {
       const visible = rows.filter(({device}) => admission?.visible('devices', device.id) !== false);
       const selected = matchingDevices(visible, target, 'auto', literalDeviceId(target));
       if (selected.length !== 1 || selected[0] === undefined) return {code: selected.length === 0 ? 'not-found' : 'invalid-state'};
-      const refused = admission?.target(selected[0].device.id, 'devices', visible.map(({device}) => ({id: device.id, label: deviceLabel(device)})));
+      const refused = admission?.target(selected[0].device.id, 'devices', visible.map(({owner, device}) => ({owner, id: device.id, label: deviceLabel(device)})));
       if (refused !== undefined) return {code: refused};
       const modes = selected[0].device.capabilities.modes;
       if (!modes.supported || data.mode !== null && !modes.values.some(value => value === data.mode)) return {code: 'unsupported-capability'};

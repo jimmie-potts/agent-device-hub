@@ -2716,7 +2716,7 @@ export class AssistantEngine {
         const texts = this.#catalogReferenceTexts(task, scope, modelCallId, true);
         const references = alternatives.map(target => ({...target, binding: '', allowed: visible(source, target.id), eligible: false}));
         const excluded = (candidate: (typeof references)[number]) =>
-          refs !== undefined && catalogExcluded(refs, source === 'shows' ? 'draft' : 'primary', candidate.id, candidate.label);
+          refs !== undefined && catalogExcluded(refs, source === 'shows' ? 'draft' : 'primary', candidate.id, candidate.label, candidate.owner);
         if (references.some(candidate => candidate.id === id && excluded(candidate))) return 'not-found';
         const addressed = new Set((refs === undefined ? [scope.request.text, scope.answer?.text ?? '']
           : [catalogSelectionText(scope, refs, 'request'), catalogSelectionText(scope, refs, 'answer')])
@@ -2730,7 +2730,8 @@ export class AssistantEngine {
           if (primary.length !== 1 || primary[0] === undefined) return 'invalid-state';
           const ref = primary[0];
           if (ref.kind === 'named') {
-            const matches = references.filter(candidate => candidate.allowed && catalogQuoteNames(ref.quote, candidate.id, candidate.label));
+            const matches = references.filter(candidate => candidate.allowed && !excluded(candidate) &&
+              catalogQuoteNames(ref.quote, candidate.id, candidate.label, candidate.owner));
             if (matches.length > 1) return 'invalid-state';
             if (matches[0]?.id !== id && !(implicit && source === 'playback' && alternatives.length === 1 &&
               ['music', 'playback'].some(label => catalogQuoteNames(ref.quote, label)))) return 'not-found';

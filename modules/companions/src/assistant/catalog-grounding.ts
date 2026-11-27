@@ -90,11 +90,13 @@ function containsControlQuote(body: string, quote: string): boolean {
     !/[\p{L}\p{N}_-]/u.test(body[index + quote.length] ?? '');
 }
 
-export function catalogQuoteNames(quote: string, id: string, label = id): boolean {
+export function catalogQuoteNames(quote: string, id: string, label = id, owner?: string): boolean {
   if (quote.startsWith('id:')) return quote.slice(3) === id;
   const name = normalizedControlText(quote);
   const bare = name.replace(/^(?:the|my) /u, '');
-  return name !== '' && [normalizedControlText(label), normalizedControlText(id)].some(value => value === name || value === bare);
+  const ownerName = owner?.split('/').at(-1);
+  const names = ownerName === undefined ? [label, id] : [label, id, `${ownerName} ${label}`, `${ownerName} ${id}`];
+  return name !== '' && names.map(normalizedControlText).some(value => value === name || value === bare);
 }
 
 /** A shorter label inside the cited name is harmless. A separate or enclosing label needs clarification. */
@@ -111,8 +113,8 @@ export function catalogSelections(refs: readonly CatalogReference[], role: Catal
   return selected.some(ref => ref.source === 'answer') ? selected.filter(ref => ref.source === 'answer') : selected;
 }
 
-export function catalogExcluded(refs: readonly CatalogReference[], role: CatalogReferenceRole, id: string, label = id): boolean {
-  return refs.some(ref => ref.role === role && ref.disposition === 'exclude' && catalogQuoteNames(ref.quote, id, label));
+export function catalogExcluded(refs: readonly CatalogReference[], role: CatalogReferenceRole, id: string, label = id, owner?: string): boolean {
+  return refs.some(ref => ref.role === role && ref.disposition === 'exclude' && catalogQuoteNames(ref.quote, id, label, owner));
 }
 
 export function catalogSelectionText(scope: ModelControlScope, refs: readonly CatalogReference[], source: CurrentCitation['source']): string {

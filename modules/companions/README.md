@@ -1463,7 +1463,9 @@ For B.U.N.N.Y., Reachy and MicroDuck, the selected hosted model interprets the
 action, settings and target roles. For each existing target, it quotes the
 complete selection or exclusion from the current request or its clarification.
 Companions checks those words against the saved owner message and resolves names
-against permitted owner records. A missing selection requires clarification
+against permitted owner records. A shared label across visible device owners
+requires an exact ID, a name qualified by its device owner, or clarification.
+A missing selection requires clarification
 even if an excluded record exists. The model interprets ordinary language once.
 The Hub validates the resulting references and checks the tool's permission and
 the current state. The tracked dispatcher checks the registered owner's

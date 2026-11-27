@@ -4942,7 +4942,8 @@ function catalogPhrases(): CatalogPhrase[] {
 }
 
 async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof world>>, operations: OperationRecord[] = [],
-  beforeOperationRead: () => void = () => {}, pixooState: () => Pick<DeviceRecord, 'availability' | 'held'> = () => ({availability: 'available'})) {
+  beforeOperationRead: () => void = () => {}, pixooState: () => Pick<DeviceRecord, 'availability' | 'held'> = () => ({availability: 'available'}),
+  sharedLampPresent: () => boolean = () => true) {
   await w.coreSync.close();
   type States = ReturnType<typeof state>[];
   const register = (owner: Participant, families: Record<string, States | (() => States)>) => owner.serveSync(Object.keys(families),
@@ -4967,18 +4968,20 @@ async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof
   const hash = 'a'.repeat(64), renditionId = 'b'.repeat(64);
   const playlistId = '11111111-1111-4111-8111-111111111111', assetId = '22222222-2222-4222-8222-222222222222';
   await Promise.all([
-    register(connect('lifx'), {device: []}),
+    register(connect('lifx'), {device: [device({...light('fixture-lifx-shared', 'Shared Lamp'), kind: 'lifx',
+      capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']}}})]}),
     register(connect('tidbyt'), {device: []}),
     register(connect('wemo'), {device: [device({...light('bench-plug', 'Bench Plug'), kind: 'wemo', availability: 'unavailable',
       held: {requestId: 'held-operation', heldAtMs: 1000}})]}),
     register(connect('nanoleaf'), {
-      device: [device({...wall, kind: 'nanoleaf', capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']},
+      device: () => [device({...wall, kind: 'nanoleaf', capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']},
         scenes: {supported: true, sceneIds: ['scene-' + hash, 'scene-' + 'd'.repeat(64)]},
         moments: {supported: true, moods: ['celebrate'], maxDurationMs: 10000, coversStatus: false}}}),
       ...['wall-left', 'wall-right'].map(id => {
         const shared = light(id, 'Shared Wall');
         return device({...shared, kind: 'nanoleaf', capabilities: {...shared.capabilities, modes: {supported: true, values: ['free']}}});
-      })],
+      }), ...(sharedLampPresent() ? [device({...light('fixture-nanoleaf-shared', 'Shared Lamp'), kind: 'nanoleaf',
+        capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']}}})] : [])],
       'nanoleaf-shows': [state('nanoleaf-shows', 'shows', {id: 'shows', revision: 7, shows: []})],
       'nanoleaf-reactive-presets': [state('nanoleaf-reactive-presets', 'reactive-presets',
         {id: 'reactive-presets', revision: 7, presets: [{presetId: 'preset-evening-glow', name: 'Evening Glow'}]})],
@@ -5017,6 +5020,7 @@ for (const host of ['anthropic', 'openai'] as const) {
     let beforeOperationRead = () => {};
     let receiptDenied: string | undefined;
     let pixooState: Pick<DeviceRecord, 'availability' | 'held'> = {availability: 'available'};
+    let sharedLamp: 'visible' | 'hidden' | 'absent' = 'visible';
     const policy = sharing();
     let modeDenied = false;
     let proposal: {name: string; input: Record<string, unknown>; ownerText: string} | undefined;
@@ -5049,13 +5053,14 @@ for (const host of ['anthropic', 'openai'] as const) {
             : query.kind === 'asset' && (query.name === 'Blue Kite' || query.id === '22222222-2222-4222-8222-222222222222')
             ? {id: '22222222-2222-4222-8222-222222222222'} : errorBody('not-found')),
       share: query => policy(query) && !(modeDenied && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'hub') &&
-        !(receiptDenied !== undefined && query.destination === 'private-conversation' && query.source === 'operations' && query.record === receiptDenied), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
+        !(receiptDenied !== undefined && query.destination === 'private-conversation' && query.source === 'operations' && query.record === receiptDenied) &&
+        !(sharedLamp === 'hidden' && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'fixture-nanoleaf-shared'), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
       artworkId: id, sourceRequestId: 'kite-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
         outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
           frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
       favorite: false, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false},
     })});
-    await catalogFixture(context, w, operationReceipts, () => beforeOperationRead(), () => pixooState);
+    await catalogFixture(context, w, operationReceipts, () => beforeOperationRead(), () => pixooState, () => sharedLamp !== 'absent');
     const validator = coreValidator();
     await w.core.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', message => {
       const validation = validator.validate(message);
@@ -5225,6 +5230,48 @@ for (const host of ['anthropic', 'openai'] as const) {
         sceneReceiptStatus = 'completed';
       }
     }
+
+    const lampsStart = delivered.length;
+    const lampsTool = catalogTool('device-mode-set');
+    const mode = {mode: 'free'};
+    const lifxOwner = 'bunny/modules/lifx';
+    const nanoleafOwner = 'bunny/modules/nanoleaf';
+    const lifxId = 'id:fixture-lifx-shared';
+    const nanoleafId = 'id:fixture-nanoleaf-shared';
+    const lampRequest = 'Set Shared Lamp to free mode.';
+    const unqualified = [ownerReference('primary', 'Shared Lamp')];
+    await ask(lampRequest, lampsTool, argumentsFor(lifxOwner, 'Shared Lamp', mode), unqualified, 'waiting');
+    assert.equal(delivered.length, lampsStart, 'the model owner cannot resolve two visible devices with the same label');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which device/u);
+
+    const chooseLamp = `Use ${lifxId}.`;
+    proposal = {ownerText: chooseLamp, name: lampsTool, input: {
+      ...argumentsFor(lifxOwner, lifxId, mode),
+      references: [ownerReference('primary', lifxId, 'named', 'answer')],
+    }};
+    assert.equal((await input(w.core, w.module(), chooseLamp, true)).status, 'accepted');
+    await until(() => delivered.length === lampsStart + 1 && status(w) === 'succeeded');
+    assert.equal(delivered.at(-1)?.data.target, 'fixture-lifx-shared');
+
+    await ask('Set LIFX Shared Lamp to free mode.', lampsTool, argumentsFor(lifxOwner, 'Shared Lamp', mode),
+      [ownerReference('primary', 'LIFX Shared Lamp')]);
+    assert.equal(delivered.length, lampsStart + 2, 'a verbatim owner-qualified label resolves without another question');
+    assert.equal(delivered.at(-1)?.data.target, 'fixture-lifx-shared');
+    assert.equal(await ask(`Set ${lifxId} to free mode.`, lampsTool, argumentsFor(nanoleafOwner, lifxId, mode),
+      [ownerReference('primary', lifxId)]), 'refused: not-found');
+    assert.equal(delivered.length, lampsStart + 2, 'an exact ID cannot be dispatched through a false owner claim');
+
+    for (const presence of ['hidden', 'absent'] as const) {
+      sharedLamp = presence;
+      const before = delivered.length;
+      await ask(lampRequest, lampsTool, argumentsFor(lifxOwner, 'Shared Lamp', mode), unqualified);
+      assert.equal(delivered.length, before + 1, 'one visible match is unambiguous');
+      assert.equal(delivered.at(-1)?.data.target, 'fixture-lifx-shared');
+      assert.equal(await ask(`Set ${nanoleafId} to free mode.`, lampsTool, argumentsFor(nanoleafOwner, nanoleafId, mode),
+        [ownerReference('primary', nanoleafId)]), 'refused: not-found');
+      assert.equal(delivered.length, before + 1, 'hidden and absent exact targets have the same refusal');
+    }
+    sharedLamp = 'visible';
 
     const offlineStart = delivered.length;
     pixooState = {availability: 'unavailable'};

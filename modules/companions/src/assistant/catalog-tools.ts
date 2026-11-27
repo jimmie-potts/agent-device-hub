@@ -105,7 +105,7 @@ const references = {
     kind: {type: 'string', enum: ['named', 'prior', 'last-activated'], description: 'Use named for a current name or ID, prior for a reference to an earlier owner selection, or last-activated for a scene activation history request. For last-activated supply sceneId as last-activated.'},
     disposition: {type: 'string', enum: ['select', 'exclude'], description: 'Select the requested target. Exclude any target the owner rules out. A missing selected name stays selected and must never be replaced with an excluded or older target.'},
     source: {type: 'string', enum: ['request', 'answer'], description: 'Current owner request or its current clarification answer.'},
-    quote: text('The complete name or reference for this role, copied verbatim from that owner message. Do not quote a different instruction.'),
+    quote: text('The complete name or reference for this role, copied verbatim from that owner message. Include an owner name if the owner used it to qualify the device.'),
   }, required: ['role', 'kind', 'disposition', 'source', 'quote'], additionalProperties: false},
 } as const satisfies ToolInputSchema['properties'][string];
 export function catalogToolWithReferences(tool: ToolDefinition): ToolDefinition {
