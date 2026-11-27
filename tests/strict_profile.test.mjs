@@ -59,8 +59,15 @@ test('browser test rules flag new fixed waits and Chromium launches on test and 
     const reports = result.messages.filter(message => [wait, launch].includes(message.ruleId)).map(message => message.ruleId);
     assert.deepEqual(reports, [wait, wait, launch, launch, launch], file);
   }
-  const commonjs = await eslint.calculateConfigForFile(join(root, 'fixture.test.cjs'));
-  assert.ok(on(commonjs, wait) && on(commonjs, launch));
+  for (const [file, source, count] of [
+    ['fixture.test.cjs', "const {chromium: browser} = require('playwright'); browser.launch();", 1],
+    ['fixture.test.mjs', "const {chromium: browser} = await import('playwright-core'); browser.launch();", 1],
+    ['fixture.test.mjs', "import {chromium as launcher} from 'another-library'; launcher.launch();", 0],
+    ['fixture.test.cjs', "const {chromium: launcher} = require('another-library'); launcher.launch();", 0],
+  ]) {
+    const [result] = await eslint.lintText(source, {filePath: join(root, file)});
+    assert.equal(result.messages.filter(message => message.ruleId === launch).length, count, source);
+  }
   const shared = await eslint.calculateConfigForFile(join(root, 'apps/runtime/dashboard/tests/journey-runner.ts'));
   assert.ok(on(shared, wait));
   assert.ok(!severity(shared, launch));
