@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import {expect, type Browser, type Locator, type Page} from 'playwright/test';
 import type {HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
-import {feed} from './harness.ts';
+import {feed, recordsLoaded} from './harness.ts';
 
 type World = {url: string; restart(): Promise<void>; holdDeviceWrites(hold: boolean): void; loseDeviceReply(): void; restoreDeviceReply(): void; nanoleafPower(on: boolean): void};
 type Sent = {path: string; target: string; keys: string; value: unknown};
@@ -82,7 +82,7 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
   const page = await context.newPage();page.setDefaultTimeout(15_000);
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   const sent = commands(page);
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
 
   // The current card's commands, from lamp-c's Wide shape: Off, and a brightness slider release. The dial's commands

@@ -1,22 +1,18 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {chromium} from 'playwright';
-import {changes,feed,holdDashboardStream,startWorld} from './harness.ts';
+import {changes,feed,holdDashboardStream} from './harness.ts';
+import {runJourney, viewport} from './journey-runner.ts';
 import {apartmentJourney} from './apartment-journey.ts';
 import {apartmentPresenceJourney} from './apartment-presence-journey.ts';
 import {roomModelFixture} from '../../dist/tests/fixtures/room-model.js';
 
-const world=await startWorld({lighting:true});
-// WebGL runs on SwiftShader on every host. Page compositing stays on Chromium's software compositor (#1893): with
-// SwiftShader as the compositing GPU, a reload or navigation soon after a 3D view rendered waited seconds for queued
-// software-GPU work while the old WebGL context was destroyed, and timed out on a busy CPU.
-const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-gpu-compositing']});
-try{
+await runJourney('Room models', {lighting: true}, async (run, world) => {
+  run.step('Load the studio model');
   const folder=join(world.stateDir,'modules/core/room-models');await mkdir(folder,{recursive:true,mode:0o700});
   await writeFile(join(folder,'catalog.json'),JSON.stringify({schema:'room-model-catalog/1.0',models:[{id:'studio',roomId:'studio'}]}),{mode:0o600});
   await writeFile(join(folder,'studio.json'),JSON.stringify(roomModelFixture()),{mode:0o600});
-  const context=await browser.newContext({viewport:{width:1280,height:1000}});const page=await context.newPage();page.setDefaultTimeout(8000);
+  const context=await run.newContext({viewport: viewport.tallDesktop});const page=await run.page(context, 'roomModel');
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));const sent=changes(page);
   await page.goto(world.url+'/#/rooms');await feed(page,'connected');
   const layout={rooms:[{id:'studio',name:'Studio'}],assignments:[{room:'studio',device:'lamp-a'},{room:'studio',device:'lamp-b'}],groups:[],home:null};
@@ -34,6 +30,7 @@ try{
   await view.getByRole('button',{name:'Select Unpaired lamp',exact:true}).focus();await page.keyboard.press('Enter');
   await view.locator('.room-selected').getByText('No device is bound to this fixture.',{exact:true}).waitFor();
   assert.equal(await view.getByRole('article').count(),0);
+  run.step('Restore the studio after restart');
   await world.restart();await page.reload();await feed(page,'connected');
   await page.getByRole('button',{name:'Open 3D model for Studio',exact:true}).click();
   await view.getByRole('button',{name:'Select Desk lamp',exact:true}).click();
@@ -48,6 +45,7 @@ try{
   await page.waitForFunction(before=>Number(document.querySelector('[aria-label="Studio 3D model"] canvas')?.getAttribute('data-distance'))<before,distance);
   await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.documentElement.scrollWidth<=innerWidth);
   if(process.env.DASHBOARD_RECEIPTS!==undefined)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/room-model-phone.png',fullPage:true});
+  run.step('Reconnect after the lighting stream drops');
   const releaseStream=await holdDashboardStream(page);world.dropDashboardStreams();
   await view.locator('.room-selected').getByText('Room assignments are stale.',{exact:true}).waitFor();
   assert.equal(sent.filter(url=>url.endsWith('/power-set')).length,1,'stream loss never replays a command');
@@ -58,11 +56,13 @@ try{
   await view.locator('.room-selected').getByText('This device is not assigned to this room.',{exact:true}).waitFor();assert.equal(await view.getByRole('article').count(),0);
   const next=await page.request.get(world.url+'/api/v2/snapshot?families=lighting-layout&owner=bunny%2Fcore');const updated=await next.json() as {records:{'lighting-layout':{revision:number}[]}};
   const restored=await page.request.post(world.url+'/api/v2/commands/lighting-layout-set',{headers:{origin:world.url,'bunny-request':'1'},data:{target:'lighting',requestId:'restore-synthetic-assignment',data:{expectedRevision:updated.records['lighting-layout'][0]?.revision,layout}}});assert.equal(restored.status(),200);await card.waitFor();
+  run.step('Retain the uncertain light command');
   world.loseDeviceReply();await card.getByRole('button',{name:'On',exact:true}).click();
   await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor();const uncertainCount=sent.filter(url=>url.endsWith('/power-set')).length;
   await page.reload();await feed(page,'connected');await page.getByRole('button',{name:'Open 3D model for Studio',exact:true}).click();await view.getByRole('button',{name:'Select Desk lamp',exact:true}).click();
   await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor();assert.equal(await card.getByRole('button',{name:'Off',exact:true}).isDisabled(),true);
   assert.equal(sent.filter(url=>url.endsWith('/power-set')).length,uncertainCount,'uncertain request stays locked without replay');
+  run.step('Open the fixtures without WebGL');
   const fallback=await context.newPage();
   await fallback.addInitScript(()=>{HTMLCanvasElement.prototype.getContext=()=>null;});
   await fallback.goto(world.url+'/#/rooms');await feed(fallback,'connected');await fallback.getByRole('button',{name:'Open 3D model for Studio',exact:true}).click();
@@ -72,7 +72,8 @@ try{
   await page.reload();await feed(page,'connected');await page.getByRole('button',{name:'Open 3D model for Studio',exact:true}).click();await view.getByRole('button',{name:'Select Wall lamp',exact:true}).click();
   assert.equal(await view.getByRole('article',{name:'Wall lamp',exact:true}).getByRole('button',{name:'On',exact:true}).isDisabled(),true);
   assert.equal(sent.filter(url=>url.endsWith('/power-set')).length,uncertainCount);
-  const mobile=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true}),phone=await mobile.newPage();const mobileSent=changes(phone);
+  run.step('Pinch to zoom on a phone');
+  const mobile=await run.newContext({viewport: viewport.phone,isMobile:true,hasTouch:true}),phone=await mobile.newPage();const mobileSent=changes(phone);
   await phone.goto(world.url+'/#/rooms');await feed(phone,'connected');await phone.getByRole('button',{name:'Open 3D model for Studio',exact:true}).tap();
   const touchCanvas=phone.getByRole('region',{name:'Studio 3D model',exact:true}).locator('canvas');await touchCanvas.locator('..').waitFor();await touchCanvas.scrollIntoViewIfNeeded();
   const touchBox=await touchCanvas.boundingBox();assert.ok(touchBox!==null);await touchCanvas.locator('..').locator('canvas[data-rendered=true]').waitFor();const touchDistance=Number(await touchCanvas.getAttribute('data-distance'));
@@ -81,12 +82,15 @@ try{
   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x-75,y,id:1},{x:x+75,y,id:2}]});
   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   await phone.waitForFunction(before=>Number(document.querySelector('[aria-label="Studio 3D model"] canvas')?.getAttribute('data-distance'))<before,touchDistance);
-  assert.equal(sent.filter(url=>url.endsWith('/power-set')).length,uncertainCount);assert.equal(mobileSent.length,0,'touch inspection sends no command');await mobile.close();
+  assert.equal(sent.filter(url=>url.endsWith('/power-set')).length,uncertainCount);assert.equal(mobileSent.length,0,'touch inspection sends no command');await run.closeContext(mobile);
   console.log(JSON.stringify({journey:'private-room-model',selections:true,reportedPower:true,unbound:true,stale:true,restartNoReplay:true,uncertainNoReplay:true,webglFallback:true,touchPinch:true,physical:false}));
-  await context.close();
+  await run.closeContext(context);
   assert.deepEqual(errors,[]);
-  const apartmentWorld=await startWorld({lighting:true});
-  try{await apartmentJourney(browser,apartmentWorld);}finally{await apartmentWorld.close();}
-  const presenceWorld=await startWorld({lighting:true,presence:true});
-  try{await apartmentPresenceJourney(browser,presenceWorld);}finally{await presenceWorld.close();}
-}finally{await browser.close();await world.close();}
+  run.step('Prepare the furnished apartment');
+  const apartment = await run.startWorld({lighting: true});
+  await apartmentJourney(run, apartment);
+  await run.closeWorld(apartment);
+  run.step('Prepare apartment presence');
+  const presence = await run.startWorld({lighting: true, presence: true});
+  await apartmentPresenceJourney(run, presence);
+}, 'software-webgl');

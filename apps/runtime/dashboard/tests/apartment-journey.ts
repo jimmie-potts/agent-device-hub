@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import {mkdir,unlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import type {Browser,Page} from 'playwright';
+import type {Page} from 'playwright';
 import {PACKET} from '@jimmie-potts/lifx';
 import {apartmentArtPath,parseApartmentModel} from '../../src/apartment-model.ts';
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
 import {changes,feed,holdDashboardStream,type World} from './harness.ts';
+import {viewport, type Journey} from './journey-runner.ts';
 import {openDirectory} from './navigation-helpers.ts';
 
 declare global {
@@ -18,7 +19,7 @@ declare global {
 const panel=(page:Page)=>page.getByRole('region',{name:'Apartment 3D model',exact:true});
 const selectLight=(page:Page,name:string)=>panel(page).getByRole('button',{name:`Select ${name}`,exact:true}).click();
 
-export async function apartmentJourney(browser:Browser,world:World):Promise<void> {
+export async function apartmentJourney(run: Journey, world: World):Promise<void> {
   const {bytes,image}=syntheticApartmentArtwork(),model=furnishedFixture(image);
   assert.ok(parseApartmentModel(model),'synthetic room placements obey the prepared model contract');
   const folder=join(world.stateDir,'modules/core/apartment'),assets=join(folder,'assets'),file=join(assets,image.id+'.png');
@@ -26,9 +27,10 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
   await writeFile(join(folder,'active.json'),JSON.stringify(model),{mode:0o600});
   await writeFile(file,bytes,{mode:0o600});
   // Keep the card's flip animation out of the guarded command and recovery checks.
-  const desktop=await browser.newContext({viewport:{width:1280,height:1000},reducedMotion:'reduce'});
+  run.step('Desktop apartment model');
+  const desktop=await run.newContext({viewport: viewport.tallDesktop});
   try{
-    const page=await desktop.newPage();page.setDefaultTimeout(10_000);
+    const page=await run.page(desktop, 'controls');
     const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
     const sent=changes(page);
     // Count live GPU objects through the real API so leaving Rooms proves release at this boundary.
@@ -115,6 +117,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     assert.equal(world.lifxState().bulbs['192.0.2.42']?.power,untouched);
     assert.equal(sent.length,1,'one deliberate action targeted the existing owner and exact room member');
     assert.match(await report.innerText(),nextPower?/Off · reported/:/On · reported/,'a write acknowledgement is not a fresh observation');
+    run.step('Restore the apartment after restart');
     await world.restart();await page.reload();await feed(page,'connected');await selectLight(page,'Reading wall light');
     await report.filter({hasText:nextPower?'On · reported':'Off · reported'}).waitFor();
     assert.equal(sent.length,1,'reconnect shows the latest reading and does not repeat the command');
@@ -185,6 +188,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     assert.equal(sent.length,2,'missing artwork and departure send no light command');
     assert.deepEqual(writes(),writesAfterUncertainty);
     assert.deepEqual(errors,[]);
+    run.step('Open the apartment without WebGL');
     const fallback=await desktop.newPage();
     await fallback.addInitScript(()=>{HTMLCanvasElement.prototype.getContext=()=>null;});
     const fallbackSent=changes(fallback);
@@ -193,9 +197,10 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await selectLight(fallback,'Reading wall light');await panel(fallback).getByRole('article',{name:'Reading wall light',exact:true}).waitFor();
     assert.equal(fallbackSent.length,0);
     await fallback.close();
-  }finally{await desktop.close();}
+  }finally{await run.closeContext(desktop);}
   await writeFile(file,bytes,{mode:0o600});
-  const mobile=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  run.step('Phone apartment model');
+  const mobile=await run.newContext({viewport: viewport.phone,isMobile:true,hasTouch:true});
   try{
     const phone=await mobile.newPage(),mobileSent=changes(phone);
     await phone.goto(world.url+'/#/rooms');await feed(phone,'connected');
@@ -218,7 +223,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await view.getByRole('combobox').selectOption({label:'Studio'});await view.locator('canvas[data-frame=studio]').waitFor();
     await view.getByRole('button',{name:'Overhead',exact:true}).tap();await view.locator('canvas[data-camera=overhead]').waitFor();
     assert.equal(mobileSent.length,0,'phone inspection sends no light command');
-  }finally{await mobile.close();}
+  }finally{await run.closeContext(mobile);}
   console.log(JSON.stringify({journey:'furnished-apartment',rooms:2,artwork:true,roomFrame:true,webglFallback:true,unmountReleasesResources:true,readCancelled:true,
     touchOrbit:true,touchPinch:true,guardedFixture:true,stale:true,reassignment:true,uncertainNoReplay:true,physical:false}));
 }

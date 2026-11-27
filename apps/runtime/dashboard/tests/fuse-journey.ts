@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import {expect, type Browser, type Locator, type Page} from 'playwright/test';
 import type {HomeLayoutRecord, HomePlacement, LightingLayoutRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {feed, holdDashboardStream} from './harness.ts';
+import {feed, recordsLoaded, holdDashboardStream} from './harness.ts';
 
 type World = {url: string; holdDeviceWrites(hold: boolean): void; dropDashboardStreams(): void; lifxState(): {packets: unknown[]; bulbs: Record<string, {power: boolean} | undefined>}; wemo: {state(): Record<string, {power: boolean} | undefined>}};
 type Sent = {path: string; target: string; on?: unknown};
@@ -76,7 +76,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   const page = await context.newPage();page.setDefaultTimeout(15_000);
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   const sent: Sent[] = commands(page);
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   // A room on Home: grouping keeps it in the lighting Home selection (#1972 review).
   assert.equal(await page.evaluate(async () => {
@@ -130,7 +130,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   // Two plugs by touch, in a second browser: the card follows the finger and the page does not scroll.
   const touch = await browser.newContext({viewport: {width: 1440, height: 1000}, hasTouch: true});
   const phone = await touch.newPage();phone.setDefaultTimeout(15_000);
-  await phone.goto(world.url);await feed(phone, 'connected');
+  await phone.goto(world.url);await recordsLoaded(phone);
   await expect(handle(phone, plug('desk-lamp'))).toBeVisible();
   const finger = await center(handle(phone, plug('desk-lamp'))), shelf = await center(card(phone, plug('shelf-lamp')));
   const cdp = await touch.newCDPSession(phone), scrolled = (): Promise<number> => phone.evaluate(() => (document.scrollingElement ?? document.documentElement).scrollTop);
