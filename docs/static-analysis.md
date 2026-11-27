@@ -186,6 +186,12 @@ is staged now, since the Pixoo module joined the profile
     with zero, `false` or an empty string. A nullable object may still be
     tested directly;
   - no non-null assertions.
+- **Runtime dashboard and shipped module frontends
+  (`bunny/no-command-text-decision`):** use a command's typed phase for
+  decisions and its receipt text for display. The typed rule checks comparisons,
+  common string and regular-expression matches, local aliases and direct
+  helpers. `npm run test:workflow` checks that it rejects command-text matching
+  and allows rendering receipts and matching unrelated text.
 - **No inline ESLint comments:** covered files, including JavaScript under
   `modules/`, set `noInlineConfig`. ESLint ignores every `eslint-disable`,
   `eslint` or `global` comment there and reports it as a warning, which

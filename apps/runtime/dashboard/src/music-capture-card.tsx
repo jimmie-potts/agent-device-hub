@@ -1,4 +1,5 @@
 import React, {useId, useState, useSyncExternalStore} from 'react';
+import {frontendCommandView, type FrontendCommandPhase} from '@jimmie-potts/sdk/frontend';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CaptureInput} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
@@ -13,8 +14,9 @@ import './music.css';
 const empty: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false, rechecking: false};
 const emptySubscribe = (): (() => void) => () => {};
 const emptySnapshot = (): MusicCaptureView => empty;
-const resultText = (text: string): string => text.replace('The module observed the result.', 'The capture owner confirmed the result.')
-  .replace('Nothing was sent to the device.', 'No capture work was sent.').replace('No evidence of a device effect.', 'No capture completion evidence.');
+const resultText = (phase: FrontendCommandPhase): string => frontendCommandView(phase, {
+  observed: 'The capture owner confirmed the result.', expiredEffect: 'No capture work was sent.', noEvidence: 'No capture completion evidence.',
+}).text;
 function statusText(view: MusicCaptureView, live: boolean): string {
   const state = view.state;
   if (!live || state === undefined) return 'Capture status is unavailable or disconnected.';
@@ -92,8 +94,8 @@ export function MusicCaptureCard({connection, connected, coreLive, control, oper
     </div>
     {!control && <p className="music-note">Read-only access. Capture controls are disabled.</p>}
     {control && !operationsLive && <p className="music-note">Command records are unavailable. Controls are disabled.</p>}
-    {start.requestId !== undefined && <p role="status">Start: {resultText(start.text)}</p>}
-    {stop.requestId !== undefined && <p role="status">Stop: {resultText(stop.text)}</p>}
+    {start.requestId !== undefined && <p role="status">Start: {resultText(start.phase)}</p>}
+    {stop.requestId !== undefined && <p role="status">Stop: {resultText(stop.phase)}</p>}
     <button type="button" className="secondary" disabled={!connected || !coreLive || scope === undefined || refreshing} onClick={() => {void refresh();}}>Refresh capture status</button>
     <MusicResponseControls view={view} available={Boolean(available)} operations={selected} operationsLive={operationsLive}/>
   </article>

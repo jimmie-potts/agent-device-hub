@@ -1,5 +1,8 @@
-// Type-only browser entry for fixed, shipped React contributions (Hub #932). Import no Node module implementation.
+// Browser entry for fixed, shipped React contributions (Hub #932). Import no Node module implementation.
 export {usableArtComposition} from './art.js';
+export {frontendCommandView} from './frontend-command.js';
+export type {FrontendCommandPhase, FrontendCommandView, FrontendCommandWording} from './frontend-command.js';
+import type {FrontendCommandPhase} from './frontend-command.js';
 import type {ComponentType, ReactNode} from 'react';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import type {HomeShape, Mode, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -14,6 +17,8 @@ export type FrontendAction = {family: string; target: string; data: object; requ
 export type FrontendUpload = {family: string; target: string; requestId: string; upload: {name: string; file: Blob}; parent?: TraceContext};
 export type FrontendActionReply = {status: 'accepted'; requestId: string} | ErrorBody;
 export type FrontendCommand = {
+  /** Always supplied by the runtime shell. Older implementations may provide only the display fields. */
+  readonly phase?: FrontendCommandPhase;
   readonly text: string;
   readonly locked: boolean;
   readonly requestId: string | undefined;

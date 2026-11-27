@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {checkLightingOutcomes} from './control-projections.ts';
 
 const started = performance.now();
 const world = await startWorld({pixooPages: true});
@@ -57,6 +58,8 @@ try {
   if (output !== undefined) await page.screenshot({path: `${output}/runtime-smoke-home.png`, fullPage: true});
 
   assert.deepEqual(sent, [], 'loading and inspecting send no command');
+  await checkLightingOutcomes(context);
+  checks.push('the Lights page and light card show expired, refused, and uncertain command outcomes');
   assert.deepEqual(errors, []);
   await context.close();
   process.stdout.write(`${JSON.stringify({passed: true, checks, seconds: Math.round((performance.now() - started) / 100) / 10})}\n`);

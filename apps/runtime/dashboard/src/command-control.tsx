@@ -1,13 +1,15 @@
 // Shell-owned command attempts shared across module pages and device controls.
 import React, {useEffect, useMemo, useSyncExternalStore} from 'react';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {FrontendAction, FrontendActionReply, FrontendUpload, FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
+import {frontendCommandView, type FrontendAction, type FrontendActionReply, type FrontendUpload, type FrontendCommand, type FrontendCommandView, type FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {errorBody} from '@jimmie-potts/event-contracts/v2/errors';
-import {ATTEMPTS_KEY, rememberAttempt} from './attempts.ts';
+import {ATTEMPTS_KEY, rememberAttempt, type AttemptIdentity} from './attempts.ts';
 import {sendAction} from './actions.ts';
 import {operationView} from './devices.ts';
 
-type Attempt = {requestId: string; target: string; family: string; text: string; locked: boolean};
+export type TrackedCommand = FrontendCommand & FrontendCommandView;
+type Attempt = AttemptIdentity & FrontendCommandView;
+const NO_COMMAND = frontendCommandView({kind: 'none'});
 /** Only action identities survive a reload, never draft values or credentials. A lost reply cannot unlock on reload. */
 function saved(target: string): Attempt | undefined {
   try {
@@ -15,7 +17,7 @@ function saved(target: string): Attempt | undefined {
     if (!Array.isArray(value)) return undefined;
     const entry = value.find((item: unknown) => typeof item === 'object' && item !== null && 'target' in item && item.target === target) as Partial<Attempt> | undefined;
     if (entry === undefined || typeof entry.requestId !== 'string' || typeof entry.family !== 'string') return undefined;
-    return {requestId: entry.requestId, target, family: entry.family, locked: true, text: 'Previous request has no confirmed result yet. It was not sent again.'};
+    return {requestId: entry.requestId, target, family: entry.family, ...frontendCommandView({kind: 'restored'})};
   } catch { return undefined; }
 }
 function remember(attempt: Attempt): boolean {
@@ -49,18 +51,19 @@ function attemptStore(target: string) {
   return store;
 }
 /** Core metadata may use a distinct attempt key so a configured device ID cannot alias its save lock. */
-export function useAttempt(target: string, operations: readonly OperationRecord[], operationsLive: boolean, send: Send = ordinary, attemptKey: string = target): FrontendCommand {
+export function useAttempt(target: string, operations: readonly OperationRecord[], operationsLive: boolean, send: Send = ordinary, attemptKey: string = target): TrackedCommand {
   const store = useMemo(() => attemptStore(attemptKey), [attemptKey]);
   const {attempt, sending} = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const latest = attemptKey !== target ? undefined : operations.filter(operation => operation.target === target).sort((a, b) => (b.sentAtMs - a.sentAtMs) === 0 ? b.revision - a.revision : b.sentAtMs - a.sentAtMs)[0];
   const operation = attempt === undefined ? latest : operations.find(item => item.requestId === attempt.requestId);
-  const view = operation === undefined ? attempt : operationView(operation);
+  const tracked = useMemo(() => operation === undefined ? undefined : operationView(operation), [operation]);
+  const view = tracked ?? attempt ?? NO_COMMAND;
   useEffect(() => {
-    if (operation === undefined || operationView(operation).locked) return;
+    if (operation === undefined || tracked === undefined || tracked.locked) return;
     store.update(previous => previous.attempt?.requestId === operation.requestId && previous.attempt.locked
-      ? {...previous, attempt: {...previous.attempt, ...operationView(operation)}} : previous);
-  }, [operation, store]);
-  const settled = view !== undefined && !view.locked;
+      ? {...previous, attempt: {...previous.attempt, ...tracked}} : previous);
+  }, [operation, tracked, store]);
+  const settled = (tracked !== undefined || attempt !== undefined) && !view.locked;
   const settledRequest = operation?.requestId ?? attempt?.requestId;
   useEffect(() => {
     if (!settled) return;
@@ -71,28 +74,27 @@ export function useAttempt(target: string, operations: readonly OperationRecord[
     } catch { /* No draft or credential is stored. */ }
   }, [attemptKey, settled, settledRequest]);
   return {
-    text: view?.text ?? 'No command sent from this page.', locked: sending || (view?.locked ?? false), requestId: operation?.requestId ?? attempt?.requestId,
+    phase: view.phase, text: view.text, locked: sending || view.locked, requestId: operation?.requestId ?? attempt?.requestId,
     run: async action => {
       if (store.getSnapshot().sending) return;
       if (typeof action === 'string' || !operationsLive) {
         store.update(previous => previous.attempt?.locked === true ? previous : {...previous, attempt: {requestId: '', target: attemptKey, family: '',
-          text: `Not sent: ${typeof action === 'string' ? action : 'operation records are stale'}. Nothing was sent.`, locked: false}});
+          ...frontendCommandView({kind: 'not-sent', reason: typeof action === 'string' ? action : 'operation records are stale'})}});
         return;
       }
-      const next = {requestId: action.requestId, target: attemptKey, family: action.family, text: 'Requested. Waiting for acceptance.', locked: true};
+      const next = {requestId: action.requestId, target: attemptKey, family: action.family, ...frontendCommandView({kind: 'requested'})};
       if (!remember(next)) {
         store.update(previous => previous.attempt?.locked === true ? previous : {...previous, attempt: {...next,
-          text: 'Not sent: this browser could not retain the request identity for reload recovery. Nothing was sent.', locked: false}});
+          ...frontendCommandView({kind: 'not-sent', reason: 'this browser could not retain the request identity for reload recovery'})}});
         return;
       }
       // Explicit owner-qualified hold release remains available through its existing
       // recovery controls. Ordinary controls share this lock and sending guard.
       store.update(() => ({attempt: next, sending: true}));
       const reply = await send(action);
-      const result = 'error' in reply
-        ? {text: reply.error.code === 'uncertain-result' ? 'Uncertain result. The command may have taken effect; it was not sent again.'
-          : `Refused (${reply.error.code}) without changing state.`, locked: reply.error.code === 'uncertain-result'}
-        : {text: 'Accepted. Waiting for completion.', locked: true};
+      const result = frontendCommandView('error' in reply
+        ? reply.error.code === 'uncertain-result' ? {kind: 'uncertain'} : {kind: 'refused', code: reply.error.code}
+        : {kind: 'accepted'});
       // A streamed definitive result can arrive before this HTTP reply. Keep it for this request,
       // including after projection retirement; clearing the shared sending guard also rerenders.
       store.update(previous => previous.attempt?.requestId !== next.requestId ? previous : {sending: false,

@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
+import {frontendCommandView, type FrontendCommand, type FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {REACTIVE_LIMITS, REACTIVE_TARGET, validReactiveName, type ReactiveCatalog} from '../music-preset-data.js';
 import type {MusicRecipeV1} from '../music-recipe-data.js';
 import {canSaveReactive, followReactivePresets, type ReactiveCatalogView} from './reactive-preset-model.js';
@@ -56,7 +56,7 @@ function PresetLibrary({context, recipe, load, command}: {context: FrontendConte
       <button type="button" disabled={!canSave} onClick={save}>Save new preset</button></div>
     {name !== '' && !validReactiveName(name) && <p role="alert">Use a name of 1–80 characters, without control characters.</p>}
     {full && <p role="status">The private library is full. Earlier presets are preserved.</p>}
-    <p role="status">{command.text.replace('The module observed the result.', 'The preset save was observed.')}</p>
+    <p role="status">{command.phase === undefined ? command.text : frontendCommandView(command.phase, {observed: 'The preset save was observed.'}).text}</p>
     {saved === fingerprint && <p role="status">This named draft was saved. Change its name or recipe to save another preset.</p>}
   </section>;
 }

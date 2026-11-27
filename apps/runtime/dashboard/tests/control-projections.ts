@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
-import type {BrowserContext, Page} from 'playwright';
+import {chromium, type BrowserContext, type Page} from 'playwright';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 
@@ -16,6 +16,7 @@ const device: DeviceRecord = {
 };
 type ProbeProps = {kind: 'device'; record: DeviceRecord; operations: OperationRecord[]} |
   {kind: 'placement'; operations: OperationRecord[]} |
+  {kind: 'lighting'; record: DeviceRecord; operations: OperationRecord[]} |
   {kind: 'playback'; record: PlaybackState; control: boolean; live: boolean};
 const render = async (page: Page, props: ProbeProps): Promise<void> => {
   await page.evaluate(input => {
@@ -23,7 +24,7 @@ const render = async (page: Page, props: ProbeProps): Promise<void> => {
   }, props);
 };
 
-export async function checkControlProjections(context: BrowserContext): Promise<void> {
+async function controlProbe(context: BrowserContext): Promise<() => Promise<Page>> {
   // Use the real components. The small entry only supplies props and commits renders synchronously.
   const bundle = await build({stdin: {contents: `
     import React from 'react';
@@ -31,6 +32,24 @@ export async function checkControlProjections(context: BrowserContext): Promise<
     import {flushSync} from 'react-dom';
     import {DeviceCard, PlaybackCard} from '../src/device-controls.tsx';
     import {useAttempt} from '../src/command-control.tsx';
+    import {LightingWorkspace} from '../src/lighting-workspace.tsx';
+    const lightingConnection = {
+      openModule: () => ({close: async () => {}}),
+      refreshDevices: async () => {},
+    };
+    function LightingProbe({record, operations}) {
+      const copies = [
+        {owner: 'bunny/modules/lifx', family: 'device', synced: true, records: [record]},
+        {owner: 'bunny/core', family: 'lighting-layout', synced: true, records: [
+          {id: 'lighting', revision: 1, layout: {rooms: [], assignments: [], groups: [], home: null}},
+        ]},
+      ];
+      return React.createElement(LightingWorkspace, {
+        runtime: {modules: [], control: true, copies, catalogFailed: false},
+        route: {kind: 'lighting-brand', brand: 'lifx'}, connection: lightingConnection,
+        connected: true, operations, operationsLive: true,
+      });
+    }
     function PlacementProbe({operations}) {
       const command = useAttempt('playback', operations.filter(op => op.family === 'playback-layout-set'), true, undefined, 'core/playback-layout');
       return React.createElement(React.Fragment, null,
@@ -40,14 +59,14 @@ export async function checkControlProjections(context: BrowserContext): Promise<
     }
     const root = createRoot(document.getElementById('root'));
     window.renderControlProbe = props => flushSync(() => root.render(React.createElement(
-      props.kind === 'placement' ? PlacementProbe : props.kind === 'device' ? DeviceCard : PlaybackCard,
+      {placement: PlacementProbe, device: DeviceCard, playback: PlaybackCard, lighting: LightingProbe}[props.kind],
       {owner: 'bunny/modules/nanoleaf', live: true, control: true, operations: [], operationsLive: true,
        refresh: async () => {}, ...props})));
   `, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'control-projections-entry.js'},
   bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, loader: {'.css': 'empty'}, logLevel: 'silent'});
   assert.ok(bundle.outputFiles[0]);
   const javascript = bundle.outputFiles[0].text;
-  const open = async (): Promise<Page> => {
+  return async (): Promise<Page> => {
     const page = await context.newPage(); page.setDefaultTimeout(5000);
     // Every request is fulfilled or aborted here. This origin never reaches a server.
     await page.route('**/*', async route => {
@@ -61,6 +80,47 @@ export async function checkControlProjections(context: BrowserContext): Promise<
     await page.waitForFunction(() => 'renderControlProbe' in window);
     return page;
   };
+}
+
+async function checkLightingProjection(lighting: Page): Promise<void> {
+  try {
+    const light: DeviceRecord = {...device, id: 'lamp', kind: 'lifx'};
+    const results = [];
+    for (const [index, status] of (['expired', 'rejected', 'uncertain'] as const).entries()) {
+      const tracked = (target: string, family: string): OperationRecord => ({
+        id: target, revision: index + 1, requestId: `${target}-${status}`, kind: 'device', target, family, command: family,
+        requestedBy: 'bunny/parts/dashboard', status, sentAtMs: 1, updatedAtMs: 2, deadlineAtMs: 50,
+        ...(status === 'rejected' ? {error: {code: 'revision-conflict', retryable: false}} : {}),
+      });
+      await render(lighting, {kind: 'lighting', record: light, operations: [
+        tracked('lighting', 'lighting-layout-set'), tracked('lamp', 'power-set'),
+      ]});
+      const region = lighting.getByRole('region', {name: 'LIFX lights'});
+      const card = region.locator('[data-light-card="lamp"]');
+      const outcome = status === 'rejected' ? 'Refused (revision-conflict)' : status === 'expired' ? 'Expired before' : 'Uncertain result';
+      const layout = region.getByRole('status').filter({hasText: `Layout: ${outcome}`});
+      const attention = card.locator('.light-attention').filter({hasText: outcome});
+      results.push({
+        status, layout: await layout.count(), attention: await attention.count(),
+        locked: await card.getByRole('button', {name: 'On', exact: true}).isDisabled(),
+      });
+    }
+    assert.deepEqual(results, [
+      {status: 'expired', layout: 1, attention: 1, locked: false},
+      {status: 'rejected', layout: 1, attention: 1, locked: false},
+      {status: 'uncertain', layout: 1, attention: 1, locked: true},
+    ], 'Lights shows all tracked outcomes in the layout status and light-card attention');
+  } finally { await lighting.close(); }
+}
+
+export async function checkLightingOutcomes(context: BrowserContext): Promise<void> {
+  const open = await controlProbe(context);
+  await checkLightingProjection(await open());
+}
+
+export async function checkControlProjections(context: BrowserContext): Promise<void> {
+  const open = await controlProbe(context);
+  await checkLightingProjection(await open());
   for (const response of ['accepted', 'uncertain'] as const) {
     const page = await open();
     let release = (): void => {};
@@ -147,5 +207,14 @@ export async function checkControlProjections(context: BrowserContext): Promise<
       command: 'org.bunny.playback-layout.set.requested', target: 'playback', requestedBy: 'bunny/parts/dashboard', status: 'completed', result: 'succeeded', evidence: 'observed', sentAtMs: 1, updatedAtMs: 2, deadlineAtMs: 50}]});
     assert.equal(await save.isEnabled(), true); assert.equal(await pause.isDisabled(), true, 'layout completion never unlocks unresolved playback');
   } finally {await collision.close();}
-  console.log(JSON.stringify({journey: 'control-projections', lateReplies: ['accepted', 'uncertain'], completionSurvivesRetirement: true, unresolvedLocked: true, replayed: 0, sameTitlePlaybackStates: 5, readOnly: true}));
+  console.log(JSON.stringify({journey: 'control-projections', lightingOutcomes: ['expired', 'refused', 'uncertain'], lateReplies: ['accepted', 'uncertain'], completionSurvivesRetirement: true, unresolvedLocked: true, replayed: 0, sameTitlePlaybackStates: 5, readOnly: true}));
+}
+
+if (import.meta.main) {
+  const browser = await chromium.launch({headless: true});
+  try {
+    await checkControlProjections(await browser.newContext({reducedMotion: 'reduce'}));
+  } finally {
+    await browser.close();
+  }
 }

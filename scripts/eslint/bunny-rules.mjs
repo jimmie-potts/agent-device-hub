@@ -3,6 +3,7 @@
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Outcome} from '../../packages/sdk/src/evidence.ts';
+import noCommandTextDecision from './command-text.mjs';
 
 /** The module directory a file belongs to, found relative to the repository root, not the working directory. */
 const moduleRoot = (root, filename) => {
@@ -572,5 +573,6 @@ export default {
     'no-raw-error-text': noRawErrorText,
     'error-body-from-registry': errorBodyFromRegistry,
     'no-raw-outcome-literal': noRawOutcomeLiteral,
+    'no-command-text-decision': noCommandTextDecision,
   },
 };
