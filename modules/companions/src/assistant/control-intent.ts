@@ -1,5 +1,5 @@
 import {isDeepStrictEqual} from 'node:util';
-import type {CatalogFamily, ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import type {ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {Proposal} from './history-contract.js';
 
 export type SceneReceipt = {readonly requestId: string; readonly revision: number; readonly sceneId: string};
