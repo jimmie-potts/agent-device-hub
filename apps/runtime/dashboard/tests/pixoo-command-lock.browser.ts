@@ -58,7 +58,11 @@ try {
       changes(page, sent);
       await page.goto(`${world.url}/${surface === 'player' ? '#/module/pixoo/player' : '#/component/pixoo-1'}`); await feed(page, 'connected');
       const card = page.getByRole('article', {name: 'Pixoo display', exact: true});
-      await step('wait for the card\'s Display tab', () => card.getByRole('tab', {name: 'Display', exact: true}).waitFor());
+      // Each new page mounts this card after Pixoo's own catalog sync. Under one-CPU contention its first
+      // Display tab took up to 15.3 s after feed() returned (#2129). Command and lock checks keep their 10 s limit.
+      const waitForCard = () => step('wait for the Pixoo card to load', () =>
+        card.getByRole('tab', {name: 'Display', exact: true}).waitFor({timeout: 20_000}));
+      await waitForCard();
       await step('open the advanced controls', () => page.getByText(surface === 'player' ? 'Advanced player' : 'Advanced device controls', {exact: true}).click());
       const advanced = surface === 'player' ? page.getByRole('region', {name: 'Pixoo player', exact: true}) : page.locator('[data-device="pixoo-1"]');
       if (direction === 'card-to-advanced') {
@@ -94,9 +98,11 @@ try {
       else assert.equal(await advanced.getByRole('combobox', {name: 'Device mode', exact: true}).isDisabled(), true, 'advanced device controls share the target lock');
       // Opening the same target on another surface, then reloading, must retain the unknown identity.
       await page.goto(`${world.url}/${surface === 'player' ? '#/component/pixoo-1' : '#/module/pixoo/player'}`);
+      await waitForCard();
       await step('wait for the other surface\'s card Screen on', () => card.getByRole('button', {name: 'Screen on', exact: true}).waitFor());
       assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
       await page.reload(); await feed(page, 'connected');
+      await waitForCard();
       await step('wait for the reloaded card\'s "Previous request has no confirmed result yet." status', () => card.getByRole('status').filter({hasText: 'Previous request has no confirmed result yet.'}).waitFor());
       assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
       assert.equal(await page.evaluate(() => sessionStorage.getItem('bunny-device-attempts')), retained);
