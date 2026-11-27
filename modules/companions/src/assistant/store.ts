@@ -70,6 +70,7 @@ export type Call = {version: 1; id: string; taskId: string; runId: string; ordin
   directBrightness?: true;
   modelControlProof?: ModelControlProof;
   wemoFacts?: readonly {id: string; revision: string}[];
+  namedDeviceRead?: {owner: string; id: string};
   historySources?: readonly ContextSourceVersion[];
   inputVersions?: readonly {field: DisclosedField; version: string}[];
   codingApproval?: {destination: 'coding-worker'; repository: string; briefDigest: string};

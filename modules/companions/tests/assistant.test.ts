@@ -4297,12 +4297,13 @@ void test('Responses history requires one exact device and current summary grant
 
 
 void test('both hosted supervisors look up owner-named devices regardless of request wording', async context => {
-  const owner = 'bunny/modules/nanoleaf';
+  const owner = 'bunny/modules/nanoleaf', substituteOwner = 'bunny/modules/tidbyt';
   const wall: DeviceRecord = {...light('studio-wall', 'Studio Wall'), kind: 'nanoleaf', availability: 'unavailable'};
   const devices = [wall, {...wall, id: 'hidden-wall', label: 'Hidden Wall'}, {...wall, id: 'studio-wall-xl', label: 'Studio Wall XL'}];
   const duplicate = {...wall, id: 'duplicate-wall'};
   const hiddenAliases = [{...duplicate, id: 'hidden-duplicate'}, {...wall, id: 'hidden-alias', label: 'Studio Wall Special'}];
   let aliasesPresent = false, duplicateVisible = false;
+  let replaceOwner = false, originalReads = 0, substituteReads = 0;
   const resultByProvider = {anthropic: [] as string[], openai: [] as string[]};
   const usage = {input_tokens: 20, output_tokens: 10};
   let lookups: {target: string; owner: string}[] = [];
@@ -4330,11 +4331,14 @@ void test('both hosted supervisors look up owner-named devices regardless of req
   const w = await world(context, {provider: anthropic, alternateProvider: openai, tools: ['read_devices', 'control_scene_activate'],
     share: grant => standard(grant) && !(grant.source === 'devices' && grant.record?.startsWith('hidden-') === true),
     dispatch: () => assert.fail('a named lookup must not dispatch')});
-  const participant = w.bus.connect(owner);
-  context.after(() => participant.close());
-  await participant.serveSync(['device'], () => ({revision: 1, states: [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])].map(data => ({
+  const participant = w.bus.connect(owner), substitute = w.bus.connect(substituteOwner);
+  context.after(async () => {await participant.close(); await substitute.close();});
+  const snapshot = (records: DeviceRecord[]) => ({revision: 1, states: records.map(data => ({
     type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
-  }))}));
+  }))});
+  await participant.serveSync(['device'], () => snapshot(replaceOwner && ++originalReads > 1 ? []
+    : [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])]));
+  await substitute.serveSync(['device'], () => snapshot(replaceOwner && ++substituteReads > 1 ? [{...wall, kind: 'tidbyt'}] : []));
   await control(w.core, w.module(), 'enable');
   for (const provider of ['anthropic', 'openai'] as const) {
     const ask = async (prompt: string, selector: string, selectedOwner = 'auto', after?: string) => {
@@ -4351,6 +4355,8 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     assert.partialDeepStrictEqual(statusFacts, {devices: [{owner, id: wall.id, name: wall.label, lastReportedAvailability: wall.availability}]});
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), statusFacts);
     assert.deepEqual(await ask('Set Studio Wall to Dusk instead of Northern Lights.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Instead of Northern Lights, apply Dusk on Studio Wall.', 'Studio Wall'), statusFacts);
+    assert.deepEqual(await ask('Instead of Studio Wall, apply Dusk to Side Wall.', 'Studio Wall'), {devices: []});
     assert.deepEqual(await ask('Set Studio Wall to Missing Scene, not Dusk.', 'Studio Wall', owner), statusFacts);
     assert.deepEqual(await ask('Set Studio Wall or Missing Wall to Dusk.', 'Missing Wall', 'auto', 'Studio Wall'), statusFacts);
     const comparison = 'Set Studio Wall to Studio Wall Special.';
@@ -4362,12 +4368,24 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), {devices: []});
     duplicateVisible = false;
     assert.deepEqual(await ask('Apply Night Sky on id:studio-wall.', 'id:studio-wall'), statusFacts);
+    assert.deepEqual(await ask('Apply Night Sky on id:studio-wall id:studio-wall-xl.', 'id:studio-wall'), {devices: []});
+    assert.deepEqual(await ask('Read id:studio-wall; read id:studio-wall-xl.', 'id:studio-wall'), statusFacts);
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Hidden Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Hidden Wall.', 'Hidden Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Missing Wall.', 'Missing Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall XL.', 'Studio Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', ''), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky without changing Studio Wall.', 'Studio Wall'), {devices: []});
+    lookups = [{owner: 'auto', target: 'Studio Wall'}];
+    replaceOwner = true;
+    originalReads = 0;
+    substituteReads = 0;
+    const previous = task(w)?.taskId, before = resultByProvider[provider].length;
+    assert.equal((await input(w.core, w.module(), 'Apply Night Sky on Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'failed');
+    assert.equal(task(w)?.code, 'forbidden');
+    assert.equal(resultByProvider[provider].length, before, 'the old owner facts do not cross the provider boundary');
+    replaceOwner = false;
   }
 });
 
