@@ -165,7 +165,8 @@ it('MCP and Conversation dispatch through the same registered device admission',
   let markEntered: () => void = () => {}, releaseAdmission: () => void = () => {};
   const entered = new Promise<void>(resolve => {markEntered = resolve;});
   const released = new Promise<void>(resolve => {releaseAdmission = resolve;});
-  const originalTransaction = CoreStore.prototype.transaction;
+  const originalTransaction = Object.getOwnPropertyDescriptor(CoreStore.prototype, 'transaction')?.value as CoreStore['transaction'] | undefined;
+  assert.ok(originalTransaction !== undefined);
   let pauseNext = true;
   const mock = context.mock.method(CoreStore.prototype, 'transaction', async function <R>(this: CoreStore, work: (transaction: CoreTransaction) => R) {
     if (pauseNext) {
@@ -354,7 +355,7 @@ it('MCP shares Wemo power identity and advertises Lines-only edits only for Line
   assert.deepEqual(wemoFacts?.generation, plug.generation);
   const linesActions = (await lookup(lines.id))?.actions;
   for (const family of ['nanoleaf-machine-edit', 'nanoleaf-favorite-edit']) {
-    assert.ok(linesActions?.includes(family));
+    assert.equal(linesActions?.includes(family), true);
     assert.equal((await lookup(panels.id))?.actions.includes(family), false);
   }
   const favorite = (target: string) => mcp.callTool({name: 'core_send_command', arguments: {
