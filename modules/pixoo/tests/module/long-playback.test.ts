@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {it} from 'node:test';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {z} from 'zod';
+import {moduleWaitBudgets, waitForObservation} from '@jimmie-potts/sdk/testing';
 import {gifFixture} from '../helpers/media-fixtures.js';
 import {FAMILIES} from '../../src/module/schemas.js';
 import {World, bytesOf, waitFor} from './support.js';
@@ -55,11 +56,13 @@ for (const ending of ['repeat', 'pause', 'replace'] as const) {
         const replacement = await world.request(FAMILIES.show, 'org.bunny.pixoo-media.show.requested', {renditionId,
           playback: {mode: 'duration', durationMs: 180_000}});
         assert.ok(replacement.status === 'accepted'); await world.outcome(replacement.requestId);
-        await waitFor(() => world.device.state().sent === writes + 1 ? true : undefined, 'replacement playback');
+        await waitForObservation(() => world.device.state().sent, sent => sent === writes + 1,
+          'one device write for the replacement playback', moduleWaitBudgets.pixoo);
       }
       elapsed += last.delay; last.fire(); await sleep(15);
       if (ending === 'repeat') {
-        await waitFor(() => world.device.state().sent === writes + 1 && long.length === 1 ? true : undefined, 'one next playback');
+        await waitForObservation(() => [world.device.state().sent - writes, long.length] as const,
+          ([sent, timers]) => sent === 1 && timers === 1, 'one next playback (writes, timers)', moduleWaitBudgets.pixoo);
         assert.equal((await state()).state, 'playing');
       } else {
         assert.equal((await state()).state, ending === 'pause' ? 'paused' : 'playing');

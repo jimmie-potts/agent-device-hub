@@ -37,6 +37,7 @@ import {schemaFamily, type Snapshot} from '../sync.js';
 import {traceFields} from '../trace.js';
 import {ModuleHarness} from './harness.js';
 import {checkModuleRecord} from './records.js';
+import {waitForObservation} from './wait.js';
 import {RecordedSpans, lostParents, type RecordedSpan} from './spans.js';
 
 export type ConformanceSpec = {
@@ -118,14 +119,8 @@ async function within<T>(work: Promise<T>, timeoutMs: number, what: string): Pro
 }
 
 /** Polls until `find` returns something, or fails after `timeoutMs`. */
-async function waitFor<T>(find: () => T | undefined, timeoutMs: number, what: string): Promise<T> {
-  const deadline = performance.now() + timeoutMs;
-  for (;;) {
-    const found = find();
-    if (found !== undefined) return found;
-    if (performance.now() > deadline) assert.fail(`timed out waiting for ${what}`);
-    await new Promise(resolve => { setTimeout(resolve, 5); });
-  }
+function waitFor<T>(find: () => T | undefined, timeoutMs: number, what: string): Promise<T> {
+  return waitForObservation(find, (value): value is T => value !== undefined, what, {timeoutMs, intervalMs: 5});
 }
 
 /** The sealed validators of earlier worlds, by the module schemas they hold besides the core families. */
