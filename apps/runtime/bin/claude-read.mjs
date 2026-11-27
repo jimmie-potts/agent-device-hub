@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// One explicit terminal UI operation. No output goes to the model or the lifecycle hook protocol.
+// One explicit Claude Code UI operation. No output goes to the model or the lifecycle hook protocol.
 const unavailable = {status: 'unavailable', error: {code: 'invalid-request', retryable: false}};
 let ended = false;
 const finish = result => {

@@ -3,8 +3,14 @@ import type {Identity, Session30Record} from '@jimmie-potts/event-contracts/v2/f
 import type {Lifecycle21Observation, ReadReceiptObservation, ReadReceiptQualification} from '@jimmie-potts/event-contracts/v2/read-receipts';
 import {producerSource} from '../hook/producer.js';
 
-export const CLAUDE_TERMINAL_VERSION = '2.1.292';
-export const CLAUDE_RECEIPT_FEED = `claude-terminal-read-${CLAUDE_TERMINAL_VERSION}`;
+/**
+ * Persisted enrollment identity from the first qualified terminal plugin. Its surface and version text are history,
+ * not admission rules (Hub #2122); changing it would derive another `receiptSource` and orphan enrolled credentials.
+ */
+export const CLAUDE_RECEIPT_FEED = 'claude-terminal-read-2.1.292';
+/** Claude Code extension surfaces whose explicit read press is accepted, for any Code version. `vscode` and `mobile` stay unchecked. */
+export const CLAUDE_READ_SURFACES = ['terminal', 'desktop'] as const;
+export type ClaudeReadSurface = typeof CLAUDE_READ_SURFACES[number];
 /** Persisted enrollment identity from the first qualified protocol; its historical versions are not admission rules. */
 export const CODEX_RECEIPT_FEED = 'codex-desktop-read-26.1027.30824-22943-0.166.0-alpha.5.1';
 /** Desktop puts global configuration flags before the stdio subcommand. Other transports remain unobserved. */

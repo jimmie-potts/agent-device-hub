@@ -16,14 +16,15 @@ import {createCoreModule} from '../src/core/core.js';
 import {producerSource, runHook} from '../src/hook/index.js';
 import {runReadHelper, type ReadHelperResult} from '../src/read-receipts/helper.js';
 import {coreSession} from '../src/read-receipts/session.js';
-import {CLAUDE_RECEIPT_FEED, CLAUDE_TERMINAL_VERSION, receiptSource} from '../src/read-receipts/qualification.js';
+import {CLAUDE_RECEIPT_FEED, receiptSource} from '../src/read-receipts/qualification.js';
 import {asSession20, current, rebuilt, servedSessions} from './fixtures/session-owner.js';
 import {edgeConfig, it, run, waitFor} from './support.js';
 
 const FEED = {provider: 'claude', client: 'code', hostId: 'test-host', sourceId: 'test-hooks'} as const;
-const BIND = {action: 'bind', version: CLAUDE_TERMINAL_VERSION, surface: 'terminal', sessionId: 'test-session', promptId: 'prompt-a'};
+const BIND = {action: 'bind', version: '2.1.292', surface: 'terminal', sessionId: 'test-session', promptId: 'prompt-a'};
 const SCRIPT = fileURLToPath(new URL('../../bin/claude-read.mjs', import.meta.url));
-const readInput = (target: object) => ({action: 'read', version: CLAUDE_TERMINAL_VERSION, surface: 'terminal', target});
+const readInput = (target: object, surface = 'terminal', version: string | undefined = '2.1.292') =>
+  ({action: 'read', ...(version === undefined ? {} : {version}), surface, target});
 
 async function setup(context: TestContext, scopes: ('read' | 'ingest')[] = ['read', 'ingest']) {
   const token = randomBytes(32).toString('base64url'), hookToken = randomBytes(32).toString('base64url');
@@ -111,11 +112,31 @@ it('the gateway rejects ordinary-hook receipts, a foreign feed and activity from
   assert.equal((await world.records())[0]?.outcome.read, 'unknown');
 });
 
-it('unsafe files, unqualified versions, absent metadata and an ingest-only grant never bind', async context => {
+it('the desktop surface and an unpinned or absent version bind and confirm (Hub #2122)', async context => {
   const world = await setup(context);
-  for (const input of [{...BIND, version: '2.1.293'}, {...BIND, surface: 'desktop'}, {...BIND, promptId: ''}, {...BIND, text: 'private-content'}]) {
-    assert.equal((await runReadHelper(world.producer, input)).status, 'unavailable');
+  const unversioned = {action: 'bind', surface: 'desktop', sessionId: BIND.sessionId, promptId: BIND.promptId};
+  for (const input of [{...BIND, surface: 'desktop', version: '2.1.325'}, {...BIND, version: '2026.11.25'}, unversioned]) {
+    const bound = await runReadHelper(world.producer, input);
+    assert.equal(bound.status, 'ready', JSON.stringify(input));
   }
+  assert.equal((await world.records())[0]?.outcome.read, 'unknown', 'binding sends no read');
+  const bound = await runReadHelper(world.producer, {...BIND, surface: 'desktop', version: '2.1.325'});
+  assert.ok(bound.status === 'ready');
+  assert.deepEqual(await runReadHelper(world.producer, readInput(bound.target, 'desktop', undefined)), {status: 'confirmed'});
+  const read = (await world.records())[0];
+  assert.equal(read?.outcome.read, 'read');
+  assert.equal(read.outcome.readReceipt?.source, world.source);
+});
+
+it('unsafe files, unchecked surfaces, absent metadata and an ingest-only grant never bind', async context => {
+  const world = await setup(context);
+  const refused = [{...BIND, surface: 'vscode'}, {...BIND, surface: 'mobile'}, {...BIND, version: 'private content'}, {...BIND, version: 2},
+    {...BIND, promptId: ''}, {...BIND, text: 'private-content'}];
+  for (const input of refused) assert.deepEqual(await runReadHelper(world.producer, input), {status: 'unavailable', error: {code: 'invalid-request', retryable: false}});
+  const bound = await runReadHelper(world.producer, BIND);
+  assert.ok(bound.status === 'ready');
+  for (const surface of ['vscode', 'mobile']) assert.equal((await runReadHelper(world.producer, readInput(bound.target, surface))).status, 'unavailable');
+  assert.equal((await world.records())[0]?.outcome.read, 'unknown');
   await chmod(world.producer, 0o644);
   assert.equal((await runReadHelper(world.producer, BIND)).status, 'unavailable');
   const denied = await setup(context, ['ingest']);

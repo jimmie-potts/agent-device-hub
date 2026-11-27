@@ -1,5 +1,15 @@
 const PANE = 'bunny-read';
-const VERSION = '2.1.292';
+// Surfaces checked on a real client (Hub #2122). Any Claude Code version is accepted; vscode and mobile stay refused.
+const SURFACES = ['terminal', 'desktop'];
+const VERSION_TEXT = /^[A-Za-z0-9_.+-]{1,64}$/;
+
+// The version is passed to the helper for information only. An unavailable or unexpected value is left out.
+async function versionInfo($) {
+  try {
+    const version = (await $.session.version())?.version;
+    return typeof version === 'string' && VERSION_TEXT.test(version) ? {version} : {};
+  } catch { return {}; }
+}
 
 export function register(on) {
   let prompt = null, started = null, stopped = null, latest = null, shown = null;
@@ -52,16 +62,15 @@ export function register(on) {
     const pane = {selected, target: null, status: 'This reply cannot be marked read. Complete a reply, then reopen this panel.'};
     shown = pane;
     try {
-      const version = await $.session.version();
       const surface = await $.session.surface();
       const sessionId = await $.session.id();
-      if (version.version === VERSION && surface === 'terminal' && selected?.sessionId === sessionId) {
+      if (SURFACES.includes(surface) && selected?.sessionId === sessionId) {
         const node = await $.env.get('BUNNY_READ_NODE');
         const helper = await $.env.get('BUNNY_READ_HELPER');
         const producer = await $.env.get('BUNNY_CLAUDE_READ_PRODUCER');
         if (node?.startsWith('/') && helper?.startsWith('/') && producer?.startsWith('/')) {
           const result = await $.process.run([node, helper, producer], {timeoutMs: 2800,
-            stdin: JSON.stringify({action: 'bind', version: VERSION, surface, sessionId, promptId: selected.promptId})});
+            stdin: JSON.stringify({action: 'bind', ...await versionInfo($), surface, sessionId, promptId: selected.promptId})});
           if (result.exitCode === 0 && !result.isStdoutTruncated) {
             const bound = JSON.parse(result.stdout);
             if (bound.status === 'ready' && bound.target?.data?.identity?.sessionId === selected.sessionId &&
@@ -80,7 +89,7 @@ export function register(on) {
     if (e.requestId !== PANE) return next(e);
     const {Box, Text, Button} = $.ui.resolve(e);
     const pane = shown;
-    if (e.surface !== 'terminal' || pane === null) return Text({children: ['Read receipts are unavailable here.']});
+    if (!SURFACES.includes(e.surface) || pane === null) return Text({children: ['Read receipts are unavailable here.']});
     const children = [Text({children: [pane.selected === null ? pane.status : 'Reply ' + pane.selected.reply + '. ' + pane.status]})];
     if (pane.target !== null) children.push(Button({key: 'read', label: 'I read this reply', onPress: async () => {
       const target = pane.target;
@@ -94,7 +103,7 @@ export function register(on) {
           const producer = await $.env.get('BUNNY_CLAUDE_READ_PRODUCER');
           if (node?.startsWith('/') && helper?.startsWith('/') && producer?.startsWith('/')) {
             const result = await $.process.run([node, helper, producer], {timeoutMs: 2800,
-              stdin: JSON.stringify({action: 'read', version: VERSION, surface: e.surface, target})});
+              stdin: JSON.stringify({action: 'read', ...await versionInfo($), surface: e.surface, target})});
             if (result.exitCode === 0 && !result.isStdoutTruncated && JSON.parse(result.stdout).status === 'confirmed') pane.status = 'Marked read in B.U.N.N.Y.';
           }
         }

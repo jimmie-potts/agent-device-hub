@@ -5,7 +5,6 @@ import {connectRemote} from '@jimmie-potts/sdk';
 import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
 import {runReadHelper} from '../../dist/src/read-receipts/helper.js';
-import {CLAUDE_TERMINAL_VERSION} from '../../dist/src/read-receipts/qualification.js';
 import {IDENTITY} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -27,13 +26,13 @@ try {
   const row = page.locator('article.session').filter({has: page.getByRole('heading', {name: 'Receipt compatibility', exact: true})});
   const chip = (text: string) => row.locator('.chip', {hasText: text}).waitFor();
   await chip('Finished · unread');
-  const selected = await runReadHelper(world.readProducer, {action: 'bind', version: CLAUDE_TERMINAL_VERSION,
-    surface: 'terminal', sessionId: IDENTITY.sessionId, promptId: 'turn-1'});
+  const selected = await runReadHelper(world.readProducer, {action: 'bind', version: '2.1.325',
+    surface: 'desktop', sessionId: IDENTITY.sessionId, promptId: 'turn-1'});
   assert.equal(selected.status, 'ready');
   assert.ok(selected.status === 'ready');
   await chip('Finished · unread');
-  assert.deepEqual(await runReadHelper(world.readProducer, {action: 'read', version: CLAUDE_TERMINAL_VERSION,
-    surface: 'terminal', target: selected.target}), {status: 'confirmed'});
+  assert.deepEqual(await runReadHelper(world.readProducer, {action: 'read', version: '2.1.325',
+    surface: 'desktop', target: selected.target}), {status: 'confirmed'});
   await chip('Idle');
   const synced = await reader.sync<Session30Record>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 3000});
   assert.equal(synced.status, 'synced');

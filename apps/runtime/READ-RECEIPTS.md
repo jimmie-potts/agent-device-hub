@@ -1,6 +1,8 @@
 # Explicit read receipts
 
-The Claude producer supports Code **2.1.292 in a terminal**. After a reply
+The Claude producer supports the Claude Code **terminal** and the **Claude
+desktop app**, at any Claude Code version (Hub #2122). The VS Code and mobile
+surfaces stay refused until someone checks them on a real client. After a reply
 finishes, `/bunny-read` opens a panel for that reply. Only pressing **I read this
 reply** requests a read transition. The panel reports success after the core's
 session stream confirms the commit. Opening, rendering, model completion and
@@ -10,8 +12,10 @@ not comprehension.
 The extension maps the native `turnId` to the classic hook's `prompt_id`; these
 are different identifiers. A root `UserPromptSubmit`, `turn.start`, `Stop` and
 successful `turn.complete` must agree on their session and prompt. The panel
-freezes that selection. Missing mapping, child turns, aborted turns, failures, session clear,
-another Claude version or another rendering surface cannot produce an action.
+freezes that selection. Missing mapping, child turns, aborted turns, failures, session clear or
+another rendering surface (`vscode`, `mobile`) cannot produce an action. The
+plugin passes the Claude Code version to the helper for information only; no
+version is required or compared.
 Reopening after a new completion selects the new reply.
 
 ## Owner and contract
@@ -61,8 +65,12 @@ ingest-only token. The read producer needs a separate, randomly generated
 source is `receiptSource(feed)`, exported by
 `@jimmie-potts/runtime/read-receipts`. This derives
 `bunny/parts/claude-read-<32 hex characters>` from the full feed and
-`feed: claude-terminal-read-2.1.292`. The distinct grant is the trusted opt-in;
-a payload cannot qualify itself. Its credential ID is the source without
+`feed: claude-terminal-read-2.1.292`. That feed string is the persisted
+enrollment ID. Its terminal and version text is history, not an admission rule:
+the same producer, source and credential serve both surfaces and every Claude
+Code version. Changing the string creates a different source that the core
+refuses. The distinct grant is the trusted opt-in; a payload cannot qualify
+itself. Its credential ID is the source without
 `bunny/parts/`. Store only the token digest in the runtime credential list.
 
 The ordinary runtime credential parser and selected container profile must
@@ -98,28 +106,53 @@ the producer. A remote endpoint requires the existing `private-https`
 transport and a matching installed receipt. Do not share a directory with
 another producer's receipt.
 
-Select matching reviewed host artifacts and Node 24. Set absolute paths in
-the selected terminal's environment, not in Git:
+Select matching reviewed host artifacts and Node 24. Load the plugin through
+the selected Claude profile's user settings, which the terminal and the desktop
+app's local Code sessions share. The release ships a local plugin marketplace
+named `bunny` at `apps/runtime/plugins`; its `.claude-plugin/marketplace.json`
+lists `bunny-read` from `./claude-read`. Register that directory and enable the
+plugin, or use an existing marketplace that lists the same reviewed plugin.
+Set the helper paths in the same settings' `env` block, because the desktop app
+does not inherit the shell environment. Keep these settings outside Git:
 
-```text
-BUNNY_READ_NODE=/absolute/path/to/node
-BUNNY_READ_HELPER=/reviewed/release/apps/runtime/bin/claude-read.mjs
-BUNNY_CLAUDE_READ_PRODUCER=/private/read-producer/producer.json
-claude --plugin-dir /reviewed/release/apps/runtime/plugins/claude-read
+```json
+{
+  "extraKnownMarketplaces": {
+    "bunny": {"source": {"source": "directory", "path": "/reviewed/release/apps/runtime/plugins"}}
+  },
+  "enabledPlugins": {"bunny-read@bunny": true},
+  "env": {
+    "BUNNY_READ_NODE": "/absolute/path/to/node",
+    "BUNNY_READ_HELPER": "/reviewed/release/apps/runtime/bin/claude-read.mjs",
+    "BUNNY_CLAUDE_READ_PRODUCER": "/private/read-producer/producer.json"
+  }
+}
 ```
 
-The environment variables must be exported. The helper's release must include
-its built workspace packages. Loading the plugin is explicit; it changes no
-personal settings or lifecycle hook configuration. Disabled hooks or managed
-plugin restrictions can prevent loading. The extension runs the helper as an
+Merge these keys into the existing settings rather than replacing the file.
+Settings values are not shell-expanded, so every path must be absolute. A
+directory marketplace loads the plugin in place, so a new session or
+`/reload-plugins` picks up a replaced release at the same path. The helper's
+release must include its built workspace packages. This is an explicit change
+to the selected Claude settings, made on the host under the owner's
+install-time authorization. It does not touch lifecycle hook configuration.
+Disabled hooks or managed plugin restrictions can prevent loading. The extension runs the helper as an
 argument vector without a shell, on explicit panel actions only. Each child
 ends within 2.7 seconds; each native call has a 2.8-second limit. Helper output
 stays in the extension and carries no model prompt or permission decision.
 
 The receipt credential cannot publish activity, Desktop metadata or another
 feed's receipts. Ordinary hook credentials cannot publish qualified receipts.
-Claude Desktop remains unqualified. The separately enrolled Codex Desktop
-path is described below; it does not change this Claude plugin or its checks.
+The separately enrolled Codex Desktop path is described below; it does not
+change this Claude plugin or its checks.
+
+Source tests cannot settle two desktop behaviors, so the installed check in the
+desktop app is their acceptance (fix forward if either fails):
+
+- whether `$.env.get` in a desktop session sees variables set through the
+  settings `env` block;
+- whether the panel and its **I read this reply** button render and press the
+  same way on desktop as in the terminal.
 
 ## Codex Desktop
 
@@ -264,7 +297,8 @@ and independent metadata readback without bypassing that restriction.
 
 Installed acceptance repeats the selected supported path after the runtime and
 host artifacts are deployed. For Claude, disable its private producer file to
-refuse later helper calls, or relaunch without the plugin selection. For Codex,
+refuse later helper calls, or set `bunny-read@bunny` to `false` in
+`enabledPlugins` and start a new session. For Codex,
 use the stop/relaunch procedure above; changing its file alone does not stop
 the active collector. Neither procedure erases committed evidence. Do not infer
 backward storage compatibility merely from unchanged table names; assess the

@@ -6,7 +6,7 @@ import {InProcessBus, type Draft, type Sdk, type SyncedCopy} from '@jimmie-potts
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCoreModule} from '../src/core/core.js';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
-import {receiptQualification, receiptSource} from '../src/read-receipts/qualification.js';
+import {CLAUDE_RECEIPT_FEED, receiptQualification, receiptSource} from '../src/read-receipts/qualification.js';
 import {CHILD, IDENTITY, observation, sessionStarted, turnEnded, turnStarted} from './fixtures/agents.js';
 import {flush, it, stateDir, waitFor} from './support.js';
 
@@ -58,6 +58,12 @@ async function send(sdk: Sdk, harness: ModuleHarness, draft: Draft<ReadReceiptOb
   await flush();
   return message;
 }
+
+it('the Claude receipt feed and source stay the persisted enrollment literals across client versions (Hub #2122)', () => {
+  // Changing either would derive a new source and orphan every enrolled read credential.
+  assert.equal(CLAUDE_RECEIPT_FEED, 'claude-terminal-read-2.1.292');
+  assert.equal(SOURCE, 'bunny/parts/claude-read-fda025c78e2a4a90d04c2b24b9f7129a');
+});
 
 it('a qualified explicit Claude action clears only the displayed finished result', async context => {
   const world = await setup(context), before = structuredClone(world.record());
