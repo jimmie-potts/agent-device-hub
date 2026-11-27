@@ -11,6 +11,8 @@ import {FuseProvider} from './fuse.tsx';
 import type {GroupUnit} from './lighting.ts';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
+import {CardBoundary} from './card-boundary.tsx';
+import {namedDevices} from './device-names.ts';
 import {GlassLayer, type GlassBackdrop, type GlassState} from './glass-layer.tsx';
 import {useArtBackdrop, useShowArtBackdrop} from '@jimmie-potts/art/frontend';
 import './home-layout.css';
@@ -42,6 +44,12 @@ function CompactFace({card, state, open}: {card: HomeCardDefinition; state: stri
  * once the art is dismissed. The hero replaces the Hub mode and Art cards, so their saved placements are kept in the
  * arrangement but never drawn in the grid, offered in the picker or reported as unknown.
  */
+/** A failed card's name: a device card's as the page names the device elsewhere, which its own heading follows, not its raw ID. */
+function failedName(definition: HomeCardDefinition, runtime: RuntimeData): string {
+  const source = definition.source;
+  return source.kind === 'device' ? namedDevices(runtime, source.owner).find(device => device.record.id === source.instance)?.name ?? definition.name : definition.name;
+}
+
 export function HomeLayout({runtime, connected, operations, operationsLive, attention, inbox, renderCard, renderHero, refresh = () => Promise.resolve()}: {
   runtime: RuntimeData; connected: boolean; operations: readonly OperationRecord[]; operationsLive: boolean;
   attention: boolean; inbox: boolean; renderCard: (card: HomeCardDefinition, placement: HomePlacement, selections: LightingSelection[]) => React.ReactNode;
@@ -237,7 +245,8 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       const required = protectedCard(entry.widget), reason = required ? 'This card stays visible while it needs attention.' : undefined;
       const place = packed?.cards.get(entry.widget), shape = place === undefined ? undefined : shapes.get(entry.widget);
       const offered = homeCardShapes(definition), generic = shape !== undefined && offered.generic.includes(shape);
-      const content = generic ? <CompactFace card={definition} state={homeCardState(definition, runtime, connected)} open={offered.open}/>
+      // Worked out inside the card's boundary (below), so a throw here stays in the card.
+      const content = (): React.ReactNode => generic ? <CompactFace card={definition} state={homeCardState(definition, runtime, connected)} open={offered.open}/>
         : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, entry, lights);
       return <div key={entry.widget} className={`home-layout-card${shape === undefined ? '' : ` home-shape-${shape}`}`} data-home-card={entry.widget} data-glass-panel={entry.widget} data-home-shape={shape} data-home-offers={offered.shapes.join(' ')} data-home-unfolded={open === entry.widget ? '' : undefined}
         style={place === undefined ? undefined : area(place)} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
@@ -268,7 +277,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
           </div>}
         </div>}
         <div className="home-card-content" inert={editing}><HomeShapeContext.Provider value={generic || shape === undefined || place === undefined ? undefined : boxOf(place, shape)}>
-          <HomeUnfoldContext.Provider value={unfoldable(entry.widget) ? unfoldOf(entry.widget) : undefined}>{content}</HomeUnfoldContext.Provider></HomeShapeContext.Provider></div>
+          <HomeUnfoldContext.Provider value={unfoldable(entry.widget) ? unfoldOf(entry.widget) : undefined}><CardBoundary id={entry.widget} name={failedName(definition, runtime)}>{content}</CardBoundary></HomeUnfoldContext.Provider></HomeShapeContext.Provider></div>
       </div>;
     })}
       {editing && packed?.holes.map(hole => <div key={`${String(hole.row)}:${String(hole.column)}`} className="home-hole" aria-hidden="true" data-glass-veil style={{gridColumn: String(hole.column), gridRow: String(hole.row)}}><span>Empty</span></div>)}
