@@ -211,3 +211,8 @@ test('a failed browser step keeps the locator and last actionability messages fr
     '  - element is not enabled',
   ].join('\n'));
 });
+
+test('a browser step preserves assertion details without a Playwright call log', () => {
+  const assertion = new Error('card shares the target lock\nfalse !== true');
+  assert.equal(browserStepError(assertion), assertion.message);
+});

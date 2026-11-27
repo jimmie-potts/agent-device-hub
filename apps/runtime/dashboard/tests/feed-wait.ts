@@ -183,7 +183,9 @@ const firstLine = (error: unknown): string => error instanceof Error ? error.mes
 /** Playwright starts its call log with the locator, then reports what kept the action from finishing. */
 export function browserStepError(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
-  const [message, ...lines] = stripVTControlCharacters(error.message).split('\n');
+  const plain = stripVTControlCharacters(error.message);
+  const [message, ...lines] = plain.split('\n');
+  if (!lines.includes('Call log:')) return plain;
   const calls = lines.map(line => line.trim()).filter(line => line.startsWith('- '));
   const kept = calls.length > 3 ? [calls[0], '…', ...calls.slice(-2)] : calls;
   return [message, ...kept].join('\n  ');

@@ -46,15 +46,16 @@ try {
   for (const surface of ['player', 'device']) for (const direction of ['card-to-advanced', 'advanced-to-card']) {
     const world = await startWorld({pixooPages: true});
     const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+    const sent: string[] = [];
+    let activeStep: string | undefined;
+    const step = async (name: string, work: () => Promise<unknown>): Promise<void> => {
+      activeStep = name;
+      await work();
+      activeStep = undefined;
+    };
     try {
       const page = await context.newPage(); page.setDefaultTimeout(10000);
-      const sent = changes(page);
-      // Each step names itself and what the page showed if it fails; a step that succeeds runs unchanged.
-      const step = async (name: string, work: () => Promise<unknown>): Promise<void> => {
-        try { await work(); } catch (error) {
-          throw new Error(`${name}: ${browserStepError(error)}\n  ${await shown(page, sent)}`, {cause: error});
-        }
-      };
+      changes(page, sent);
       await page.goto(`${world.url}/${surface === 'player' ? '#/module/pixoo/player' : '#/component/pixoo-1'}`); await feed(page, 'connected');
       const card = page.getByRole('article', {name: 'Pixoo display', exact: true});
       await step('wait for the card\'s Display tab', () => card.getByRole('tab', {name: 'Display', exact: true}).waitFor());
@@ -101,8 +102,12 @@ try {
       assert.equal(await page.evaluate(() => sessionStorage.getItem('bunny-device-attempts')), retained);
       assert.equal(sent.length, count, 'navigation and reload neither clear nor replay the unknown request');
       results.push({surface, direction, passed: true});
-    } catch (error) { results.push({surface, direction, passed: false, reason: error instanceof Error ? error.message : String(error)}); }
-    finally { await context.close(); await world.close(); }
+    } catch (error) {
+      const page = context.pages()[0];
+      const facts = page === undefined ? `page unavailable; command requests sent ${JSON.stringify(sent)}` : await shown(page, sent);
+      const reason = [activeStep, browserStepError(error)].filter(part => part !== undefined).join(': ');
+      results.push({surface, direction, passed: false, reason: `${reason}\n  ${facts}`});
+    } finally { await context.close(); await world.close(); }
   }
 } finally { await browser.close(); }
 process.stdout.write(JSON.stringify(results)+'\n');
