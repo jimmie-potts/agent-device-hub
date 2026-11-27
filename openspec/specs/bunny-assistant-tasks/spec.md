@@ -1347,6 +1347,13 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 - **THEN** the Hub sends the existing guarded owner command through the tracked dispatcher once
 - **AND** the private result follows the owner's existing evidence contract
 
+#### Scenario: Device availability follows the registered owner rule
+
+- **WHEN** a catalog request targets an unavailable device
+- **THEN** the tracked dispatcher applies the registered owner's availability rule to the guarded command
+- **AND** eligible owner-local changes such as Pixoo Now Playing and Moments preferences can be admitted
+- **AND** a physical action requiring availability is refused, and an active hold refuses these preference and physical writes
+
 #### Scenario: A hosted catalog proposal cites the current target words
 
 - **WHEN** the hosted supervisor proposes a catalog effect against an existing target

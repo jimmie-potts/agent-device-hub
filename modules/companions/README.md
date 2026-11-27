@@ -1466,7 +1466,11 @@ Companions checks those words against the saved owner message and resolves names
 against permitted owner records. A missing selection requires clarification
 even if an excluded record exists. The model interprets ordinary language once.
 The Hub validates the resulting references and checks the tool's permission and
-the current state. The receiving owner validates settings and revision guards.
+the current state. The tracked dispatcher checks the registered owner's
+availability rule and active hold. Pixoo's Now Playing and Moments preferences
+can be saved while the device is unavailable. Physical playback requires an
+available display. A held device refuses these writes. The receiving owner
+validates settings and revision guards.
 
 A current reference can use eligible history in the same conversation. For
 “use the last scene I activated” on a selected light, Companions checks tracked
@@ -1479,7 +1483,7 @@ can report transmission with the physical effect still unconfirmed.
 
 | Conversation flow | Command families and tools |
 | --- | --- |
-| Live device action | `device-mode-set`, `scene-activate`, `moment-play`, `nanoleaf-animation-play`, `nanoleaf-wall-edit`, `nanoleaf-machine-edit`, `nanoleaf-favorite-edit`, `nanoleaf-notice-acknowledge`, `media-start`, `media-control`, `pixoo-media-show`, `pixoo-monitor-set`, `pixoo-now-playing-set`, `pixoo-moments-set`, `pixoo-playlist-change`, `pixoo-asset-change`, `pixoo-notice-dismiss`, `wemo-hold-release` |
+| Device and owner-local action | `device-mode-set`, `scene-activate`, `moment-play`, `nanoleaf-animation-play`, `nanoleaf-wall-edit`, `nanoleaf-machine-edit`, `nanoleaf-favorite-edit`, `nanoleaf-notice-acknowledge`, `media-start`, `media-control`, `pixoo-media-show`, `pixoo-monitor-set`, `pixoo-now-playing-set`, `pixoo-moments-set`, `pixoo-playlist-change`, `pixoo-asset-change`, `pixoo-notice-dismiss`, `wemo-hold-release` |
 | Live action against a current record | `mode-override-set`, `notice-clear`, `session-label-set`, `inbox-handle`, `home-layout-set`, `lighting-layout-set`, `playback-layout-set`, `playback-control`, `volcano-session-gap`, `music-lighting-control` |
 | Live action against a fixed owner | `nanoleaf-reactive-preset-save`, `art-catalog-edit`, `art-show`, `nanoleaf-show-save` |
 | Live Hub mode and private draft authoring | `set_mode`, `create_light_show_draft`, `edit_light_show_cue` |

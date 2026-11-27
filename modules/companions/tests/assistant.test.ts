@@ -4942,14 +4942,17 @@ function catalogPhrases(): CatalogPhrase[] {
 }
 
 async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof world>>, operations: OperationRecord[] = [],
-  beforeOperationRead: () => void = () => {}) {
+  beforeOperationRead: () => void = () => {}, pixooState: () => Pick<DeviceRecord, 'availability' | 'held'> = () => ({availability: 'available'})) {
   await w.coreSync.close();
-  const register = (owner: Participant, families: Record<string, ReturnType<typeof state>[]>) => owner.serveSync(Object.keys(families),
+  type States = ReturnType<typeof state>[];
+  const register = (owner: Participant, families: Record<string, States | (() => States)>) => owner.serveSync(Object.keys(families),
     request => {
       if (request.data.families.includes('operation')) beforeOperationRead();
-      return {revision: 7, states: request.data.families.flatMap(family => family === 'operation'
-        ? operations.map(row => state('operation', row.id, row))
-        : families[family] ?? [])};
+      return {revision: 7, states: request.data.families.flatMap(family => {
+        if (family === 'operation') return operations.map(row => state('operation', row.id, row));
+        const entries = families[family];
+        return typeof entries === 'function' ? entries() : entries ?? [];
+      })};
     });
   function state(family: string, subject: string, data: {id: string; revision: number} & Record<string, unknown>, type = `org.bunny.${family}.updated`) {
     return {type, subject, dataschema: `https://bunny.invalid/events/${family}/2.0`, data};
@@ -4981,7 +4984,7 @@ async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof
         {id: 'reactive-presets', revision: 7, presets: [{presetId: 'preset-evening-glow', name: 'Evening Glow'}]})],
     }),
     register(connect('pixoo'), {
-      device: [device({...screen, kind: 'pixoo', capabilities: {...screen.capabilities,
+      device: () => [device({...screen, ...pixooState(), kind: 'pixoo', capabilities: {...screen.capabilities,
         media: {supported: true, actions: ['pause'], playlistIds: [playlistId], renditionIds: [renditionId]}}})],
       'pixoo-playlist': [state('pixoo-playlist', playlistId, {id: playlistId, revision: 7, playlistRevision: 7, name: 'Evening Loop'})],
       'pixoo-rendition': [state('pixoo-rendition', renditionId, {id: renditionId, revision: 7, name: 'Blue Kite', assetId, compatible: true})],
@@ -5013,6 +5016,7 @@ for (const host of ['anthropic', 'openai'] as const) {
     let sceneReceiptStatus: OperationRecord['status'] = 'completed';
     let beforeOperationRead = () => {};
     let receiptDenied: string | undefined;
+    let pixooState: Pick<DeviceRecord, 'availability' | 'held'> = {availability: 'available'};
     const policy = sharing();
     let modeDenied = false;
     let proposal: {name: string; input: Record<string, unknown>; ownerText: string} | undefined;
@@ -5051,7 +5055,7 @@ for (const host of ['anthropic', 'openai'] as const) {
           frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
       favorite: false, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false},
     })});
-    await catalogFixture(context, w, operationReceipts, () => beforeOperationRead());
+    await catalogFixture(context, w, operationReceipts, () => beforeOperationRead(), () => pixooState);
     const validator = coreValidator();
     await w.core.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', message => {
       const validation = validator.validate(message);
@@ -5064,6 +5068,8 @@ for (const host of ['anthropic', 'openai'] as const) {
           status: sceneReceiptStatus, ...(sceneReceiptStatus === 'completed' ? {result: 'succeeded', evidence: 'transmitted'} : {}),
           sentAtMs: now, updatedAtMs: now, deadlineAtMs: now + 1000});
       }
+      if (pixooState.availability !== 'available' && message.data.family === 'catalog-action' &&
+        message.data.command === 'pixoo-media-show') return errorBody('unavailable');
       return validation.ok ? {status: 'accepted'} : {error: validation.error};
     });
     await w.core.respond<{action: 'dismiss'; expectedRevision: number}>('bunny.cmd.inbox-handle.fixture-inbox', message => {
@@ -5219,6 +5225,31 @@ for (const host of ['anthropic', 'openai'] as const) {
         sceneReceiptStatus = 'completed';
       }
     }
+
+    const offlineStart = delivered.length;
+    pixooState = {availability: 'unavailable'};
+    const pixooSettings = phrases.filter(({family}) => family === 'pixoo-now-playing-set' || family === 'pixoo-moments-set');
+    assert.equal(pixooSettings.length, 2);
+    for (const row of pixooSettings) {
+      const before = delivered.length;
+      await ask(row.say, catalogTool(row.family), argumentsFor(row.owner, row.selector, row.settings));
+      assert.equal(delivered.length, before + 1, `${row.family} reaches the tracked dispatcher while offline`);
+      assert.partialDeepStrictEqual(delivered.at(-1)?.data, {family: 'catalog-action', command: row.family,
+        target: row.target, binding: {kind: 'device', owner: row.owner}, data: row.settings});
+    }
+    assert.equal(delivered.length, offlineStart + 2, 'offline local preference writes reach the tracked dispatcher');
+    const media = phrases.find(({family}) => family === 'pixoo-media-show') ?? assert.fail('media fixture');
+    assert.equal(await ask(media.say, catalogTool(media.family), argumentsFor(media.owner, media.selector, media.settings)),
+      'refused: unavailable');
+    assert.equal(delivered.length, offlineStart + 3, 'the tracked dispatcher decides whether the physical write may proceed');
+
+    pixooState = {...pixooState, held: {requestId: 'pixoo-hold', heldAtMs: 1000}};
+    for (const row of pixooSettings) {
+      assert.equal(await ask(row.say, catalogTool(row.family), argumentsFor(row.owner, row.selector, row.settings)),
+        'refused: unavailable');
+    }
+    assert.equal(delivered.length, offlineStart + 3, 'owner-local preferences send no command under a hold');
+    pixooState = {availability: 'available'};
 
     const assetId = '22222222-2222-4222-8222-222222222222';
     const assetTool = catalogTool('pixoo-asset-change');
