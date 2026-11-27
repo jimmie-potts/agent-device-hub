@@ -37,6 +37,7 @@ import {REGISTRY_REASONS} from '../diagnostics.js';
 import {kept, type OperationStep} from './history.js';
 import {DEADLINES, advance, kindOf, type Operation, type OperationEvent, type TakenOutcome} from './operations.js';
 import type {CoreStore, CoreTransaction} from './store.js';
+import type {AutomationDevice} from './automation-devices.js';
 import {deviceRefusal, observationRefusal, type DeviceAdmission} from './device-admission.js';
 
 /**
@@ -145,7 +146,7 @@ export type TrackerOptions = {
   scheduler: ModuleScheduler;
   files?: () => string;
   currentDevice?: (id: string) => Message<DeviceRecord> | undefined;
-  registeredDevice?: (id: string) => boolean;
+  registeredDevice?: (id: string) => AutomationDevice | undefined;
   /** The parts' derivers of tracked actions' changes. */
   tracked?: readonly Tracked[];
   /** Resolves once the core's store is open. */
@@ -462,7 +463,7 @@ export class Tracker {
           const current = this.#options.currentDevice?.(target);
           const lifx = lifxCopy?.records()?.find(light => light.id === target);
           const refusal = deviceRefusal({admission: action.deviceAdmission, current,
-            registered: this.#options.registeredDevice?.(target) === true, family, data, lifx});
+            registered: this.#options.registeredDevice?.(target), family, data, lifx});
           if (refusal !== undefined) throw new Refused(refusal.code, refusal.detail);
           if (observationBasis !== undefined && current !== undefined) {
             const changed = this.#required().changesSince.all(target, observationBasis.observedAtMs)

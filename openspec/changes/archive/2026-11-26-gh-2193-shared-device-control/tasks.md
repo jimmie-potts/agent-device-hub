@@ -9,6 +9,8 @@
 
 - [x] Exercise an interleaved temperature-only owner update before admission and preserve offline local edits, applicable owners and scoped current facts.
 
+- [x] Use qualified owner declarations for availability and exercise the Pixoo preference and physical command matrix through both entry points.
+
 ## 2. Verification
 
 - [x] Exercise both public readers and shared command admission against disposable device state.

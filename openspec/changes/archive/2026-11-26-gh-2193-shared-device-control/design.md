@@ -19,5 +19,8 @@ work or newer tracked effects invalidate that reading before a new operation can
 commit. The tracker keeps the named owner's LIFX color copy live until admission,
 so a color-only update during the transaction wait invalidates the earlier basis.
 Owner-local library, layout and acknowledgment actions retain their offline
-admission. Holds and applicability remain separate checks. The exact basis is part of the request identity. A new relative action
+admission. The owner's manifest declares that exception per command family.
+The core takes the declaration from the same qualified registration as the
+selected target. Unlisted commands require an available device. Conversation
+uses the tracker for availability. Holds and applicability remain separate checks. The exact basis is part of the request identity. A new relative action
 needs a fresh reading after an inbox failure. A partial read names each unreadable owner so it cannot be mistaken for an empty inventory.

@@ -25,7 +25,7 @@ const pixoo = 'bunny/modules/pixoo', tidbyt = 'bunny/modules/tidbyt', volcano = 
 export const assistantDeviceOwners = [lifx, wemo, nanoleaf, pixoo, tidbyt, 'bunny/modules/roborock', volcano] as const;
 export type CatalogDeviceOwner = typeof assistantDeviceOwners[number];
 
-type DeviceRoute = {binding: 'device'; owners: readonly CatalogDeviceOwner[]; target?: string; capability?: keyof Capabilities; offline?: true; fields: string; guardedMinor?: '2.1' | '2.3'};
+type DeviceRoute = {binding: 'device'; owners: readonly CatalogDeviceOwner[]; target?: string; capability?: keyof Capabilities; fields: string; guardedMinor?: '2.1' | '2.3'};
 type RecordRoute = {binding: 'record'; owner: string; record: string; fields: string};
 type FixedRoute = {binding: 'fixed'; owner: string; target: string; fields: string};
 type Route = DeviceRoute | RecordRoute | FixedRoute;
@@ -41,17 +41,17 @@ export const assistantRoutes = {
   'media-start': {binding: 'device', owners: [pixoo], capability: 'media', fields: 'playlistId'},
   'media-control': {binding: 'device', owners: [pixoo], capability: 'media', fields: 'action'},
   'pixoo-media-show': {binding: 'device', owners: [pixoo], capability: 'media', fields: 'renditionId playback'},
-  'pixoo-monitor-set': {binding: 'device', owners: [pixoo], offline: true, fields: 'filter cadenceMs'},
+  'pixoo-monitor-set': {binding: 'device', owners: [pixoo], fields: 'filter cadenceMs'},
   'pixoo-now-playing-set': {binding: 'device', owners: [pixoo], fields: 'media'},
   'pixoo-moments-set': {binding: 'device', owners: [pixoo], fields: 'overStatus'},
   'nanoleaf-animation-play': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'animation'},
-  'pixoo-playlist-change': {binding: 'device', owners: [pixoo], offline: true, fields: 'change'},
-  'pixoo-asset-change': {binding: 'device', owners: [pixoo], offline: true, fields: 'change'},
-  'pixoo-notice-dismiss': {binding: 'device', owners: [pixoo], offline: true, fields: 'session noticeId'},
-  'nanoleaf-wall-edit': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', offline: true, fields: 'edit'},
-  'nanoleaf-machine-edit': {binding: 'device', owners: [nanoleaf], target: NANOLEAF_LINES_DEVICE, guardedMinor: '2.1', offline: true, fields: 'edit'},
-  'nanoleaf-favorite-edit': {binding: 'device', owners: [nanoleaf], target: NANOLEAF_LINES_DEVICE, guardedMinor: '2.1', offline: true, fields: 'edit'},
-  'nanoleaf-notice-acknowledge': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', offline: true, fields: 'task noticeId'},
+  'pixoo-playlist-change': {binding: 'device', owners: [pixoo], fields: 'change'},
+  'pixoo-asset-change': {binding: 'device', owners: [pixoo], fields: 'change'},
+  'pixoo-notice-dismiss': {binding: 'device', owners: [pixoo], fields: 'session noticeId'},
+  'nanoleaf-wall-edit': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'edit'},
+  'nanoleaf-machine-edit': {binding: 'device', owners: [nanoleaf], target: NANOLEAF_LINES_DEVICE, guardedMinor: '2.1', fields: 'edit'},
+  'nanoleaf-favorite-edit': {binding: 'device', owners: [nanoleaf], target: NANOLEAF_LINES_DEVICE, guardedMinor: '2.1', fields: 'edit'},
+  'nanoleaf-notice-acknowledge': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'task noticeId'},
   'nanoleaf-reactive-preset-save': {binding: 'fixed', owner: nanoleaf, target: 'reactive-presets', fields: 'presetId expectedRevision name recipe'},
   'wemo-hold-release': {binding: 'device', owners: [wemo], fields: 'heldRequestId'},
   'mode-override-set': {binding: 'record', owner: 'bunny/core', record: 'mode', fields: 'mode'},
@@ -79,12 +79,6 @@ export type CatalogBinding =
   | (Identity & {kind: 'record'; revision: number})
   | (Identity & {kind: 'fixed'});
 export type CatalogProposal = {family: 'catalog-action'; target: string; command: CatalogFamily; binding: CatalogBinding; data: Record<string, unknown>};
-
-export function requiresDeviceAvailability(family: string): boolean {
-  if (!catalogFamily(family)) return true;
-  const route = catalogRoute(family);
-  return route.binding !== 'device' || route.offline !== true;
-}
 
 export function permitsDevice(route: DeviceRoute, device: DeviceRecord): boolean {
   return (route.target === undefined || device.id === route.target) &&

@@ -10,8 +10,8 @@ import type {BrightnessSetRequest, DeviceRecord} from '@jimmie-potts/event-contr
 import {createCompanionsModule} from '@jimmie-potts/companions';
 import {lifxSchemas} from '@jimmie-potts/lifx';
 import {NANOLEAF_LINES_DEVICE} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
-import {nanoleafSchemas} from '@jimmie-potts/nanoleaf';
-import {pixooOwnSchemas} from '@jimmie-potts/pixoo';
+import {nanoleafSchemas, registration as nanoleafRegistration} from '@jimmie-potts/nanoleaf';
+import {pixooOwnSchemas, registration as pixooRegistration} from '@jimmie-potts/pixoo';
 import {Outcome, type BunnyModule, type LifxDeviceFacts, type ModuleContext} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {CoreStore, type CoreTransaction} from '../src/core/store.js';
@@ -254,10 +254,12 @@ it('MCP resolves an exact Pixoo playlist outside its capability preview through 
   const missing = '33333333-3333-4333-8333-333333333333';
   const record = deviceRecord('fixture-pixoo', 1, 'pixoo', 'available');
   record.capabilities.media = {supported: true, actions: ['pause'], playlistIds: [preview], renditionIds: []};
-  const written: string[] = [], edited: string[] = [];
+  const written: string[] = [], edited: string[] = [], saved: string[] = [];
   let pixooContext: ModuleContext | undefined;
+  const pixooAvailability = pixooRegistration.simulate().manifest.deviceCommandAvailability;
+  assert.ok(pixooAvailability !== undefined);
   const pixoo: BunnyModule = {
-    manifest: {name: 'pixoo', apiVersion: '1.2', configure: config => ({config, devices: [record.id]})},
+    manifest: {name: 'pixoo', apiVersion: '1.2', deviceCommandAvailability: pixooAvailability, configure: config => ({config, devices: [record.id]})},
     async start(given) {
       pixooContext = given;
       const {sdk} = given;
@@ -271,6 +273,12 @@ it('MCP resolves an exact Pixoo playlist outside its capability preview through 
         edited.push(command.data.change.name);
         return {status: 'accepted'};
       });
+      for (const family of ['pixoo-moments-set', 'pixoo-now-playing-set']) {
+        await sdk.respond(`bunny.cmd.${family}.fixture-pixoo`, () => {
+          saved.push(family);
+          return {status: 'accepted'};
+        });
+      }
     },
     stop() {},
   };
@@ -297,18 +305,64 @@ it('MCP resolves an exact Pixoo playlist outside its capability preview through 
   await flush();
   const command = (requestId: string, name: string) => ({family: 'pixoo-playlist-change', target: record.id, requestId,
     data: {change: {operation: 'create', name}}});
+  const sdk = contextOf(companions).sdk;
+  const conversation = async (family: string, data: Record<string, unknown>, requestId: string,
+    configurationRevision = record.configurationRevision) => {
+    const reply = await sdk.request('bunny.cmd.assistant-dispatch.assistant', {
+      type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.3',
+      data: {requestId, family: 'catalog-action', command: family, target: record.id, data, binding: {kind: 'device', target: record.id,
+        owner: 'bunny/modules/pixoo', configurationRevision, generation: record.generation}},
+    }, {requestId, timeoutMs: 2000});
+    return reply.status === 'accepted' ? reply.status : reply.error.error.code;
+  };
+  const mcpSend = async (family: string, data: Record<string, unknown>, requestId: string) => {
+    const answer = await mcp.callTool({name: 'core_send_command', arguments: {family, data, target: record.id, requestId}});
+    const body = (answer.structuredContent as {data: {error?: {code: string}}}).data;
+    return body.error?.code ?? 'accepted';
+  };
   const mcpEdit = await mcp.callTool({name: 'core_send_command', arguments: command('offline-mcp-edit', 'MCP offline')});
   assert.equal(mcpEdit.isError, false, JSON.stringify(mcpEdit.structuredContent));
   const edit = command('offline-conversation-edit', 'Conversation offline');
-  const fromConversation = await contextOf(companions).sdk.request('bunny.cmd.assistant-dispatch.assistant', {
-    type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.3',
-    data: {...edit, family: 'catalog-action', command: edit.family, binding: {kind: 'device', target: record.id,
-      owner: 'bunny/modules/pixoo', configurationRevision: record.configurationRevision, generation: record.generation}},
-  }, {requestId: edit.requestId, timeoutMs: 2000});
-  assert.equal(fromConversation.status, 'accepted', JSON.stringify(fromConversation));
-  assert.equal((await start('offline-play', full)).isError, true);
+  assert.equal(await conversation(edit.family, edit.data, edit.requestId), 'accepted');
+  assert.equal(await mcpSend('media-start', {playlistId: full}, 'offline-mcp-play'), 'unavailable');
+  assert.equal(await conversation('media-start', {playlistId: full}, 'offline-conversation-play'), 'unavailable');
   assert.deepEqual(written, [full], 'offline playing sends no device action');
   assert.deepEqual(edited, ['MCP offline', 'Conversation offline']);
+
+  const local = [
+    {family: 'pixoo-moments-set', data: {overStatus: true}},
+    {family: 'pixoo-now-playing-set', data: {media: 'whole'}},
+  ];
+  for (const {family, data} of local) {
+    assert.equal(await mcpSend(family, data, `offline-mcp-${family}`), 'accepted');
+    assert.equal(await conversation(family, data, `offline-conversation-${family}`), 'accepted');
+    const stale = record.configurationRevision - 1;
+    assert.equal(await mcpSend(family, {...data, expectedConfigurationRevision: stale}, `stale-mcp-${family}`), 'revision-conflict');
+    assert.equal(await conversation(family, data, `stale-conversation-${family}`, stale), 'revision-conflict');
+  }
+  record.availability = 'available';
+  record.revision += 1;
+  await pixooContext.sdk.publish('bunny.state.device.fixture-pixoo', {kind: 'state', ...deviceState(record)});
+  await flush();
+  for (const {family, data} of local) {
+    assert.equal(await mcpSend(family, data, `online-mcp-${family}`), 'accepted');
+    assert.equal(await conversation(family, data, `online-conversation-${family}`), 'accepted');
+  }
+  assert.equal(await conversation('media-start', {playlistId: full}, 'online-conversation-play'), 'accepted');
+  record.held = {requestId: 'fixture-pixoo-hold', heldAtMs: Date.now()};
+  for (const availability of ['available', 'unavailable'] as const) {
+    record.availability = availability;
+    record.revision += 1;
+    await pixooContext.sdk.publish('bunny.state.device.fixture-pixoo', {kind: 'state', ...deviceState(record),
+      dataschema: 'https://bunny.invalid/events/device/2.1'});
+    await flush();
+    for (const {family, data} of [...local, {family: 'media-start', data: {playlistId: full}}]) {
+      assert.equal(await mcpSend(family, data, `held-${availability}-mcp-${family}`), 'unavailable');
+      assert.equal(await conversation(family, data, `held-${availability}-conversation-${family}`), 'unavailable');
+    }
+  }
+  assert.deepEqual(written, [full, full]);
+  assert.deepEqual(saved, [...local, ...local].flatMap(({family}) => [family, family]));
 });
 
 it('MCP shares Wemo power identity and advertises Lines-only edits only for Lines', async context => {
@@ -318,8 +372,10 @@ it('MCP shares Wemo power identity and advertises Lines-only edits only for Line
   plug.label = 'Fixture plug';
   plug.capabilities.power = {supported: true};
   const edits: string[] = [];
+  const nanoleafAvailability = nanoleafRegistration.simulate().manifest.deviceCommandAvailability;
+  assert.ok(nanoleafAvailability !== undefined);
   const nanoleaf: BunnyModule = {
-    manifest: {name: 'nanoleaf', apiVersion: '1.2', configure: config => ({config, devices: [lines.id, panels.id]})},
+    manifest: {name: 'nanoleaf', apiVersion: '1.2', deviceCommandAvailability: nanoleafAvailability, configure: config => ({config, devices: [lines.id, panels.id]})},
     async start({sdk}) {
       await sdk.serveSync(['device'], () => ({revision: 1, states: [deviceState(lines), deviceState(panels)]}));
       await sdk.respond('bunny.cmd.nanoleaf-favorite-edit.*', command => {

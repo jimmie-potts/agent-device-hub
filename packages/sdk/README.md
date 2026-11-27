@@ -450,6 +450,13 @@ export const sign: BunnyModule<SignConfig> = {
   the module until it is updated. `checkManifest(manifest)`,
   `checkModuleName(name)` and `checkApiVersion(declared)` return the runtime's
   own reason for refusing, as `{code, detail}`, or undefined.
+- **Device command availability.** A module can declare
+  `deviceCommandAvailability` by command family. An omitted family requires the
+  device to report `available`. Use `owner-admission` for a command the device
+  owner can validate while the device is offline, such as saving its options.
+  Conversation and runtime MCP use the qualified target owner's declaration
+  at tracked admission. Holds, request identity and revision checks still apply.
+
 - **Configuration (1.1, Hub #919).** The manifest may declare
   `configure(section)`. The runtime calls it before `start` with the module's
   own section of its [configuration file](../../apps/runtime/README.md#configuration),

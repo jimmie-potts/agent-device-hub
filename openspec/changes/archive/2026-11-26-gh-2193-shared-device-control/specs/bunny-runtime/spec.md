@@ -2,7 +2,7 @@
 
 ### Requirement: Shared device facts and tracked command admission
 
-The runtime SHALL expose the device lookup to read-scoped MCP clients using the current registered owner's SDK state. A named device SHALL include exact identity, declared capabilities and applicable value constraints, availability and observation currentness. MCP and Conversation SHALL use the same tracker admission for new supported device actions and preserve their respective principals, control grants, payload identity and device writer.
+The runtime SHALL expose the device lookup to read-scoped MCP clients using the current registered owner's SDK state. A named device SHALL include exact identity, declared capabilities and applicable value constraints, availability and observation currentness. MCP and Conversation SHALL use the same tracker admission for new supported device actions and preserve their respective principals, control grants, payload identity and device writer. The qualified device owner SHALL declare command availability in its module manifest. A command with no declaration SHALL require an available device.
 
 #### Scenario: A device is inspected and controlled across clients
 
@@ -24,5 +24,5 @@ The runtime SHALL expose the device lookup to read-scoped MCP clients using the 
 #### Scenario: An owner-local edit targets an offline device
 
 - **WHEN** an authorized client submits a supported library or layout edit for an offline device with no hold
-- **THEN** the existing owner SHALL validate and apply its local edit
+- **THEN** the existing owner SHALL validate and apply its local edit if its declaration assigns the availability decision to the owner. This includes the Pixoo Now Playing and Moments settings
 - **AND** commands that require an available device and commands against a hold still follow their existing admission rules

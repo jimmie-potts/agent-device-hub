@@ -1,7 +1,9 @@
-import {LIFX_COLOR_PARAMETERS, observationBasis, requiresDeviceAvailability, type ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {LIFX_COLOR_PARAMETERS, observationBasis, type ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {currentObservationBasis, supportsDeviceAction, type LifxDeviceFacts} from '@jimmie-potts/sdk';
+
+import type {AutomationDevice} from './automation-devices.js';
 
 const within = (value: unknown, {minimum, maximum}: {minimum: number; maximum: number}): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= maximum;
@@ -14,10 +16,10 @@ function generationMatches(value: unknown, generation: DeviceRecord['generation'
 }
 
 export function deviceRefusal({admission, current, registered, family, data, lifx}: {
-  admission: DeviceAdmission; current: Message<DeviceRecord> | undefined; registered: boolean;
+  admission: DeviceAdmission; current: Message<DeviceRecord> | undefined; registered: AutomationDevice | undefined;
   family: string; data: Record<string, unknown>; lifx: LifxDeviceFacts | undefined;
 }): {code: ErrorCode; detail: string} | undefined {
-  if (current === undefined) return registered
+  if (current === undefined) return registered !== undefined
     ? {code: 'unavailable', detail: 'the current device record is unavailable'}
     : {code: 'not-found', detail: 'the runtime has no registered target with that ID'};
   if (admission.kind === 'conversation' && current.source !== admission.owner) {
@@ -31,7 +33,8 @@ export function deviceRefusal({admission, current, registered, family, data, lif
   if (family === 'wemo-hold-release' && (held === undefined || data.heldRequestId !== held.requestId)) {
     return {code: 'revision-conflict', detail: 'the selected device hold changed'};
   }
-  if (family !== 'wemo-hold-release' && (held !== undefined || requiresDeviceAvailability(family) && availability !== 'available')) {
+  const ownerAdmits = registered?.owner === current.source && registered.commandAvailability?.[family] === 'owner-admission';
+  if (family !== 'wemo-hold-release' && (held !== undefined || !ownerAdmits && availability !== 'available')) {
     return {code: 'unavailable', detail: 'the selected device is held or unavailable'};
   }
   const supported = supportsDeviceAction({owner: current.source, device: current.data}, family);

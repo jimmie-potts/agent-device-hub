@@ -40,6 +40,17 @@ it('a 1.0 or 1.1 module that declares a contribution is refused, and still runs 
   }
 });
 
+it('a module declares availability for its own command families', () => {
+  assert.equal(checkManifest({name: 'sign', apiVersion: '1.2', deviceCommandAvailability: {
+    'sign-label-set': 'owner-admission', 'power-set': 'requires-available',
+  }}), undefined);
+  assert.equal(checkManifest({name: 'sign', apiVersion: '1.2', deviceCommandAvailability: {
+    'not a family': 'owner-admission',
+  }})?.code, 'invalid-request');
+  const unexpected = JSON.parse('{"power-set":"unknown"}') as NonNullable<ModuleManifest['deviceCommandAvailability']>;
+  assert.equal(checkManifest({name: 'sign', apiVersion: '1.2', deviceCommandAvailability: unexpected})?.code, 'invalid-request');
+});
+
 it('pages need distinct IDs other than content, a title and a render', () => {
   const ids = 'each page needs a distinct ID of lowercase letters and digits with single hyphens, at most 64, other than content or assets';
   for (const id of ['Preview', 'pre_view', '-preview', 'content', 'assets', 'x'.repeat(65), '']) assert.equal(problem({...sign, pages: [{...page, id}]}), ids, id);

@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {literalToolDeviceId, literalDeviceId, normalizedControlText, requestedArtRecipients, requestedMoment} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
-import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, requiresDeviceAvailability, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {ART_SHOW_EFFECTS_FAMILY, acceptsArtRendition, artDestination, artShowSurfaces, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord, ArtworkSummary, CatalogArtwork} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {ErrorBody, ErrorCode} from '@jimmie-potts/event-contracts/v2';
@@ -269,7 +269,7 @@ export class ConversationActions {
       }
       if (family === 'wemo-hold-release') {
         if (device.held === undefined || data.heldRequestId !== device.held.requestId) return {code: 'revision-conflict'};
-      } else if (device.held !== undefined || requiresDeviceAvailability(family) && device.availability !== 'available') return {code: 'unavailable'};
+      } else if (device.held !== undefined) return {code: 'unavailable'};
       binding = {kind: 'device', target: device.id, owner: selected.owner, configurationRevision: device.configurationRevision, generation: device.generation};
       if (family === 'brightness-set' && selected.owner === 'bunny/modules/pixoo') {
         if (typeof data.percent !== 'number' || !Number.isSafeInteger(data.percent) || data.percent < 0 || data.percent > 100) {
