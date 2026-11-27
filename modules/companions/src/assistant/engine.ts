@@ -23,7 +23,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {authorizesControl, brightnessSubject, containsControlValue, literalDeviceId, missingBrightness, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
+import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, literalDeviceId, missingBrightness, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, resolveModelControl, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
@@ -2295,6 +2295,7 @@ export class AssistantEngine {
       if (allowed) clarificationDevices.add(id);
       return allowed;
     };
+    const noOwnerRequest = 'refused: this control needs a clear current owner request naming the action, target and setting.';
     let direct: BoundControl | undefined;
     const command = call === undefined ? undefined : catalogCommand(call.name);
     const interpreted = command !== undefined && modelCatalogCommand(command);
@@ -2357,9 +2358,13 @@ export class AssistantEngine {
     if (call !== undefined && question !== undefined && proposal != null && proposal.family !== 'coding-dispatch' && command !== 'art-request') {
       if (interpreted || call.name === SET_MODE) {
         const bound = this.#bindCatalogControl(currentTask, proposal, call, id, state.step + 1, question.text, knownTargets, draftRevision, sceneReceipt);
-        if ('code' in bound) result = proposal.family === 'mode-set' && bound.code === 'revision-conflict'
-          ? 'refused: revision-conflict: the Hub mode changed after the request was resolved. No change was sent.'
-          : `refused: ${bound.code}`;
+        if ('code' in bound) {
+          result = `refused: ${bound.code}`;
+          if (proposal.family === 'mode-set' && bound.code === 'revision-conflict') {
+            result = 'refused: revision-conflict: the Hub mode changed after the request was resolved. No change was sent.';
+          }
+          if (proposal.family === 'mode-set' && bound.code === 'invalid-state') result = noOwnerRequest;
+        }
         else if ('clarify' in bound) {
           if (this.#controlClarification(currentTask)?.answer == null) {
             const access = paid ? this.#supervisorScope(currentTask, 'supervisor', bound.clarify).fields : modelFields;
@@ -2371,7 +2376,7 @@ export class AssistantEngine {
         direct = this.#bindControl(task, proposal, call, question.text, state.step + 1, targets, knownTargets);
       }
       next = direct === undefined ? 'tool' : 'act';
-      if (direct === undefined && result === '') result = 'refused: this control needs a clear current owner request naming the action, target and setting.';
+      if (direct === undefined && result === '') result = noOwnerRequest;
       if (question.kind !== 'clarification') question = undefined;
     }
     // A command the module cannot bind to a synced Hub-mode revision, or whose value is not a mode, is refused to the model in the tool node.
@@ -2460,6 +2465,11 @@ export class AssistantEngine {
       const result = deviceProposal(call, selected.device);
       if ('code' in result) return undefined;
       return {id, text: deviceProposalText(result.proposal, deviceLabel(selected.device)), answer: null, kind: 'approval', call: call.id, proposal: result.proposal};
+    }
+    const task = this.#task(taskId);
+    const instruction = task.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? task.prompt;
+    if (call.name === SET_MODE && task.question?.answer == null && missingMode(instruction)) {
+      return {id, text: 'Which Hub mode do you want: work, free, or quiet?', answer: null, kind: 'clarification', call: call.id, proposal: null};
     }
     const mode = MODES.find(value => value === call.input.mode);
     if (mode === undefined || copy.mode === undefined || !copy.synced) return undefined;
@@ -2813,6 +2823,9 @@ export class AssistantEngine {
       if (this.store.call(modelCallId)?.modelControlProof?.modeRevision !== proposal.expectedRevision) return {code: 'revision-conflict'};
     }
     if (!this.#catalogFieldsPermitted(task, proposal)) return {code: 'forbidden'};
+    if (proposal.family === 'mode-set' && !authorizesHubMode(scope.request.text, scope.answer?.text ?? '', proposal.data.mode)) {
+      return {code: 'invalid-state'};
+    }
     if (proposal.family === 'catalog-action' && proposal.command === 'art-catalog-edit' && proposal.data.action === 'delete') {
       const id = proposal.data.artworkId;
       const tokens = `${scope.request.text} ${scope.answer?.text ?? ''}`.split(/[^a-zA-Z0-9_.-]+/u);

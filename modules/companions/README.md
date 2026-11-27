@@ -1488,7 +1488,8 @@ can report transmission with the physical effect still unconfirmed.
 | Device and owner-local action | `device-mode-set`, `scene-activate`, `moment-play`, `nanoleaf-animation-play`, `nanoleaf-wall-edit`, `nanoleaf-machine-edit`, `nanoleaf-favorite-edit`, `nanoleaf-notice-acknowledge`, `media-start`, `media-control`, `pixoo-media-show`, `pixoo-monitor-set`, `pixoo-now-playing-set`, `pixoo-moments-set`, `pixoo-playlist-change`, `pixoo-asset-change`, `pixoo-notice-dismiss`, `wemo-hold-release` |
 | Live action against a current record | `mode-override-set`, `notice-clear`, `session-label-set`, `inbox-handle`, `home-layout-set`, `lighting-layout-set`, `playback-layout-set`, `playback-control`, `volcano-session-gap`, `music-lighting-control` |
 | Live action against a fixed owner | `nanoleaf-reactive-preset-save`, `art-catalog-edit`, `art-show`, `nanoleaf-show-save` |
-| Live Hub mode and private draft authoring | `set_mode`, `create_light_show_draft`, `edit_light_show_cue` |
+| Private draft authoring | `create_light_show_draft`, `edit_light_show_cue` |
+| Global Hub mode (existing contract) | `set_mode` takes `{mode}`. The current owner request must authorize that mode. Conversation can ask for a missing mode. |
 | Dedicated plug and lighting controls | `set_wemo_power`, `set_lifx_power`, `set_lifx_brightness`, and the catalog families `power-set`, `brightness-set`, `lifx-color-set`, `lifx-temperature-set` |
 | Specialized approval | Paid `art-request`, presentation of newly generated art on the selected destinations, and coding handoffs |
 

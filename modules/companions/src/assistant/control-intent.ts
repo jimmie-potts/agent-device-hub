@@ -30,6 +30,19 @@ function explicitWords(text: string): string | undefined {
   return words;
 }
 
+export function missingMode(text: string): boolean {
+  const words = explicitWords(text);
+  return words !== undefined && /^(?:set|change|switch) (?:the )?(?:hub )?mode(?: to)?$/u.test(words);
+}
+
+export function authorizesHubMode(instruction: string, answer: string, mode: string): boolean {
+  const words = explicitWords(instruction), choice = answer === '' ? '' : explicitWords(answer);
+  if (words === undefined || choice === undefined) return false;
+  const requested = /^(?:set|change|switch|enter|put) (?:(?:the )?hub )?(?:mode )?(?:to |in |into )?(work|free|quiet)(?: mode)?(?: now| please)?$/u
+    .exec(`${words} ${choice}`.trim());
+  return requested?.[1] === mode;
+}
+
 function requestedPower(input: string): {on: boolean; subject: string} | undefined {
   const prefix = /^(?:turn|switch|power|shut) (on|off) (?:(?:the|my) )?(.+?)(?: now| please)?$/u.exec(input);
   const suffix = /^(?:turn|switch|power|shut) (?:(?:the|my) )?(.+?) (on|off)(?: now| please)?$/u.exec(input);
