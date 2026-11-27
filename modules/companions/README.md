@@ -883,7 +883,11 @@ permission or capability refuses the action at execution too.
 
 An explicit owner instruction authorizes a configured Hub or device control
 once Conversation resolves the target and setting. “Turn off the shelf lamp”
-and “Set the Hub mode to quiet” send directly. Conversation asks for an exact
+and “Can you switch to quiet?” send directly. A short reply such as “Quiet”
+can select a mode after Conversation asks which mode to switch to. That
+question remains bound to the current request and Hub mode revision across
+restart. A short answer to a generic question about mode authorizes no switch.
+Conversation asks for an exact
 choice when names match more than one device. Earlier owner messages can
 identify a reference such as “it.” A status question or model suggestion
 cannot authorize a write. Paid artwork and coding delegation still use an
@@ -1459,14 +1463,56 @@ permissions keep their original names. The existing owner command checks
 device revisions, generation and capability. The tracked operation shows
 acceptance and available effect evidence.
 
-| Configured owner | Conversation operations |
+For B.U.N.N.Y., Reachy and MicroDuck, the selected hosted model interprets the
+action, settings and target roles. For each existing target, it quotes the
+complete selection or exclusion from the current request or its clarification.
+Companions checks those words against the saved owner message and resolves names
+against permitted owner records. A shared label across visible device owners
+requires an exact ID, a name qualified by its device owner, or clarification.
+A missing selection requires clarification
+even if an excluded record exists. The model interprets ordinary language once.
+The Hub validates the resulting references and checks the tool's permission and
+the current state. The tracked dispatcher checks the registered owner's
+availability rule and active hold. Pixoo's Now Playing and Moments preferences
+can be saved while the device is unavailable. Physical playback requires an
+available display. A held device refuses these writes. The receiving owner
+validates settings and revision guards.
+
+A current reference can use eligible history in the same conversation. For
+“use the last scene I activated” on a selected light, Companions checks tracked
+activation order across callers. It uses the latest successful receipt when it
+can verify the scene against an eligible owner-backed request. A later activation
+with an unresolved outcome or a receipt without an eligible scene requires the
+owner to name a scene. Companions checks access after the tracker read and
+verifies that the same receipt is still current before dispatch. A successful receipt
+can report transmission with the physical effect still unconfirmed.
+
+| Conversation flow | Command families and tools |
 | --- | --- |
-| LIFX and Wemo | Device reads, power, LIFX brightness and color, Wemo hold release |
-| Nanoleaf | Power, brightness, operating mode, scenes, moments, animations, wall and machine edits, favorites, notice acknowledgment, reactive presets and saved show versions |
-| Pixoo and Tidbyt | Supported display power, brightness, operating modes, moments and saved artwork. Pixoo also offers Monitor, Media, now playing, playlists, assets and notices |
-| Playback and Volcano | Playback controls and the Volcano software session-gap setting |
-| Core | Hub mode, device mode overrides, session labels, notice clearing, Inbox handling, layouts and tracked light show playback |
-| Art | Saved artwork edits and presentation. Paid generation keeps its explicit approval |
+| Device and owner-local action | `device-mode-set`, `scene-activate`, `moment-play`, `nanoleaf-animation-play`, `nanoleaf-wall-edit`, `nanoleaf-machine-edit`, `nanoleaf-favorite-edit`, `nanoleaf-notice-acknowledge`, `media-start`, `media-control`, `pixoo-media-show`, `pixoo-monitor-set`, `pixoo-now-playing-set`, `pixoo-moments-set`, `pixoo-playlist-change`, `pixoo-asset-change`, `pixoo-notice-dismiss`, `wemo-hold-release` |
+| Live action against a current record | `mode-override-set`, `notice-clear`, `session-label-set`, `inbox-handle`, `home-layout-set`, `lighting-layout-set`, `playback-layout-set`, `playback-control`, `volcano-session-gap`, `music-lighting-control` |
+| Live action against a fixed owner | `nanoleaf-reactive-preset-save`, `art-catalog-edit`, `art-show`, `nanoleaf-show-save` |
+| Private draft authoring | `create_light_show_draft`, `edit_light_show_cue` |
+| Global Hub mode | `set_mode` accepts the existing `{mode}` settings and adds typed `intent` for a current switch request. Use `{mode: "clarify"}` for a missing choice. Conversation renders the switch question and binds its answer to the current owner request. |
+| Dedicated plug and lighting controls | `set_wemo_power`, `set_lifx_power`, `set_lifx_brightness`, and the catalog families `power-set`, `brightness-set`, `lifx-color-set`, `lifx-temperature-set` |
+| Specialized approval | Paid `art-request`, presentation of newly generated art on the selected destinations, and coding handoffs |
+
+The hosted supervisors use the same enabled catalog. The model determines whether the owner
+is asking to switch or discussing the mode. For typed switch intent, the Hub
+checks that the action quote comes from the current owner input and contains
+a declared switch verb and the selected mode. A short mode choice, including
+a polite answer such as “Quiet mode, please,” requires the Hub's saved switch question.
+Tool availability gives no access to private catalog fields. Companions resolves names and revision
+guards locally when the owner publishes that index. This covers session labels,
+Volcano labels, saved light shows, Pixoo playlists and compatible renditions.
+The playback control can use the unique presented playback record.
+
+Companions asks the selected Nanoleaf owner to resolve a scene name to its ID.
+The Pixoo owner resolves original names even when the original has no
+rendition. Both reads return only a unique ID. Ambiguous names need a more
+specific selector. The Art catalog identifies saved artwork by ID or a known
+Conversation reference. Private catalog records and draft storyboards remain
+on the Hub.
 
 Roborock offers status only. ONN is hibernated. Conversation's Inbox Send
 again follows the existing requester and replay rules for the saved command.
@@ -1485,7 +1531,9 @@ display's preparation and presentation evidence. A skipped phase shows its owner
 If the evidence is unavailable, the phase reports that separately.
 
 For light shows, `create_light_show_draft` uses a Nanoleaf starter timeline.
-`edit_light_show_cue` applies edits against the current draft revision.
+`edit_light_show_cue` binds the named draft and applies one cue edit against
+its revision. A hosted supervisor receives the edit result without the private
+storyboard. The owner can inspect the saved storyboard in the tool result.
 `preview_light_show_draft` shows cue timing, colors and intensity.
 `save_light_show` writes the requested version to the existing Nanoleaf catalog. Each immutable version can confirm its save by request
 identity after a lost reply. If the save expires without a matching version,

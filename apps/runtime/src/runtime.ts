@@ -15,6 +15,7 @@ import {modeParticipants} from './core/mode-participants.js';
 import {historyDevices} from './core/history-alarm.js';
 import {automationDevices} from './core/automation-devices.js';
 import {bindHostedArtCatalog} from './core/art-catalog.js';
+import {hostedCatalogIdentity} from './core/catalog-identity.js';
 import {readEdgeCredentials} from './credentials.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {GatewayRefusals, methodOf} from './gateway/refusals.js';
@@ -359,6 +360,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     core?.setModeParticipants(modeParticipants(hosted));
     await core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
     bindHostedArtCatalog(core, modules, host, scheduler);
+    modules.find(isCompanionsModule)?.setCatalogIdentity?.(hostedCatalogIdentity(host, scheduler));
     if (core !== undefined) modules.find(isCompanionsModule)?.setDeviceHistory(core.history.devicePower);
   }
   if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && edgeOptions !== undefined) {

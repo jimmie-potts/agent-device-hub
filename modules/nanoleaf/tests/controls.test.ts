@@ -8,7 +8,7 @@ import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {admitCommand, MAX_QUEUED, Refused, sceneList} from '../src/controls.js';
+import {admitCommand, discovered, MAX_QUEUED, Refused, sceneIdsByName, sceneList} from '../src/controls.js';
 import {PRESETS, render, type ExplicitAnimation, type PresetName} from '../src/effects.js';
 import {transactWith, type Outcome as ControlOutcome} from '../src/journal.js';
 import {setMode} from '../src/modes.js';
@@ -174,6 +174,13 @@ suite('ControlsTest', () => {
     const listed = sceneList(replay.run.database());
     assert.deepEqual(listed.map(scene => Object.keys(scene)), [['id', 'name'], ['id']]);
     assert.equal(listed[0]?.name, 'Beach Waves');
+    const db = replay.run.database();
+    discovered(db, ['Daybreak', 'daybreak'], 'other-light', () => {});
+    assert.deepEqual(sceneIdsByName(db, 'wall', 'Daybreak'), []);
+    const duplicate = sceneIdsByName(db, 'other-light', 'Daybreak');
+    assert.equal(duplicate.length, 2);
+    assert.equal(new Set(duplicate).size, 2);
+
   });
 
   test('test_control_admitted_during_observation_is_not_undone_by_that_iteration', async context => {

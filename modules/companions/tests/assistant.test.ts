@@ -1,5 +1,6 @@
+import {NANOLEAF_LINES_DEVICE} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {CodingStore} from '../src/coding/store.js';
-import {DEVICE_HISTORY_VERSION} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {assistantRoutes, catalogFamily, DEVICE_HISTORY_VERSION, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -20,6 +21,7 @@ import {AnthropicTitleProvider} from '../src/assistant/titles.js';
 import {OPENAI_MODEL, OPENAI_URL, OpenAIProvider, OpenAITitleProvider} from '../src/assistant/openai.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
+import {ShowDrafts} from '../src/assistant/show-drafts.js';
 import {saveFinalDisclosureProofs} from '../src/assistant/disclosure-proof.js';
 import {inputBound} from '../src/assistant/spend.js';
 import {assistantStateDraft, DECLINED, REFUSED, UNSPOKEN} from '../src/assistant/engine.js';
@@ -35,7 +37,7 @@ import {readDevices} from '../src/assistant/devices.js';
 import {confirmationEvidence, type Confirmation} from '../src/assistant/confirmation.js';
 import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
 import {authorizesControl} from '../src/assistant/control-intent.js';
-import {catalogTools} from '../src/assistant/catalog-tools.js';
+import {catalogTool, catalogToolReferenceRoles, catalogTools, modelCatalogCommand} from '../src/assistant/catalog-tools.js';
 import {deviceToolOwner, FIXTURE_TEXT, summarizeSessions, TOOLS} from '../src/assistant/tools.js';
 import {DEVICE_TOOLS} from '../src/assistant/tool-scope.js';
 
@@ -70,12 +72,12 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
   const timers = new Map<number, {due: number; callback: () => void}>(); let timerId = 0;
   const time = {clock: {now: () => now}, scheduler: {after: (delay: number, callback: () => void) => {const id = ++timerId; timers.set(id, {due: now + delay, callback}); return () => {timers.delete(id);};}}};
   const dir = await mkdtemp(join(tmpdir(), 'assistant-owner-')), bus = new InProcessBus({now: time.clock.now, ...(maxQueued === undefined ? {} : {maxQueued})}), core = bus.connect('bunny/core');
-  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  const coreSync = await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   const make = () => {const module = createCompanionsModule(options); return {module, host: new ModuleHarness({...module, start: context => module.start(adapt(context))}, {bus, stateDir: dir, spans, section: {}, ...time})};};
   let {module, host} = make();
   await host.start();
   context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
-  return {core, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async (stopped?: () => void) => {
+  return {core, coreSync, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async (stopped?: () => void) => {
     await host.stop(); stopped?.(); ({module, host} = make()); await host.start();
   }};
 }
@@ -186,20 +188,51 @@ void test('a stale owner identity and an unrelated exact Wemo ID cannot dispatch
   assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
 });
 
-void test('a mode call cannot substitute its guess for the owner choosing a setting', async context => {
+void test('a generic informational question cannot grant authority for a bare mode answer', async context => {
   const requests: AssistantDispatch[] = [];
-  const provider = counted((_request, turn) => turn <= 2 ? call('set_mode', {mode: 'quiet'}) : reply('The dispatcher accepted the request.'));
+  const provider = counted((_request, turn) => turn === 1 ? call('ask_owner', {text: 'Which mode should I explain?'})
+    : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('Finished.'));
+  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(4), synced: true}),
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Could you set the Hub mode?');
+  await until(() => status(w) === 'waiting');
+  assert.equal((await input(w.core, w.module(), 'Quiet mode.', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(requests, []);
+});
+
+void test('the supervisor asks once for a missing mode and binds the owner answer', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn === 1 ? call('set_mode', {mode: 'clarify'})
+    : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('The dispatcher accepted the request.'));
   const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(4), synced: true}),
     dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Could you set the Hub mode?');
   await until(() => status(w) === 'waiting');
   assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
-  assert.ok((await page(w)).messages.some(message => /Which Hub mode/.test(message.text)));
+  assert.ok((await page(w)).messages.some(message => /Which mode should I switch the Hub to/.test(message.text)));
   assert.equal(requests.length, 0);
-  assert.equal((await input(w.core, w.module(), 'quiet', true)).status, 'accepted');
+  assert.equal((await input(w.core, w.module(), 'Quiet mode, please.', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.deepEqual(requests.map(({data}) => data), [{mode: 'quiet', expectedRevision: 4}]);
+});
+
+void test('a saved mode clarification refuses a bare choice after the Hub mode revision changes', async context => {
+  const provider = counted((_request, turn) => turn === 1 ? call('set_mode', {mode: 'quiet'})
+    : turn === 2 ? call('set_mode', {mode: 'quiet'}) : reply('Finished.'));
+  let revision = 4;
+  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(revision), synced: true}),
+    dispatch: () => assert.fail('a stale mode clarification sends no command')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Set the Hub mode.');
+  await until(() => status(w) === 'waiting');
+  assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which mode should I switch the Hub to/u);
+  revision += 1;
+  assert.equal((await input(w.core, w.module(), 'quiet', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: revision-conflict')));
 });
 
 void test('identical numbers in unrelated settings and relative commands authorize no brightness write', async context => {
@@ -222,7 +255,7 @@ void test('identical numbers in unrelated settings and relative commands authori
   assert.partialDeepStrictEqual(writes[0], {target: lamp.id, family: 'brightness-set', data: {percent: 70}});
 });
 
-void test('catalog arguments preserve the roles of color and label values', () => {
+void test('catalog arguments preserve the roles of hue and saturation', () => {
   const color = {family: 'catalog-action', command: 'lifx-color-set', target: 'desk-lamp',
     binding: {kind: 'device', owner: 'bunny/modules/lifx', target: 'desk-lamp', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}},
     data: {hue: 20, saturation: 40}} as const;
@@ -230,11 +263,6 @@ void test('catalog arguments preserve the roles of color and label values', () =
   assert.equal(authorizesControl(color, 'Set Desk lamp color to hue 20 and saturation 40', '', lamp, ''), true);
   assert.equal(authorizesControl(color, 'Set Desk lamp color to hue 40 and saturation 20', '', lamp, ''), false);
   assert.equal(authorizesControl(color, 'Set Desk lamp timer to 40 after 20 minutes', '', lamp, ''), false);
-  const rename = {family: 'catalog-action', command: 'session-label-set', target: 'kitchen',
-    binding: {kind: 'record', owner: 'bunny/core', target: 'kitchen', revision: 1}, data: {label: 'New title'}} as const;
-  assert.equal(authorizesControl(rename, 'Rename session kitchen to New title', '', [['kitchen']], ''), true);
-  assert.equal(authorizesControl(rename, 'Rename session New title to kitchen', '', [['kitchen']], ''), false);
-  assert.equal(authorizesControl(rename, 'Rename session kitchen to new title', '', [['kitchen']], ''), false);
 });
 
 void test('an exact tool ID cannot skip the owner choosing between shared catalog aliases', async context => {
@@ -267,8 +295,8 @@ void test('ordinary media requests bind the exact display and action', async con
   const base = light('office-pixoo', 'Office Pixoo');
   const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities, media: {supported: true as const, actions: ['pause' as const], playlistIds: [], renditionIds: []}}};
   const writes: AssistantDispatch[] = [];
-  const provider = counted((_request, turn) => turn % 2 === 0 ? reply('Finished.') : call('control_media_control', {
-    owner, target: device.id, arguments: '{"action":"pause"}',
+  const provider = counted((request, turn) => turn % 2 === 0 ? reply('Finished.') : call('control_media_control', {
+    owner, target: device.id, arguments: JSON.stringify({action: request.transcript.at(-1)?.role === 'owner' && turn === 1 ? 'stop' : 'pause'}),
   }));
   const w = await world(context, {provider, tools: ['control_media_control'],
     dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
@@ -288,6 +316,42 @@ void test('ordinary media requests bind the exact display and action', async con
   assert.equal(writes[0]?.family === 'catalog-action' ? writes[0].data.action : undefined, 'pause');
 });
 
+void test('a newly configured Pixoo resolves a saved playlist by name and checks its revision locally', async context => {
+  const owner = 'bunny/modules/pixoo', base = light('new-pixoo', 'Kitchen Display');
+  const playlistId = '11111111-1111-4111-8111-111111111111';
+  const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities,
+    media: {supported: true as const, actions: ['pause' as const], playlistIds: [playlistId], renditionIds: []}}};
+  let revision = 6;
+  const writes: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.')
+    : call('control_pixoo_playlist_change', {owner, target: 'Kitchen Display', arguments: JSON.stringify({
+      change: {operation: 'rename', playlistId: 'Evening loop', revision, name: 'After dinner'},
+    })}));
+  const w = await world(context, {provider, tools: ['control_pixoo_playlist_change'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device', 'pixoo-playlist'], request => ({revision: 7, states: request.data.families.includes('device')
+    ? [{type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}]
+    : [{type: 'org.bunny.pixoo-playlist.updated', subject: playlistId, dataschema: 'https://bunny.invalid/events/pixoo-playlist/2.0',
+      data: {id: playlistId, revision: 7, playlistRevision: 7, name: 'Evening loop', repeat: true, shuffle: false, items: []}}]}));
+  await control(w.core, w.module(), 'enable');
+  const ask = async (text: string) => {
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+  };
+  await ask('On the Kitchen Display, call revision six of Evening loop After dinner.');
+  assert.equal(writes.length, 0);
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === 'refused: revision-conflict'));
+  revision = 7;
+  await ask('On Kitchen Display, rename Evening loop to After dinner.');
+  assert.equal(writes.length, 1);
+  assert.partialDeepStrictEqual(writes[0], {family: 'catalog-action', command: 'pixoo-playlist-change', target: device.id,
+    binding: {kind: 'device', configurationRevision: device.configurationRevision, generation: device.generation},
+    data: {change: {operation: 'rename', playlistId, revision: 7, name: 'After dinner'}}});
+});
+
 void test('ordinary monitor requests and moments dispatch only their named settings', async context => {
   const owner = 'bunny/modules/pixoo', base = light('office-pixoo', 'Office Pixoo');
   const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities,
@@ -296,7 +360,7 @@ void test('ordinary monitor requests and moments dispatch only their named setti
   const instructions = new Map([
     ['Show Claude sessions on the office Pixoo every 3 seconds', ['control_pixoo_monitor_set', '{"filter":{"provider":"claude"},"cadenceMs":3000}']],
     ['Hide Now Playing on the office Pixoo', ['control_pixoo_now_playing_set', '{"media":"off"}']],
-    ['Play a celebrate moment on the office Pixoo for 5 seconds', ['control_moment_play', '{}']],
+    ['Play a celebrate moment on the office Pixoo for 5 seconds', ['control_moment_play', '{"mood":"celebrate","durationMs":5000}']],
   ]);
   const provider = counted(request => {
     const text = request.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? '';
@@ -349,31 +413,6 @@ void test('ambiguous device clarification omits choices denied at either destina
   assert.doesNotMatch(JSON.stringify(document), /(?:owner|model)-denied-screen/);
 });
 
-void test('showing saved art binds status visibility and the whole display set', () => {
-  const proposal = {family: 'catalog-action', command: 'art-show', target: 'hub', binding: {kind: 'fixed', owner: 'bunny/core', target: 'hub'},
-    data: {artworkId: 'kite', targets: ['pixoo', 'tidbyt'], coversStatus: false}} as const;
-  const prompt = 'Show the kite on Pixoo and Tidbyt and keep status visible';
-  assert.equal(authorizesControl(proposal, prompt, '', [['pixoo'], ['tidbyt']], ''), true);
-  assert.equal(authorizesControl({...proposal, data: {...proposal.data, coversStatus: true}}, prompt, '', [['pixoo'], ['tidbyt']], ''), false);
-  assert.equal(authorizesControl({...proposal, data: {...proposal.data, targets: ['pixoo']}}, prompt, '', [['pixoo']], ''), false);
-  const opaque = {...proposal, data: {...proposal.data, artworkId: 'kite-blue'}};
-  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite-blue'), '', [['pixoo'], ['tidbyt']], ''), true);
-  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite_blue'), '', [['pixoo'], ['tidbyt']], ''), false);
-});
-
-void test('art catalog changes bind the exact opaque ID and requested edit', () => {
-  const artworkId = 'Kite-Blue';
-  const deleteArt = {family: 'catalog-action', command: 'art-catalog-edit', target: 'art',
-    binding: {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'}, data: {action: 'delete', artworkId}} as const;
-  assert.equal(authorizesControl(deleteArt, 'Bunny, delete saved artwork Kite-Blue', '', [['art']], ''), true);
-  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork Kite_Blue', '', [['art']], ''), false);
-  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork kite-blue', '', [['art']], ''), false);
-  assert.equal(authorizesControl(deleteArt, 'Favorite saved artwork Kite-Blue', '', [['art']], ''), false);
-  const favorite = {...deleteArt, data: {action: 'favorite', artworkId, favorite: false}};
-  assert.equal(authorizesControl(favorite, 'Unfavorite artwork Kite-Blue', '', [['art']], ''), true);
-  assert.equal(authorizesControl(favorite, 'Favorite artwork Kite-Blue', '', [['art']], ''), false);
-});
-
 void test('ordinary art deletion reaches its fixed owner only for the exact selected ID', async context => {
   const writes: AssistantDispatch[] = [];
   const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_art_catalog_edit', {
@@ -398,19 +437,6 @@ void test('ordinary art deletion reaches its fixed owner only for the exact sele
   assert.ok(dispatched?.family === 'catalog-action');
   assert.deepEqual(dispatched.binding, {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'});
   assert.deepEqual(dispatched.data, {action: 'delete', artworkId: 'Kite-Blue'});
-});
-
-void test('a seek binds the light, position and direction in an ordinary request', () => {
-  const seek = {family: 'catalog-action', command: 'music-lighting-control', target: 'wall',
-    binding: {kind: 'record', owner: 'bunny/core', target: 'wall', revision: 1},
-    data: {action: 'seek-show', generation: 'current-light-show', positionMs: 1500}} as const;
-  const wall = [['wall', 'Studio Wall']];
-  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Jump the light show to 1500 milliseconds on the Studio Wall.', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds?', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 milliseconds on the Studio Wall', '', wall, ''), false);
-  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 seconds on the Studio Ceiling', '', wall, ''), false);
-  assert.equal(authorizesControl(seek, 'Jump the light show to -1.5 seconds on the Studio Wall', '', wall, ''), false);
 });
 
 async function finishWemoConfirmationWindow(w: Awaited<ReturnType<typeof world>>): Promise<void> {
@@ -1791,8 +1817,9 @@ void test('Conversation pages through large show catalogs and can read a saved t
 
 void test('ordinary light-show seek dispatches once with the active generation and exact position', async context => {
   const requests: AssistantDispatch[] = [];
-  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_music_lighting_control', {
-    owner: 'bunny/core', target: 'wall', arguments: '{"action":"seek-show","positionMs":1500,"generation":"model-supplied-generation"}',
+  const provider = counted((request, turn) => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_music_lighting_control', {
+    owner: 'bunny/core', target: 'wall', arguments: JSON.stringify({action: 'seek-show', positionMs: turn === 1 ? -2000 : 1500,
+      generation: 'model-supplied-generation'}),
   }));
   const w = await world(context, {provider, tools: ['control_music_lighting_control'], dispatch: data => {
     requests.push(data);
@@ -1804,7 +1831,7 @@ void test('ordinary light-show seek dispatches once with the active generation a
       startedAtMs: 1000, show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0}}, last: null},
   }]}));
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Seek the light show on wall to 2 seconds');
+  await input(w.core, w.module(), 'Seek the light show on wall to two seconds before the start');
   await until(() => status(w) === 'succeeded');
   assert.equal(requests.length, 0);
   await input(w.core, w.module(), 'Could you seek the light show on wall to 1.5 seconds?');
@@ -3028,18 +3055,6 @@ void test('an ordinary multi-display show clarifies duplicate labels despite the
   w.advance(1100);
   await until(() => status(w) === 'succeeded');
   assert.deepEqual(writes[0]?.family === 'catalog-action' ? writes[0].data.targets : undefined, ['display-green', 'browser']);
-});
-
-void test('saving a show binds the explicitly requested draft revision and immutable version name', () => {
-  const proposal = {family: 'catalog-action', command: 'nanoleaf-show-save', target: 'shows',
-    binding: {kind: 'fixed', owner: 'bunny/modules/nanoleaf', target: 'shows'}, data: {
-      name: 'Dawn test', showId: 'show-synthetic', versionName: 'First version',
-    }} as const;
-  const owners = [['show-synthetic']];
-  const request = 'Save draft Dawn test (show-synthetic) revision 1 as First version';
-  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, 1), true);
-  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, 2), false);
-  assert.equal(authorizesControl(proposal, request.replace('First version', 'Other version'), '', owners, '', [], false, 1), false);
 });
 
 void test('a failed compound turn reports the saved artwork and exact rejected display action', async context => {
@@ -4908,3 +4923,785 @@ void test('Claude reads an explicit device ID within its current grants when a l
   selector = id;
   assert.deepEqual(await ask('Check Main display status.'), [[owner, id]]);
 });
+
+for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], ['anthropic', 'microduck'],
+  ['openai', 'bunny'], ['openai', 'reachy'], ['openai', 'microduck']] as const) {
+  void test(`${name} ${profile} catalog admission offers playback and draft tools while refusing denied or stale writes`, async context => {
+    const playback = 'control_playback_control', edit = 'edit_light_show_cue';
+    const offered = new Set<string>();
+    const bodies: string[] = [];
+    const usage = {input_tokens: 20, output_tokens: 10};
+    let proposal: {name: string; input: Record<string, unknown>} | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      bodies.push(init.body);
+      const body = JSON.parse(init.body) as {tools: {name: string}[]};
+      for (const tool of body.tools) offered.add(tool.name);
+      const candidate = proposal;
+      proposal = undefined;
+      const selected = candidate !== undefined && body.tools.some(tool => tool.name === candidate.name) ? candidate : undefined;
+      return Promise.resolve(Response.json(name === 'anthropic'
+        ? {content: selected === undefined ? [{type: 'text', text: 'Synthetic supervisor reply.'}]
+          : [{type: 'tool_use', id: 'catalog_call', ...selected}], stop_reason: selected === undefined ? 'end_turn' : 'tool_use', usage}
+        : {status: 'completed', output: selected === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic supervisor reply.', annotations: []}]}]
+          : [{type: 'function_call', id: 'fc_catalog_call', call_id: 'catalog_call', name: selected.name, arguments: JSON.stringify(selected.input)}], usage}));
+    };
+    const provider = name === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const calls: AssistantDispatch[] = [];
+    const policy = sharing();
+    let denied = true, deniedDraft = false, extraSpeaker = false, deniedSpeaker = false;
+    const w = await world(context, {provider, share: query => policy(query) && !(query.destination === 'private-conversation' &&
+      (denied && query.source === 'playback' || deniedDraft && query.source === 'shows' ||
+        deniedSpeaker && query.source === 'playback' && query.record === 'hall-speaker')),
+      tools: [playback, 'read_playback', edit, 'read_light_shows'],
+      dispatch: request => {calls.push(request); return Promise.resolve(accepted(request.requestId));}});
+    const owner = w.bus.connect('bunny/modules/playback');
+    context.after(() => owner.close());
+    await owner.serveSync(['playback'], () => ({revision: 7, states: (extraSpeaker ? ['desk-speaker', 'hall-speaker', 'north-hall-speaker'] : ['desk-speaker']).map(id => ({
+      type: 'org.bunny.playback.updated', subject: id, dataschema: 'https://bunny.invalid/events/playback/2.0',
+      data: {id, revision: 7, availability: 'available', playback: {status: 'known', player: 'playing', controls: ['pause', 'play'], title: 'PRIVATE_PLAYBACK_TITLE'}},
+    }))}));
+    const drafts = new ShowDrafts(w.host().moduleDatabase() ?? assert.fail('open database'));
+    assert.ok('text' in drafts.create({name: 'Desk show', starter: 'warm'}));
+    const summary = drafts.list(0, 1, '', () => true)[0] ?? assert.fail('saved draft');
+    assert.ok('text' in drafts.create({name: 'Red Dawn', starter: 'ocean'}));
+    const red = drafts.list(0, 2, '', () => true).find(item => item.name === 'Red Dawn') ?? assert.fail('second saved draft');
+    const redBefore = drafts.read(red.id);
+    const before = drafts.read(summary.id) ?? assert.fail('current draft');
+    const cue = before.value.timeline.cues[0]?.id ?? assert.fail('starter cue');
+    const stale = {draftId: summary.id, revision: summary.revision - 1, cue, changes: '{"intensity":0.25}'};
+    assert.deepEqual(drafts.edit(stale), {code: 'revision-conflict'});
+
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string, next: NonNullable<typeof proposal>, claimed?: ReturnType<typeof ownerReference> | readonly ReturnType<typeof ownerReference>[]) => {
+      const previous = task(w)?.taskId;
+      const draftReference = ['Desk show', 'Red Dawn', `id:${summary.id}`].find(value => text.includes(value));
+      const subject = ['hall-speaker', 'missing-speaker', 'desk speaker', 'music', 'a different speaker'].find(value => text.includes(value));
+      const exact = /id:[^ ]*/u.exec(text)?.[0]?.replace(/[.]$/u, '');
+      const references = next.name === edit ? [ownerReference('draft', draftReference ?? 'unavailable'), ownerReference('cue', 'first cue')]
+        : next.name !== playback ? [] : subject !== undefined || exact !== undefined ? [ownerReference('primary', exact ?? subject ?? '')]
+          : [ownerReference('primary', 'it', 'prior')];
+      proposal = next.name === edit || next.name === playback ? {...next, input: {...next.input, references: claimed === undefined ? references : 'role' in claimed ? [claimed] : claimed}} : next;
+      assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
+      await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+      assert.equal(proposal, undefined, 'the fake transport received the owner turn');
+    };
+    await ask('Is the desk speaker paused? Please leave it alone.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'desk-speaker', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 0, 'a status question and explicit denial cause zero dispatches');
+
+    await ask('Tone down the first cue in revision zero of my Desk show draft.', {name: edit, input: stale});
+    assert.deepEqual(drafts.read(summary.id), before, 'the stale edit changes neither the revision nor the draft');
+    assert.equal(calls.length, 0, 'a private draft edit never dispatches to a device');
+
+    await ask('Read the Red Dawn draft.', {name: 'read_light_shows', input: {view: 'drafts', id: red.id, offset: 0}});
+    await ask(`Edit the first cue on id:${summary.id}.`, {name: edit,
+      input: {...stale, draftId: 'Red Dawn', revision: red.revision, cue: '1'}});
+    assert.deepEqual(drafts.read(red.id), redBefore, 'an earlier valid draft cannot replace the current explicit draft ID');
+    assert.deepEqual(drafts.read(summary.id), before, 'a mismatched draft proposal never silently redirects the write');
+
+    const expected = [playback, 'read_playback', edit, 'read_light_shows'];
+    assert.deepEqual(expected.filter(tool => !offered.has(tool)), [], 'the hosted adapter receives enabled catalog tools');
+    denied = false;
+    await ask('Give the music a break, please.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'auto', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0]?.data, {action: 'pause'});
+    assert.ok(calls[0]?.family === 'catalog-action');
+    assert.deepEqual(calls[0].binding, {kind: 'record', owner: 'bunny/modules/playback', target: 'desk-speaker', revision: 7});
+    await ask('Actually, let it carry on.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'auto', arguments: '{"action":"play"}'}});
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1]?.target, calls[0].target);
+    assert.deepEqual(calls[1]?.data, {action: 'play'});
+    await ask('Pause a different speaker.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'other-speaker', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 2, 'an unknown target never enters dispatch');
+    for (const selector of ['???', 'bad/path', '', 'a'.repeat(64), '11111111-1111-4111-8111-111111111111']) {
+      await ask(`Pause id:${selector}.`, {name: playback,
+        input: {owner: 'bunny/modules/playback', target: 'desk-speaker', arguments: '{"action":"pause"}'}});
+    }
+    assert.equal(calls.length, 2, 'an unaccounted complete selector never falls back to the previously selected speaker');
+    extraSpeaker = true;
+    await ask('Pause id:desk-speaker.', {name: playback,
+      input: {owner: 'bunny/modules/playback', target: 'hall-speaker', arguments: '{"action":"pause"}'}});
+    assert.equal(calls.length, 2, 'a different existing playback record never enters dispatch');
+    const pause = (target: string) => ({name: playback,
+      input: {owner: 'bunny/modules/playback', target, arguments: '{"action":"pause"}'}});
+    const misleading = [
+      ['Pause that Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Missing Speaker')],
+      ['Pause North Hall Speaker.', 'hall-speaker', ownerReference('primary', 'Hall Speaker')],
+      ['Instead of Desk Speaker, pause Hall Speaker.', 'desk-speaker', ownerReference('primary', 'Hall Speaker')],
+      ['Pause the other speaker like that one.', 'desk-speaker', ownerReference('primary', 'the other speaker')],
+      ['Instead of Desk Speaker, pause Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Missing Speaker')],
+      ['Pause Missing Speaker instead of Desk Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker', 'named', 'request', 'exclude')],
+      ['Pause Desk Speaker versus Missing Speaker.', 'desk-speaker', [ownerReference('primary', 'Desk Speaker'), ownerReference('primary', 'Missing Speaker')]],
+      ['Pause Missing Speaker, rather than the music.', 'desk-speaker', ownerReference('primary', 'music', 'named', 'request', 'exclude')],
+    ] as const;
+    const substitutions: string[] = [];
+    for (const [utterance, target, reference] of misleading) {
+      const before = calls.length;
+      await ask(utterance, pause(target), reference);
+      if (calls.length !== before) substitutions.push(utterance);
+    }
+    assert.deepEqual(substitutions, [], 'misclassified names, partial names and unrelated references never select the prior speaker');
+    const excludeDesk = ownerReference('primary', 'Desk Speaker', 'named', 'request', 'exclude');
+    await ask('Pause Missing Speaker, not Desk Speaker.', pause('desk-speaker'),
+      [ownerReference('primary', 'Missing Speaker'), excludeDesk]);
+    assert.equal(calls.length, 2, 'a missing selection cannot dispatch to the excluded speaker');
+    await ask('Instead of Desk Speaker, pause Hall Speaker.', pause('hall-speaker'),
+      [ownerReference('primary', 'Hall Speaker'), excludeDesk]);
+    assert.equal(calls.at(-1)?.target, 'hall-speaker');
+    assert.equal(calls.length, 3, 'a valid contrast dispatches to the selected speaker once');
+    deniedSpeaker = true;
+    for (const speaker of ['hall-speaker', 'missing-speaker']) {
+      await ask(`Pause ${speaker}.`, {name: playback,
+        input: {owner: 'bunny/modules/playback', target: 'auto', arguments: '{"action":"pause"}'}});
+      const latest = (await page(w, profile, 'recent')).messages.filter(message => message.role === 'tool').at(-1);
+      assert.equal(latest?.text, 'refused: not-found');
+    }
+    assert.equal(calls.length, 3, 'denied and absent selections never redirect to the visible speaker');
+
+    await ask('Make the first cue in the Desk show draft half as bright.', {name: edit,
+      input: {...stale, draftId: 'Desk show', revision: summary.revision, cue: '1'}});
+    assert.equal(drafts.read(summary.id)?.revision, summary.revision + 1);
+    assert.equal(drafts.read(summary.id)?.value.timeline.cues[0]?.intensity, 0.25);
+    await ask(`Edit cue id:${cue} in Desk show, excluding the first cue.`, {name: edit,
+      input: {...stale, draftId: 'Desk show', revision: summary.revision + 1, cue}},
+    [ownerReference('draft', 'Desk show'), ownerReference('cue', `id:${cue}`),
+      ownerReference('cue', 'first cue', 'named', 'request', 'exclude')]);
+    assert.equal(drafts.read(summary.id)?.revision, summary.revision + 1, 'a cue excluded by ordinal cannot change by ID');
+    assert.equal(calls.length, 3, 'private cue edit never sends a device command');
+    assert.doesNotMatch(bodies.join(' '), /PRIVATE_PLAYBACK_TITLE|Draft Desk show \(/u);
+    assert.ok((await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
+    deniedDraft = true;
+    assert.ok(!(await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
+    deniedSpeaker = false;
+    await ask('Pause North Hall Speaker.', pause('north-hall-speaker'), ownerReference('primary', 'North Hall Speaker'));
+    assert.equal(calls.length, 4);
+    assert.equal(calls.at(-1)?.target, 'north-hall-speaker', 'the complete longer name still selects its own record');
+  });
+}
+
+function ownerReference(role: string, quote: string, kind = 'named', source = 'request', disposition = 'select') {
+  return {role, quote, kind, source, disposition};
+}
+
+type CatalogPhrase = {
+  family: CatalogFamily;
+  say: string;
+  owner: string;
+  selector: string;
+  target: string;
+  settings: Record<string, unknown>;
+  expected?: Record<string, unknown>;
+  refuse: {say: string; selector?: string; settings?: Record<string, unknown>; owner?: string; code: string};
+};
+
+void test('natural catalog corpus covers every migrated command', () => {
+  assert.deepEqual(catalogPhrases().map(row => row.family).concat('nanoleaf-show-save').sort(),
+    Object.keys(assistantRoutes).filter(catalogFamily).filter(modelCatalogCommand).sort());
+});
+
+function catalogPhrases(): CatalogPhrase[] {
+  const core = 'bunny/core', nanoleaf = 'bunny/modules/nanoleaf', pixoo = 'bunny/modules/pixoo';
+  const wall = 'studio-wall', screen = 'new-pixoo', noticeId = 'a'.repeat(64);
+  const playlistId = '11111111-1111-4111-8111-111111111111', renditionId = 'b'.repeat(64);
+  const assetId = '22222222-2222-4222-8222-222222222222';
+  const wrongWall = {say: 'Make that change on the spare wall panel instead.', selector: 'spare-wall', code: 'not-found'};
+  const wrongScreen = {say: 'Make that change on the spare display instead.', selector: 'spare-screen', code: 'not-found'};
+  const onWall = (family: CatalogFamily, say: string, settings: CatalogPhrase['settings'], refuse: CatalogPhrase['refuse'] = wrongWall,
+    expected?: CatalogPhrase['expected']): CatalogPhrase =>
+    ({family, say, settings, refuse, owner: nanoleaf, selector: 'Studio Wall', target: wall, ...(expected === undefined ? {} : {expected})});
+  const onScreen = (family: CatalogFamily, say: string, settings: CatalogPhrase['settings'], refuse: CatalogPhrase['refuse'] = wrongScreen,
+    expected?: CatalogPhrase['expected']): CatalogPhrase =>
+    ({family, say, settings, refuse, owner: pixoo, selector: 'Kitchen Display', target: screen, ...(expected === undefined ? {} : {expected})});
+  const record = (family: CatalogFamily, say: string, selector: string, settings: CatalogPhrase['settings'], target = selector,
+    owner = core, refuse: CatalogPhrase['refuse'] = {say: 'Apply that to the other entry instead.', selector: 'unknown-record', code: 'not-found'}): CatalogPhrase =>
+    ({family, say, settings, refuse, owner, selector, target});
+  return [
+    onWall('device-mode-set', 'Switch Studio Wall to free mode.', {mode: 'free'}),
+    onWall('scene-activate', 'Put Northern Lights on Studio Wall.', {sceneId: 'Northern Lights'},
+       {say: 'Use id:scene-' + 'c'.repeat(64) + ' on Studio Wall.', settings: {sceneId: 'scene-' + noticeId}, code: 'not-found'},
+      {sceneId: 'scene-' + noticeId}),
+    onWall('moment-play', 'Give Studio Wall five seconds of celebration.', {mood: 'celebrate', durationMs: 5000},
+      {say: 'Give Studio Wall two hours of celebration.', settings: {mood: 'celebrate', durationMs: 7_200_000}, code: 'invalid-request'}),
+    onWall('nanoleaf-animation-play', 'Play Ocean on Studio Wall.', {animation: {preset: 'ocean'}}),
+    onWall('nanoleaf-wall-edit', 'Rotate Studio Wall a quarter turn.', {edit: {kind: 'settings', settings: {rotation: 90}}}),
+    record('nanoleaf-machine-edit', 'Use project style for Desk Lines machine status.', 'Desk Lines',
+      {edit: {kind: 'settings', settings: {style: 'project'}}}, NANOLEAF_LINES_DEVICE, nanoleaf,
+      {say: 'Use project style for Studio Wall machine status.', selector: 'Studio Wall', code: 'unsupported-capability'}),
+    record('nanoleaf-favorite-edit', 'Rename the Desk Lines favorite Evening to Dusk.', 'Desk Lines',
+      {edit: {kind: 'animation.rename', name: 'Evening', newName: 'Dusk'}}, NANOLEAF_LINES_DEVICE, nanoleaf,
+      {say: 'Rename the Studio Wall favorite Evening to Dusk.', selector: 'Studio Wall', code: 'unsupported-capability'}),
+    onWall('nanoleaf-notice-acknowledge', 'Acknowledge notice ' + noticeId + ' for synthetic-task on Studio Wall.', {task: 'synthetic-task', noticeId}),
+    onScreen('media-start', 'Start the Evening Loop playlist on Kitchen Display.', {playlistId: 'Evening Loop'}, wrongScreen, {playlistId}),
+    onScreen('media-control', 'Could you pause the media on Kitchen Display?', {action: 'pause'}),
+    onScreen('pixoo-media-show', 'Play the Blue Kite rendition once on Kitchen Display.', {renditionId: 'Blue Kite', playback: {mode: 'plays', totalPlays: 1}},
+      wrongScreen, {renditionId, playback: {mode: 'plays', totalPlays: 1}}),
+    onScreen('pixoo-monitor-set', 'Show Claude sessions on Kitchen Display every three seconds.', {filter: {provider: 'claude'}, cadenceMs: 3000}),
+    onScreen('pixoo-now-playing-set', 'Hide Now Playing on Kitchen Display.', {media: 'off'}),
+    onScreen('pixoo-moments-set', 'Let moments cover status on Kitchen Display.', {overStatus: true}),
+    onScreen('pixoo-playlist-change', 'Rename Evening Loop to Last Light on Kitchen Display.', {change: {operation: 'rename', playlistId: 'Evening Loop', name: 'Last Light'}},
+      {say: 'Rename revision six of Evening Loop to Last Light on Kitchen Display.', settings: {change: {operation: 'rename', playlistId: 'Evening Loop', revision: 6, name: 'Last Light'}}, code: 'revision-conflict'},
+      {change: {operation: 'rename', playlistId, revision: 7, name: 'Last Light'}}),
+    onScreen('pixoo-asset-change', 'Render the Blue Kite original again for Kitchen Display.', {change: {operation: 'render', assetId: 'Blue Kite'}},
+      {say: 'Render original id:33333333-3333-4333-8333-333333333333 on Kitchen Display.', settings: {change: {operation: 'render', assetId}}, code: 'not-found'},
+      {change: {operation: 'render', assetId}}),
+    onScreen('pixoo-notice-dismiss', 'Dismiss fixture-notice for session ' + noticeId + ' on Kitchen Display.', {session: noticeId, noticeId: 'fixture-notice'}),
+    record('wemo-hold-release', 'Release the hold on Bench Plug.', 'Bench Plug', {}, 'bench-plug', 'bunny/modules/wemo',
+      {say: 'Release the hold from an older operation on Bench Plug.', settings: {heldRequestId: 'old-operation'}, code: 'invalid-request'}),
+    record('mode-override-set', 'Keep Studio Wall in free mode regardless of Hub mode.', 'Studio Wall', {mode: 'free'}, wall, core,
+      {say: 'Keep id:studio-wall in free mode.', selector: 'id:wall-right', code: 'not-found'}),
+    record('notice-clear', 'Clear all notices for the Writing session.', 'Writing', {noticeId: null}, noticeId),
+    record('session-label-set', 'Call the Writing session Revised chapter.', 'Writing', {label: 'Revised chapter'}, noticeId),
+    record('inbox-handle', 'Dismiss Inbox item fixture-inbox.', 'fixture-inbox', {action: 'dismiss'}),
+    record('home-layout-set', 'Clear my custom desktop and phone Home ordering.', 'home', {layouts: {desktop: [], phone: []}}),
+    record('lighting-layout-set', 'Clear my saved room lighting groups and assignments.', 'lighting', {layout: {rooms: [], assignments: [], groups: [], home: null}}),
+    record('playback-layout-set', 'Remove the custom placements for Music cards.', 'playback', {assignments: []}),
+    record('playback-control', 'Give the music a break, please.', 'auto', {action: 'pause'}, 'desk-speaker', 'bunny/modules/playback',
+      {say: 'Pause music on the spare speaker.', selector: 'spare-speaker', code: 'not-found'}),
+    record('volcano-session-gap', 'Set Volcano’s session gap to half an hour.', 'Volcano', {gapMinutes: 30}, 'volcano', 'bunny/modules/volcano'),
+    record('art-catalog-edit', 'Favorite the saved artwork ' + playlistId + '.', 'art', {action: 'favorite', artworkId: playlistId, favorite: true}, 'art', 'bunny/modules/art',
+      {say: 'Favorite it in the other art catalog.', selector: 'other-catalog', code: 'forbidden'}),
+    record('art-show', 'Show retained-kite on the Browser.', 'hub', {artworkId: 'retained-kite', targets: ['browser']}, 'hub', core,
+      {say: 'Show missing-kite on the Browser.', settings: {artworkId: 'missing-kite', targets: ['browser']}, code: 'not-found'}),
+    record('music-lighting-control', 'Jump to one and a half seconds in the wall light show.', 'wall', {action: 'seek-show', positionMs: 1500}, 'wall', core,
+      {say: 'Jump to two seconds before the wall light show starts.', settings: {action: 'seek-show', positionMs: -2000}, code: 'invalid-request'}),
+    record('nanoleaf-reactive-preset-save', 'Save the ambient blue recipe as Evening Glow.', 'reactive-presets',
+      {name: 'Evening Glow', recipe: {rendererVersion: 1, effect: 'ambient', palette: ['#1122ff']}}, 'reactive-presets', nanoleaf,
+      {say: 'Save Evening Glow against revision six.', settings: {name: 'Evening Glow', expectedRevision: 6, recipe: {rendererVersion: 1, effect: 'ambient', palette: ['#1122ff']}}, code: 'revision-conflict'}),
+  ];
+}
+
+async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof world>>, operations: OperationRecord[] = [],
+  beforeOperationRead: () => void = () => {}, pixooState: () => Pick<DeviceRecord, 'availability' | 'held'> = () => ({availability: 'available'}),
+  sharedLampPresent: () => boolean = () => true) {
+  await w.coreSync.close();
+  type States = ReturnType<typeof state>[];
+  const register = (owner: Participant, families: Record<string, States | (() => States)>) => owner.serveSync(Object.keys(families),
+    request => {
+      if (request.data.families.includes('operation')) beforeOperationRead();
+      return {revision: 7, states: request.data.families.flatMap(family => {
+        if (family === 'operation') return operations.map(row => state('operation', row.id, row));
+        const entries = families[family];
+        return typeof entries === 'function' ? entries() : entries ?? [];
+      })};
+    });
+  function state(family: string, subject: string, data: {id: string; revision: number} & Record<string, unknown>, type = `org.bunny.${family}.updated`) {
+    return {type, subject, dataschema: `https://bunny.invalid/events/${family}/2.0`, data};
+  }
+  function connect(owner: string) {
+    const participant = w.bus.connect(`bunny/modules/${owner}`);
+    context.after(() => participant.close());
+    return participant;
+  }
+  const device = (data: DeviceRecord) => ({...state('device', data.id, data), dataschema: DEVICE_READBACK_SCHEMA});
+  const wall = light('studio-wall', 'Studio Wall'), screen = light('new-pixoo', 'Kitchen Display');
+  const hash = 'a'.repeat(64), renditionId = 'b'.repeat(64);
+  const playlistId = '11111111-1111-4111-8111-111111111111', assetId = '22222222-2222-4222-8222-222222222222';
+  await Promise.all([
+    register(connect('lifx'), {device: [device({...light('fixture-lifx-shared', 'Shared Lamp'), kind: 'lifx',
+      capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']}}})]}),
+    register(connect('tidbyt'), {device: []}),
+    register(connect('wemo'), {device: [device({...light('bench-plug', 'Bench Plug'), kind: 'wemo', availability: 'unavailable',
+      held: {requestId: 'held-operation', heldAtMs: 1000}})]}),
+    register(connect('nanoleaf'), {
+      device: () => [device({...light(NANOLEAF_LINES_DEVICE, 'Desk Lines'), kind: 'nanoleaf'}),
+        device({...wall, kind: 'nanoleaf', capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']},
+        scenes: {supported: true, sceneIds: ['scene-' + hash, 'scene-' + 'd'.repeat(64)]},
+        moments: {supported: true, moods: ['celebrate'], maxDurationMs: 10000, coversStatus: false}}}),
+      ...['wall-left', 'wall-right'].map(id => {
+        const shared = light(id, 'Shared Wall');
+        return device({...shared, kind: 'nanoleaf', capabilities: {...shared.capabilities, modes: {supported: true, values: ['free']}}});
+      }), ...(sharedLampPresent() ? [device({...light('fixture-nanoleaf-shared', 'Shared Lamp'), kind: 'nanoleaf',
+        capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']}}})] : [])],
+      'nanoleaf-shows': [state('nanoleaf-shows', 'shows', {id: 'shows', revision: 7, shows: []})],
+      'nanoleaf-reactive-presets': [state('nanoleaf-reactive-presets', 'reactive-presets',
+        {id: 'reactive-presets', revision: 7, presets: [{presetId: 'preset-evening-glow', name: 'Evening Glow'}]})],
+    }),
+    register(connect('pixoo'), {
+      device: () => [device({...screen, ...pixooState(), kind: 'pixoo', capabilities: {...screen.capabilities,
+        media: {supported: true, actions: ['pause'], playlistIds: [playlistId], renditionIds: [renditionId]}}})],
+      'pixoo-playlist': [state('pixoo-playlist', playlistId, {id: playlistId, revision: 7, playlistRevision: 7, name: 'Evening Loop'})],
+      'pixoo-rendition': [state('pixoo-rendition', renditionId, {id: renditionId, revision: 7, name: 'Blue Kite', assetId, compatible: true})],
+    }),
+    register(connect('volcano'), {'volcano-status': [state('volcano-status', 'volcano', {id: 'volcano', revision: 7, label: 'Volcano', configurationRevision: 7})]}),
+    register(connect('playback'), {playback: [state('playback', 'desk-speaker', {id: 'desk-speaker', revision: 7, availability: 'available',
+      playback: {status: 'known', controls: ['pause', 'play'], player: 'playing'}})]}),
+    register(connect('art'), {art: [state('art', 'art', {id: 'art', revision: 7, jobs: [], artworks: []})]}),
+    register(w.core, {
+      mode: [state('mode', 'hub', hub(7))],
+      session: [state('session', hash, {...session('Writing'), id: hash, revision: 7})],
+      'inbox-item': [state('inbox-item', 'fixture-inbox', {id: 'fixture-inbox', revision: 7})],
+      'home-layout': [state('home-layout', 'home', {id: 'home', revision: 7})],
+      'lighting-layout': [state('lighting-layout', 'lighting', {id: 'lighting', revision: 7})],
+      'playback-layout': [state('playback-layout', 'playback', {id: 'playback', revision: 7})],
+      'music-lighting-state': [state('music-lighting-state', 'wall', {id: 'wall', revision: 7, session: {
+        status: 'active', generation: 'active-show', show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0},
+      }}, 'org.bunny.music-lighting.updated')],
+      operation: [],
+    }),
+  ]);
+}
+
+for (const host of ['anthropic', 'openai'] as const) {
+  void test(`${host} natural catalog phrases validate through the Hub command boundary`, async context => {
+    const phrases = catalogPhrases();
+    const delivered: {data: AssistantDispatch; valid: boolean}[] = [];
+    const operationReceipts: OperationRecord[] = [];
+    let sceneReceiptStatus: OperationRecord['status'] = 'completed';
+    let beforeOperationRead = () => {};
+    let receiptDenied: string | undefined;
+    let pixooState: Pick<DeviceRecord, 'availability' | 'held'> = {availability: 'available'};
+    let sharedLamp: 'visible' | 'hidden' | 'absent' = 'visible';
+    const policy = sharing();
+    let modeDenied = false;
+    let proposal: {name: string; input: Record<string, unknown>; ownerText: string} | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {tools?: {name: string}[]; input?: unknown[]; messages?: unknown[]};
+      const candidate = proposal;
+      proposal = undefined;
+      if (candidate !== undefined) {
+        assert.match(JSON.stringify(body.messages ?? body.input), new RegExp(candidate.ownerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
+        assert.ok(body.tools?.some(tool => tool.name === candidate.name) === true, candidate.name);
+      }
+      const usage = {input_tokens: 20, output_tokens: 10, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: candidate === undefined ? [{type: 'text', text: 'The tool returned its evidence.'}]
+          : [{type: 'tool_use', id: 'catalog_phrase', name: candidate.name, input: candidate.input}],
+        stop_reason: candidate === undefined ? 'end_turn' : 'tool_use', usage}
+        : {status: 'completed', output: candidate === undefined
+          ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'The tool returned its evidence.', annotations: []}]}]
+          : [{type: 'function_call', id: 'fc_catalog_phrase', call_id: 'catalog_phrase', name: candidate.name, arguments: JSON.stringify(candidate.input)}], usage}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['set_mode', 'create_light_show_draft', 'edit_light_show_cue', 'save_light_show',
+      ...phrases.map(row => catalogTool(row.family))], core: () => ({mode: hub(7), sessions: [], synced: true}),
+      readCatalogIdentity: query => Promise.resolve(
+        query.kind === 'scene' && query.deviceId === 'studio-wall' && query.name === 'Northern Lights'
+          ? {id: 'scene-' + 'a'.repeat(64)}
+          : query.kind === 'scene' && query.deviceId === 'studio-wall' && query.name === 'Dusk'
+            ? {id: 'scene-' + 'd'.repeat(64)}
+            : query.kind === 'asset' && (query.name === 'Blue Kite' || query.id === '22222222-2222-4222-8222-222222222222')
+            ? {id: '22222222-2222-4222-8222-222222222222'} : errorBody('not-found')),
+      share: query => policy(query) && !(modeDenied && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'hub') &&
+        !(receiptDenied !== undefined && query.destination === 'private-conversation' && query.source === 'operations' && query.record === receiptDenied) &&
+        !(sharedLamp === 'hidden' && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'fixture-nanoleaf-shared'), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
+      artworkId: id, sourceRequestId: 'kite-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
+        outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
+          frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
+      favorite: false, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false},
+    })});
+    await catalogFixture(context, w, operationReceipts, () => beforeOperationRead(), () => pixooState, () => sharedLamp !== 'absent');
+    const validator = coreValidator();
+    await w.core.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', message => {
+      const validation = validator.validate(message);
+      delivered.push({data: message.data, valid: validation.ok && message.source === 'bunny/modules/companions'});
+      if (validation.ok && message.data.family === 'catalog-action' && message.data.command === 'scene-activate') {
+        const {requestId, target} = message.data;
+        const now = 10 + Math.max(1000, ...operationReceipts.map(row => row.sentAtMs));
+        operationReceipts.push({id: operationEntityId(requestId), revision: 1, requestId, target, kind: 'device',
+          family: 'scene-activate', command: 'org.bunny.scene.activate.requested', requestedBy: message.source,
+          status: sceneReceiptStatus, ...(sceneReceiptStatus === 'completed' ? {result: 'succeeded', evidence: 'transmitted'} : {}),
+          sentAtMs: now, updatedAtMs: now, deadlineAtMs: now + 1000});
+      }
+      if (pixooState.availability !== 'available' && message.data.family === 'catalog-action' &&
+        message.data.command === 'pixoo-media-show') return errorBody('unavailable');
+      return validation.ok ? {status: 'accepted'} : {error: validation.error};
+    });
+    await w.core.respond<{action: 'dismiss'; expectedRevision: number}>('bunny.cmd.inbox-handle.fixture-inbox', message => {
+      const validation = validator.validate(message);
+      const {subject, data, id} = message;
+      delivered.push({valid: validation.ok && message.source === 'bunny/modules/companions', data: {
+        family: 'catalog-action', command: 'inbox-handle', requestId: id, target: subject,
+        binding: {kind: 'record', owner: 'bunny/core', target: subject, revision: data.expectedRevision}, data: {action: data.action},
+      }});
+      return validation.ok ? {status: 'accepted'} : {error: validation.error};
+    });
+    await control(w.core, w.module(), 'enable');
+    const ask = async (ownerText: string, name: string, args: Record<string, unknown>, selection?: ReturnType<typeof ownerReference>[],
+      expectedStatus = 'succeeded') => {
+      const prior = task(w)?.taskId, writes = delivered.length;
+      const nested = typeof args.arguments === 'string' ? JSON.parse(args.arguments) as Record<string, unknown> : {};
+      const change = nested.change as {assetId?: string; playlistId?: string} | undefined;
+      const refs: ReturnType<typeof ownerReference>[] = [];
+      const cite = (role: string, candidates: unknown[]) => {
+        const exact = candidates.find(value => typeof value === 'string' && ownerText.includes(value));
+        if (typeof exact === 'string') refs.push(ownerReference(role, exact));
+      };
+      cite('primary', ['id:studio-wall', 'id:new-pixoo', 'Studio Wall', 'Desk Lines', 'Kitchen Display', 'Bench Plug',
+        'spare wall panel', 'spare display', 'spare speaker', 'Writing', 'fixture-inbox', 'Volcano',
+        'music', 'wall', 'Browser', 'Shared Wall', 'id:wall-left', 'id:wall-right']);
+      cite('artwork', [nested.artworkId]);
+      cite('scene', [nested.sceneId]);
+      cite('playlist', [nested.playlistId, change?.playlistId]);
+      cite('asset', [change?.assetId]);
+      cite('rendition', [nested.renditionId]);
+      cite('draft', [args.draftId]);
+      cite('notice', [nested.noticeId]);
+      cite('session', [nested.session, nested.task]);
+      cite('operation', [nested.heldRequestId, ownerText.includes('older operation') ? 'older operation' : undefined]);
+      cite('favorite', [(nested.edit as {name?: string} | undefined)?.name]);
+      cite('preset', [nested.presetId, nested.name]);
+      if (name === 'edit_light_show_cue') cite('cue', ['first cue']);
+      proposal = {ownerText, name, input: name === 'set_mode' || name === 'ask_owner' || name === 'create_light_show_draft' ? args
+        : {...args, references: selection ?? refs.filter(ref => catalogToolReferenceRoles(name).some(role => role === ref.role))}};
+      const accepted = await input(w.core, w.module(), ownerText);
+      assert.equal(accepted.status, 'accepted', `${ownerText} ${JSON.stringify(accepted)}`);
+      await until(() => task(w)?.taskId !== prior && (delivered.length > writes || status(w) === 'succeeded' || status(w) === 'failed' || status(w) === 'waiting'));
+      if (delivered.length > writes) w.advance(1100);
+      await until(() => status(w) === 'succeeded' || status(w) === 'failed' || status(w) === 'waiting');
+      assert.equal(status(w), expectedStatus, `${name}: ${ownerText}`);
+      assert.equal(proposal, undefined, ownerText);
+      return (await page(w, 'bunny', 'recent')).messages.filter(message => message.role === 'tool').at(-1)?.text;
+    };
+    const argumentsFor = (owner: string, target: string, settings: Record<string, unknown>) => ({owner, target, arguments: JSON.stringify(settings)});
+    for (const row of phrases) {
+      const tool = catalogTool(row.family);
+      const previous = delivered.length;
+      const refusal = await ask(row.refuse.say, tool, argumentsFor(row.refuse.owner ?? row.owner, row.refuse.selector ?? row.selector,
+        row.refuse.settings ?? row.settings));
+      assert.equal(delivered.length, previous, row.family);
+      assert.equal(refusal, `refused: ${row.refuse.code}`, row.family);
+      await ask(row.say, tool, argumentsFor(row.owner, row.selector, row.settings));
+      assert.equal(delivered.length, previous + 1, row.family);
+      const write = delivered[previous];
+      assert.ok(write?.valid === true, row.family);
+      const effect = write.data;
+      assert.ok(effect.family === 'catalog-action', row.family);
+      assert.equal(effect.command, row.family);
+      assert.equal(effect.target, row.target);
+      assert.equal(effect.binding.owner, row.owner);
+      const namedGuards = row.family === 'wemo-hold-release' ? {heldRequestId: 'held-operation'} :
+        row.family === 'nanoleaf-reactive-preset-save' ? {presetId: 'preset-evening-glow', expectedRevision: 7} :
+          row.family === 'music-lighting-control' ? {generation: 'active-show'} :
+            row.family === 'art-show' ? {guards: []} : {};
+      if (row.family === 'moment-play') {
+        assert.partialDeepStrictEqual(effect.data, {...row.settings, priorityClass: 'flourish', coversStatus: false, toleranceMs: 2000});
+        assert.equal(typeof effect.data.startAtMs, 'number');
+        assert.match(String(effect.data.momentId), /^[\da-f-]{36}$/u);
+      } else assert.deepEqual(effect.data, {...(row.expected ?? row.settings), ...namedGuards});
+      if (row.family === 'media-start') {
+        const outsidePreview = '44444444-4444-4444-8444-444444444444';
+        await ask(`Start id:${outsidePreview} on Kitchen Display.`, tool,
+          argumentsFor(row.owner, row.selector, {playlistId: outsidePreview}),
+          [ownerReference('primary', 'Kitchen Display'), ownerReference('playlist', `id:${outsidePreview}`)]);
+        assert.equal(delivered.length, previous + 2, 'an exact playlist outside the preview reaches the owner writer');
+        assert.deepEqual(delivered.at(-1)?.data.data, {playlistId: outsidePreview});
+      }
+      if (row.family === 'wemo-hold-release') {
+        await ask('Release the hold on Bench Plug, excluding held-operation.', tool,
+          argumentsFor(row.owner, row.selector, {}),
+          [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'held-operation', 'named', 'request', 'exclude')]);
+        assert.equal(delivered.length, previous + 1, 'an excluded held operation is never filled in from device state');
+        assert.equal(await ask('Release the hold from old-operation on Bench Plug.', tool, argumentsFor(row.owner, row.selector, {}),
+          [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'old-operation')]), 'refused: not-found');
+        assert.equal(delivered.length, previous + 1, 'an omitted operation argument cannot substitute the current hold for an earlier cited operation');
+        await ask('Release the hold for id:held-operation on Bench Plug.', tool, argumentsFor(row.owner, row.selector, {}),
+          [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'id:held-operation')]);
+        assert.equal(delivered.length, previous + 2, 'a cited exact current operation can supply the omitted argument');
+        assert.deepEqual(delivered.at(-1)?.data.data, {heldRequestId: 'held-operation'});
+      }
+      if (row.family === 'pixoo-playlist-change') {
+        const itemIds = Array.from({length: 26}, (_, i) => `33333333-3333-4333-8333-${String(i + 1).padStart(12, '0')}`);
+        const change = {operation: 'order', playlistId: '11111111-1111-4111-8111-111111111111', revision: 7, itemIds};
+        await ask(`Reorder Evening Loop on Kitchen Display to ${itemIds.join(', ')}.`, tool,
+          argumentsFor(row.owner, row.selector, {change: {...change, playlistId: 'Evening Loop'}}),
+          [ownerReference('primary', 'Kitchen Display'), ownerReference('playlist', 'Evening Loop'),
+            ...itemIds.map(id => ownerReference('playlist-item', id))]);
+        assert.equal(delivered.length, previous + 2, 'a supported long playlist order is admitted');
+        assert.deepEqual(delivered.at(-1)?.data.data, {change});
+      }
+      if (row.family === 'nanoleaf-reactive-preset-save') {
+        await ask('Change id:preset-evening-glow, excluding Evening Glow.', tool,
+          argumentsFor(row.owner, row.selector, {...row.settings, presetId: 'preset-evening-glow'}),
+          [ownerReference('preset', 'id:preset-evening-glow'), ownerReference('preset', 'Evening Glow', 'named', 'request', 'exclude')]);
+        assert.equal(delivered.length, previous + 1, 'a preset excluded by label cannot change by ID');
+      }
+      if (row.family === 'scene-activate') {
+        const oldScene = 'scene-' + 'a'.repeat(64), dusk = 'scene-' + 'd'.repeat(64);
+        await ask('Set Studio Wall to Dusk instead of Northern Lights.', tool, argumentsFor(row.owner, row.selector, {sceneId: 'Dusk'}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Dusk'),
+            ownerReference('scene', 'Northern Lights', 'named', 'request', 'exclude')]);
+        assert.equal(delivered.length, previous + 2);
+        assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: dusk});
+        assert.equal(await ask(`Set Studio Wall to id:${dusk}, exclude Dusk.`, tool,
+          argumentsFor(row.owner, row.selector, {sceneId: dusk}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${dusk}`),
+            ownerReference('scene', 'Dusk', 'named', 'request', 'exclude')]), 'refused: not-found');
+        assert.equal(delivered.length, previous + 2, 'excluded names cannot dispatch through aliases of the same scene');
+        const useLatest = argumentsFor(row.owner, row.selector, {sceneId: 'last-activated'});
+        const latest = [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')];
+        await ask('Use the last scene I activated on Studio Wall.', tool, useLatest, latest);
+        assert.equal(delivered.length, previous + 3);
+        assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: dusk}, 'the latest successful activation wins on this target');
+
+        const earlier = operationReceipts[0] ?? assert.fail('earlier scene receipt');
+        const later = operationReceipts.at(-1) ?? assert.fail('later scene receipt');
+        earlier.sentAtMs = later.sentAtMs + 1;
+        await ask('Use the last scene I activated on Studio Wall.', tool, useLatest, latest);
+        assert.equal(delivered.length, previous + 4);
+        assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: oldScene}, 'Core receipt order supersedes Conversation task order');
+
+        const sceneRequest = 'Use the last scene I activated on Studio Wall.';
+        const latestReceipt = operationReceipts.at(-1) ?? assert.fail('latest scene receipt');
+        let reads = 0;
+        const intervening = 'intervening-scene';
+        beforeOperationRead = () => {
+          if (++reads !== 2) return;
+          operationReceipts.push({...latestReceipt, id: operationEntityId(intervening), requestId: intervening,
+            requestedBy: 'bunny/mcp/other-client', sentAtMs: latestReceipt.sentAtMs + 1});
+        };
+        assert.equal(await ask(sceneRequest, tool, useLatest, latest),
+          'refused: Which saved scene would you like to activate on this light?');
+        assert.equal(delivered.length, previous + 4, 'an operation that arrived between proposal and dispatch prevents a write');
+        assert.equal(operationReceipts.pop()?.requestId, intervening);
+
+        beforeOperationRead = () => {receiptDenied = latestReceipt.requestId;};
+        await ask(sceneRequest, tool, useLatest, latest, 'waiting');
+        assert.equal(delivered.length, previous + 4, 'revocation during the receipt read prevents a write');
+        assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which saved scene/u);
+        receiptDenied = undefined;
+        beforeOperationRead = () => {};
+
+        sceneReceiptStatus = 'uncertain';
+        const answer = `Use id:${oldScene}.`;
+        proposal = {ownerText: answer, name: tool, input: {
+          ...argumentsFor(row.owner, row.selector, {sceneId: oldScene}),
+          references: [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${oldScene}`, 'named', 'answer')],
+        }};
+        assert.equal((await input(w.core, w.module(), answer, true)).status, 'accepted');
+        await until(() => delivered.length === previous + 5);
+        w.advance(1100);
+        await until(() => status(w) === 'succeeded');
+        sceneReceiptStatus = 'completed';
+      }
+    }
+
+    const lampsStart = delivered.length;
+    const lampsTool = catalogTool('device-mode-set');
+    const mode = {mode: 'free'};
+    const lifxOwner = 'bunny/modules/lifx';
+    const nanoleafOwner = 'bunny/modules/nanoleaf';
+    const lifxId = 'id:fixture-lifx-shared';
+    const nanoleafId = 'id:fixture-nanoleaf-shared';
+    const lampRequest = 'Set Shared Lamp to free mode.';
+    const unqualified = [ownerReference('primary', 'Shared Lamp')];
+    await ask(lampRequest, lampsTool, argumentsFor(lifxOwner, 'Shared Lamp', mode), unqualified, 'waiting');
+    assert.equal(delivered.length, lampsStart, 'the model owner cannot resolve two visible devices with the same label');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which device/u);
+
+    const chooseLamp = `Use ${lifxId}.`;
+    proposal = {ownerText: chooseLamp, name: lampsTool, input: {
+      ...argumentsFor(lifxOwner, lifxId, mode),
+      references: [ownerReference('primary', lifxId, 'named', 'answer')],
+    }};
+    assert.equal((await input(w.core, w.module(), chooseLamp, true)).status, 'accepted');
+    await until(() => delivered.length === lampsStart + 1 && status(w) === 'succeeded');
+    assert.equal(delivered.at(-1)?.data.target, 'fixture-lifx-shared');
+
+    await ask('Set LIFX Shared Lamp to free mode.', lampsTool, argumentsFor(lifxOwner, 'Shared Lamp', mode),
+      [ownerReference('primary', 'LIFX Shared Lamp')]);
+    assert.equal(delivered.length, lampsStart + 2, 'a verbatim owner-qualified label resolves without another question');
+    assert.equal(delivered.at(-1)?.data.target, 'fixture-lifx-shared');
+    assert.equal(await ask(`Set ${lifxId} to free mode.`, lampsTool, argumentsFor(nanoleafOwner, lifxId, mode),
+      [ownerReference('primary', lifxId)]), 'refused: not-found');
+    assert.equal(delivered.length, lampsStart + 2, 'an exact ID cannot be dispatched through a false owner claim');
+
+    for (const presence of ['hidden', 'absent'] as const) {
+      sharedLamp = presence;
+      const before = delivered.length;
+      await ask(lampRequest, lampsTool, argumentsFor(lifxOwner, 'Shared Lamp', mode), unqualified);
+      assert.equal(delivered.length, before + 1, 'one visible match is unambiguous');
+      assert.equal(delivered.at(-1)?.data.target, 'fixture-lifx-shared');
+      assert.equal(await ask(`Set ${nanoleafId} to free mode.`, lampsTool, argumentsFor(nanoleafOwner, nanoleafId, mode),
+        [ownerReference('primary', nanoleafId)]), 'refused: not-found');
+      assert.equal(delivered.length, before + 1, 'hidden and absent exact targets have the same refusal');
+    }
+    sharedLamp = 'visible';
+
+    const offlineStart = delivered.length;
+    pixooState = {availability: 'unavailable'};
+    const pixooSettings = phrases.filter(({family}) => family === 'pixoo-now-playing-set' || family === 'pixoo-moments-set');
+    assert.equal(pixooSettings.length, 2);
+    for (const row of pixooSettings) {
+      const before = delivered.length;
+      await ask(row.say, catalogTool(row.family), argumentsFor(row.owner, row.selector, row.settings));
+      assert.equal(delivered.length, before + 1, `${row.family} reaches the tracked dispatcher while offline`);
+      assert.partialDeepStrictEqual(delivered.at(-1)?.data, {family: 'catalog-action', command: row.family,
+        target: row.target, binding: {kind: 'device', owner: row.owner}, data: row.settings});
+    }
+    assert.equal(delivered.length, offlineStart + 2, 'offline local preference writes reach the tracked dispatcher');
+    const media = phrases.find(({family}) => family === 'pixoo-media-show') ?? assert.fail('media fixture');
+    assert.equal(await ask(media.say, catalogTool(media.family), argumentsFor(media.owner, media.selector, media.settings)),
+      'refused: unavailable');
+    assert.equal(delivered.length, offlineStart + 3, 'the tracked dispatcher decides whether the physical write may proceed');
+
+    pixooState = {...pixooState, held: {requestId: 'pixoo-hold', heldAtMs: 1000}};
+    for (const row of pixooSettings) {
+      assert.equal(await ask(row.say, catalogTool(row.family), argumentsFor(row.owner, row.selector, row.settings)),
+        'refused: unavailable');
+    }
+    assert.equal(delivered.length, offlineStart + 3, 'owner-local preferences send no command under a hold');
+    pixooState = {availability: 'available'};
+
+    const assetId = '22222222-2222-4222-8222-222222222222';
+    const assetTool = catalogTool('pixoo-asset-change');
+    const deleteAsset = (id: string, owner = 'bunny/modules/pixoo') =>
+      argumentsFor(owner, 'new-pixoo', {change: {operation: 'delete', assetId: id}});
+    const priorWrites = delivered.length;
+    await ask(`Delete asset id:${assetId} on id:new-pixoo.`, assetTool, deleteAsset(assetId, 'bunny/modules/nanoleaf'),
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', `id:${assetId}`)]);
+    for (const name of ['Sunrise', 'Missing Sunrise']) {
+      const refusal = await ask(`Delete asset ${name} on id:new-pixoo.`, assetTool, deleteAsset(assetId),
+        [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', name)]);
+      assert.equal(refusal, 'refused: invalid-request', name);
+    }
+    const redirected = await ask('Delete asset Missing Sunrise on id:new-pixoo, then show it.', assetTool, deleteAsset(assetId),
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'Missing Sunrise')]);
+    assert.equal(redirected, 'refused: invalid-request');
+    for (const modifier of ['named Missing Sunrise', 'called “Missing Sunrise”', '“Missing Sunrise”', 'Missing Sunrise', ', Missing Sunrise,']) {
+      const result = await ask(`Delete that asset${modifier.startsWith(',') ? '' : ' '}${modifier} on id:new-pixoo.`, assetTool, deleteAsset(assetId),
+        [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'Missing Sunrise')]);
+      assert.equal(result, 'refused: invalid-request', modifier);
+    }
+    assert.equal(delivered.length, priorWrites, 'neither a replacement name nor an unrelated trailing pronoun selects the previous original');
+    const playlistTool = catalogTool('pixoo-playlist-change');
+    assert.equal(await ask('Delete the Morning Loop playlist on Kitchen Display.', playlistTool,
+      argumentsFor('bunny/modules/pixoo', 'Kitchen Display', {change: {operation: 'delete', playlistId: '11111111-1111-4111-8111-111111111111'}}),
+      [ownerReference('primary', 'Kitchen Display'), ownerReference('playlist', 'Morning Loop')]), 'refused: invalid-request');
+    const sceneTool = catalogTool('scene-activate');
+    assert.equal(await ask('Activate Old Sunrise on Studio Wall.', sceneTool,
+      argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: 'scene-' + 'a'.repeat(64)}),
+      [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Old Sunrise')]), 'refused: invalid-request');
+    assert.equal(delivered.length, priorWrites, 'ordinary current scene and playlist names cannot inherit stale IDs');
+    await ask('Delete it on id:new-pixoo.', assetTool, deleteAsset(assetId),
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'it', 'prior')]);
+    assert.equal(delivered.length, priorWrites + 1);
+    assert.deepEqual(delivered[priorWrites]?.data.data, {change: {operation: 'delete', assetId}});
+
+    const prior = delivered.length;
+    const drafts = new ShowDrafts(w.host().moduleDatabase() ?? assert.fail('draft database'));
+    await ask('Create an ocean draft without a name.', 'create_light_show_draft', {name: '', starter: 'ocean'});
+    assert.deepEqual(drafts.list(0, 1, '', () => true), []);
+    await ask('Start a draft named Blue Hour with the ocean timeline.', 'create_light_show_draft', {name: 'Blue Hour', starter: 'ocean'});
+    const draft = drafts.list(0, 1, '', () => true)[0] ?? assert.fail('created Blue Hour draft');
+    await ask('In revision zero of Blue Hour set the first cue to 40 percent.', 'edit_light_show_cue',
+      {draftId: 'Blue Hour', revision: 0, cue: '1', changes: '{"intensity":0.4}'});
+    assert.equal(drafts.read(draft.id)?.revision, draft.revision);
+    await ask('In that draft, dim the first cue to 40 percent.', 'edit_light_show_cue',
+      {draftId: 'Blue Hour', revision: -1, cue: '1', changes: '{"intensity":0.4}'},
+      [ownerReference('draft', 'that draft', 'prior'), ownerReference('cue', 'first cue')]);
+    const current = drafts.read(draft.id) ?? assert.fail('edited Blue Hour draft');
+    assert.equal(current.revision, draft.revision + 1);
+    assert.equal(current.value.timeline.cues[0]?.intensity, 0.4);
+    assert.equal(delivered.length, prior, 'drafting is local');
+
+    assert.equal(await ask('Save the old revision of Blue Hour as First Cut.', 'save_light_show',
+      {draftId: 'Blue Hour', revision: draft.revision, versionName: 'First Cut'}), 'refused: revision-conflict');
+    assert.equal(delivered.length, prior);
+    await ask('Save the current Blue Hour draft as First Cut.', 'save_light_show',
+      {draftId: 'Blue Hour', revision: -1, versionName: 'First Cut'});
+    assert.equal(delivered.length, prior + 1);
+    const saved = delivered[prior];
+    assert.ok(saved?.valid === true);
+    assert.partialDeepStrictEqual(saved.data, {family: 'catalog-action', command: 'nanoleaf-show-save', target: 'shows',
+      data: {showId: draft.id, timeline: current.value.timeline, versionName: 'First Cut', expectedVersion: 0}});
+
+    modeDenied = true;
+    assert.equal(await ask('Switch the Hub to quiet for a while.', 'set_mode', {mode: 'quiet'}), 'refused: forbidden');
+    assert.equal(delivered.length, prior + 1);
+    modeDenied = false;
+    const switchIntent = (actionQuote: string, actionWord: string, modeQuote?: string) =>
+      ({kind: 'switch', actionQuote, actionWord, ...(modeQuote === undefined ? {} : {modeQuote})});
+    assert.match(await ask('Is the Hub in work mode?', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
+    assert.match(await ask('Can you explain quiet mode?', 'set_mode', {mode: 'quiet'}) ?? '', /^refused: this control needs a clear current owner request/u);
+    assert.match(await ask('Set the Hub to free mode.', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
+    const modeStatus = 'Is the Hub in work mode?';
+    assert.match(await ask(modeStatus, 'set_mode', {mode: 'work', intent: switchIntent(modeStatus, 'Is', 'work')}) ?? '',
+      /^refused: this control needs a clear current owner request/u);
+    const discussMode = 'Can you explain quiet mode?';
+    await ask(discussMode, 'set_mode', {mode: 'clarify', intent: switchIntent(discussMode, 'explain')});
+    assert.match(await ask('Can you explain quiet mode?', 'set_mode',
+      {mode: 'quiet', intent: switchIntent('switch to quiet', 'switch', 'quiet')}) ?? '', /^refused: this control needs a clear current owner request/u);
+    const polite = host === 'anthropic' ? 'I would like you to switch the Hub to quiet mode.' : 'Please switch the mode to quiet.';
+    assert.match(await ask(polite, 'set_mode', {mode: 'free', intent: switchIntent(polite, 'switch', 'quiet')}) ?? '',
+      /^refused: this control needs a clear current owner request/u);
+    assert.equal(delivered.length, prior + 1, 'a status read or a different requested mode authorizes no write');
+    await ask('Can you switch to quiet?', 'set_mode', {mode: 'quiet'});
+    assert.equal(delivered.length, prior + 2);
+    assert.ok(delivered[prior + 1]?.valid === true);
+    assert.partialDeepStrictEqual(delivered[prior + 1]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 7}});
+    await ask(polite, 'set_mode', {mode: 'quiet', intent: switchIntent(polite, 'switch', 'quiet')});
+    assert.equal(delivered.length, prior + 3);
+
+    const incompleteMode = host === 'anthropic' ? 'Switch the mode' : 'Change the mode to';
+    const modeAnswer = 'Free mode, please.';
+    await ask(incompleteMode, 'ask_owner', {text: 'Which mode should I explain?'}, undefined, 'waiting');
+    await w.restart();
+    await until(() => status(w) === 'waiting');
+    proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free', intent: switchIntent(modeAnswer, 'Free', 'Free')}};
+    assert.equal((await input(w.core, w.module(), modeAnswer, true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(delivered.length, prior + 3, 'an informational answer cannot fill in a mode after restart');
+
+    await ask(incompleteMode, 'set_mode', {mode: 'clarify', intent: switchIntent(incompleteMode, host === 'anthropic' ? 'Switch' : 'Change')}, undefined, 'waiting');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which mode should I switch the Hub to/u);
+    assert.equal(delivered.length, prior + 3, 'the model cannot fill in a missing mode');
+    await w.restart();
+    await until(() => status(w) === 'waiting');
+    proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free'}};
+    assert.equal((await input(w.core, w.module(), modeAnswer, true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(delivered.length, prior + 4);
+    assert.partialDeepStrictEqual(delivered[prior + 3]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'free', expectedRevision: 7}});
+
+    const ambiguous = 'Put Shared Wall in free mode.';
+    const modeTool = catalogTool('device-mode-set');
+    proposal = {ownerText: ambiguous, name: modeTool, input: {...argumentsFor('bunny/modules/nanoleaf', 'Shared Wall', {mode: 'free'}),
+      references: [ownerReference('primary', 'Shared Wall')]}};
+    assert.equal((await input(w.core, w.module(), ambiguous)).status, 'accepted');
+    await until(() => status(w) === 'waiting');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which device/);
+    assert.equal(delivered.length, prior + 4, 'an ambiguous device sends no command');
+
+    const answer = 'Use id:wall-right.';
+    proposal = {ownerText: answer, name: modeTool, input: {...argumentsFor('bunny/modules/nanoleaf', 'id:wall-right', {mode: 'free'}),
+      references: [ownerReference('primary', 'id:wall-right', 'named', 'answer')]}};
+    assert.equal((await input(w.core, w.module(), answer, true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.equal(delivered.length, prior + 5);
+    assert.ok(delivered[prior + 4]?.valid === true);
+    assert.partialDeepStrictEqual(delivered[prior + 4]?.data, {family: 'catalog-action', command: 'device-mode-set', target: 'wall-right',
+      binding: {kind: 'device', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}}, data: {mode: 'free'}});
+    const beforeUnknown = delivered.length;
+    await ask('Use the last scene I activated on Studio Wall.', sceneTool,
+      argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: 'last-activated'}),
+      [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')], 'waiting');
+    assert.equal(delivered.length, beforeUnknown, 'an uncertain newer activation does not fall back to an older receipt');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which saved scene/u);
+
+    const scene = 'scene-' + 'd'.repeat(64);
+    const explicit = `Use id:${scene}.`;
+    proposal = {ownerText: explicit, name: sceneTool, input: {
+      ...argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: scene}),
+      references: [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${scene}`, 'named', 'answer')],
+    }};
+    assert.equal((await input(w.core, w.module(), explicit, true)).status, 'accepted');
+    await until(() => delivered.length === beforeUnknown + 1);
+    w.advance(1100);
+    await until(() => status(w) === 'succeeded');
+    const tracked = operationReceipts.at(-1) ?? assert.fail('clarified scene receipt');
+    const requestId = 'other-client-activation';
+    operationReceipts.push({...tracked, id: operationEntityId(requestId), requestId, requestedBy: 'bunny/mcp/other-client',
+      sentAtMs: tracked.sentAtMs + 1, updatedAtMs: tracked.updatedAtMs + 1});
+    await ask('Use the last scene I activated on Studio Wall.', sceneTool,
+      argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: 'last-activated'}),
+      [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')], 'waiting');
+    assert.equal(delivered.length, beforeUnknown + 1, 'a newer activation from another client prevents a stale substitution');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which saved scene/u);
+  });
+}

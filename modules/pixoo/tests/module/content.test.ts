@@ -25,7 +25,7 @@ function json<T>(result: ModuleContent | ErrorBody | undefined): T {
   return JSON.parse(Buffer.from(result.bytes).toString('utf8')) as T;
 }
 
-async function fixture(fill: (library: Library) => Promise<void>) {
+async function fixture(fill: (library: Library, database: DatabaseSync) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'pixoo-content-'));
   const module = createPixooModule({transport: new SimulatedPixoo(), timing: FAST});
   const bus = new InProcessBus();
@@ -37,7 +37,7 @@ async function fixture(fill: (library: Library) => Promise<void>) {
     try {
       database.exec('PRAGMA synchronous=OFF');
       const library = await Library.attach({database, directory: join(root, 'pixoo')});
-      try { await fill(library); } finally { await library.close(); }
+      try { await fill(library, database); } finally { await library.close(); }
     } finally { database.close(); }
     await core.serveSync(['session'], () => ({revision: 1, states: []}));
     await playback.serveSync(['playback'], () => ({revision: 1, states: []}));
@@ -82,6 +82,40 @@ void it('splits an oversized playlist catalog into bounded SQL pages with every 
     assert.deepEqual(json<{items: unknown[]}>(await read('catalog-playlists', request({offset: '700'}))).items, []);
     assert.deepEqual(world.harness.failures, []);
   } finally { await world.close(); }
+});
+
+void it('looks up original assets without renditions and refuses duplicate or absent names', async () => {
+  const originals: string[] = [];
+  const world = await fixture(async (library, database) => {
+    for (const [index, name] of ['Original', 'Duplicate', 'duplicate', 'Sunrise'].entries()) {
+      const source = await sharp({create: {width: 64, height: 64, channels: 3, background: {r: index + 1, g: 10, b: 20}}}).png().toBuffer();
+      const imported = await library.importMedia(bytesOf(source), name);
+      originals.push(imported.asset.id);
+      database.prepare('DELETE FROM renditions WHERE asset_id=?').run(imported.asset.id);
+    }
+  });
+  try {
+    const read = world.module.manifest.content;
+    assert.ok(read);
+    const before = json(await read('catalog-media', request()));
+    assert.deepEqual(json(await read('asset-id-by-name', request({name: 'original'}))), {id: originals[0]});
+    for (const [name, code] of [['Duplicate', 'invalid-state'], ['absent', 'not-found'], [' ', 'invalid-request']] as const) {
+      const found = await read('asset-id-by-name', request({name}));
+      assert.equal(found !== undefined && 'error' in found && found.error.code, code);
+    }
+    const originalId = originals[0] ?? assert.fail('original ID');
+    assert.deepEqual(json(await read('asset-id-by-name', request({id: originalId, currentText: 'Delete it on id:desk-pixoo'}))),
+      {id: originals[0]});
+    for (const [selector, code] of [
+      [{id: originalId, currentText: 'Delete Sunrise, then show it on id:desk-pixoo'}, 'invalid-request'],
+      [{id: originalId, currentText: 'Delete Duplicate'}, 'invalid-state'],
+      [{name: 'Missing Sunrise', currentText: 'Delete Missing Sunrise on id:desk-pixoo'}, 'not-found'],
+    ] as const) {
+      const found = await read('asset-id-by-name', request(selector));
+      assert.equal(found !== undefined && 'error' in found && found.error.code, code);
+    }
+    assert.deepEqual(json(await read('catalog-media', request())), before);
+  } finally {await world.close();}
 });
 
 void it('resolves selected media and a referenced synthetic PNG without changing the catalog', async () => {
