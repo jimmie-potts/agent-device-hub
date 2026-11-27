@@ -10,6 +10,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import {drawnMismatches} from './glass-boxes.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {glyphContrast, type Capture} from './glyph-contrast.ts';
@@ -143,7 +144,7 @@ try {
   // Every page draws the wash and its panels, follows them and rests; text keeps 4.5:1 in light and dark.
   const contrasts: Record<string, number> = {};
   for (const scheme of ['light', 'dark'] as const) {
-    const context = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: scheme});
+    const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: scheme});
     const {page, sent, errors} = await open(context, PAGES[0].hash, PAGES[0].ready);
     for (const target of PAGES) {
       if (new URL(page.url()).hash !== target.hash) {await page.goto(`${world.url}/${target.hash}`);await feed(page, 'connected');await target.ready(page).waitFor();}
@@ -214,7 +215,7 @@ try {
   // A page opened from the phone drawer is drawn as it rests (#1950 review): the drawer, a veil, slides shut after the
   // page has been read, so the layer must read it again once it has. A redraw from scratch at rest, through a lost and
   // restored context, must change nothing. Home is checked the same way.
-  const drawer = await browser.newContext({viewport: {width: 390, height: 760}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'light'});
+  const drawer = await openJourneyContext(browser, {viewport: {width: 390, height: 760}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'light'});
   const phone = await open(drawer, '#/rooms', ready => ready.getByRole('region', {name: 'Rooms', exact: true}), 390, 760);
   const redrawn = async (selector: string, root: string, label: string): Promise<void> => {
     const canvas = phone.page.locator(selector);
@@ -258,7 +259,7 @@ try {
   assert.deepEqual(phone.errors, []);await drawer.close();
 
   // A forced context loss leaves Quiet glass panels that work, and a restored context draws again.
-  const lost = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
+  const lost = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
   const losing = await open(lost, '#/devices', PAGES[0].ready);
   await expect(main(losing.page)).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
   const lose = await losing.page.evaluateHandle(() => document.querySelector<HTMLCanvasElement>('#main > .glass-layer')?.getContext('webgl2')?.getExtension('WEBGL_lose_context') ?? null);
@@ -276,7 +277,7 @@ try {
   assert.deepEqual(losing.errors, []);await lost.close();report['contextLoss'] = true;
 
   // Without WebGL 2 the pages keep their Quiet glass panels and work.
-  const plain = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
+  const plain = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
   await plain.addInitScript(() => {
     const original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')?.value as (this: HTMLCanvasElement, ...args: unknown[]) => RenderingContext | null;
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {configurable: true, writable: true,

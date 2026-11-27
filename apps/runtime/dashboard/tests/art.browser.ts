@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {chromium, expect, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {HomeArrangements} from '@jimmie-potts/event-contracts/v2/families';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {changes, feed, startWorld} from './harness.ts';
@@ -22,7 +23,7 @@ const world = await startWorld({art: true}), browser = await chromium.launch({he
 const artifacts = await browserArtifactDirectory();
 const noOverflow = async (page: Page): Promise<void> => {assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'art must not create horizontal scrolling');};
 try {
-  const context = await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce'}), page = await context.newPage();
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce'}), page = await context.newPage();
   page.setDefaultTimeout(15_000);
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   const sent = changes(page);

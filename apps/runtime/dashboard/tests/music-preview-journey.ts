@@ -3,6 +3,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {expect} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {Browser} from 'playwright';
 import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 import {destinationLink} from './navigation-helpers.ts';
@@ -10,7 +11,7 @@ import {destinationLink} from './navigation-helpers.ts';
 /** Actual disposable host and module, fixed generated input and simulated controllers only. */
 export async function musicPreviewJourney(browser: Browser): Promise<void> {
   const world = await startWorld({nanoleaf: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   try {
     const page = await context.newPage(); page.setDefaultTimeout(12_000);
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});

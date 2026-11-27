@@ -29,6 +29,7 @@ import assert from 'node:assert/strict';
 import {preferencesJourney} from './preferences.browser.ts';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 const world = await startWorld({companions: true});
@@ -58,7 +59,7 @@ try {
   await codingJobsJourney(browser);
   await homeSpeechLifetimeJourney(browser);
   await speechReadinessJourney(browser);
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
   await duckFailureJourney(context);

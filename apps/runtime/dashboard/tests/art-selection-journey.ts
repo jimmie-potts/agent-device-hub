@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {chromium, expect} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {artworkOf, browserArt} from '../../../../modules/art/dist/src/frontend/model.js';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
@@ -9,7 +10,7 @@ import {feed, startWorld} from './harness.ts';
 /** Saved-art selection through the existing core control; all generation uses the synthetic provider. */
 export async function artSelectionJourney(): Promise<void> {
   const world = await startWorld({art: true}), browser = await chromium.launch({headless: true});
-  const artifacts = await browserArtifactDirectory(), context = await browser.newContext({viewport: {width: 1440, height: 1100}});
+  const artifacts = await browserArtifactDirectory(), context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1100}});
   const page = await context.newPage(), creator = await context.newPage();page.setDefaultTimeout(10_000);
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   let releaseMetadata: (() => void) | undefined;

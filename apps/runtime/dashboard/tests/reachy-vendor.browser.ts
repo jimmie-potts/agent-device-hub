@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {setTimeout as pause} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import {keepRequestInterception} from './browser-context.ts';
 import {HttpReachy,type ReachyTransport} from '@jimmie-potts/reachy-mini';
 import {feed,startWorld} from './harness.ts';
 if(process.env.REACHY_VENDOR_EXERCISE!=='1')throw new Error('explicit dedicated simulator qualification required');
@@ -14,7 +15,9 @@ const transport:ReachyTransport={connect:(observer,signal)=>vendor.connect({...o
  cancel:async(id,signal,beforeEffect)=>{effects.push({kind:'cancel',id});await vendor.cancel(id,signal,beforeEffect);}};
 const world=await startWorld({reachy:true,reachyTransport:transport}),browser=await chromium.launch({headless:true});
 try{
- const page=await browser.newPage({viewport:{width:1280,height:900}});page.setDefaultTimeout(30000);await page.goto(world.url+'/#/module/reachy-mini/controls');await feed(page,'connected');
+ const page=await browser.newPage({viewport:{width:1280,height:900}});
+ await keepRequestInterception(page.context());
+ page.setDefaultTimeout(30000);await page.goto(world.url+'/#/module/reachy-mini/controls');await feed(page,'connected');
  const panel=page.getByRole('region',{name:'Reachy robot controls'});await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();assert.equal(effects.length,0);
  await panel.getByRole('button',{name:'Take over',exact:true}).click();await panel.getByText('Manual takeover',{exact:true}).waitFor();
  await panel.getByRole('button',{name:'Notice gesture',exact:true}).click();await panel.getByText(/^Completed: succeeded\./).first().waitFor();assert.equal(effects.filter(x=>x.kind==='move').length,2);assert.ok(observations.some(value=>value.antennas[0]>.08&&value.antennas[1]<-.08),'streamed simulator pose reflects the first target');await panel.getByText(/^Simulated antennas:/).waitFor();

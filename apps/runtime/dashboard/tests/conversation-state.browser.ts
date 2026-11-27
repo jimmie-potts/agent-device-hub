@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import type {Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 
 /** Mount the real page with copy events and saved-question reads that a healthy runtime cannot manufacture. */
 export async function conversationStateJourney(browser: Browser): Promise<void> {
@@ -132,7 +133,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     render();
   `, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'conversation-state-entry.js'},
     bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, outdir: '.'});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   try {
     const script = bundle.outputFiles.find(file => file.path.endsWith('.js'))?.text ?? assert.fail('conversation state bundle');
     const style = bundle.outputFiles.find(file => file.path.endsWith('.css'))?.text ?? assert.fail('conversation state stylesheet');

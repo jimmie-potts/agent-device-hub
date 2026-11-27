@@ -15,6 +15,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import {drawnMismatches} from './glass-boxes.ts';
 import {changes, feed, recordsLoaded, holdDashboardStream, startWorld} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
@@ -304,7 +305,7 @@ try {
   for (let index = 0; index < 13; index += 1) await world.failCommand();
 
   // AC1: the backdrop is drawn and the glass follows each card's box.
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference'});
   const {page, sent, errors} = await open(context);
   await expect(page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
   // With a GPU the first appearance eases over several frames; rendering in software it is one settled frame, since
@@ -419,7 +420,7 @@ try {
   // AC3: panel and heading text keep 4.5:1 over a dark and a bright artwork, light and dark.
   const contrasts: Record<string, number> = {};
   for (const scheme of ['light', 'dark'] as const) {
-    const themed = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: scheme});
+    const themed = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: scheme});
     const opened = await open(themed);
     await expect(opened.page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
     for (const sample of ['dark', 'bright'] as const) {
@@ -456,7 +457,7 @@ try {
   report['contrast'] = contrasts;
 
   // AC4: without WebGL 2 the cards keep their Quiet glass panels and work.
-  const plain = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
+  const plain = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
   await plain.addInitScript(noWebgl2);
   const fallback = await open(plain);
   await expect(layer(fallback.page)).toHaveAttribute('data-glass-fallback', 'no-webgl2');
@@ -470,7 +471,7 @@ try {
 
   // #1931: the lit room. Two LIFX lights and the Nanoleaf light as ring dials and a plug as a press panel; lamp-a red.
   // A simulated LIFX bulb reports its state when the module reads it, which a runtime restart does at once.
-  const room = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark'});
+  const room = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark'});
   const lit = await open(room);
   await expect(lit.page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
   const square = (widget: string): HomePlacement => ({widget, size: 'small', hidden: false, shape: 'square'});
@@ -541,7 +542,7 @@ try {
   assert.equal(lit.sent.length, layoutSaves, 'a cancelled drag sends nothing');
   // Frames that repeat the last timestamp (a zero-length easing step, seen on hosted runners) must not stall the
   // easing short of its target (#1966 review, F8): every other animation frame here repeats the one before it.
-  const stutter = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark'});
+  const stutter = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark'});
   await stutter.addInitScript(() => {
     const original = window.requestAnimationFrame.bind(window);let last = 0, repeat = false;
     window.requestAnimationFrame = callback => original(time => {const now = repeat ? last : time;repeat = !repeat;last = now;callback(now);});
@@ -579,7 +580,7 @@ try {
   await lit.page.emulateMedia({colorScheme: 'dark'});await present(lit.page, bright);await rest(lit.page);
 
   // Quiet glass: without WebGL 2 the dial and the plug show their state in plain CSS and still switch.
-  const quiet = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
+  const quiet = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
   await quiet.addInitScript(noWebgl2);
   const plainRoom = await open(quiet);
   await expect(layer(plainRoom.page)).toHaveAttribute('data-glass-fallback', 'no-webgl2');
@@ -641,7 +642,7 @@ try {
   report['litRoom'] = {lifxColor: true, warmWhite: true, plug: true, lamp: 'ring center', press: true, dragTarget: true, restAfterEasing: true, allOffDrawsNothing: true, quiet: true};
 
   // #1932: unfold a light in place. A touch-capable window, so the same page is used by pointer, touch and keyboard.
-  const unfoldContext = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark', hasTouch: true});
+  const unfoldContext = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark', hasTouch: true});
   const unfolding = await open(unfoldContext), up = unfolding.page;
   await expect(up.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
   await present(up, dark);await rest(up);

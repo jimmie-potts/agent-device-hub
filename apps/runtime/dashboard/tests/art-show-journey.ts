@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {chromium, expect} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import {ART_SHOW_LEAD_MS} from '@jimmie-potts/event-contracts/v2/art-show';
 import {CATALOG_PAGE_SIZE} from '../../../../modules/art/dist/src/frontend/model.js';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
@@ -15,7 +16,7 @@ import {worldClock} from './world-clock.ts';
 export async function artShowJourney(): Promise<void> {
   const clock = worldClock();
   const world = await startWorld({art: true, tidbyt: true, clock}), browser = await chromium.launch({headless: true});
-  const artifacts = await browserArtifactDirectory(), context = await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce'});
+  const artifacts = await browserArtifactDirectory(), context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce'});
   const page = await context.newPage();page.setDefaultTimeout(15_000);await clock.install(page);
   const errors: string[] = [], shows: unknown[] = [];
   page.on('pageerror', error => {errors.push(error.message);});

@@ -6,6 +6,7 @@
 // lighting.browser.ts; synthetic devices only.
 import assert from 'node:assert/strict';
 import {expect, type Browser, type Locator, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {HomeLayoutRecord, HomePlacement, LightingLayoutRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {feed, recordsLoaded, holdDashboardStream} from './harness.ts';
 
@@ -72,7 +73,7 @@ async function mouseDrag(page: Page, from: string, to: string): Promise<void> {
 }
 
 export async function fuseJourney(browser: Browser, world: World): Promise<Record<string, unknown>> {
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   const page = await context.newPage();page.setDefaultTimeout(15_000);
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   const sent: Sent[] = commands(page);
@@ -128,7 +129,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   await expect(page.locator('[data-fuse-status]')).toHaveCount(0);
 
   // Two plugs by touch, in a second browser: the card follows the finger and the page does not scroll.
-  const touch = await browser.newContext({viewport: {width: 1440, height: 1000}, hasTouch: true});
+  const touch = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, hasTouch: true});
   const phone = await touch.newPage();phone.setDefaultTimeout(15_000);
   await phone.goto(world.url);await recordsLoaded(phone);
   await expect(handle(phone, plug('desk-lamp'))).toBeVisible();
@@ -238,14 +239,14 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   // The saved groups are there after a reload and in a second browser.
   await page.reload();await feed(page, 'connected');
   await groupOf(page, ['lamp-a', 'lamp-b']);await groupOf(page, ['lamp-c', 'desk-lamp', 'shelf-lamp']);
-  const second = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const second = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   try {
     const other = await second.newPage();other.setDefaultTimeout(15_000);await other.goto(world.url);await feed(other, 'connected');
     await groupOf(other, ['lamp-a', 'lamp-b']);await groupOf(other, ['lamp-c', 'desk-lamp', 'shelf-lamp']);
   } finally {await second.close();}
 
   // Read-only: no handle, and neither grouping nor switching.
-  const reader = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const reader = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   try {
     const readOnly = await reader.newPage();readOnly.setDefaultTimeout(15_000);
     await readOnly.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
@@ -301,7 +302,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   // light to the window's edge scrolls the page to a plug below the fold, and a tap on a member switch sends one command.
   await group.getByRole('button', {name: 'Ungroup', exact: true}).click();
   await expect(card(page, plug('desk-lamp'))).toHaveCount(1);await expect(card(page, plug('shelf-lamp'))).toHaveCount(1);sent.splice(0);
-  const pocket = await browser.newContext({viewport: {width: 390, height: 844}, hasTouch: true, isMobile: true});
+  const pocket = await openJourneyContext(browser, {viewport: {width: 390, height: 844}, hasTouch: true, isMobile: true});
   try {
     const small = await pocket.newPage();small.setDefaultTimeout(15_000);const smallSent = commands(small);
     await small.goto(world.url);await feed(small, 'connected');

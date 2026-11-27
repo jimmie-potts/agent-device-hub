@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {chromium, type Browser, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {feed, startWorld} from './harness.ts';
 import {chooseConversation, conversationLink, destinationLink, openDeviceMenu, routeCatalog, showRail, type CatalogModule} from './navigation-helpers.ts';
 
@@ -90,7 +91,7 @@ async function railGroupFixture(browser: Browser): Promise<void> {
     render();
   `, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'conversation-rail-entry.js'},
   bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, outdir: '.'});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   try {
     const script = bundle.outputFiles.find(file => file.path.endsWith('.js'))?.text ?? assert.fail('conversation rail bundle');
     const style = bundle.outputFiles.find(file => file.path.endsWith('.css'))?.text ?? assert.fail('conversation rail stylesheet');
@@ -274,7 +275,7 @@ async function railGroupFixture(browser: Browser): Promise<void> {
 /** The real dashboard: the group in the rail on every page, the marker, the phone menu button and the catalog. */
 async function railInDashboard(browser: Browser): Promise<void> {
   const world = await startWorld({devices: true, pixooPages: true, companions: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(12_000);

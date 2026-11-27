@@ -1,12 +1,13 @@
 import {worldClock} from './world-clock.ts';
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {PACKET} from '@jimmie-potts/lifx';
 import {feed, startWorld} from './harness.ts';
 
 export async function lifxConversationJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, devices: true, lighting: true, assistantLights: true});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(12_000);
@@ -58,7 +59,7 @@ export async function wemoConversationJourney(browser: Browser): Promise<void> {
       assert.equal(plug, 'shelf-lamp');
       return overrideRead?.() ?? Promise.resolve(observed);
     }});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(12_000);

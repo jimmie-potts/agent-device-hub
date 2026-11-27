@@ -2,6 +2,7 @@ import {destinationLink, directoryLink} from './navigation-helpers.ts';
 // Synthetic integration proof: the runtime owns metadata and real module queues control only in-memory lamps.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {dialJourney} from './light-dial-journey.ts';
@@ -9,7 +10,7 @@ import {fuseJourney} from './fuse-journey.ts';
 const world = await startWorld({lighting: true, nanoleaf: true});
 const browser = await chromium.launch({headless: true});
 try {
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   const page = await context.newPage(); page.setDefaultTimeout(15_000);
   const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().message); });
   const sent = changes(page);
@@ -75,7 +76,7 @@ try {
   const beam = brand.locator('[data-light-card="beam"]');
   assert.equal(await beam.getByRole('button', {name: 'On', exact: true}).isDisabled(), true, 'Beam remains unsupported');
   // Lose an actual committed layout reply while the SDK stream is unavailable, then reconcile by reading.
-  const faultContext = await browser.newContext();
+  const faultContext = await openJourneyContext(browser);
   try {
     const faultPage = await faultContext.newPage(); faultPage.setDefaultTimeout(15_000);
     const layoutSends = changes(faultPage); let forwarded = 0;
@@ -114,7 +115,7 @@ try {
   await studio.getByLabel('Options for Studio', {exact: true}).click();
   await studio.getByRole('button', {name: 'Add to Home', exact: true}).click();
   await studio.getByRole('button', {name: 'Remove from Home', exact: true}).waitFor();
-  const context2 = await browser.newContext();
+  const context2 = await openJourneyContext(browser);
   try {
     const other = await context2.newPage(); await other.goto(`${world.url}/#/rooms`); await feed(other, 'connected');
     await other.getByRole('heading', {name: 'Studio', exact: true}).waitFor();

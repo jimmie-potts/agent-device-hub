@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {SIMULATED_SECTION} from '@jimmie-potts/pixoo';
 import {gifFixture} from '../../../../modules/pixoo/dist/tests/helpers/media-fixtures.js';
 import {changes, feed, startWorld} from './harness.ts';
@@ -13,7 +14,7 @@ const world = await startWorld({pixooPages: true});
 const browser = await chromium.launch({headless: true});
 const evidence = process.env.DASHBOARD_RECEIPTS;
 try {
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'no-preference'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'no-preference'});
   const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); });
   const page = await context.newPage(); page.setDefaultTimeout(12000);
   page.on('dialog', dialog => { void dialog.accept(); });

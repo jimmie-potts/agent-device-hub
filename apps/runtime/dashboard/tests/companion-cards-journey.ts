@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import type {Browser, BrowserContext, Locator, Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {feed, startWorld, type World} from './harness.ts';
 
 async function stableTabs(card: Locator): Promise<void> {
@@ -119,7 +120,7 @@ export async function companionCardsJourney(world: World, page: Page, context: B
 
 export async function companionCardsCheck(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true});
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   try {const page = await context.newPage(); page.setDefaultTimeout(12_000); await companionCardsJourney(world, page, context);}
   finally {await context.close(); await world.close();}
 }

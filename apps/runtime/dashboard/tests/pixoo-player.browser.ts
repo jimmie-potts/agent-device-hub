@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import sharp from 'sharp';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {SIMULATED_SECTION} from '@jimmie-potts/pixoo';
@@ -11,7 +12,7 @@ const world = await startWorld({pixooPages: true});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
     const page = await context.newPage(); page.setDefaultTimeout(8000);

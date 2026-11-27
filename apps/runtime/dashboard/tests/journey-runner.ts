@@ -2,8 +2,11 @@ import {rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {chromium, type BrowserContext, type BrowserContextOptions, type Page} from 'playwright';
+import {keepRequestInterception} from './browser-context.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {startWorld, type World, type WorldOptions} from './harness.ts';
+
+export {keepRequestInterception} from './browser-context.ts';
 
 export const viewport = {
   desktop: {width: 1280, height: 900}, tallDesktop: {width: 1280, height: 1000}, wide: {width: 1440, height: 1000},
@@ -20,14 +23,6 @@ export type Journey = {
   startWorld(options: WorldOptions): Promise<World>;
   closeWorld(world: World): Promise<void>;
 };
-
-/**
- * Install once at context creation, before any page can start a request. Page routes take precedence over this
- * fallback. Removing their last handler keeps interception on for all pages in the context (#1691).
- */
-export async function keepRequestInterception(context: BrowserContext): Promise<void> {
-  await context.route('**/*', route => route.fallback());
-}
 
 /** A journey owns its simulated worlds and every context, including secondary tabs and isolated cookie jars. */
 export async function runJourney(
