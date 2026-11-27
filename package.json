@@ -9,7 +9,7 @@
   "scripts": {
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
-    "test:workflow": "node --test tests/workflow_checks.cjs tests/strict_profile.test.mjs tests/scratch_root.test.mjs tests/ci_selection.test.mjs tests/runtime_browser_ci.test.mjs tests/fast_admission.test.mjs tests/standalone_admission.test.mjs tests/standalone_completion.test.mjs tests/onn_hibernation.test.mjs",
+    "test:workflow": "node --test tests/workflow_checks.cjs tests/strict_profile.test.mjs tests/scratch_root.test.mjs tests/ci_selection.test.mjs tests/runtime_browser_ci.test.mjs tests/failure_summary.test.mjs tests/fast_admission.test.mjs tests/standalone_admission.test.mjs tests/standalone_completion.test.mjs tests/onn_hibernation.test.mjs",
     "ci:select": "node scripts/ci-selection/local.mjs",
     "preflight": "tsc -p packages/app-verify/tsconfig.json && node scripts/delivery-preflight.mjs",
     "test:preflight": "tsc -p packages/app-verify/tsconfig.json && node --test tests/delivery_preflight.test.mjs tests/standalone_preflight.test.mjs",

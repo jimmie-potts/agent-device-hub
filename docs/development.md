@@ -1174,6 +1174,23 @@ See [Lint misses and their reasons](static-analysis.md#lint-misses-and-their-rea
 
 ## CI diagnostic access
 
+Open the Actions run **Summary** for a failed test step in Checks or Runtime dashboard browser suite. A browser row names
+the journey and, where instrumented, the runner step, wait condition and last observed feed and copies states.
+`not observed` means that the step had no safe reading for that field. The renderer accepts only reviewed identifiers
+and finite state values. The production dashboard's contents, request text and error messages are never summary fields.
+
+Native Node test steps in Core, App verification and the runtime suites show up to ten failing cases, with rounded milliseconds
+when supplied. Suite and module are reviewed identifiers. The case ID identifies the registration in the module. A module without a reviewed name uses its file number in the run, and
+the result number counts completed cases in that invocation's reporter order. Declaration line and column refer to the
+compiled test module when the runner attributes the case directly to it. Cases registered by a shared helper can have
+only their numeric identifiers. Mixed Core and App commands keep their own reporters and show the failing suite or
+browser entry. Core standalone admission uses its existing own-command notices on the exact head. Passing test steps add no failure summary.
+
+To reproduce, check out the reported revision, run `npm ci` and `npm run build`, and run the command from the failing
+step. The dashboard browser group log names the command for an individual journey. The local journey runner prints
+its trace location on failure. Screenshots, traces, state dumps and full reports stay with the runner. The hosted
+summary remains available on the run after that machine exits.
+
 Routine merge and main-CI evidence uses the GitHub check records described in
 [the SDLC](sdlc.md#ci-evidence). Query the exact SHA with pagination:
 

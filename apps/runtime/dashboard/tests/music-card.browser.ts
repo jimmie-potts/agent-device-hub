@@ -1,3 +1,4 @@
+import {browserEntry} from './failure-context.ts';
 import {destinationLink, openAudio} from './navigation-helpers.ts';
 // Shared Music card journey through a real disposable runtime; all media and receivers are synthetic.
 import assert from 'node:assert/strict';
@@ -176,10 +177,10 @@ await runJourney('Music card', {lighting: true, playbackArtwork: {speakers, fetc
 });
 
 // The music visualizer (#1619) reads the same numeric producer fixture and sends nothing itself.
-await import('./music-visualizer.browser.ts');
+await browserEntry('music-visualizer.browser.ts', import('./music-visualizer.browser.ts'));
 
 // Explicit Music input measurements use only a numeric producer fixture.
-await import('./music-capture.browser.ts');
+await browserEntry('music-capture.browser.ts', import('./music-capture.browser.ts'));
 
 // Explicit Music lighting uses the real core and Nanoleaf module on a simulated Lines controller.
-await import('./music-lighting.browser.ts');
+await browserEntry('music-lighting.browser.ts', import('./music-lighting.browser.ts'));

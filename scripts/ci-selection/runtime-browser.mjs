@@ -10,7 +10,9 @@
 //   node scripts/ci-selection/runtime-browser.mjs report         after a failed push to main, comment on the open issue or open it
 // Like the selector, this module has no dependencies: the select and report steps run it without `npm ci`.
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import {dirname, join} from 'node:path';
+import {journeyId} from './failure-fields.mts';
 import { pathToFileURL } from 'node:url';
 
 import { selectChecks } from './selection.mjs';
@@ -160,6 +162,11 @@ export function runSuite({ env = process.env, spawn = spawnSync, scripts, group 
       console.log(`\nJourney ${index} of ${total}, group ${item.name}: ${journey.name}`);
       const result = spawn(journey.command, journey.args, { env, stdio: 'inherit' });
       if (result.status !== 0 || result.error) {
+        if (env.BUNNY_CI_BROWSER_RECORD) {
+          try {
+            writeFileSync(join(dirname(env.BUNNY_CI_BROWSER_RECORD), 'entry'), JSON.stringify({journey: journeyId(journey.name)}), {mode: 0o600, flag: 'wx'});
+          } catch { /* The suite still reports its original failure. */ }
+        }
         const how = result.error ? 'could not start' : result.signal ? `ended by ${result.signal}` : `exited with status ${result.status}`;
         console.log(`::error title=Runtime dashboard browser suite::${journey.name} ${how}`);
         output(`journey_${item.name}=${journey.name}`);

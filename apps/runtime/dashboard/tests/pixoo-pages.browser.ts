@@ -1,3 +1,4 @@
+import {browserEntry} from './failure-context.ts';
 // A real Pixoo editor command through the authenticated shell, against fresh synthetic state only (Hub #932).
 import assert from 'node:assert/strict';
 import {deviceTab, jumpTo} from './navigation-helpers.ts';
@@ -62,8 +63,8 @@ try {
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}
 
-await import('./pixoo-cards.browser.ts');
+await browserEntry('pixoo-cards.browser.ts', import('./pixoo-cards.browser.ts'));
 
-await import('./pixoo-command-lock.browser.ts');
+await browserEntry('pixoo-command-lock.browser.ts', import('./pixoo-command-lock.browser.ts'));
 
-await import('./pixoo-card-reread.browser.ts');
+await browserEntry('pixoo-card-reread.browser.ts', import('./pixoo-card-reread.browser.ts'));

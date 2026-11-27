@@ -1,4 +1,5 @@
 // The browser journeys' wait for the dashboard's feed, which says what it saw when it expires (#2068).
+import {withFailureContext} from './failure-context.ts';
 import {stripVTControlCharacters} from 'node:util';
 
 /** A response the page already has. */
@@ -208,17 +209,21 @@ export async function waitForFeed(page: FeedPage, value: string, clock: Clock = 
     await page.locator(`main#main[data-feed="${value}"]`).waitFor();
   } catch (error) {
     let facts: string[];
+    let observed: MainState = null;
     try {
       const [seen, requests] = await Promise.all([bounded(async () => {
         const watched = await watching;
         const read = await page.evaluate(readFeed, key);
         return watched ? read : {...read, trail: null};
       }), bounded(() => page.requests())]);
+      if ('value' in seen) observed = seen.value.main;
       facts = describe(seen, requests, since, times);
     } catch (problem) {
       facts = [`the wait's facts could not be gathered: ${firstLine(problem)}`];
     }
-    throw new Error(`feed(page, '${value}') did not see main#main[data-feed="${value}"]: ${firstLine(error)}\n  ${facts.join('\n  ')}`, {cause: error});
+    const failure = new Error(`feed(page, '${value}') did not see main#main[data-feed="${value}"]: ${firstLine(error)}\n  ${facts.join('\n  ')}`, {cause: error});
+    withFailureContext(failure, {condition: `feed ${value}`, feed: observed?.feed, copies: observed?.copies});
+    throw failure;
   }
   // Not awaited, so a successful wait takes no longer; a page that navigated or closed has dropped the record anyway.
   void watching.then(() => page.evaluate(stopFeedWatch, key)).catch(() => {});
@@ -253,12 +258,16 @@ export async function waitForCopies(page: FeedPage, clock: Clock = Date.now): Pr
     await page.locator('main#main[data-copies="synced"]').waitFor();
   } catch (error) {
     let facts: string[];
+    let observed: MainState = null;
     try {
-      const [main, requests] = await Promise.all([mainNow(page), bounded(() => page.requests())]);
-      facts = [main, 'value' in requests ? requestFacts(requests.value, since, times) : `the page's requests could not be read: ${requests.problem}`];
+      const [main, requests] = await Promise.all([bounded(() => page.evaluate(readMain, null)), bounded(() => page.requests())]);
+      if ('value' in main) observed = main.value;
+      facts = ['value' in main ? mainFact(main.value) : `the page could not be read: ${main.problem}`, 'value' in requests ? requestFacts(requests.value, since, times) : `the page's requests could not be read: ${requests.problem}`];
     } catch (problem) {
       facts = [`the wait's facts could not be gathered: ${firstLine(problem)}`];
     }
-    throw new Error(`copiesSynced(page) did not see main#main[data-copies="synced"]: ${firstLine(error)}\n  ${facts.join('\n  ')}`, {cause: error});
+    const failure = new Error(`copiesSynced(page) did not see main#main[data-copies="synced"]: ${firstLine(error)}\n  ${facts.join('\n  ')}`, {cause: error});
+    withFailureContext(failure, {condition: 'copies synced', feed: observed?.feed, copies: observed?.copies});
+    throw failure;
   }
 }

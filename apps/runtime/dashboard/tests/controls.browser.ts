@@ -1,3 +1,4 @@
+import {browserEntry} from './failure-context.ts';
 import {destinationLink, deviceTab, openConnections} from './navigation-helpers.ts';
 // Focused #922 control/navigation acceptance against a synthetic process, never an installed service or real device.
 import assert from 'node:assert/strict';
@@ -76,4 +77,4 @@ try {
 } finally { await browser?.close(); await world.close(); }
 
 // This suite also exercises the shared lighting composition against its own disposable world.
-await import('./lighting.browser.ts');
+await browserEntry('lighting.browser.ts', import('./lighting.browser.ts'));
