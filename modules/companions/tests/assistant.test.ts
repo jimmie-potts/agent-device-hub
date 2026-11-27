@@ -4349,7 +4349,7 @@ void test('both hosted supervisors look up owner-named devices regardless of req
   const duplicate = {...wall, id: 'duplicate-wall'};
   const hiddenAliases = [{...duplicate, id: 'hidden-duplicate'}, {...wall, id: 'hidden-alias', label: 'Studio Wall Special'}];
   let aliasesPresent = false, duplicateVisible = false;
-  let replaceOwner = false, revokeStatus = false;
+  let replaceOwner = false, revokeStatus = false, statusRevoked = false;
   const resultByProvider = {anthropic: [] as string[], openai: [] as string[]};
   const usage = {input_tokens: 20, output_tokens: 10};
   let lookups: {target: string; owner: string}[] = [];
@@ -4381,7 +4381,7 @@ void test('both hosted supervisors look up owner-named devices regardless of req
   }
   const w = await world(context, {provider: anthropic, alternateProvider: openai, tools: ['read_devices', 'control_scene_activate'],
     share: grant => standard(grant) && !(grant.source === 'devices' && (grant.record?.startsWith('hidden-') === true ||
-      revokeStatus && grant.record === wall.id && grant.field === 'status' && factsSaved())),
+      statusRevoked && grant.record === wall.id && grant.field === 'status')),
     dispatch: () => assert.fail('a named lookup must not dispatch')});
   const participant = w.bus.connect(owner), substitute = w.bus.connect(substituteOwner);
   context.after(async () => {await participant.close(); await substitute.close();});
@@ -4389,8 +4389,11 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
   }))});
   const ownerReplaced = () => replaceOwner && factsSaved();
-  await participant.serveSync(['device'], () => snapshot(ownerReplaced() ? []
-    : [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])]));
+  await participant.serveSync(['device'], () => {
+    if (revokeStatus && factsSaved()) statusRevoked = true;
+    return snapshot(ownerReplaced() ? []
+      : [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])]);
+  });
   await substitute.serveSync(['device'], () => snapshot(ownerReplaced() ? [{...wall, kind: 'tidbyt'}] : []));
   await control(w.core, w.module(), 'enable');
   for (const provider of ['anthropic', 'openai'] as const) {
@@ -4444,7 +4447,9 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     requireRepair(await ask('Read id:studio-wall and id:studio-wall-xl.', ''));
     requireRepair(await ask('Instead of Studio Wall, apply Dusk to Side Wall.', ''));
     requireRepair(await ask('Check the status of Studio Wall; actually, do not read Studio Wall.', ''));
-    assert.equal((await page(w)).messages.at(-1)?.text, 'Synthetic device answer.');
+    const withdrawalResult = `${task(w)?.taskId}-result`;
+    assert.equal((await page(w, 'bunny', 'recent')).messages.find(message => message.id === withdrawalResult)?.text,
+      'Synthetic device answer.');
     assert.deepEqual(await ask('Read Studio Wall. Never mind.', ''), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall, not Dusk.', '', 'auto', 'Studio Wall'), statusFacts);
     const beforeRepair = task(w)?.taskId;
@@ -4471,9 +4476,9 @@ void test('both hosted supervisors look up owner-named devices regardless of req
       const previous = task(w)?.taskId, before = resultByProvider[provider].length;
       assert.equal((await input(w.core, w.module(), 'Check the status of Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
       await until(() => task(w)?.taskId !== previous && status(w) === 'failed');
-      assert.equal(task(w)?.code, 'forbidden');
+      assert.equal(task(w)?.code, 'forbidden', `${provider} after ${changed} changes`);
       assert.equal(resultByProvider[provider].length, before, `facts do not reach the supervisor after the ${changed} changes`);
-      replaceOwner = revokeStatus = false;
+      replaceOwner = revokeStatus = statusRevoked = false;
     }
   }
 });
