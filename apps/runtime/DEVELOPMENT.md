@@ -715,6 +715,14 @@ layout at 320, 390 and 1440 px. Run it after the root build with an
 outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS` keeps screenshots private.
 These synthetic checks change no installed routines or devices.
 
+The shared dashboard save lifecycle (#1645) is exercised by the dashboard
+unit suite and existing browser journeys. Automation checks that reconnect
+reads updated routines without clearing uncertainty or changing its status to
+“Up to date.” Wemo checks typed refusal, revision conflict, a delayed owner
+copy after an accepted limit save, and explicit refresh without replay.
+The Hub mode, Inbox, session label and notice override journeys exercise the
+other consumers with the existing synthetic runtime.
+
 Paged Home lists (#1658) extend the same Home editor chain, so hosted smoke and
 the full browser suite run them. After the root build,
 `node apps/runtime/dashboard/tests/home-paging.browser.ts` checks, in one

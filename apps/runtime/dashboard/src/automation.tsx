@@ -1,12 +1,13 @@
 import {ArtSchedulePanel} from './art-schedule.tsx';
 import React, {useCallback, useEffect, useRef, useState, useSyncExternalStore} from 'react';
-import {isErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
+import {isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {REQUEST_HEADER, childOf} from '@jimmie-potts/sdk/remote';
 import type {DashboardConnection} from './connection.ts';
 import {Badge, Facts} from './ui.tsx';
 import {PREVIEW_DETAILS,PREVIEW_REASONS,RoutinesEditor,type Routine,type RoutinePreview} from './routines.tsx';
+import {useSaveLifecycle, type SaveReply} from './save-lifecycle.ts';
 import './automation.css';
 
 export type AutomationPageProps = {connection: DashboardConnection; live: boolean; control: boolean};
@@ -27,8 +28,8 @@ const object = (value: unknown): value is Record<string, unknown> => typeof valu
 type Snapshot = {routines: Routine[]; timeZone: string;rules: Rule[]; settings: AutomationSettings; kinds: string[]; entries: LogEntry[]};
 
 class AutomationFailure extends Error {
-  readonly uncertain: boolean;
-  constructor(message: string, uncertain = false) { super(message); this.uncertain = uncertain; }
+  readonly code: ErrorCode | undefined;
+  constructor(message: string, code?: ErrorCode) { super(message); this.code = code; }
 }
 
 /** A rule definition never enables on create or changes enabled as a side effect of editing. */
@@ -76,7 +77,7 @@ export function previewReply(answer: Record<string, unknown>): boolean {
 export async function automationRequest(path: string, method = 'GET', body?: object, signal?: AbortSignal): Promise<Record<string, unknown>> {
   const mutation = method !== 'GET';
   const unreliable = (): AutomationFailure => new AutomationFailure(mutation
-    ? 'The change has no reliable reply. Refresh current rules before another attempt.' : 'Automation is unavailable. Refresh to read again.', mutation);
+    ? 'The change has no reliable reply. Refresh current rules before another attempt.' : 'Automation is unavailable. Refresh to read again.', mutation ? 'uncertain-result' : undefined);
   try {
     const response = await fetch(`/api/v2/automation/${path}`, {
       method, credentials: 'same-origin', redirect: 'error', cache: 'no-store',
@@ -89,7 +90,7 @@ export async function automationRequest(path: string, method = 'GET', body?: obj
       const code = object(answer.error) ? answer.error.code : undefined;
       if (!isErrorCode(code)) throw unreliable();
       if (mutation && (code === 'uncertain-result' || code === 'internal')) throw unreliable();
-      throw new AutomationFailure(`Request refused: ${code}.`);
+      throw new AutomationFailure(`Request refused: ${code}.`, code);
     }
     if (answer.schema !== 'automation/2.0' || (mutation && !mutationReply(path, method, answer)) ||
         (!mutation && /^routines\/[^/]+\/preview$/.test(path) && !previewReply(answer))) throw unreliable();
@@ -97,6 +98,15 @@ export async function automationRequest(path: string, method = 'GET', body?: obj
   } catch (error) {
     if (error instanceof AutomationFailure) throw error;
     throw unreliable();
+  }
+}
+
+export async function saveAutomation(path: string, method: string, body?: object): Promise<SaveReply<Record<string, unknown>>> {
+  try {
+    return {kind: 'accepted', value: await automationRequest(path, method, body)};
+  } catch (error) {
+    const code = error instanceof AutomationFailure ? error.code : undefined;
+    return code === undefined || code === 'uncertain-result' ? {kind: 'uncertain'} : {kind: 'refused', code};
   }
 }
 
@@ -128,29 +138,36 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
   const returnRuleFocus = useRef(false);
   const [paletteText, setPaletteText] = useState('');
   const [settings, setSettings] = useState<AutomationSettings>(), [kinds, setKinds] = useState('');
-  const [status, setStatus] = useState('Loading automation…'), [reading, setReading] = useState(false);
-  const [busy, setBusy] = useState(false), [uncertain, setUncertain] = useState(false), [current, setCurrent] = useState(false);
+  const [readStatus, setReadStatus] = useState('Loading automation…'), [reading, setReading] = useState(false);
+  const [currentRead, setCurrentRead] = useState<number>();
   const mounted = useRef(false), latestRead = useRef(0), controller = useRef<AbortController | undefined>(undefined);
-  const inFlight = useRef(false), locked = useRef(false), initialized = useRef(false), liveNow = useRef(live);
+  const initialized = useRef(false), liveNow = useRef(live);
   liveNow.current = live;
-  const available = live && state.feed === 'connected' && control && state.runtime.control && current && !reading && !busy && !uncertain;
-  const readable = live && state.feed === 'connected' && current && !reading;
+  // Automatic reads may refresh the view, but only an explicit refresh resolves a lost reply.
+  const save = useSaveLifecycle<{run: boolean}, number>({
+    accepted: () => true, uncertain: () => true,
+    confirm: phase => phase.kind === 'accepted' && currentRead !== undefined && currentRead >= phase.value,
+  });
+  const phase = save.state, busy = phase.kind === 'sending', uncertain = phase.kind === 'uncertain';
+  const available = live && state.feed === 'connected' && control && state.runtime.control && currentRead !== undefined && !reading && !save.blocked;
+  const readable = live && state.feed === 'connected' && currentRead !== undefined && !reading;
   const writable = useRef(available); writable.current = available;
-  const refresh = useCallback(async (resetDrafts = false, resolveUncertainty = false): Promise<void> => {
-    if (!liveNow.current || connection.getState().feed !== 'connected') return;
+  const refresh = useCallback(async (resetDrafts = false): Promise<boolean> => {
+    if (!liveNow.current || connection.getState().feed !== 'connected') return false;
     const generation = ++latestRead.current;
     controller.current?.abort(); const next = new AbortController(); controller.current = next;
-    setReading(true); setCurrent(false);
+    setReading(true); setCurrentRead(undefined);
     try {
       const value = await readAutomation(next.signal);
-      if (!mounted.current || generation !== latestRead.current || !liveNow.current) return;
-      setSnapshot(value); setCurrent(true);
+      if (!mounted.current || generation !== latestRead.current || !liveNow.current || connection.getState().feed !== 'connected') return false;
+      setSnapshot(value); setCurrentRead(generation);
       if (resetDrafts || !initialized.current) { setSettings(value.settings); setKinds(value.kinds.join(', ')); }
       initialized.current = true;
-      if (resolveUncertainty) { locked.current = false; setUncertain(false); }
-      setStatus('Up to date.');
+      setReadStatus('Up to date.');
+      return true;
     } catch (error) {
-      if (mounted.current && generation === latestRead.current) setStatus(error instanceof AutomationFailure ? error.message : 'Automation is unavailable.');
+      if (mounted.current && generation === latestRead.current) setReadStatus(error instanceof AutomationFailure ? error.message : 'Automation is unavailable.');
+      return false;
     } finally {
       if (mounted.current && generation === latestRead.current) setReading(false);
     }
@@ -161,20 +178,29 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
     return () => { mounted.current = false; latestRead.current += 1; controller.current?.abort(); };
   }, [live, refresh]);
 
+  const refreshExplicitly = async (): Promise<void> => {
+    if (await refresh(true)) save.reset();
+  };
   const mutate = async (path: string, method: string, value?: object, after?: () => void): Promise<void> => {
     const currentState = connection.getState();
-    if (!writable.current || inFlight.current || locked.current || currentState.feed !== 'connected' || !currentState.runtime.control) return;
-    inFlight.current = true; setBusy(true); setStatus('Saving…');
-    try {
-      await automationRequest(path, method, value);
-      if (!mounted.current) return;
-      after?.(); setStatus(path.endsWith('/run') ? 'Run now answered. Reading current state…' : 'Saved. Reading current state…'); await refresh();
-    } catch (error) {
-      if (!mounted.current) return;
-      if (error instanceof AutomationFailure && error.uncertain) { locked.current = true; setUncertain(true); }
-      setStatus(error instanceof AutomationFailure ? error.message : 'The change has no reliable reply. Refresh before another attempt.');
-    } finally { inFlight.current = false; if (mounted.current) setBusy(false); }
+    if (!writable.current || currentState.feed !== 'connected' || !currentState.runtime.control) return;
+    const result = await save.run({run: path.endsWith('/run')}, async () => {
+      const reply = await saveAutomation(path, method, value);
+      // A refresh already in progress when the write answered cannot confirm the write.
+      return reply.kind === 'accepted' ? {kind: 'accepted', value: latestRead.current + 1} : reply;
+    });
+    if (result?.kind === 'accepted') {after?.(); await refresh();}
   };
+  let status = readStatus;
+  switch (phase.kind) {
+    case 'sending': status = 'Saving…'; break;
+    case 'accepted':
+      if (reading || readStatus === 'Up to date.') status = phase.input.run ? 'Run now answered. Reading current state…' : 'Saved. Reading current state…';
+      break;
+    case 'refused': status = `Request refused: ${phase.code}.`; break;
+    case 'uncertain': status = 'The change has no reliable reply. Refresh current rules before another attempt.'; break;
+    case 'idle': case 'confirmed': break;
+  }
   const deviceCopies = state.runtime.copies.filter(copy => copy.family === 'device');
   const devices = deviceCopies.flatMap(copy => (copy.records as DeviceRecord[]).filter(record => copy.owner === `bunny/modules/${record.kind}` && record.capabilities.moments.supported)
     .map(record => ({record, current: copy.synced})));
@@ -197,7 +223,7 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
   useEffect(() => {if (ruleOpen) ruleName.current?.focus();}, [ruleOpen, editing]);
   return <section aria-label="Automation" className="automation-workspace"><header className="page automation-heading"><h1>Automation</h1>
       <button type="button" className="secondary" aria-label="Refresh rules and logs" disabled={!live || reading || busy}
-        onClick={() => { void refresh(true, true); }}>Refresh</button></header>
+        onClick={() => { void refreshExplicitly(); }}>Refresh</button></header>
     {!control && <p>Your session is read-only.</p>}
     {!live && <p role="status">The connection is unavailable. Saved evidence may be stale.</p>}
     {uncertain && <p role="alert">The last change has no reliable reply. Refresh current rules before another attempt.</p>}
