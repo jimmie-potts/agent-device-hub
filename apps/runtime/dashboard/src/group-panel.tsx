@@ -27,9 +27,9 @@ export type GroupPanelProps = {
 };
 type Member = {id: string; name: string; plug: boolean; power: boolean | undefined; state: string};
 type Commands = Map<string, TrackedCommand>;
-/** Results that need the operator's attention: anything but no command or a completed success. */
-const attention = (command: TrackedCommand): boolean => command.phase.kind !== 'none' &&
-  (command.phase.kind !== 'completed' || command.phase.result !== 'succeeded');
+/** A saved individual mode remains visible until superseded. Routine successful device commands stay quiet. */
+const attention = ({phase}: TrackedCommand): boolean => phase.kind !== 'none' &&
+  (phase.kind !== 'completed' || phase.result !== 'succeeded' || phase.family === 'mode-override-set');
 
 /**
  * A member's power as its switch shows it: the newest of its observation and its latest power request that succeeded

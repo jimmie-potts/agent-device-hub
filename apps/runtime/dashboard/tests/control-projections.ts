@@ -16,7 +16,7 @@ const device: DeviceRecord = {
 };
 type ProbeProps = {kind: 'device'; record: DeviceRecord; operations: OperationRecord[]} |
   {kind: 'placement'; operations: OperationRecord[]} |
-  {kind: 'lighting'; record: DeviceRecord; operations: OperationRecord[]} |
+  {kind: 'lighting' | 'group-mode'; record: DeviceRecord; operations: OperationRecord[]} |
   {kind: 'playback'; record: PlaybackState; control: boolean; live: boolean};
 const render = async (page: Page, props: ProbeProps): Promise<void> => {
   await page.evaluate(input => {
@@ -33,6 +33,8 @@ async function controlProbe(context: BrowserContext): Promise<() => Promise<Page
     import {DeviceCard, PlaybackCard} from '../src/device-controls.tsx';
     import {useAttempt} from '../src/command-control.tsx';
     import {LightingWorkspace} from '../src/lighting-workspace.tsx';
+    import {DeviceModeChoice, DeviceModesProvider} from '../src/device-mode.tsx';
+    import {GroupPanel} from '../src/group-panel.tsx';
     const lightingConnection = {
       openModule: () => ({close: async () => {}}),
       refreshDevices: async () => {},
@@ -50,6 +52,15 @@ async function controlProbe(context: BrowserContext): Promise<() => Promise<Page
         connected: true, operations, operationsLive: true,
       });
     }
+    function GroupModeProbe({record, operations}) {
+      const devices = [{owner: 'bunny/modules/nanoleaf', live: true, record}];
+      const mode = {id: 'hub', revision: 1, mode: 'free', selectedAtMs: 1};
+      return React.createElement(DeviceModesProvider, {value: {record: mode, live: true, control: true, operations,
+        operationsLive: true, devices}},
+        React.createElement(DeviceModeChoice, {target: record.id}),
+        React.createElement(GroupPanel, {id: 'group', name: 'Light group', group: {devices: [record.id]},
+          devices, plugs: [], control: true, operations, operationsLive: true}));
+    }
     function PlacementProbe({operations}) {
       const command = useAttempt('playback', operations.filter(op => op.family === 'playback-layout-set'), true, undefined, 'core/playback-layout');
       return React.createElement(React.Fragment, null,
@@ -59,7 +70,7 @@ async function controlProbe(context: BrowserContext): Promise<() => Promise<Page
     }
     const root = createRoot(document.getElementById('root'));
     window.renderControlProbe = props => flushSync(() => root.render(React.createElement(
-      {placement: PlacementProbe, device: DeviceCard, playback: PlaybackCard, lighting: LightingProbe}[props.kind],
+      {placement: PlacementProbe, device: DeviceCard, playback: PlaybackCard, lighting: LightingProbe, 'group-mode': GroupModeProbe}[props.kind],
       {owner: 'bunny/modules/nanoleaf', live: true, control: true, operations: [], operationsLive: true,
        refresh: async () => {}, ...props})));
   `, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'control-projections-entry.js'},
@@ -113,6 +124,34 @@ async function checkLightingProjection(lighting: Page): Promise<void> {
   } finally { await lighting.close(); }
 }
 
+async function checkGroupModeReceipt(page: Page): Promise<void> {
+  try {
+    const requests: string[] = [];
+    await page.route('**/api/v2/commands/mode-override-set', async route => {
+      const body = route.request().postDataJSON() as {target: string; requestId: string; data: object};
+      assert.equal(body.target, device.id);
+      assert.deepEqual(body.data, {mode: 'quiet', expectedRevision: 1});
+      requests.push(body.requestId);
+      await route.fulfill({status: 200, contentType: 'application/json',
+        body: JSON.stringify({schema: 'command-reply/2.0', status: 'accepted', requestId: body.requestId})});
+    });
+    await render(page, {kind: 'group-mode', record: device, operations: []});
+    await page.getByRole('button', {name: 'Quiet', exact: true}).click();
+    const result = page.getByRole('article', {name: 'Light group'}).getByRole('status');
+    await result.getByText('Accepted. Waiting for completion.', {exact: false}).waitFor();
+    assert.equal(requests.length, 1);
+    const requestId = requests[0];
+    assert.ok(requestId);
+    await render(page, {kind: 'group-mode', record: device, operations: [{
+      id: '3'.repeat(64), revision: 2, requestId, kind: 'mode', family: 'mode-override-set', command: 'org.bunny.mode-override.set.requested',
+      target: device.id, requestedBy: 'bunny/parts/dashboard', status: 'completed', result: 'succeeded', evidence: 'observed',
+      sentAtMs: 1, updatedAtMs: 2, deadlineAtMs: 50,
+    }]});
+    await result.getByText('wall: Choice saved. Device results are separate.', {exact: true}).waitFor();
+    console.log(JSON.stringify({journey: 'group-mode-receipt', target: device.id, requests: requests.length, savedReceipt: true}));
+  } finally { await page.close(); }
+}
+
 export async function checkLightingOutcomes(context: BrowserContext): Promise<void> {
   const open = await controlProbe(context);
   await checkLightingProjection(await open());
@@ -120,6 +159,7 @@ export async function checkLightingOutcomes(context: BrowserContext): Promise<vo
 
 export async function checkControlProjections(context: BrowserContext): Promise<void> {
   const open = await controlProbe(context);
+  await checkGroupModeReceipt(await open());
   await checkLightingProjection(await open());
   for (const response of ['accepted', 'uncertain'] as const) {
     const page = await open();
