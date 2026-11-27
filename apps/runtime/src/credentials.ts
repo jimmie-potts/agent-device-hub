@@ -9,7 +9,7 @@ import {chmod, link, open, readdir, readFile, rename, rm, stat, writeFile} from 
 import {basename, dirname, join} from 'node:path';
 import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {MUSIC_PLAYBACK_SOURCE} from '@jimmie-potts/event-contracts/v2/music-playback';
-import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
+import {codingDestinationForSource, codingWorkerSourceReserved} from '@jimmie-potts/event-contracts/v2/coding';
 import {PrivateFileError, RuntimeError, readPrivateFile} from './state.js';
 
 export const CREDENTIALS_SCHEMA = 'edge-credentials/1.0';
@@ -96,7 +96,7 @@ export function parseCredentials(document: unknown): EdgeCredential[] {
       return {id, source, digest, scopes: [], role: 'music-producer'};
     }
     if (entry.role === 'coding-worker') {
-      if (source !== CODING_WORKER_SOURCE || scopes.length !== 0 || entry.robotId !== undefined) throw invalid('has an invalid coding-worker role');
+      if (codingDestinationForSource(source) === undefined || scopes.length !== 0 || entry.robotId !== undefined) throw invalid('has an invalid coding-worker role');
       return {id, source, digest, scopes: [], role: 'coding-worker'};
     }
     if (entry.role !== undefined || entry.robotId !== undefined) {
@@ -106,7 +106,7 @@ export function parseCredentials(document: unknown): EdgeCredential[] {
     if (source === 'bunny/parts/bb8-windows') throw invalid('requires the BB-8 transport role for its reserved helper source');
     if (source === MUSIC_PRODUCER_SOURCE) throw invalid('requires the music-producer role for its reserved producer source');
     if (source === MUSIC_PLAYBACK_SOURCE) throw invalid('requires the music-playback-producer role for its reserved producer source');
-    if (source === CODING_WORKER_SOURCE) throw invalid('requires the coding-worker role for its reserved worker source');
+    if (codingWorkerSourceReserved(source)) throw invalid('requires the coding-worker role for its reserved worker source');
     return {id, source, digest, scopes: [...scopes]};
   });
   if (new Set(credentials.map(credential => credential.id)).size !== credentials.length) throw invalid('gives two credentials one ID');

@@ -1,8 +1,10 @@
+import {browserEntry} from './failure-context.ts';
 // A real Pixoo editor command through the authenticated shell, against fresh synthetic state only (Hub #932).
 import assert from 'node:assert/strict';
 import {deviceTab, jumpTo} from './navigation-helpers.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 
 const world = await startWorld({pixooPages: true});
@@ -12,7 +14,7 @@ try {
   for (let attempt = 0; (await world.pixooPlaylists()).length === 0 && attempt < 50; attempt++) await delay(20);
   const before = (await world.pixooPlaylists())[0]; assert.ok(before);
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
     const page = await context.newPage(); page.setDefaultTimeout(8000);
@@ -61,8 +63,8 @@ try {
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}
 
-await import('./pixoo-cards.browser.ts');
+await browserEntry('pixoo-cards.browser.ts', import('./pixoo-cards.browser.ts'));
 
-await import('./pixoo-command-lock.browser.ts');
+await browserEntry('pixoo-command-lock.browser.ts', import('./pixoo-command-lock.browser.ts'));
 
-await import('./pixoo-card-reread.browser.ts');
+await browserEntry('pixoo-card-reread.browser.ts', import('./pixoo-card-reread.browser.ts'));

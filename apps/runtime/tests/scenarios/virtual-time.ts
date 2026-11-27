@@ -1,42 +1,13 @@
 // What the in-memory harness and a disposable run on virtual time share (Hub #1684, #1710): a clock and scheduler that
 // move only when the harness advances them, and the hold that keeps virtual time still while a module's worker call
 // runs in real time (Hub #1442). The run's child imports this file, so it imports nothing of the test runner's.
-import type {BunnyModule, Scheduler, WorkerCallOptions} from '@jimmie-potts/sdk';
+import type {BunnyModule, WorkerCallOptions} from '@jimmie-potts/sdk';
+import {manualClock as createManualClock} from '@jimmie-potts/sdk/testing';
 
 export const START = Date.parse('2026-10-06T12:00:00.000Z');
 
-/** A clock and scheduler that move only when the test advances them. */
-export function manualClock(start = START): {
-  now: () => number; scheduler: Scheduler; advance: (ms: number) => void; pending: () => number; next: () => number | undefined;
-} {
-  let now = start;
-  const timers = new Set<{at: number; callback: () => void}>();
-  return {
-    now: () => now,
-    scheduler: {after: (delayMs, callback) => {
-      const timer = {at: now + delayMs, callback};
-      timers.add(timer);
-      return () => { timers.delete(timer); };
-    }},
-    advance: ms => {
-      now += ms;
-      for (const timer of [...timers].sort((a, b) => a.at - b.at)) {
-        if (timer.at > now) break;
-        if (timers.delete(timer)) timer.callback();
-      }
-    },
-    pending: () => timers.size,
-    /** When the earliest pending timer is due, or undefined with none pending. NaN while a timer due at NaN is pending. */
-    next: () => {
-      let earliest: number | undefined;
-      for (const {at} of timers) {
-        if (Number.isNaN(at)) return at;
-        if (earliest === undefined || at < earliest) earliest = at;
-      }
-      return earliest;
-    },
-  };
-}
+/** The runtime's existing scenario epoch applies when no start is supplied. */
+export const manualClock = (start = START) => createManualClock(start);
 
 /**
  * How long, in real time, virtual time waits for one module's worker call. A worker runs in real time but its deadline

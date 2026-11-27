@@ -5,8 +5,9 @@
 // it, which a runtime restart does at once, so the journey restarts the runtime to see a request become observed.
 import assert from 'node:assert/strict';
 import {expect, type Browser, type Locator, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
-import {feed} from './harness.ts';
+import {feed, recordsLoaded} from './harness.ts';
 
 type World = {url: string; restart(): Promise<void>; holdDeviceWrites(hold: boolean): void; loseDeviceReply(): void; restoreDeviceReply(): void; nanoleafPower(on: boolean): void};
 type Sent = {path: string; target: string; keys: string; value: unknown};
@@ -78,11 +79,11 @@ const word = (on: boolean): string => on ? 'on' : 'off';
 export async function dialJourney(browser: Browser, world: World): Promise<Record<string, unknown>> {
   // Fresh readings: every bulb's last report is newer than any earlier request.
   await world.restart();
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   const page = await context.newPage();page.setDefaultTimeout(15_000);
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   const sent = commands(page);
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
 
   // The current card's commands, from lamp-c's Wide shape: Off, and a brightness slider release. The dial's commands
@@ -227,7 +228,7 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
 
   // The light reports what was asked: the ring, the switch and the glow follow.
   await world.restart();
-  const touch = await browser.newContext({viewport: {width: 1440, height: 300}, hasTouch: true});
+  const touch = await openJourneyContext(browser, {viewport: {width: 1440, height: 300}, hasTouch: true});
   const phone = await touch.newPage();phone.setDefaultTimeout(15_000);
   const touchSent = commands(phone);
   await phone.goto(world.url);await feed(phone, 'connected');
@@ -261,7 +262,7 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
   await touch.close();
 
   // Read-only: the dial shows the observed state and sends nothing.
-  const reader = await browser.newContext({viewport: {width: 1440, height: 1000}});
+  const reader = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}});
   const readOnly = await reader.newPage();readOnly.setDefaultTimeout(15_000);
   await readOnly.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
   const readSent = commands(readOnly);

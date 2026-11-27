@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {feed, startWorld} from './harness.ts';
 
 type Section = {name: string; state: string; included: number; text: string | null};
@@ -25,7 +26,7 @@ export async function conversationContextJourney(browser: Browser): Promise<void
   const output = process.env.DASHBOARD_RECEIPTS;
   if (output !== undefined) await mkdir(output, {recursive: true});
   const shot = async (page: Page, name: string): Promise<void> => {if (output !== undefined) await page.screenshot({path: `${output}/${name}.png`, fullPage: false});};
-  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   const errors: string[] = [];
   context.on('weberror', error => {errors.push(error.error().name);});
   try {

@@ -2,12 +2,13 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Request} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 
 const world = await startWorld({tidbyt: true});
 const browser = await chromium.launch({headless: true});
 try {
-  const context = await browser.newContext({viewport: {width: 1280, height: 900}});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 900}});
   try {
     const errors: string[] = []; context.on('weberror', event => { errors.push(event.error().message); });
     const page = await context.newPage(); page.setDefaultTimeout(12000);

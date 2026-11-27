@@ -898,8 +898,8 @@ fnm exec --using=.nvmrc -- node --input-type=module - "$BUNNY_SOURCE_REVISION" "
 import {execFileSync} from 'node:child_process';
 import {lstat, mkdir, open, readFile, realpath} from 'node:fs/promises';
 import {dirname, join, resolve} from 'node:path';
-import {canonical, fullRevision, hashRegular, inventory, safeRelative, sha256} from './apps/hub/dist/install/files.js';
-import {syncDirectory} from './apps/hub/dist/install/stage.js';
+import {canonical, fullRevision, hashRegular, inventory, safeRelative, sha256} from './apps/runtime/dist/src/upgrade-files.js';
+import {syncDirectory} from './apps/runtime/dist/src/upgrade-stage.js';
 import {checkStateDirectory} from './apps/runtime/dist/src/state.js';
 const [revision, bundle] = process.argv.slice(2);
 process.umask(0o077);
@@ -1001,8 +1001,8 @@ import {execFileSync} from 'node:child_process';
 import {constants} from 'node:fs';
 import {mkdir, open} from 'node:fs/promises';
 import {dirname, join, resolve} from 'node:path';
-import {inventory, sha256} from './apps/hub/dist/install/files.js';
-import {syncDirectory} from './apps/hub/dist/install/stage.js';
+import {inventory, sha256} from './apps/runtime/dist/src/upgrade-files.js';
+import {syncDirectory} from './apps/runtime/dist/src/upgrade-stage.js';
 import {checkStateDirectory, readPrivateFile} from './apps/runtime/dist/src/state.js';
 const [identityFile, archiveFile, destination] = process.argv.slice(2);
 const identity = JSON.parse((await readPrivateFile(identityFile, 256 * 1024)).toString('utf8'));
@@ -1335,7 +1335,7 @@ for initial adoption). A different anchor requires inspection and a new plan.
 node --input-type=module - "$BUNNY_INSTALL_ROOT" "$BUNNY_SELECTION_DIRECTORY" <<'JS'
 import {readlink, realpath} from 'node:fs/promises';
 import {join} from 'node:path';
-import {switchCurrent} from './apps/hub/dist/install/stage.js';
+import {switchCurrent} from './apps/runtime/dist/src/upgrade-stage.js';
 const [root, target] = process.argv.slice(2);
 if (!target.startsWith(root + '/releases/') || !/^[a-f0-9]{40}$/.test(target.slice((root + '/releases/').length))) throw new Error('runtime-selection-refused');
 await switchCurrent(root, target);
@@ -1392,7 +1392,7 @@ case "$BUNNY_CHECK_PHASE" in candidate|recovery|reupgrade) ;; *) exit 1 ;; esac
 BUNNY_CHECK_FRAME="$(node --input-type=module - "$BUNNY_REQUEST_FILE" "$BUNNY_PLAN_FILE" "$BUNNY_INSTALL_ROOT" <<'JS'
 import {readPrivateFile} from './apps/runtime/dist/src/state.js';
 import {parseUpgradeRequest} from './apps/runtime/dist/src/upgrade-paths.js';
-import {canonical, sha256} from './apps/hub/dist/install/files.js';
+import {canonical, sha256} from './apps/runtime/dist/src/upgrade-files.js';
 const [requestFile, planFile, root] = process.argv.slice(2);
 const bytes = await readPrivateFile(requestFile, 256 * 1024);
 const request = parseUpgradeRequest(JSON.parse(bytes.toString('utf8')));
@@ -1591,8 +1591,8 @@ or substitution rules; qualify such a layout separately rather than guessing.
 node --input-type=module - "$BUNNY_PLAN_FILE" "$BUNNY_INSTALL_ROOT" "$BUNNY_DRAFT_OVERRIDE" <<'JS'
 import {open} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
-import {canonical, sha256} from './apps/hub/dist/install/files.js';
-import {syncDirectory} from './apps/hub/dist/install/stage.js';
+import {canonical, sha256} from './apps/runtime/dist/src/upgrade-files.js';
+import {syncDirectory} from './apps/runtime/dist/src/upgrade-stage.js';
 import {readPrivateFile} from './apps/runtime/dist/src/state.js';
 import {renderUpgradeAdoptionDraft} from './apps/runtime/dist/src/upgrade-paths.js';
 const [planFile, root, destination] = process.argv.slice(2);

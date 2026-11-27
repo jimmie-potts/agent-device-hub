@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes,feed,startWorld,holdDashboardStream} from './harness.ts';
 import {openHabitat} from './navigation-helpers.ts';
 import {IDENTITY} from '../../dist/tests/fixtures/agents.js';
@@ -10,7 +11,7 @@ const output=process.env.DASHBOARD_RECEIPTS;if(output!==undefined)await mkdir(ou
 try{
  for(let n=0;n<12;n++)await world.observe({kind:'session-started'},{identity:{...IDENTITY,sessionId:`habitat-${n}`},title:{value:`Synthetic agent ${n}`,source:'provider'}});
  await world.observe({kind:'turn-ended'},{identity:{...IDENTITY,sessionId:'habitat-11'}});
- const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(12000);
+ const context=await openJourneyContext(browser, {viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(12000);
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));const sent=changes(page);let streams=0;page.on('request',request=>{if(request.url().endsWith('/api/sdk/v1/stream'))streams++;});
  await page.goto(world.url);await feed(page,'connected');const before=streams;
  await openHabitat(page);await page.locator('#habitat[data-ready=true]').waitFor();
@@ -66,7 +67,7 @@ try{
  const late=JSON.stringify({schema:'bunny-habitat-settings/1.0',preferences:{'bunny.burrow.aprons.v1':JSON.stringify(Array<string>(10).fill('#998877'))}});
  await page.getByLabel('Import habitat settings',{exact:true}).setInputFiles({name:'late.json',mimeType:'application/json',buffer:Buffer.from(late)});await page.getByRole('link',{name:'Home',exact:true}).click();await page.waitForTimeout(600);assert.equal(await page.evaluate(()=>localStorage.getItem('bunny.burrow.aprons.v1')),JSON.stringify(colors));
  const native='00000000-0000-4000-8000-000000000099';await world.observe({kind:'session-started'},{identity:{...IDENTITY,provider:'codex',client:'desktop',sourceId:'codex-desktop',sessionId:native},title:{value:'Synthetic desktop conversation',source:'provider'}});
- const windows=await browser.newContext({reducedMotion:'reduce'});await windows.addInitScript(()=>{Object.defineProperty(navigator,'platform',{get:()=> 'Win32'});});const desktop=await windows.newPage(),desktopSent=changes(desktop),cdp=await windows.newCDPSession(desktop),navigations:string[]=[];await cdp.send('Page.enable');cdp.on('Page.frameRequestedNavigation',(event:{url:string})=>{if(event.url.startsWith('codex:'))navigations.push(event.url);});
+ const windows=await openJourneyContext(browser, {reducedMotion:'reduce'});await windows.addInitScript(()=>{Object.defineProperty(navigator,'platform',{get:()=> 'Win32'});});const desktop=await windows.newPage(),desktopSent=changes(desktop),cdp=await windows.newCDPSession(desktop),navigations:string[]=[];await cdp.send('Page.enable');cdp.on('Page.frameRequestedNavigation',(event:{url:string})=>{if(event.url.startsWith('codex:'))navigations.push(event.url);});
  await desktop.goto(world.url+'/#/habitat');await feed(desktop,'connected');await desktop.locator('#habitat[data-ready=true]').waitFor();await desktop.locator('#live-session').selectOption({label:'Synthetic desktop conversation · Codex Desktop'});await desktop.locator('#live-bunny').selectOption('0');await desktop.locator('#live-bind').click();
  await desktop.locator('#agent-0').click();assert.equal(navigations.length,0);await desktop.waitForTimeout(650);await desktop.locator('#agent-0').click();await desktop.waitForTimeout(100);assert.deepEqual(navigations,[`codex://threads/${native}`]);
  await desktop.locator('#agent-0').focus();await desktop.keyboard.press('Enter');assert.equal(navigations.length,1);await desktop.keyboard.press('Space');await desktop.waitForTimeout(100);assert.equal(navigations.length,2);assert.deepEqual(desktopSent,[]);await windows.close();

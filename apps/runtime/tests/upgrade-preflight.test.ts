@@ -24,7 +24,7 @@ type Helpers = {
 };
 type Files = {canonical: (value: unknown) => string; sha256: (bytes: string | Buffer) => string};
 const helpers = await import(pathToFileURL(join(process.cwd(), 'apps/runtime/bin/runtime-upgrade-preflight.mjs')).href) as Helpers;
-const {canonical, sha256} = await import(pathToFileURL(join(process.cwd(), 'apps/hub/dist/install/files.js')).href) as Files;
+const {canonical, sha256} = await import(pathToFileURL(join(process.cwd(), 'apps/runtime/dist/src/upgrade-files.js')).href) as Files;
 /** What one composed case returns: the plan or result, or the refusal code, with its reader counts and observation contexts. */
 type Outcome = {plan?: unknown; result?: unknown; code?: string; counters: Record<string, number>; observations: unknown[]};
 const errorCode = (error: unknown) => (error instanceof Error ? error.message : String(error));

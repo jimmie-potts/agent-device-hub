@@ -1,8 +1,11 @@
 import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceAction, type AssistantDeviceOwner} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {Cancel, ModuleContext, SyncedCopy, TraceContext} from '@jimmie-potts/sdk';
+import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS,
+  type Cancel, type ModuleContext, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
+export {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS} from '@jimmie-potts/sdk';
+import {literalToolDeviceId} from './control-intent.js';
 import type {ToolCall} from './provider.js';
-import {READ_BYTES, SET_LIFX_POWER, SET_WEMO_POWER} from './tools.js';
+import {READ_BYTES, SET_LIFX_POWER} from './tools.js';
 
 export type DeviceReadDisplay = {
   instant: (ms: number) => string;
@@ -87,27 +90,21 @@ export class AssistantDeviceCopy {
   }
 }
 
-export const deviceLabel = (device: DeviceRecord): string => device.label?.slice(0, 128) ?? device.id;
 const normalized = (name: string): string => name.trim().toLowerCase().replace(/[\s-]+/g, '-');
 type Selection = {device: DeviceRecord} | {matches: readonly DeviceRecord[]} | {code: 'invalid-request' | 'not-found' | 'unavailable'};
 
-export function chooseDevice(devices: readonly DeviceRecord[] | undefined, name: unknown): Selection {
-  if (typeof name !== 'string' || name.length > 128 || name.trim() === '') return {code: 'invalid-request'};
+export function chooseDevice(devices: readonly DeviceRecord[] | undefined, name: unknown, brightness = false): Selection {
+  const literalId = brightness ? literalToolDeviceId(name) : undefined;
+  if (typeof name !== 'string' || (literalId ?? name).length > 128 || name.trim() === '') return {code: 'invalid-request'};
   if (devices === undefined) return {code: 'unavailable'};
-  const exact = devices.find(device => device.id === name);
+  const exact = devices.find(device => device.id === (literalId ?? name));
   if (exact !== undefined) return {device: exact};
+  if (literalId !== undefined) return {code: 'not-found'};
   const matches = devices.filter(device => normalized(deviceLabel(device)) === normalized(name) || normalized(device.id) === normalized(name));
   if (matches.length === 0) return {code: 'not-found'};
   return matches.length === 1 && matches[0] !== undefined ? {device: matches[0]} : {matches};
 }
 
-// LIFX treats a reading older than 30 seconds as due for an on-demand refresh.
-export const MAX_OBSERVATION_AGE_MS = 30_000;
-export const WEMO_OBSERVATION_AGE_MS = 15_000;
-export function observationStale({observed, lastTransmission}: DeviceRecord, now: number, maxAgeMs: number): boolean {
-  return observed.status === 'known' && (observed.observedAtMs > now || now - observed.observedAtMs >= maxAgeMs ||
-    (lastTransmission.status === 'known' && observed.observedAtMs < lastTransmission.transmittedAtMs));
-}
 export function readDevices(devices: readonly DeviceRecord[] | undefined, name: unknown, nowMs: number,
   owner: AssistantDeviceOwner = ASSISTANT_LIGHT_OWNER, display?: DeviceReadDisplay): string {
   const wemo = owner === ASSISTANT_WEMO_OWNER;
@@ -140,11 +137,10 @@ export function deviceProposal(call: ToolCall, device: DeviceRecord): {proposal:
   if (Object.keys(call.input).length !== 2) return {code: 'invalid-request'};
   const guards = {expectedConfigurationRevision: device.configurationRevision, expectedGeneration: device.generation};
   const {on, percent} = call.input;
-  if (call.name === SET_LIFX_POWER || call.name === SET_WEMO_POWER) {
+  if (call.name === SET_LIFX_POWER) {
     if (typeof on !== 'boolean') return {code: 'invalid-request'};
     if (!device.capabilities.power.supported) return {code: 'unsupported-capability'};
-    const action = {family: 'power-set', target: device.id, data: {...guards, on}} as const;
-    return {proposal: call.name === SET_WEMO_POWER ? {...action, owner: ASSISTANT_WEMO_OWNER} : action};
+    return {proposal: {family: 'power-set', target: device.id, data: {...guards, on}}};
   }
   if (typeof percent !== 'number' || !Number.isInteger(percent) || percent < 0 || percent > 100) return {code: 'invalid-request'};
   if (!device.capabilities.brightness.supported) return {code: 'unsupported-capability'};

@@ -443,14 +443,9 @@ const STEP_GROUPS = {
   },
 };
 
-// Hub #2059: a test job's last step uploads its evidence when the job fails and its checkout has the action (a
-// standalone head may predate it). It runs on the job's outcome, not the selection, so the checks below leave it out.
-const selectionSteps = job => job.steps.filter(step => !(step.uses === './.github/actions/failure-evidence'
-  && step.if === "failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''"));
-
 test('every conditional Checks step keeps its pinned group', () => {
   for (const [id, expected] of Object.entries(STEP_GROUPS)) {
-    const actual = Object.fromEntries(selectionSteps(checks.jobs[id]).filter(step => step.if !== undefined && !stepOwner(step.if))
+    const actual = Object.fromEntries(checks.jobs[id].steps.filter(step => step.if !== undefined && !stepOwner(step.if))
       .map(step => [step.run ?? step.uses.split('@')[0], stepGroup(step.if)]));
     assert.deepEqual(actual, expected, `${id}: a suite moved group, or a conditional step was added or removed`);
   }
@@ -477,6 +472,19 @@ test('a narrow change runs the suites its paths can break', () => {
     for (const command of ['npm run build', 'npm run typecheck', 'npm run lint:js', ...included]) assert.ok(commands.includes(command), `${files}: runs ${command}`);
     for (const command of excluded) assert.equal(commands.includes(command), false, `${files}: omits ${command}`);
   }
+});
+
+test('shared command code and active frontend paths retain the Lights outcome smoke check', () => {
+  const smoke = fs.readFileSync(new URL('../apps/runtime/dashboard/tests/smoke.ts', import.meta.url), 'utf8');
+  assert.match(smoke, /import \{checkLightingOutcomes\} from '\.\/control-projections\.ts';/);
+  assert.match(smoke, /await checkLightingOutcomes\(context\);/);
+  for (const file of ['packages/sdk/src/frontend-command.ts', 'apps/runtime/dashboard/src/lighting-workspace.tsx',
+    'apps/runtime/dashboard/tests/control-projections.ts', 'modules/nanoleaf/src/frontend/shows.tsx']) {
+    const app = selectedCommands(checks, pr([file])).find(job => job.id === 'app-verify');
+    assert.ok(app?.commands.includes('npm run test:runtime-dashboard:smoke'), file);
+  }
+  const dormant = selectedCommands(checks, pr(['modules/onn/src/frontend/onn-card-data.ts'])).find(job => job.id === 'app-verify');
+  assert.equal(dormant?.selected, false);
 });
 
 test('Checks selects jobs and steps only through the selection outputs, and the gate covers every job', () => {
@@ -507,12 +515,12 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
     assert.equal(job.strategy, undefined, `${id} has no matrix`);
     assert.equal(job['runs-on'], 'ubuntu-latest');
     assert.match(job.name, / on ubuntu-latest$/);
-    const stepGroups = new Set(selectionSteps(job).map(step => stepGroup(step.if)).filter(Boolean));
+    const stepGroups = new Set(job.steps.map(step => stepGroup(step.if)).filter(Boolean));
     groups.forEach(group => used.add(group));
     if (stepGroups.size) assert.deepEqual([...stepGroups].sort(), [...groups].sort(), `${id} runs when any of its steps' groups is selected`);
   }
   for (const [id, job] of Object.entries(checks.jobs)) {
-    for (const step of selectionSteps(job)) {
+    for (const step of job.steps) {
       if (step.if === undefined) continue;
       if (id === 'core' || id === 'app-verify') {
         if(stepOwner(step.if)){assert.equal(id,'core');assert.equal(stepOwner(step.if),'microduck-browser');continue;}

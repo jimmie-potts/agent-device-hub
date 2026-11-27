@@ -4,8 +4,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {setImmediate as turn,setTimeout as pause} from 'node:timers/promises';
-import {InProcessBus,type Scheduler} from '@jimmie-potts/sdk';
-import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import {InProcessBus} from '@jimmie-potts/sdk';
+import {ModuleHarness, manualClock, moduleWaitBudgets, waitForObservation} from '@jimmie-potts/sdk/testing';
 import type {ModeState,Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
 import {createMicroDuckModule} from '../src/module.js';
@@ -25,13 +25,20 @@ import type {CompletedOutcome} from '@jimmie-potts/event-contracts/v2/devices';
  */
 export class TestClock {
  ms=Date.now();
- #loopMs=this.ms;
- readonly #timers=new Set<{at:number;callback:()=>void}>();
- readonly now=():number=>this.ms;
- readonly scheduler:Scheduler={after:(delayMs,callback)=>{const timer={at:this.#loopMs+delayMs,callback};this.#timers.add(timer);return ()=>{this.#timers.delete(timer);};}};
- async advance(ms:number):Promise<void>{for(let moved=0;moved<ms;moved+=5){this.ms+=5;this.#loopMs=this.ms;for(const timer of [...this.#timers].sort((a,b)=>a.at-b.at)){if(timer.at>this.ms)break;if(this.#timers.delete(timer))timer.callback();}await turn();}}
+ readonly #loop = manualClock(this.ms);
+ readonly now = (): number => this.ms;
+ readonly scheduler = this.#loop.scheduler;
+ async advance(ms: number): Promise<void> {
+   for (let moved = 0; moved < ms; moved += 5) {
+     this.ms += 5;
+     this.#loop.advance(this.ms - this.#loop.now(), this.now);
+     await turn();
+   }
+ }
 }
-export async function until(check:()=>boolean,ms=4000):Promise<void>{const end=Date.now()+ms;while(!check()){if(Date.now()>end)assert.fail('MicroDuck condition did not arrive');await pause(5);}}
+export async function until<T>(read: () => T, ready: (value: T) => boolean, what: string): Promise<void> {
+  await waitForObservation(read, ready, what, moduleWaitBudgets.microduck);
+}
 /** Moves a test clock 5 ms a turn until `check` holds, so the module's timers run. `until` moves no test clock. */
 export async function advanceUntil(clock:TestClock,check:()=>boolean,ms=4000):Promise<void>{for(let moved=0;!check();moved+=5){if(moved>=ms)assert.fail('MicroDuck condition did not arrive');await clock.advance(5);}}
 export async function fixture(t:TestContext,transport:MicroDuckTransport=new SimulatedMicroDuck(),clock?:TestClock) {
@@ -45,9 +52,12 @@ export async function fixture(t:TestContext,transport:MicroDuckTransport=new Sim
   const state=():MicroDuckState=>{const v=states.at(-1);assert.ok(v);return v;};
   const command=(family:Family,data:object={},requestId:string=crypto.randomUUID(),timeoutMs=5000)=>core.request(`bunny.cmd.${family}.${section.id}`,{type:typeOf(family),subject:section.id,dataschema:schemaOf(family),data:family==='microduck-stop'?data:{expectedConfigurationRevision:state().configurationRevision,expectedGeneration:state().generation,...data}},{requestId,timeoutMs});
   const outcome=(id:string):CompletedOutcome|undefined=>[...states].reverse().find(s=>s.lastOutcome?.requestId===id)?.lastOutcome??undefined;
-  const control=async(action:string)=>{const id=crypto.randomUUID();assert.equal((await command('microduck-control',{action},id)).status,'accepted');await until(()=>outcome(id)!==undefined);assert.equal(outcome(id)?.result,'succeeded');};
+  const control=async(action:string)=>{const id=crypto.randomUUID();assert.equal((await command('microduck-control',{action},id)).status,'accepted');await until(()=>outcome(id)?.result, result=>result!==undefined, 'the control outcome');assert.equal(outcome(id)?.result,'succeeded');};
   // On a test clock, the connection and its observations arrive only as the clock moves.
-  const connected=():Promise<void>=>clock===undefined?until(()=>state().connection==='available'):advanceUntil(clock,()=>state().connection==='available');
+  const connected = async (): Promise<void> => {
+    if (clock) await advanceUntil(clock, () => state().connection === 'available');
+    else await waitForObservation(() => state().connection, value => value === 'available', 'the MicroDuck connection', moduleWaitBudgets.microduck);
+  };
   await connected();await (clock===undefined?pause(30):clock.advance(30));
   return {bus,core,operator,command,state,outcome,control,states,get host(){return host;},async restart(){await host.stop();host=new ModuleHarness(createMicroDuckModule({transport}),{bus,stateDir:dir,section,...timing});await host.start();await connected();},
     async mode(value:ModeState['mode']){mode={...mode,revision:mode.revision+1,mode:value};await core.publish('bunny.state.mode.hub',{kind:'state',type:'org.bunny.mode.updated',subject:'hub',dataschema:schemaOf('mode'),data:mode});await pause(20);},

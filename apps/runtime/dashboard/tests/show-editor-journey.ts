@@ -5,6 +5,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import type {Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld, type WorldOptions} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {musicPlaybackProducer} from './music-playback-producer.ts';
@@ -27,7 +28,7 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
   }});
   let capture: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
   let playback: Awaited<ReturnType<typeof musicPlaybackProducer>> | undefined;
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   try {
     const page = await context.newPage(); page.setDefaultTimeout(12_000);
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});

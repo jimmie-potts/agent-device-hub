@@ -4,6 +4,7 @@ import {destinationLink, openAudio, openConnections} from './navigation-helpers.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser, type ElementHandle, type Route} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {expect} from 'playwright/test';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
@@ -48,7 +49,7 @@ let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
   // Home shows the full Music card in one column (#1672); the wide grid shows its generic compact face.
-  const context = await browser.newContext({viewport: {width: 560, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 560, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
     const page = await context.newPage(); page.setDefaultTimeout(15_000); await clock.install(page);

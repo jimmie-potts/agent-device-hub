@@ -8,9 +8,11 @@ import {promisify} from 'node:util';
 import {Ajv2020} from 'ajv/dist/2020.js';
 import {createInterface} from 'node:readline';
 import type {CodingLimit, CodingLimitWindow} from '@jimmie-potts/event-contracts/v2/coding';
-import {checkStateDirectory, prepareStateDirectory} from '../state.js';
+import {checkStateDirectory, prepareStateDirectory, PrivateFileError, readPrivateFile} from '../state.js';
 import {CODEX_RESULT_SCHEMA, nativeSessionId, reportedModel, type AdapterEvidence, type AdapterHealth, type AdapterRun, type CodingAdapter} from './adapter.js';
 import {harnessEnvironment, parseVersion, UNKNOWN_READINESS, type HarnessReadiness} from './claude-stream.js';
+import {CODEX_TOOLCHAIN_REFUSAL, codexToolchainVariables, prepareCodexToolchain, prepareLinkedGitView, releaseCodexToolchain,
+  type CodexToolchain} from './codex-toolchain.js';
 
 const execute = promisify(execFile);
 // Validate independently of the provider's structured-output promise.
@@ -18,12 +20,14 @@ const validOutput = new Ajv2020({strict: true}).compile(CODEX_RESULT_SCHEMA);
 const PROBE_MS = 10_000;
 const QUOTA_MS = 2000;
 const STEER_MS = 4000;
+const INTERRUPT_MS = 4000;
 const STEER_LIMIT = 32;
 const MESSAGE_BYTES = 1024 * 1024;
 const CLOSED = new Error('codex protocol closed');
 const CHATGPT_ORIGIN = 'https://chatgpt.com';
 const CHATGPT_BACKEND = `${CHATGPT_ORIGIN}/backend-api/`;
-const OPENAI_API = 'https://api.openai.com/v1';
+// Codex 0.163.0 uses this built-in provider route with ChatGPT auth.
+const CHATGPT_CODEX_BACKEND = `${CHATGPT_BACKEND}codex`;
 const PERSONAL_PLANS = new Set(['free', 'go', 'plus', 'pro', 'prolite', 'promax']);
 const MANAGED_PLAN = /^(?:team|(?:self_serve_)?business|ent26|enterprise|edu)(?:_|$)/;
 class CodexRpcError extends Error {
@@ -96,10 +100,12 @@ const limitOf = (windows: CodingLimitWindow[]): CodingLimit => {
 };
 
 /** The child sees only the worker's stable profile, even when its parent uses a different Codex home. */
-export function codexEnvironment(environment: NodeJS.ProcessEnv, home: string): Record<string, string> {
+export function codexEnvironment(environment: NodeJS.ProcessEnv, home: string, toolchain?: CodexToolchain): Record<string, string> {
   const allowed = harnessEnvironment(environment);
   delete allowed.CLAUDE_CODE_OAUTH_TOKEN;
-  return {...allowed, HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'};
+  return {...allowed, ...(toolchain === undefined ? {} : {...codexToolchainVariables(toolchain.bin),
+    PATH: [toolchain.gitView?.bin, toolchain.bin, allowed.PATH ?? '/usr/bin:/bin'].filter(path => path !== undefined).join(':')}),
+    HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'};
 }
 
 const inside = (parent: string, child: string): boolean => {
@@ -126,6 +132,22 @@ async function checkPrivateEntries(directory: string): Promise<void> {
   }
 }
 
+const USER_CONFIG = 'config.toml';
+const TUI_MARKER = /^\[tui\]\r?\nscreen_reader_detection_done = (?:true|false)(?:\r?\n)?$/u;
+
+/** Codex 0.163.0 writes only this marker on the supported native path. */
+export async function checkCodexUserConfig(home: string): Promise<void> {
+  if (await entry(join(home, '.codex')) !== undefined) throw new Error('codex worker profile contains configuration');
+  const config = join(home, USER_CONFIG);
+  const bytes = await readPrivateFile(config, 64).catch((error: unknown) => {
+    if (error instanceof PrivateFileError && error.problem === 'missing') return undefined;
+    throw error;
+  });
+  if (bytes !== undefined && (!bytes.every(byte => byte < 0x80) || !TUI_MARKER.test(bytes.toString('ascii')))) {
+    throw new Error('codex worker profile contains configuration');
+  }
+}
+
 export async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise<string> {
   const path = await checkStateDirectory(home);
   const userHomes = await Promise.all([userInfo().homedir, environment.HOME]
@@ -138,10 +160,6 @@ export async function workerHome(home: string, environment: NodeJS.ProcessEnv): 
     throw new Error('codex worker profile must be separate');
   }
   if (!(await lstat(path)).isDirectory()) throw new Error('codex worker profile is missing');
-  // App-server has no ignore-user-config flag. Presence alone refuses; never read a supplied configuration.
-  for (const name of ['config.toml', '.codex']) {
-    if (await entry(join(path, name)) !== undefined) throw new Error('codex worker profile contains configuration');
-  }
   const auth = await entry(join(path, 'auth.json'));
   if (auth !== undefined && (!auth.isFile() || auth.uid !== process.getuid?.() || (auth.mode & 0o077) !== 0 || auth.nlink !== 1)) {
     throw new Error('codex worker credentials must be private to this profile');
@@ -151,20 +169,27 @@ export async function workerHome(home: string, environment: NodeJS.ProcessEnv): 
     await prepareStateDirectory(directory);
     await checkPrivateEntries(directory);
   }
+  await checkCodexUserConfig(path);
   return path;
 }
 
 const startupStorage = (home: string) => ({sqlite: join(home, 'sqlite'), logs: join(home, 'log')});
 const configArg = (key: string, value: string | boolean): string[] => ['-c', `${key}=${JSON.stringify(value)}`];
-export function codexArguments(cwd: string, profile: string, home: string, protectedRoot?: string): string[] {
-  const filesystem = {':minimal': 'read', [cwd]: 'write', [join(cwd, '.git')]: 'read',
-    [join(cwd, '.codex')]: 'read', [join(home, 'auth.json')]: 'deny', ...(protectedRoot === undefined ? {} : {[protectedRoot]: 'deny'})};
+export function codexArguments(cwd: string, profile: string, home: string, protectedRoot?: string, toolchain?: CodexToolchain): string[] {
+  const gitReads = toolchain?.gitView === undefined ? [] : [toolchain.gitView.bin, ...toolchain.gitView.readable];
+  const toolReads = toolchain === undefined ? {} : Object.fromEntries([toolchain.bin, ...toolchain.readable, ...gitReads].map(path => [path, 'read']));
+  const commonDeny = Object.fromEntries([toolchain?.gitView?.common, toolchain?.protectedGit]
+    .flatMap(path => path === undefined ? [] : [[path, 'deny']]));
+  const filesystem = {':minimal': 'read', ...commonDeny, ...toolReads, [cwd]: 'write', [join(cwd, '.git')]: 'read',
+    [join(cwd, '.codex')]: 'read', [join(home, 'auth.json')]: 'deny', [join(home, USER_CONFIG)]: 'deny', ...(protectedRoot === undefined ? {} : {[protectedRoot]: 'deny'})};
   const rules = Object.entries(filesystem).map(([path, access]) => `${JSON.stringify(path)}=${JSON.stringify(access)}`).join(',');
   const {sqlite, logs} = startupStorage(home);
+  const toolVariables = toolchain === undefined ? {} : codexToolchainVariables(toolchain.bin);
+  const shellKeys = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_*', 'TERM', 'TZ', ...Object.keys(toolVariables)];
   return [...configArg('sqlite_home', sqlite), ...configArg('log_dir', logs),
     ...configArg('forced_login_method', 'chatgpt'), ...configArg('cli_auth_credentials_store', 'file'), ...configArg('model_provider', 'openai'),
     ...configArg('chatgpt_base_url', CHATGPT_BACKEND),
-    ...configArg('openai_base_url', OPENAI_API),
+    ...configArg('openai_base_url', CHATGPT_CODEX_BACKEND),
     ...configArg('approval_policy', 'never'), ...configArg('web_search', 'disabled'), ...configArg('allow_login_shell', false),
     ...configArg('analytics.enabled', false), ...configArg('feedback.enabled', false),
     ...configArg('otel.log_user_prompt', false), ...configArg('otel.exporter', 'none'), ...configArg('otel.trace_exporter', 'none'),
@@ -173,16 +198,36 @@ export function codexArguments(cwd: string, profile: string, home: string, prote
     ...configArg('features.apps', false), ...configArg('features.plugins', false), ...configArg('features.shell_snapshot', false),
     '-c', 'mcp_servers={}', '-c', 'plugins={}', '-c', 'notify=[]',
     ...configArg('shell_environment_policy.inherit', 'core'),
-    '-c', 'shell_environment_policy.include_only=["PATH","HOME","USER","LOGNAME","SHELL","LANG","LC_*","TERM","TZ"]',
+    '-c', `shell_environment_policy.include_only=${JSON.stringify(shellKeys)}`,
+    ...Object.entries(toolVariables).flatMap(([name, value]) => configArg(`shell_environment_policy.set.${name}`, value)),
     '-c', `projects={${JSON.stringify(cwd)}={trust_level="untrusted"}}`,
     ...configArg('default_permissions', profile),
     '-c', `permissions.${profile}.filesystem={${rules}}`,
     ...configArg(`permissions.${profile}.network.enabled`, false)];
 }
 
+/** Prove that the same CLI sandbox can execute the selected tools before it receives a brief or releases a terminal plan. */
+export async function verifyCodexToolchain(executable: string, cwd: string, profile: string, home: string,
+  environment: NodeJS.ProcessEnv, protectedRoot?: string, signal?: AbortSignal, protectedGit?: string): Promise<CodexToolchain> {
+  const distribution = await prepareCodexToolchain(home);
+  const gitView = await prepareLinkedGitView(cwd, home, signal);
+  const toolchain = {...distribution, ...(gitView === undefined ? {} : {gitView}), ...(protectedGit === undefined ? {} : {protectedGit})};
+  try {
+    const git = gitView === undefined ? 'git --no-optional-locks -c core.fsmonitor=false' : 'git';
+    await checkCodexUserConfig(home);
+    const probe = `node --version && npm --version && ${git} status --porcelain >/dev/null`;
+    await execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
+      '--', '/bin/sh', '-c', probe], {cwd: home, env: codexEnvironment(environment, home, toolchain), signal, timeout: 5000, maxBuffer: 8192});
+    return toolchain;
+  } catch (error) {
+    await releaseCodexToolchain(toolchain);
+    throw error;
+  }
+}
+
 /** Exercise the same native profile without a model call before relying on it for a successor. */
 export async function verifyCodexWriterBoundary(executable: string, cwd: string, home: string, protectedRoot: string, profile: string,
-  environment: Record<string, string>): Promise<boolean> {
+  environment: Record<string, string>, toolchain?: CodexToolchain): Promise<boolean> {
   if (process.platform !== 'darwin' || inside(cwd, protectedRoot) || inside(home, protectedRoot) || inside(protectedRoot, cwd) || inside(protectedRoot, home)) return false;
   let sourceProbe: string | undefined, targetProbe: string | undefined;
   try {
@@ -192,7 +237,8 @@ export async function verifyCodexWriterBoundary(executable: string, cwd: string,
     await writeFile(target, 'protected', {mode: 0o600});
     await symlink(target, alias);
     const script = 'umask 077; /usr/bin/touch "$1/ok" || exit 1; if /usr/bin/touch "$2/out" || /usr/bin/touch "$3" || /bin/ln "$4" "$1/hardlink" || /bin/mv "$2" "$2-moved"; then exit 1; fi';
-    await execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot),
+    await checkCodexUserConfig(home);
+    await execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
       '--', '/bin/sh', '-c', script, 'bunny-boundary', sourceProbe, targetProbe, alias, target],
       {cwd: home, env: environment, timeout: 5000, maxBuffer: 4096});
     return true;
@@ -210,6 +256,20 @@ type Wire = {
 };
 export type CodexTransport = (input: {executable: string; args: string[]; cwd: string; env: Record<string, string>; signal: AbortSignal;
   event: (method: string, data: unknown) => void; closed: () => void}) => Wire;
+
+// A v2 turn/interrupt reply is empty. The independently delivered terminal event can arrive first.
+async function interruptTurn(wire: Wire, threadId: string, turnId: string, completed: Promise<void>,
+  lost: Promise<void>, interrupted: () => boolean): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const receipt = wire.request('turn/interrupt', {threadId, turnId});
+    const confirmed = Promise.all([receipt, completed]).then(([ack]) =>
+      object(ack) && Object.keys(ack).length === 0 && interrupted());
+    return await Promise.race([confirmed, lost.then(() => false),
+      new Promise<boolean>(resolve => {timer = setTimeout(() => {resolve(false);}, INTERRUPT_MS);})]);
+  } catch {return false;}
+  finally {if (timer !== undefined) clearTimeout(timer);}
+}
 
 /** One child, one stdio connection and a small number of in-flight request IDs. */
 export const openCodex: CodexTransport = ({executable, args, cwd, env, signal, event, closed}) => {
@@ -295,12 +355,13 @@ export const openCodex: CodexTransport = ({executable, args, cwd, env, signal, e
 
 /** No turn is submitted. The exact saved thread must accept the successor and the same provider boundary. */
 export async function verifyCodexNativeResume(executable: string, cwd: string, original: string, home: string, profile: string,
-  threadId: string, env: Record<string, string>): Promise<boolean> {
+  threadId: string, env: Record<string, string>, toolchain: CodexToolchain): Promise<boolean> {
   const signal = AbortSignal.timeout(5000);
   let wire: Wire | undefined;
   let checked: boolean;
   try {
-    wire = openCodex({executable, args: ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, original)],
+    await checkCodexUserConfig(home);
+    wire = openCodex({executable, args: ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, original, toolchain)],
       cwd: home, env, signal, event: () => {}, closed: () => {}});
     await initialize(wire);
     if (!await isolatedSettings(wire, cwd, home) ||
@@ -326,6 +387,7 @@ const initialize = async (wire: Wire) => {
 
 async function isolatedSettings(wire: Wire, cwd: string, home: string): Promise<boolean> {
   const {config} = record(await wire.request('config/read', {cwd, includeLayers: false}));
+  await checkCodexUserConfig(home);
   const {mcp_servers, plugins, hooks, notify, features, allow_login_shell, cli_auth_credentials_store, sqlite_home, log_dir,
     forced_login_method, model_provider, chatgpt_base_url, openai_base_url, otel} = record(config);
   const telemetry = record(otel);
@@ -336,14 +398,14 @@ async function isolatedSettings(wire: Wire, cwd: string, home: string): Promise<
     && (notify === null || notify === undefined || (Array.isArray(notify) && notify.length === 0))
     && allow_login_shell === false && cli_auth_credentials_store === 'file' && forced_login_method === 'chatgpt' && model_provider === 'openai'
     && chatgpt_base_url === CHATGPT_BACKEND
-    && openai_base_url === OPENAI_API
+    && openai_base_url === CHATGPT_CODEX_BACKEND
     && telemetry.log_user_prompt === false
     && ['exporter', 'trace_exporter', 'metrics_exporter'].every(key => telemetry[key] === 'none')
     && ['apps', 'plugins', 'hooks', 'shell_snapshot'].every(name => flags[name] === false);
 }
 
 export function codexAdapter(configuration: CodexConfiguration, options: {
-  environment?: NodeJS.ProcessEnv; transport?: CodexTransport; version?: () => Promise<string | null>;
+  environment?: NodeJS.ProcessEnv; transport?: CodexTransport; version?: () => Promise<string | null>; toolchain?: typeof verifyCodexToolchain;
 }): CodingAdapter {
   const environment = options.environment ?? process.env;
   const transport = options.transport ?? openCodex;
@@ -375,10 +437,10 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
     } catch {return undefined;}
     finally {if (timer !== undefined) clearTimeout(timer);}
   };
-  const prepare = (home: string, cwd: string, signal: AbortSignal, protectedRoot?: string) => {
-    const profile = `bunny-worker-${randomUUID()}`;
-    const args = ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, protectedRoot)];
-    return {command: {executable: configuration.executable, cwd: home, env: codexEnvironment(environment, home), signal, args}, profile};
+  const prepare = (home: string, cwd: string, signal: AbortSignal, profile = `bunny-worker-${randomUUID()}`,
+    protectedRoot?: string, toolchain?: CodexToolchain) => {
+    const args = ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, protectedRoot, toolchain)];
+    return {executable: configuration.executable, cwd: home, env: codexEnvironment(environment, home, toolchain), signal, args};
   };
   return {
     id: 'codex', capabilities: {steering: 'live', resume: 'unsupported', review: true},
@@ -396,7 +458,8 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       let wire: Wire | undefined;
       let unauthorized = false;
       try {
-        const {command} = prepare(home, home, signal);
+        await checkCodexUserConfig(home);
+        const command = prepare(home, home, signal);
         wire = transport({...command, event: (method, data) => {if (observeAccount(method, data)) unauthorized = true;}, closed: () => {}});
         await initialize(wire);
         if (!await isolatedSettings(wire, home, home) || unauthorized) return health;
@@ -409,11 +472,12 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       finally {wire?.close();}
     },
     async run(input: AdapterRun): Promise<AdapterEvidence> {
+      const profileRefusal = {reason: 'refused' as const, summary: 'Codex needs a dedicated private worker profile with only its supported TUI marker.'};
       const revision = quotaRevision;
       if (input.signal.aborted) return {reason: 'cancelled'};
       let home: string;
       try {home = await workerHome(configuration.home, environment);}
-      catch {return {reason: 'refused', summary: 'Codex needs a separate private worker profile with no user configuration.'};}
+      catch {return profileRefusal;}
       const cwd = await realpath(input.worktree);
       if (inside(cwd, home) || inside(home, cwd)) return {reason: 'refused', summary: 'The Codex worker profile must be outside the worktree.'};
       const {signal} = input;
@@ -423,6 +487,8 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const sentMessages = new Set<string>();
       let pendingSteer = false;
       let wireClosed = false;
+      let disconnected: () => void = () => {};
+      const closed = new Promise<void>(resolve => {disconnected = resolve;});
       let message: string | undefined, terminal: Record<string, unknown> | undefined;
       let settle = (): void => {};
       const completed = new Promise<void>(resolve => {settle = resolve;});
@@ -431,7 +497,15 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const invalidate = () => {unauthorized = true; revoke(); settle();};
       const protectedRoot = input.continuationRoot === undefined ? undefined : await realpath(input.continuationRoot).catch(() => undefined);
       const separated = protectedRoot !== undefined && !inside(home, protectedRoot) && !inside(protectedRoot, home);
-      const {command, profile} = prepare(home, cwd, signal, separated ? protectedRoot : undefined);
+      const protection = separated ? protectedRoot : undefined;
+      const profile = `bunny-worker-${randomUUID()}`;
+      let toolchain: CodexToolchain;
+      try {toolchain = await (options.toolchain ?? verifyCodexToolchain)(configuration.executable, cwd, profile, home, environment, protection, signal);}
+      catch {return signal.aborted ? {reason: 'cancelled'} : {reason: 'refused', summary: CODEX_TOOLCHAIN_REFUSAL};}
+      try {await checkCodexUserConfig(home);}
+      catch {await releaseCodexToolchain(toolchain); return profileRefusal;}
+      if (signal.aborted) {await releaseCodexToolchain(toolchain); return {reason: 'cancelled'};}
+      const command = prepare(home, cwd, signal, profile, protection, toolchain);
       const wire = transport({...command, event: (method, value) => {
         const data = record(value);
         if (observeAccount(method, data)) {invalidate(); return;}
@@ -452,7 +526,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         }
         const turn = record(data.turn);
         if (method === 'turn/completed' && turnId !== undefined && turn.id === turnId) {terminal = turn; settle();}
-      }, closed: () => {wireClosed = true; settle();}});
+      }, closed: () => {wireClosed = true; disconnected(); settle();}});
       const refusal = (summary: string): AdapterEvidence => ({reason: 'refused', summary});
       const execute = async (): Promise<AdapterEvidence> => {
         try {
@@ -465,6 +539,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           if (unauthorized || !quotaAllowed(revision)) return refusal('Codex reported contrary personal ChatGPT subscription evidence.');
           if (signal.aborted) return {reason: 'cancelled'};
           if (initialWindows !== undefined && windows.length === 0) windows = initialWindows;
+          await checkCodexUserConfig(home);
           const opened = record(await wire.request('thread/start', {cwd, runtimeWorkspaceRoots: [cwd], permissions: profile,
             modelProvider: 'openai', approvalPolicy: 'never', allowProviderModelFallback: false,
             developerInstructions: 'Work only on this delegated repository brief. Do not change settings, publish changes or open a pull request. Report checks and limitations. Use waiting-for-owner for an unresolved decision.',
@@ -474,7 +549,9 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           const writable = sandbox.writableRoots;
           if (unauthorized || opened.modelProvider !== 'openai' || opened.approvalPolicy !== 'never' || opened.cwd !== cwd ||
             record(opened.activePermissionProfile).id !== profile || sandbox.type !== 'workspaceWrite' || sandbox.networkAccess !== false ||
-            !Array.isArray(writable) || writable.length !== 1 || writable[0] !== cwd || !Array.isArray(roots) || roots.length !== 1 || roots[0] !== cwd) {
+            // A named profile may omit the worktree from this legacy projection, as on thread/resume.
+            !Array.isArray(writable) || writable.length > 1 || writable.some(root => root !== cwd) ||
+            !Array.isArray(roots) || roots.length !== 1 || roots[0] !== cwd) {
             return refusal('Codex did not confirm the required worktree, permission profile or first-party provider.');
           }
           sessionId = nativeSessionId(record(opened.thread).id);
@@ -500,8 +577,16 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           const model = reportedModel(opened.model);
           if (model !== undefined) input.reportedModel?.(model);
           const nativeThread = sessionId;
+          let interrupt: Promise<boolean> | undefined;
+          input.namedStop?.(() => {
+            if (interrupt !== undefined || wireClosed || unauthorized || signal.aborted || terminal !== undefined) return;
+            input.steering?.(undefined);
+            interrupt = interruptTurn(wire, nativeThread, acceptedTurn, completed, Promise.race([closed, revoked]),
+              () => terminal?.status === 'interrupted' && terminal.error == null);
+            void interrupt.then(settle);
+          });
           input.steering?.(async (messageId, text) => {
-            if (signal.aborted || wireClosed || terminal !== undefined || unauthorized || !quotaAllowed(revision) ||
+            if (interrupt !== undefined || signal.aborted || wireClosed || terminal !== undefined || unauthorized || !quotaAllowed(revision) ||
                 pendingSteer || sentMessages.size >= STEER_LIMIT || sentMessages.has(messageId)) return 'unavailable';
             pendingSteer = true;
             sentMessages.add(messageId);
@@ -519,6 +604,12 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
             }
           });
           await completed;
+          if (interrupt !== undefined) {
+            const confirmed = await interrupt;
+            if (unauthorized) return contrary(sessionId);
+            if (!confirmed || wireClosed || signal.aborted) return {reason: 'lost', uncertain: true, sessionId, windows};
+            return {reason: 'cancelled', sessionId, windows};
+          }
           if (unauthorized) return contrary(sessionId);
           if (terminal === undefined) return {reason: 'lost', uncertain: true, sessionId, windows};
           const cause = record(terminal.error).codexErrorInfo;
@@ -541,9 +632,11 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const stopped = await wire.writerStopped?.();
       if (stopped === true) {
         const confined = dispatched && evidence.uncertain !== true && separated && protectedRoot !== undefined &&
-          options.transport === undefined && await verifyCodexWriterBoundary(configuration.executable, cwd, home, protectedRoot, profile, command.env);
+          options.transport === undefined && await verifyCodexWriterBoundary(configuration.executable, cwd, home, protectedRoot, profile, command.env, toolchain);
+        await releaseCodexToolchain(toolchain);
         return {...evidence, writerStopped: true, ...(confined && protectedRoot !== undefined ? {writerFence: {root: protectedRoot, home}} : {})};
       }
+      if (dispatched && evidence.reason === 'cancelled') return {...evidence, reason: 'lost', uncertain: true};
       return stopped === false && dispatched ? {...evidence, uncertain: true} : evidence;
     },
   };

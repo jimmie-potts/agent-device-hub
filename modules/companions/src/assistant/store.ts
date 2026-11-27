@@ -1,20 +1,23 @@
 import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
+import type {ModelControlProof} from './model-control.js';
 import type {BoundControl} from './control-intent.js';
-import type {CodingChoice} from '../coding/routing.js';
+import type {DeviceHistoryBinding} from './device-history.js';
+import type {CodingChoice, CodingDestinationChoice, CodingRequirements} from '../coding/routing.js';
 import type {MessageCodingInput, OpenNativeClientInput, StopCodingInput} from './history-contract.js';
 import type {Confirmation} from './confirmation.js';
 import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
 import {Messages} from '../knowledge/messages.js';
 import {advanceRevision, initializeRevision} from '../revision.js';
 import {randomUUID} from 'node:crypto';
+import {gzipSync, gunzipSync} from 'node:zlib';
 import type {DatabaseSync} from 'node:sqlite';
 import {isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 
 import type {TranscriptItem} from './provider.js';
 import {RECENT_MESSAGES, type RecentMessage} from './context.js';
-import {HISTORY_ROWS, historyCursor, readHistoryCursor, type ConversationMessage, type RecentConversationPage, type SavedQuestion} from './history-contract.js';
+import {HISTORY_ROWS, historyCursor, readHistoryCursor, type ConversationMessage, type RecentConversationPage, type SavedQuestion, type CodingPreference} from './history-contract.js';
 import {projectionOf, waitsOnOwner, type Reported} from './sessions.js';
 import {MessageQueue} from './queue.js';
 
@@ -30,21 +33,48 @@ export const RESPONSES_GRAPH_VERSION = 'responses-1';
 export const PREVIOUS_GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
-export type Question = SavedQuestion & {call: string; codingChoice?: CodingChoice};
+/** Submission time is private task metadata for delayed owner messages. */
+type SavedTranscriptItem = (Extract<TranscriptItem, {role: 'owner'}> & {submittedAtMs?: number})
+  | Exclude<TranscriptItem, {role: 'owner'}>;
+type ConversationQuestion = SavedQuestion & {call: string; codingChoice?: CodingChoice; codingDestination?: CodingDestinationChoice; codingRequirements?: CodingRequirements};
+export type Question = ConversationQuestion & {modeClarification?: {requestId: string; requestRevision: number; modeRevision: number}};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
+  /** Only the private Conversation page renders this receipt, after a fresh exact Jobs lookup. */
+  localJobStatus?: {question: string; visible?: {jobId: string; operationId: string; status: string}};
   control?: BoundControl;
   supervisor?: SupervisorIdentity;
+  codingPreference?: CodingPreference;
   clarificationDevices?: readonly string[];
+  historyScope?: DeviceHistoryBinding;
+  ownerInputStart?: string;
+  /** Legacy Messages task's bound history query. */
+  claudeHistory?: DeviceHistoryBinding & {replayFrom: number; ordinaryFrom?: number};
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
-  traceparent: string | null; transcript: TranscriptItem[];
+  traceparent: string | null; transcript: SavedTranscriptItem[];
   /**
    * The conversation's last saved message sequence when the task started (Hub #2029): the recent conversation section of
    * each of its calls holds the conversation's messages up to it, so the section stays fixed for the task. A task saved
    * before this field has no recent conversation.
    */
   contextThrough?: number};
+export type ContextSourceVersion = {id: string; revision: number};
+export type SavedDisclosureProof = {
+  fields: readonly DisclosedField[]; sources: readonly string[]; legacy: boolean; complete: boolean; model: boolean;
+};
+export type HistoryCompaction = {
+  id: string; taskId: string; conversationId: string; provider: SupervisorIdentity; sources: readonly ContextSourceVersion[];
+  status: 'admitted' | 'succeeded' | 'failed' | 'uncertain'; text: string | null; stopCode?: ErrorCode;
+};
+export type HostedHistoryMessage = Pick<RecentMessage, 'id' | 'role' | 'text'> & {taskId: string; revision: number};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
+  directBrightness?: true;
+  modelControlProof?: ModelControlProof;
+  privateDraftId?: string;
+  wemoFacts?: readonly {id: string; revision: string}[];
+  namedDeviceRead?: {owner: string; id: string};
+  historySources?: readonly ContextSourceVersion[];
+  inputVersions?: readonly {field: DisclosedField; version: string}[];
   codingApproval?: {destination: 'coding-worker'; repository: string; briefDigest: string};
   status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true;
   result: string | null; units: number | null; reservedUnits: number;
@@ -64,21 +94,22 @@ export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; 
  * Decline with message for an approval.
  */
 export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'queue' | 'edit-queued' | 'steer'; profile: AssistantProfile; text: string; expectedRevision: number; provider?: SupervisorIdentity['provider'];
-  taskId?: string; questionId?: string; queuedId?: string; harness?: CodingChoice};
+  taskId?: string; questionId?: string; queuedId?: string; harness?: CodingChoice; destination?: CodingDestinationChoice; requirements?: CodingRequirements};
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
 export type Stage = {ref: string; requestId: string; input: StagedInput | StopCodingInput | MessageCodingInput | OpenNativeClientInput; expires: number};
-export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
+export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: ConversationQuestion | null} | null; next: number | null};
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
-export type Appended = TranscriptItem & {effect: string};
+export type Appended = SavedTranscriptItem & {effect: string};
 type RecordRow = {record: string};
 export type MessageSource = Pick<ConversationMessage, 'id' | 'role' | 'taskId'> & {follows?: string | null};
 type MessageVisibility = {
   shows(message: MessageSource): boolean;
+  privateText?(message: MessageSource): string | undefined;
   attachment(requestId: string): boolean;
   task(taskId: string): boolean;
 };
-type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
+type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows' | 'codingRefusal'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
   artStatus: Call['status'] | null; artResult: string | null};
 const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,msg.follows,
   art.request_id AS artRequestId,art.description AS artDescription,intent.targets AS artTargets,json_extract(call.record, '$.status') AS artStatus,
@@ -125,7 +156,12 @@ export class AssistantStore {
       CREATE TABLE IF NOT EXISTS assistant_confirmations (request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, record TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_confirmations_task ON assistant_confirmations(task_id);
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
-      CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
+      CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);
+      CREATE TABLE IF NOT EXISTS assistant_history_compactions (
+        id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, conversation_id TEXT NOT NULL, record TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS assistant_history_compactions_conversation ON assistant_history_compactions(conversation_id);
+      CREATE TABLE IF NOT EXISTS assistant_disclosure_proofs (
+        task_id TEXT NOT NULL, through_call INTEGER NOT NULL, proof BLOB NOT NULL, PRIMARY KEY(task_id,through_call)) STRICT;`);
     if (!database.prepare("SELECT 1 FROM pragma_table_info('assistant_messages') WHERE name='follows'").get()) {
       database.exec('ALTER TABLE assistant_messages ADD COLUMN follows TEXT');
     }
@@ -249,12 +285,12 @@ export class AssistantStore {
   lastSequence(conversationId: string): number {
     return (this.database.prepare('SELECT MAX(seq) AS seq FROM assistant_messages WHERE conversation_id=?').get(conversationId) as {seq: number | null}).seq ?? 0;
   }
-  newTask(profile: AssistantProfile, prompt: string, supervisor?: SupervisorIdentity): Task {
+  newTask(profile: AssistantProfile, prompt: string, supervisor?: SupervisorIdentity, submittedAtMs?: number): Task {
     const conversationId = this.ensureConversation(profile);
     return {version: 1, graphVersion: supervisor?.provider === 'openai' ? RESPONSES_GRAPH_VERSION : GRAPH_VERSION,
       ...(supervisor === undefined ? {} : {supervisor}), tracksApprovals: true, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
       generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
-      transcript: [{role: 'owner', text: prompt}], contextThrough: this.lastSequence(conversationId)};
+      transcript: [{role: 'owner', text: prompt, ...(submittedAtMs === undefined ? {} : {submittedAtMs})}], contextThrough: this.lastSequence(conversationId)};
   }
   /**
    * The recent conversation a task's context may hold (Hub #2029): the conversation's saved owner messages, replies and
@@ -310,6 +346,39 @@ export class AssistantStore {
         ...(saved.attachment === undefined ? {} : {attachment: {kind: saved.attachment.kind, requestId: saved.attachment.requestId, description: saved.attachment.description}})};
     });
     return {messages, total};
+  }
+  /** Earlier owner and final assistant messages in their stored sequence, with no message-count ceiling. */
+  hostedHistory(profile: AssistantProfile, conversationId: string, through: number): Iterable<HostedHistoryMessage> {
+    if (this.messages.conversation(conversationId)?.profile !== profile) return [];
+    return this.database.prepare(`SELECT id,role,text,task_id AS taskId,COALESCE(json_extract(record,'$.revision'),0) AS revision
+      FROM assistant_messages WHERE conversation_id=? AND seq<=?
+      AND ((role='tool' AND record IS NULL) OR (record IS NOT NULL
+        AND (role='owner' OR (role='assistant' AND id=task_id || '-result'))
+        AND json_extract(record,'$.provenance.imported')=0 AND json_extract(record,'$.meaning.kind')='literal'
+        AND (json_extract(record,'$.speakerId')=? OR EXISTS (SELECT 1 FROM json_each(record,'$.recipientIds') WHERE value=?)
+          OR json_type(record,'$.recipientIds')='null')))
+      AND NOT EXISTS (SELECT 1 FROM companion_removals WHERE id=assistant_messages.id) ORDER BY seq`)
+      .iterate(conversationId, through, profile, profile) as Iterable<HostedHistoryMessage>;
+  }
+  historySourceRevision(id: string): number | undefined {
+    const row = this.database.prepare(`SELECT COALESCE(json_extract(record,'$.revision'),0) AS revision
+      FROM assistant_messages WHERE id=? AND NOT EXISTS (SELECT 1 FROM companion_removals WHERE id=assistant_messages.id)`)
+      .get(id) as {revision: number} | undefined;
+    return row?.revision;
+  }
+  lastHistoryCompaction(conversationId: string): HistoryCompaction | undefined {
+    return parsed<HistoryCompaction>(this.database.prepare(`SELECT record FROM assistant_history_compactions WHERE conversation_id=?
+      AND json_extract(record,'$.status')='succeeded' ORDER BY rowid DESC LIMIT 1`).get(conversationId) as RecordRow | undefined);
+  }
+  taskHistoryCompaction(taskId: string): HistoryCompaction | undefined {
+    return parsed<HistoryCompaction>(this.database.prepare('SELECT record FROM assistant_history_compactions WHERE task_id=?').get(taskId) as RecordRow | undefined);
+  }
+  hasHistoryCompaction(id: string, taskId: string): boolean {
+    return this.database.prepare('SELECT 1 FROM assistant_history_compactions WHERE id=? OR task_id=?').get(id, taskId) !== undefined;
+  }
+  saveHistoryCompaction(value: HistoryCompaction): void {
+    this.database.prepare(`INSERT INTO assistant_history_compactions VALUES (?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET record=excluded.record`).run(value.id, value.taskId, value.conversationId, JSON.stringify(value));
   }
   /** Whether the owner turned on knowledge notes for the companion's context (Hub #2029); off until the owner does. */
   knowledgeEnabled(profile: AssistantProfile): boolean {
@@ -391,7 +460,7 @@ export class AssistantStore {
    * about, so it is left out and can never become a title.
    */
   titleMessages(conversationId: string, limit = 8, permits?: (message: MessageSource) => boolean): {role: 'owner' | 'assistant'; text: string}[] {
-    const query = "SELECT id,role,text,task_id AS taskId,follows FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' AND id NOT LIKE task_id || '-step-%-job-%' AND (follows IS NULL OR follows NOT LIKE task_id || '-step-%-job') ORDER BY seq DESC";
+    const query = "SELECT id,role,text,task_id AS taskId,follows FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT IN (task_id || '-private-question', task_id || '-private-status') AND id NOT LIKE task_id || '-closing-%' AND id NOT LIKE task_id || '-step-%-job-%' AND (follows IS NULL OR follows NOT LIKE task_id || '-step-%-job') ORDER BY seq DESC";
     const rows = (permits === undefined ? this.database.prepare(query + ' LIMIT ?').all(conversationId, limit)
       : this.database.prepare(query).all(conversationId)) as (MessageSource & {role: 'owner' | 'assistant'; text: string})[];
     return (permits === undefined ? rows : rows.filter(permits).slice(0, limit)).reverse().map(({role, text}) => ({role, text}));
@@ -412,6 +481,18 @@ export class AssistantStore {
   }
   calls(taskId: string): Call[] {return this.database.prepare('SELECT record FROM assistant_calls WHERE task_id=?').all(taskId).map(row => JSON.parse(row.record as string) as Call);}
   saveCall(call: Call): void {this.database.prepare('INSERT INTO assistant_calls VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(call.id, call.taskId, JSON.stringify(call));}
+  hasDisclosureProof(taskId: string, through: number): boolean {
+    return this.database.prepare('SELECT 1 FROM assistant_disclosure_proofs WHERE task_id=? AND through_call=?').get(taskId, through) !== undefined;
+  }
+  disclosureProof(taskId: string, through: number): SavedDisclosureProof | undefined {
+    const row = this.database.prepare('SELECT proof FROM assistant_disclosure_proofs WHERE task_id=? AND through_call=?')
+      .get(taskId, through) as {proof: Uint8Array} | undefined;
+    return row === undefined ? undefined : JSON.parse(gunzipSync(row.proof).toString()) as SavedDisclosureProof;
+  }
+  saveDisclosureProof(taskId: string, through: number, proof: SavedDisclosureProof): void {
+    this.database.prepare('INSERT OR IGNORE INTO assistant_disclosure_proofs VALUES (?,?,?)')
+      .run(taskId, through, gzipSync(JSON.stringify(proof), {level: 1}));
+  }
   confirmation(requestId: string): Confirmation | undefined {
     return parsed<Confirmation>(this.database.prepare('SELECT record FROM assistant_confirmations WHERE request_id=?').get(requestId) as RecordRow | undefined);
   }
@@ -478,9 +559,20 @@ export class AssistantStore {
     size: number, visibility?: MessageVisibility): MessageRow[] {
     const filter = `WHERE conversation_id=? AND ${condition}`;
     if (visibility === undefined) return this.database.prepare(`${messagesWithAttachments} ${filter} ORDER BY seq ${order} LIMIT ?`).all(conversationId, position, size) as MessageRow[];
-    const candidates = this.database.prepare(`SELECT id,role,task_id AS taskId,follows FROM assistant_messages ${filter} ORDER BY seq ${order}`)
-      .all(conversationId, position) as MessageSource[];
-    const ids = candidates.filter(message => visibility.shows(message)).slice(0, size).map(message => message.id);
+    // Finish each SELECT before evaluating visibility, which may save disclosure proof.
+    const select = this.database.prepare(`SELECT seq,id,role,task_id AS taskId,follows FROM assistant_messages ${filter} ORDER BY seq ${order} LIMIT ?`);
+    const ids: string[] = [];
+    let cursor = position;
+    while (ids.length < size) {
+      const candidates = select.all(conversationId, cursor, size) as (MessageSource & {seq: number})[];
+      for (const candidate of candidates) {
+        cursor = candidate.seq;
+        if (visibility.shows(candidate)) ids.push(candidate.id);
+        if (ids.length === size) break;
+      }
+      if (candidates.length < size) break;
+    }
+    if (ids.length === 0) return [];
     return this.database.prepare(`${messagesWithAttachments} WHERE msg.id IN (${ids.map(() => '?').join(',')}) ORDER BY seq ${order}`).all(...ids) as MessageRow[];
   }
   #visibleMessage(row: MessageRow, visibility?: MessageVisibility): ConversationMessage {
@@ -489,14 +581,17 @@ export class AssistantStore {
     const follows = followed !== undefined && visibility.shows(followed) ? row.follows : null;
     const visible = row.artRequestId !== null && !visibility.attachment(row.artRequestId)
       ? {...row, artRequestId: null, artDescription: null} : row;
-    return messageOf({...visible, follows});
+    const message = messageOf({...visible, text: visibility.privateText?.(row) ?? visible.text, follows});
+    return message.role === 'tool' && message.text.startsWith('refused: ') && this.call(message.id)?.codingApproval !== undefined
+      ? {...message, codingRefusal: true} : message;
   }
-  #visibleQuestion(task: Task, visibility?: MessageVisibility): Question | null {
+  #visibleQuestion(task: Task, visibility?: MessageVisibility): ConversationQuestion | null {
     const question = task.question;
     if (question === null || visibility?.shows({id: question.id, role: 'assistant', taskId: task.id}) === false) return null;
     const answerRole = question.kind === 'delegation' ? 'tool' : 'owner';
     const answerId = `${question.id}-${answerRole === 'tool' ? 'result' : 'answer'}`;
-    return visibility?.shows({id: answerId, role: answerRole, taskId: task.id}) === false ? {...question, answer: null} : question;
+    const {modeClarification: _modeClarification, ...visible} = question;
+    return visibility?.shows({id: answerId, role: answerRole, taskId: task.id}) === false ? {...visible, answer: null} : visible;
   }
   page(profile: AssistantProfile, after: number, visibility?: MessageVisibility): ConversationPage {
     const id = this.conversation(profile);

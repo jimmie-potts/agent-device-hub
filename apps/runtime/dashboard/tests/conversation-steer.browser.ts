@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser, type Locator, type Page, type Route} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {connectRemote} from '@jimmie-potts/sdk/remote';
 import type {CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {feed, startWorld, type WorldOptions} from './harness.ts';
@@ -46,7 +47,7 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
   const output = process.env.DASHBOARD_RECEIPTS;
   if (output !== undefined) await mkdir(output, {recursive: true});
   const shot = async (page: Page, name: string): Promise<void> => {if (output !== undefined) await page.screenshot({path: `${output}/${name}.png`, fullPage: false});};
-  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   const errors: string[] = [];
   context.on('weberror', error => {errors.push(error.error().name);});
   const worker = await connectRemote({url: world.url, source: 'bunny/parts/coding-worker', token: world.codingToken});

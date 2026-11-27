@@ -1,13 +1,14 @@
 // Device settings remain one runtime configuration; explicit display controls use tracked commands.
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 
 const world = await startWorld({pixooPages: true});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
     const page = await context.newPage(); page.setDefaultTimeout(8000);

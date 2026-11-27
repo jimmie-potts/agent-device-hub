@@ -40,7 +40,9 @@ type ArtworkFetch = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['f
 import {createWisprModule} from '@jimmie-potts/wispr';
 import {prepareWisprFixture} from '../../dist/tests/fixtures/wispr.js';
 import {editorFixture} from './editor-fixture.ts';
-import {waitForFeed} from './feed-wait.ts';
+import {waitForCopies, waitForFeed} from './feed-wait.ts';
+import {cardFaultsReported, failOnCardFaults, watchCards} from './card-watch.ts';
+export {expectCardFaults} from './card-watch.ts';
 import {INSTALLED_PORTS, PortAllocationError, startWorldRuntime, worldDeadline} from './world-runtime.ts';
 export {INSTALLED_PORTS} from './world-runtime.ts';
 
@@ -242,10 +244,10 @@ async function writePrivate(file: string, text: string): Promise<void> {
 }
 
 /** The runtime, the core, its gateway and the hook, in a private directory. */
-export async function startWorld(options: WorldOptions = {}): Promise<World> {
+export async function startWorld(options: WorldOptions = {}, currentStep?: () => string): Promise<World> {
   assert.equal(options.nanoleaf === true && options.modeDevices === true, false, 'one Nanoleaf writer per world');
-  // The journey is the file that asked for this world, as its stack names it.
-  const deadline = worldDeadline(/([^/\\\s(]+\.ts):(\d+)/.exec(new Error().stack?.split('\n')[2] ?? '')?.slice(1, 3).join(':') ?? 'a journey');
+  // The runner knows its current step. Other callers are identified by their file and line.
+  const deadline = worldDeadline(currentStep ?? /([^/\\\s(]+\.ts):(\d+)/.exec(new Error().stack?.split('\n')[2] ?? '')?.slice(1, 3).join(':') ?? 'a journey');
   const withDevices = options.devices === true || options.lighting === true;
   const now = (): number => options.clock?.clock.now() ?? Date.now();
   const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-dash-')));
@@ -621,6 +623,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       deadline.clear();
       await rm(root, {recursive: true, force: true});
       assert.equal(JSON.stringify(logs).includes(TOKEN_MARKER), false, 'no record holds the hook\'s token');
+      // A card that failed after the journey's last health check fails the run here (card-watch.ts).
+      failOnCardFaults();
     },
   };
 }
@@ -639,14 +643,43 @@ export function changes(page: Page, sent: string[] = []): string[] {
  * Waits for the dashboard's main region to show `feed`, within the page's default timeout. An expired wait says which
  * `data-feed` values the page showed, its `data-copies` and `data-syncs`, and how its latest SDK streams stood (#2068).
  */
-export async function feed(page: Page, value: string): Promise<void> {
+export async function feed(page: Page, value: string, expect: {failedCards?: readonly string[]} = {}): Promise<void> {
+  await watchCards(page);
   await waitForFeed(page, value);
+  await noFailedCards(page, expect.failedCards);
 }
 
 /**
- * Waits until the page holds a current copy of every owner's records it follows. A page that has just loaded sends
- * those syncs after its feed connects, so a check that no sync is sent starts after this (#1919).
+ * A contained card fault (Hub #2139) leaves the page mounted, so a journey would not see it as a blank page: a failed
+ * card carries `data-card-failed` with its identity, and this fails the journey on any card it did not expect to fail.
+ * `feed()` checks it at each health point; a card that fails after the last one fails the run at the world's `close()`
+ * (card-watch.ts), unless the journey expects it with `expectCardFaults`.
+ */
+export async function noFailedCards(page: Page, expected: readonly string[] = []): Promise<void> {
+  const found = await page.locator('[data-card-failed]').evaluateAll(all => all.map(node => ({card: node.getAttribute('data-card-failed') ?? '', type: node.getAttribute('data-error-type') ?? 'unknown'})));
+  cardFaultsReported(page, found.map(({card}) => card));
+  const unexpected = found.filter(({card}) => !expected.includes(card)).map(({card, type}) => `${card} (${type})`);
+  if (unexpected.length > 0) throw new Error(`a card failed: ${unexpected.join(', ')}. The page contained the error, so this journey would otherwise pass over a broken card.`);
+}
+
+/**
+ * Waits until the page holds a current copy of every owner's records it follows, within the page's default timeout. A
+ * page that has just loaded sends those syncs after its feed connects, so a check that no sync is sent starts after
+ * this (#1919). An expired wait says the main region's `data-feed`, `data-copies` and `data-syncs` and how the page's
+ * latest SDK requests stood (#2123).
  */
 export async function copiesSynced(page: Page): Promise<void> {
-  await page.locator('main#main[data-copies="synced"]').waitFor();
+  await watchCards(page);
+  await waitForCopies(page);
+  await noFailedCards(page);
+}
+
+/**
+ * Waits for the feed to connect and then for the page's copies. Use it after a load or reload when the next check
+ * reads something a card builds from records, such as a Home card's controls: the feed connects first and the copies
+ * follow, so `feed(page, 'connected')` alone is early for those (#2123). A check of the unsynced state keeps `feed`.
+ */
+export async function recordsLoaded(page: Page): Promise<void> {
+  await feed(page, 'connected');
+  await copiesSynced(page);
 }

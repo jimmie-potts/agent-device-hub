@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import type {Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {connectRemote} from '@jimmie-potts/sdk/remote';
 import type {CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {feed, startWorld} from './harness.ts';
@@ -11,12 +12,13 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
       const owner = input.transcript.find(item => item.role === 'owner');
       if (owner?.text.startsWith('Please delegate') === true && input.transcript.length === 1) {
         return Promise.resolve({text: null, calls: [{id: 'delegate', name: 'delegate_coding',
-          input: {repository: 'agent-device-hub', brief: owner.text}}], stop: 'tool', units: 20});
+          input: {repository: 'agent-device-hub', brief: owner.text,
+            ...(owner.text.includes('source fixture') ? {destination: 'pc', harness: 'claude-code'} : {})}}], stop: 'tool', units: 20});
       }
       return Promise.resolve({text: 'Hub fixture answered.', calls: [], stop: 'end', units: 20});
     },
   }});
-  const context = await browser.newContext();
+  const context = await openJourneyContext(browser);
   const worker = await connectRemote({url: world.url, source: 'bunny/parts/coding-worker', token: world.codingToken});
   const commands: CodingWork[] = [], prepared: Extract<CodingWork, {action: 'prepare-native-client'}>[] = [];
   let acceptMessage = (): void => {};
@@ -48,14 +50,19 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
       await conversation.getByRole('textbox', {name: 'Message', exact: true}).fill(text);
       await conversation.locator('.conversation-composer-actions').getByRole('button', {name: text.startsWith('Tell the') ? 'Message job' : 'Send', exact: true}).click();
     };
-    const approve = async (name: string, harness: 'auto' | 'codex' = 'auto') => {
+    const approve = async (name: string, harness: 'auto' | 'codex' = 'auto', destination: 'auto' | 'mac' = 'auto') => {
       await send(`Please delegate the ${name} logging check.`);
       const approval = conversation.getByRole('button', {name: 'Approve proposal', exact: true});
       const choices = conversation.getByRole('combobox', {name: 'Coding harness'});
       await choices.waitFor();
       assert.equal(await choices.inputValue(), 'auto');
       assert.deepEqual(await choices.getByRole('option').allTextContents(), ['Auto', 'Claude Code', 'Codex']);
+      const destinations = conversation.getByRole('combobox', {name: 'Execution destination'});
+      assert.equal(await destinations.inputValue(), 'auto');
+      assert.deepEqual(await destinations.getByRole('option').allTextContents(), ['Auto', 'Mac', 'PC', 'Cloud']);
       if (harness !== 'auto') await choices.selectOption(harness);
+      if (destination !== 'auto') await destinations.selectOption(destination);
+      assert.equal(await choices.inputValue(), harness);
       await approval.press('Enter');
       await conversation.getByText('Task completed', {exact: true}).waitFor();
     };
@@ -74,7 +81,7 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await progress({operationId: first.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'fixture-alpha-session'});
     const newConversation = conversation.getByRole('button', {name: 'New conversation', exact: true});
     await newConversation.click();
-    await approve('beta', 'codex');
+    await approve('beta', 'codex', 'mac');
     await waitFor(() => commands.length === 2);
     const second = commands[1] ?? assert.fail('second job missing');
     assert.ok(second.action === 'start' && second.harness === 'codex');
@@ -97,6 +104,11 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await card(second).getByText('fixture-beta-session', {exact: true}).waitFor();
     await card(second).getByText('fixture-model', {exact: true}).waitFor();
     await card(second).getByText('bunny-fixture-beta', {exact: true}).waitFor();
+    const fact = (name: string) => card(second).locator('dt').filter({hasText: new RegExp(`^${name}$`)}).locator('xpath=following-sibling::dd[1]');
+    assert.equal(await fact('Requested harness').innerText(), 'Codex');
+    assert.equal(await fact('Requested destination').innerText(), 'Mac');
+    assert.equal(await fact('Actual destination').innerText(), 'Mac');
+    assert.notEqual(await fact('Selection reason').innerText(), '');
     await card(second).getByText('Queued in the Hub', {exact: true}).waitFor();
     acceptMessage();
     await card(second).getByText('Accepted by the harness', {exact: true}).waitFor();
@@ -132,6 +144,8 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await card(second).getByText('fixture-beta-session', {exact: true}).waitFor();
     await card(second).getByText('fixture-model', {exact: true}).waitFor();
     await card(second).getByText('bunny-fixture-beta', {exact: true}).waitFor();
+    assert.equal(await fact('Requested destination').innerText(), 'Mac');
+    assert.equal(await fact('Actual destination').innerText(), 'Mac');
     await card(second).getByText(/Input observed in the native turn/).waitFor();
     await card(first).getByRole('link', {name: 'Open original conversation'}).click();
     await conversation.locator('.conversation-message-text').filter({hasText: /^Please delegate the alpha logging check\.$/}).waitFor();
@@ -194,5 +208,28 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await progress({operationId: successor, status: 'native-client', clients: ['terminal'], state: 'terminal-closed', observedAtMs: Date.now()}, '2.6');
     await card(second).getByText('Terminal exited, writer release unverified', {exact: true}).waitFor();
     assert.equal(await card(second).getByRole('button', {name: native}).count(), 0);
+
+    await jobs.locator('summary').filter({hasText: /^New coding job$/u}).click();
+    await jobs.getByRole('combobox', {name: 'Companion'}).selectOption('reachy');
+    await jobs.getByRole('combobox', {name: 'Coding harness'}).selectOption('codex');
+    await jobs.getByRole('combobox', {name: 'Execution destination'}).selectOption('cloud');
+    await jobs.getByRole('link', {name: 'Continue in Conversation'}).press('Enter');
+    const reachy = page.getByRole('region', {name: 'B.U.N.N.Y. conversation'});
+    await reachy.getByRole('heading', {name: 'Reachy', exact: true}).waitFor();
+    const draft = reachy.getByRole('form', {name: 'New coding job'});
+    assert.equal(await draft.getByRole('combobox', {name: 'Coding harness'}).inputValue(), 'codex');
+    assert.equal(await draft.getByRole('combobox', {name: 'Execution destination'}).inputValue(), 'cloud');
+    await draft.getByRole('textbox', {name: 'Job brief'}).fill('Check the source fixture in agent-device-hub.');
+    await draft.getByRole('button', {name: 'Request coding job'}).click();
+    const proposed = reachy.getByRole('article', {name: 'Proposed command'});
+    assert.equal(await proposed.getByRole('combobox', {name: 'Coding harness'}).inputValue(), 'codex');
+    assert.equal(await proposed.getByRole('combobox', {name: 'Execution destination'}).inputValue(), 'cloud');
+    assert.equal(commands.length, 8, 'a request originating in Jobs still waits for owner approval');
+    await proposed.getByRole('button', {name: 'Approve proposal'}).click();
+    await reachy.getByText(/refused: unavailable.*cloud coding is disabled.*eligible alternatives: mac/i).waitFor();
+    assert.equal(commands.length, 8, 'an unavailable explicit Cloud request sends nothing to the Mac');
+    await page.goto(`${world.url}/#/module/companions/assistant`);
+    await page.locator('.rail-conversations').getByRole('link', {name: /B\.U\.N\.N\.Y\./u}).click();
+    await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).waitFor();
   } finally {acceptMessage(); await worker.close(); await context.close(); await world.close();}
 }

@@ -450,6 +450,14 @@ export const sign: BunnyModule<SignConfig> = {
   the module until it is updated. `checkManifest(manifest)`,
   `checkModuleName(name)` and `checkApiVersion(declared)` return the runtime's
   own reason for refusing, as `{code, detail}`, or undefined.
+- **Device command availability.** A module can declare
+  `deviceCommandAvailability` by command family. An omitted ordinary command
+  requires the device to report `available`. Guarded hold release retains its
+  existing checks. Use `owner-admission` for a command the device
+  owner can validate while the device is offline, such as saving its options.
+  Conversation and runtime MCP use the qualified target owner's declaration
+  at tracked admission. Holds, request identity and revision checks still apply.
+
 - **Configuration (1.1, Hub #919).** The manifest may declare
   `configure(section)`. The runtime calls it before `start` with the module's
   own section of its [configuration file](../../apps/runtime/README.md#configuration),
@@ -606,9 +614,13 @@ export const sign: BunnyModule<SignConfig> = {
   `context.ui` supplies `Badge`, `Facts`, `InfoTip`, `Select` and `Command` with
   the shell's styling. A feature wraps its form in
   `<Command context={context} target={target}>` and renders from its child
-  callback's `{text, locked, requestId, run}`. This reuses the existing command
-  attempt retention, tracked results and reload behavior; no command values or
-  credentials are stored, and an uncertain command is never resent by recovery.
+  callback's `{phase, text, locked, requestId, run}`. Use `phase.kind` for
+  decisions and `text` for display. The runtime shell always supplies
+  `phase`; older implementations can still supply the existing fields
+  without it. `frontendCommandView` renders the same phase where a feature
+  needs evidence wording specific to its command. The shared attempt retains
+  request identity across reload. It stores no command values or credentials
+  and never resends an uncertain command during recovery.
 
   `context.ui.Command` accepts an optional `attemptKey` for a separately tracked
   priority control, such as cancelling a known robot task. It retains that
@@ -905,6 +917,11 @@ Known limits:
 
 `@jimmie-potts/sdk/testing` holds one conformance suite that every module runs,
 so all modules behave the same. Its tests import it; the runtime never does.
+
+The same test-only entry exports `manualClock(start)` for fixtures that drive a
+scheduler and `waitForObservation(read, ready, what, budget)` for real I/O.
+The [development guide](../../docs/development.md#module-test-waits-and-manual-time)
+describes the MicroDuck and Pixoo budgets and how each fixture advances time.
 
 ```ts
 import {moduleConformance} from '@jimmie-potts/sdk/testing';
@@ -1206,6 +1223,11 @@ HTTP status that fits its code.
   Message and request IDs come from Web Crypto, which Node and a browser both
   have. The same entry exports `childOf(parent)` for a page's other HTTP calls:
   put its `traceparent` in the request headers, with `undefined` for a new root.
+  It also exports `recordLog`, `levelOf` and `errorType` with the `LogEvent`,
+  `LogFields` and `Logger` types (Hub #2139), so a page records its own faults
+  at the code table's level, as module and runtime code does; the page supplies
+  the `Logger`. The table's `dashboard.card.failed` (ERROR) is such a page
+  record. A page's record reaches no runtime log until a browser relay exists.
   A browser has no async context, so a page's handler that closes its own
   subscription does so before its first await, or does not await the close.
   When the edge refuses a reconnect with `unauthenticated` or `forbidden`, as

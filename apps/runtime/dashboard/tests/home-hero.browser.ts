@@ -10,9 +10,10 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {HomeArrangements, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
-import {changes, feed, holdDashboardStream, startWorld} from './harness.ts';
+import {changes, feed, recordsLoaded, holdDashboardStream, startWorld} from './harness.ts';
 import {lightsChip, observedPower, plugsChip} from '../src/home-hero.ts';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
@@ -37,7 +38,7 @@ async function open(context: BrowserContext, width = 1440, height = 900): Promis
   const page = await context.newPage();page.setDefaultTimeout(30_000);await page.setViewportSize({width, height});
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   const sent = changes(page);
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   return {page, sent, errors};
 }
@@ -75,7 +76,7 @@ async function stored(page: Page): Promise<{revision: number; layouts: HomeArran
 }
 
 try {
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference'});
   const {page, sent, errors} = await open(context);
   const bodies = modeCommands(page);
   await expect(page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
@@ -219,7 +220,7 @@ try {
   const current = await stored(page);
   assert.equal(await page.evaluate(async ({revision, desktop, phone}) => (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
     body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: revision, layouts: {desktop, phone}}})})).status, {revision: current.revision, desktop: dismissed, phone: current.layouts.phone}), 200);
-  await page.reload();await feed(page, 'connected');
+  await page.reload();await recordsLoaded(page);
   await expect(hero(page).getByRole('button', {name: 'Restore art', exact: true})).toBeEnabled();
   const beforeReset = await stored(page);
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();await page.getByRole('button', {name: 'Reset', exact: true}).click();
@@ -244,7 +245,7 @@ try {
   await context.close();
 
   // Without WebGL 2 the selected segment keeps a plain fill and the switch works.
-  const plain = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
+  const plain = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
   await plain.addInitScript(() => {
     const original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')?.value as (this: HTMLCanvasElement, ...args: unknown[]) => RenderingContext | null;
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {configurable: true, writable: true,

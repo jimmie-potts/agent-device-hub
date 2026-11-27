@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
+import {keepRequestInterception} from './browser-context.ts';
 import {connectRemote} from '@jimmie-potts/sdk';
 import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
@@ -16,6 +17,7 @@ try {
   await world.observe({kind: 'session-started'}, {title: {value: 'Receipt compatibility', source: 'provider'}});
   await world.observe({kind: 'turn-ended'});
   const page = await browser.newPage();
+  await keepRequestInterception(page.context());
   page.setDefaultTimeout(12_000);
   const errors: string[] = [];
   page.on('pageerror', error => {errors.push(error.name);});

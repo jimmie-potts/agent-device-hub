@@ -2,8 +2,10 @@
 // layout results and its own refusals to this line, so it must say what the latest save is doing in every state the
 // shared `lighting` attempt can be in, and a card's note must never hide a newer save result, or the reverse.
 
+import type {FrontendCommandView} from '@jimmie-potts/sdk/frontend';
+
 /** The shared `lighting` attempt as `useAttempt` reports it. */
-export type LineSave = {requestId: string | undefined; text: string; locked: boolean};
+export type LineSave = FrontendCommandView & {requestId: string | undefined};
 export type HomeLineInput = {
   save: LineSave;
   /** Monotonic stamp of the save's last change (request, text or lock). */
@@ -26,12 +28,12 @@ const NONE: HomeLine = {text: '', recover: false};
  * "Layout:" and its result. Every settled or locked result that needs attention offers Refresh records.
  */
 export function homeLine({save, saveStamp, grouping, note}: HomeLineInput): HomeLine {
-  const waiting = save.locked && /^(Requested|Accepted)\./.test(save.text);
+  const waiting = save.locked && (save.phase.kind === 'requested' || save.phase.kind === 'accepted');
   // An uncertain or conflicting save stays locked with the same text, so its stamp never moves again; a later note must
   // not hide it and its Refresh records.
   const stuck = save.requestId !== undefined && save.locked && !waiting;
   if (note !== undefined && note.stamp > saveStamp && !stuck) return {text: note.text, recover: false};
-  if (save.requestId === undefined || (!save.locked && /^Completed: succeeded/.test(save.text))) return NONE;
+  if (save.requestId === undefined || (!save.locked && save.phase.kind === 'completed' && save.phase.result === 'succeeded')) return NONE;
   if (grouping !== undefined && grouping.requestId === save.requestId) {
     if (waiting) return {text: grouping.text, recover: false};
     return {text: save.locked ? `${grouping.text.replace(/\.$/, '')}: ${save.text}` : `Not grouped: ${save.text}`, recover: true};

@@ -34,7 +34,8 @@ services or automation only when the story needs them. These defaults never
 remove an already accepted capability.
 
 At pickup or a material scope change, check the requested outcome, actual setup,
-risks and smallest useful change. Keep the assessment in the existing issue/PR;
+risks, shared foundations and complete delivery boundary. Keep the assessment in
+the existing issue/PR;
 a separate template, skill lookup or dossier is not required. Read-only work
 reports the assessment without writing. Shared interface work names its owner
 and integration order; independent work continues in separate worktrees under
@@ -97,12 +98,44 @@ the answer goes in "Behavior and protections to preserve", with a `###`
 subheading at most, because a new `##` heading ends that section for the section parser.
 A story that crosses no boundary may say so in one line.
 
-Prefer existing components and explicit manual steps where practical. Avoid
-speculative platform support, abstraction layers, automatic rollback systems and
-broad outage matrices. Always protect supported behavior: one authoritative
+Prioritize good coding practices, reusable components and shared foundations.
+Choose a maintainable implementation that fully delivers the agreed outcome.
+Reuse and improve existing abstractions where they fit. When relevant consumers
+need the same behavior, implement it in the appropriate shared layer and include
+their adoption and integration in acceptance. Compare total delivery and
+maintenance effort, including repeated patches and coordination. Small PRs may
+stage a coherent design; they do not determine its architecture or defer
+essential integration. Avoid speculative abstractions without a concrete need.
+Keep explicit manual steps where they meet the accepted outcome. Always protect
+supported behavior: one authoritative
 state owner and one writer per device, correct targets, bounded queued work, no
 unsafe replay, accurate freshness and completion, manual control, and user data
 integrity.
+
+<a id="consumer-evidence"></a>
+**Behavior ownership and consumer evidence.** Before each implementation task,
+check whether it changes shared behavior or a contract other callers use. In the
+existing issue or plan, name the behavior owner, reusable foundations, affected
+callers, migration or removal needs and planned checks. For a local change with
+no shared seam or other affected caller, the owning component, path and check
+fit in one line.
+
+For shared interfaces, state transitions, recovery or repeated fixes, trace
+supported entry points through the actual wiring, including relevant callers
+outside the proposed diff. Account for required migrations, supported
+compatibility paths and remaining uses before removing a replaced path. Plan
+checks at the affected consumer entry points, including relevant failures and
+recovery. Refresh the assessment and renew affected evidence after a material
+design or scope change or discovery of another affected caller.
+
+In the existing PR review, record the caller paths inspected, which migrations
+and removals were verified, and any coverage gaps. Tie each required consumer
+outcome to its requirement and evidence on the current comparison. Report a
+required caller still using a replaced path or failing its entry-point check as
+a finding. Missing required consumer evidence leaves the affected work
+incomplete under [Review and merge](#review-and-merge). Ground architectural
+findings in a concrete caller or failure and apply existing review rules to
+unrelated legacy defects.
 
 Select local tests for the changed behavior and its direct consumers. For
 runtime work, use the affected disposable scenarios and the full-suite triggers
@@ -142,7 +175,7 @@ installed trial ([#22](https://github.com/jimmie-potts/agent-device-hub/issues/2
 
 - Setup: one operator, one designated controller runner and the bulbs selected
   by explicit IP.
-- Smallest implementation: consume the shared state owner's feed through #18's
+- Implementation and reuse: consume the shared state owner's feed through #18's
   per-bulb queues. No second lifecycle reducer, cross-process lease service or
   effect engine.
 - Preserve: a heartbeat or unchanged snapshot never resumes painting over a
@@ -684,9 +717,6 @@ the PR's changed files omits it and the `Selected checks gate` job succeeded.
 Merged-main source revisions run applicable integration jobs. Full release
 qualification has its separate immutable candidate and applicable job set.
 
-A failed hosted test job also uploads its failure evidence (screenshots,
-dumps and JUnit results) as a 14-day artifact; the
-[diagnostic access procedure](development.md#ci-diagnostic-access) says where.
 Inspect relevant job details, logs or artifacts when a job fails, results
 conflict, a job is missing or unexpectedly skipped, workflow changes leave actual
 coverage uncertain, or acceptance requires evidence beyond a success status.

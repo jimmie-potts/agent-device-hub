@@ -3,7 +3,7 @@
 // page-side watch itself runs in every browser journey.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {waitForFeed, type FeedPage, type FeedRequest} from './feed-wait.ts';
+import {browserStepError, waitForCopies, waitForFeed, type FeedPage, type FeedRequest} from './feed-wait.ts';
 
 const ORIGIN = 'http://127.0.0.1:4100';
 /** The fake clock's reading when each wait begins. */
@@ -166,4 +166,53 @@ void test('an absent main region and an unrecorded watch are reported as such', 
   const {page} = fakePage({wait: timeout, seen: {trail: null, main: null}});
   const error = await expired(page, () => SINCE);
   assert.deepEqual(error.message.split('\n').slice(1, 3).map(line => line.trim()), ['data-feed during the wait: (not observed)', 'main#main is absent']);
+});
+
+void test('an expired copies wait says how the main region and the page\'s requests stood', async () => {
+  const original = new Error(`${ORIGINAL}\nCall log:\n  - waiting for locator`);
+  const {page, selectors, evaluated} = fakePage({
+    wait: () => Promise.reject(original),
+    seen: {feed: 'connected', copies: 'syncing', syncs: '3'},
+    requests: () => [request('/api/sdk/v1/stream', SINCE - 1200, {status: 200}), request('/api/sdk/v1/sync', SINCE + 50)],
+  });
+  const error = await waitForCopies(page, () => SINCE).then(() => assert.fail('the wait expired'), (caught: unknown) => caught);
+  assert.ok(error instanceof Error);
+  assert.equal(error.cause, original, 'the original timeout stays the cause');
+  assert.deepEqual(selectors, ['main#main[data-copies="synced"]']);
+  assert.deepEqual(evaluated, ['readMain']);
+  assert.deepEqual(error.message.split('\n').map(line => line.trim()), [
+    `copiesSynced(page) did not see main#main[data-copies="synced"]: ${ORIGINAL}`,
+    'main#main now has data-feed="connected" data-copies="syncing" data-syncs="3"',
+    'stream requests (start relative to the wait): 1, latest -1200ms answered 200 5ms after it started (body open); '
+      + 'other SDK requests of this document with no response yet: 1',
+  ]);
+});
+
+void test('synced copies resolve the wait without reading the page', async () => {
+  const {page, evaluated} = fakePage({wait: () => Promise.resolve()});
+  await waitForCopies(page, () => SINCE);
+  assert.deepEqual(evaluated, []);
+});
+
+void test('a failed browser step keeps the locator and last actionability messages from a coloured Playwright call log', () => {
+  const problem = new Error([
+    'locator.click: Timeout 10000ms exceeded.',
+    'Call log:',
+    "\x1b[2m  - waiting for getByRole('button', { name: 'Set display mode' })\x1b[22m",
+    '  - locator resolved to button',
+    '  - attempting click action',
+    '  - element is not enabled',
+  ].join('\n'));
+  assert.equal(browserStepError(problem), [
+    'locator.click: Timeout 10000ms exceeded.',
+    "  - waiting for getByRole('button', { name: 'Set display mode' })",
+    '  …',
+    '  - attempting click action',
+    '  - element is not enabled',
+  ].join('\n'));
+});
+
+void test('a browser step preserves assertion details without a Playwright call log', () => {
+  const assertion = new Error('card shares the target lock\nfalse !== true');
+  assert.equal(browserStepError(assertion), assertion.message);
 });

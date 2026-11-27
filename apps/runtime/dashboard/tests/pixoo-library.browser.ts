@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import sharp from 'sharp';
 import {changes, feed, startWorld} from './harness.ts';
 import {checkPixooAnimatedMedia} from './pixoo-animated-media.ts';
@@ -12,7 +13,7 @@ const world = await startWorld({pixooPages: true});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
     // The preview's bitmap lifetime, on the real component in a page of its own (Hub #1900).

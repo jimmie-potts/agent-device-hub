@@ -70,6 +70,17 @@ void test('the section accepts the synthetic default and a keyed hosted provider
   ]) assert.equal(configured(section), 'invalid-request', JSON.stringify(section));
 });
 
+void test('device history accepts an owner calendar and refuses unsupported time zone IDs', () => {
+  assert.deepEqual(configured({assistant: {historyTimeZone: 'America/New_York'}}),
+    {assistant: {provider: 'synthetic', tools: [], historyTimeZone: 'America/New_York'}});
+  assert.notEqual(configured({assistant: {historyTimeZone: 'UTC'}}), 'invalid-request');
+  for (const historyTimeZone of ['America/Not_A_Zone', '+05:00', '', null, 4]) {
+    const answer = configureCompanions({assistant: {historyTimeZone}});
+    assert.deepEqual('error' in answer ? [answer.error.code, answer.error.detail] : answer.config,
+      ['invalid-request', 'assistant.historyTimeZone must name a supported IANA time zone']);
+  }
+});
+
 void test('a configured hosted provider uses the secret key through the transport and exposes only provider, model and tools', async context => {
   const dir = await mkdtemp(join(tmpdir(), 'assistant-configured-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));

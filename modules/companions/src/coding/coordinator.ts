@@ -1,6 +1,7 @@
+import type {CloudScope} from './cloud-qualification.js';
 import type {OpenNativeClientInput} from '../assistant/history-contract.js';
 import type {ContinueCodingControl} from '@jimmie-potts/event-contracts/v2/assistant';
-import {chooseCodingHarness, codingHarness, type CodingChoice} from './routing.js';
+import {chooseCodingHarness, codingHarness, isCloudChoice, selectCodingWorker, type CodingCandidate, type CodingChoice, type CodingDestinationChoice, type CodingRequirements, type CodingResource} from './routing.js';
 import {createHash, randomUUID} from 'node:crypto';
 import type {ActionEvidence} from '../assistant/closing-reply.js';
 // One coding worker endpoint with one slot per companion (Hub #502, #2028). The core's tracked dispatcher hands the
@@ -11,23 +12,23 @@ import type {ActionEvidence} from '../assistant/closing-reply.js';
 // companion's slot is busy waits, durably and first in first out, and is dispatched once when that slot frees.
 import {errorBody, isErrorCode, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
-import {continuationChecks, CODING_SETUP_WAIT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingAttemptContext, type CodingCompanion, type CodingEndpointControl, type CodingHarnessId, type CodingLost, type CodingNativeClient, type CodingWorkerProgress, type CodingResult, type CodingRun,
+import {continuationChecks, CODING_SETUP_WAIT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, codingDestinationForSource, DEFAULT_CODING_BOUNDS, type CodingDestination, type CodingWorkerDeclaration, type CodingAttemptContext, type CodingCompanion, type CodingEndpointControl, type CodingHarnessId, type CodingLost, type CodingNativeClient, type CodingWorkerProgress, type CodingResult, type CodingRun,
   type CodingRunEntry, type CodingSetup, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {Outcome, fullDisk, recordLog, type AddMessage, type Cancel, type Command, type ModuleContext, type Outbox, type Reply, type RequestResult, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {advanceRevision} from '../revision.js';
 import {CODING_JOB_PAGE_SIZE, type CodingAttemptEntry, type CodingAttemptResult, type CodingJobDetail, type CodingJobEntry, type CodingJobPage, type JobNativeClient, type NativeObservation} from './job-page.js';
-import {CodingStore, type CodingAttempt, type CodingJob, type CodingResponsibility, type CodingWaitingRecord} from './store.js';
+import {CodingStore, type AttemptDestination, type CodingAttempt, type CodingJob, type CodingResponsibility, type CodingWaitingRecord} from './store.js';
 
 /** Workers offering adapter selection add harness declarations and active session attribution in 2.3. */
 export const codingStateDraft = (data: CodingState) => ({kind: 'state' as const, type: 'org.bunny.coding-state.updated', subject: 'coding',
-  dataschema: `https://bunny.invalid/events/coding-state/${data.counts !== undefined ? '2.4' : data.harnesses === undefined && data.runs?.some(run => run.harness !== undefined || run.sessionId !== undefined) !== true ? '2.2' : '2.3'}`, data: {...data, readiness: data.readiness ?? null, slots: data.slots ?? null, runs: data.runs ?? [], waiting: data.waiting ?? []}});
+  dataschema: `https://bunny.invalid/events/coding-state/${data.workers !== undefined ? '2.5' : data.counts !== undefined ? '2.4' : data.harnesses === undefined && data.runs?.some(run => run.harness !== undefined || run.sessionId !== undefined) !== true ? '2.2' : '2.3'}`, data: {...data, readiness: data.readiness ?? null, slots: data.slots ?? null, runs: data.runs ?? [], waiting: data.waiting ?? []}});
 /**
  * Delivers the worker's final word to the task that waits for it; the engine turns it into the delegation tool's result.
  * `startup` marks the settlement, at start, of responsibility still pending at the last stop.
  */
 export type Delivery = (taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence, startup: boolean) => Promise<void>;
 /** An approved hand-off as the engine gives it: the task, the companion whose slot it needs and the endpoint revision the proposal saw. */
-export type HandOff = {requestId: string; taskId: string; conversationId?: string; companion: CodingCompanion; repository: string; brief: string; expectedRevision: number; choice?: CodingChoice};
+export type HandOff = {requestId: string; taskId: string; conversationId?: string; companion: CodingCompanion; repository: string; brief: string; expectedRevision: number; choice?: CodingChoice; destination?: CodingDestinationChoice; requirements?: CodingRequirements};
 /** The core's answer for a hand-off sent now, or `waiting` for one held until its companion's slot frees. */
 export type CodingBrief = Pick<HandOff, 'requestId' | 'taskId' | 'repository' | 'brief'>;
 export type HandOffAnswer = RequestResult | {status: 'waiting'; requestId: string} | {status: 'queued'; requestId: string; jobId: string};
@@ -45,12 +46,19 @@ export type CodingSeams = {
   jobVisible?: (job: Pick<CodingJob, 'jobId' | 'taskId' | 'conversationId' | 'operationId' | 'repository'>, companion: CodingCompanion) => boolean;
   legacyOperationVisible?: (operation: Pick<CodingRunEntry, 'operationId' | 'taskId' | 'companion'>) => boolean;
   jobBriefVisible?: (job: CodingJob, companion: CodingCompanion) => boolean;
-  allowMessage?: (job: CodingJob, companion: CodingCompanion) => boolean;
+  allowMessage?: (job: CodingJob, companion: CodingCompanion, destination?: CodingDestination) => boolean;
+  allowDestination?: (brief: CodingBrief, destination: CodingDestination) => boolean;
+  allowCloud?: (scope: CloudScope, now: number) => boolean;
+  allowResource?: (brief: CodingBrief, resource: CodingResource, destination: CodingDestination) => boolean;
   awaits?: (taskId: string) => boolean;
   sent?: (taskId: string, operationId: string, parent: TraceContext) => void | Promise<void>;
 };
 type Phase = CodingRunEntry['status'];
-type Active = CodingResponsibility & {companion: CodingCompanion; phase: Phase; wallClockMs: number; cancel: Cancel; settling: boolean; uncapped: boolean; deliveryStarted?: true; setup?: CodingSetup; harness?: CodingHarnessId; sessionId?: string; stopEvidence?: string};
+type Active = CodingResponsibility & {worker: Worker;companion: CodingCompanion; phase: Phase; wallClockMs: number; cancel: Cancel; settling: boolean; uncapped: boolean; deliveryStarted?: true; setup?: CodingSetup; harness?: CodingHarnessId; sessionId?: string; stopEvidence?: string};
+type Worker = Pick<CodingState, 'readiness' | 'slots' | 'capacity' | 'harnesses' | 'selectionId'> & {
+  destination: CodingDestination; endpointId: string; receivedAt: number; declaration?: CodingWorkerDeclaration;
+  delivery?: StartDelivery; reply?: Promise<void>;
+};
 type StartDelivery = {endpointId: string; record: CodingWaitingRecord; discarded?: true; workerReply?: Promise<void>};
 const noop = (): void => {};
 function privateDisplayText(value: string): string | undefined {
@@ -129,8 +137,7 @@ export class CodingCoordinator {
   /** Each slot's hand-off on its way through the core, so a second one never leaves for the same slot. */
   readonly #reserved = new Map<string, string>();
   /** One uncapped delivery awaits both the core response and the worker's acknowledgement. Running jobs do not hold it. */
-  #startDelivery: StartDelivery | undefined;
-  #workerReply: Promise<void> | undefined;
+  readonly #workers = new Map<CodingDestination, Worker>();
   /** Tasks cancelled while their hand-off was on its way from the queue: its arrival is refused, so nothing runs. */
   readonly #cancelled = new Set<string>();
   readonly #observationWrites = new Map<string, Cancel>();
@@ -143,6 +150,31 @@ export class CodingCoordinator {
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly deliver: Delivery, seams: CodingSeams = {}) {
     this.#seams = seams;
     this.#store = new CodingStore(context.database());
+  }
+  #primary(): Worker | undefined {return this.#workers.get('mac') ?? this.#workers.values().next().value;}
+  #workerFor(attempt: CodingAttempt | undefined): Worker | undefined {
+    const binding = attempt?.binding;
+    const worker = this.#workers.get(binding?.actual ?? 'mac');
+    if (binding?.endpointId !== undefined && (worker?.endpointId !== binding.endpointId || worker.selectionId !== binding.selectionId)) return undefined;
+    return worker;
+  }
+  #byEndpoint(endpointId: string): Worker | undefined {
+    return [...this.#workers.values()].find(worker => worker.endpointId === endpointId);
+  }
+  #allowed(brief: CodingBrief, destination: CodingDestination): boolean {
+    if (this.#seams.allowDestination === undefined) return destination === 'mac';
+    const attempt = this.#store.attempt(brief.requestId);
+    const requestId = attempt?.continuation === undefined ? brief.requestId : this.#store.jobRead(brief.requestId)?.originalOperationId;
+    return requestId !== undefined && this.#seams.allowDestination({...brief, requestId}, destination);
+  }
+  #route(data: CodingBrief, choice: CodingChoice, destination: CodingDestinationChoice, requirements?: CodingRequirements, candidates = [...this.#workers.values()]) {
+    const workers: CodingCandidate[] = candidates.map(worker => ({destination: worker.destination, endpointId: worker.endpointId, receivedAt: worker.receivedAt,
+      ...(worker.selectionId === undefined ? {} : {selectionId: worker.selectionId}), ...(worker.declaration === undefined ? {} : {declaration: worker.declaration}),
+      ...(worker.harnesses == null ? {} : {harnesses: worker.harnesses}), legacyDefault: worker.harnesses == null,
+      running: [...this.#active.values()].filter(active => active.worker === worker).length}));
+    return selectCodingWorker(workers, {operationId: data.requestId,
+      ...(this.#seams.allowCloud === undefined ? {} : {cloudAllowed: this.#seams.allowCloud}), repository: data.repository, choice, destination, now: this.context.clock.now(), ...(requirements === undefined ? {} : {requirements}),
+      allowed: dest => this.#allowed(data, dest), resourceAllowed: (resource, dest) => this.#seams.allowResource?.(data, resource, dest) === true});
   }
   jobForAttempt(operationId: string): CodingJob | undefined {return this.#store.job(operationId);}
   jobRead(...args: Parameters<CodingStore['jobRead']>): ReturnType<CodingStore['jobRead']> {return this.#store.jobRead(...args);}
@@ -170,7 +202,7 @@ export class CodingCoordinator {
         const {nativeObservation, ...context} = attempt?.context ?? {};
         const nativeView = attempt === undefined ? undefined : this.#nativeView(attempt.operationId, nativeObservation);
         const nativeClient = nativeView !== undefined && original !== undefined && this.#canUseCodingBrief(original, companion) ? nativeView : undefined;
-        jobs.push({...job, companion, status, ...(label === '' ? {} : {label}), ...(nativeClient === undefined ? {} : {nativeClient}),
+        jobs.push({...job, companion, status, ...(attempt?.binding === undefined ? {} : {requestedHarness: attempt.choice, requestedDestination: attempt.binding.requested, selectedDestination: attempt.binding.actual, ...(this.#store.workerStarted(attempt.operationId) ? {actualDestination: attempt.binding.actual} : {}), selectionReason: attempt.selectionReason}), ...(label === '' ? {} : {label}), ...(nativeClient === undefined ? {} : {nativeClient}),
           ...(attempt?.harness == null ? {} : {harness: attempt.harness}), steering: this.#steering(active), messages: this.#store.messages(job.jobId).filter(message =>
             this.#seams.jobVisible?.({...job, operationId: message.operationId}, companion) !== false),
           ...context, ...(attempt?.sessionId == null ? {} : {sessionId: attempt.sessionId}), ...(active === undefined ? {} : this.#runContext(active))});
@@ -181,25 +213,30 @@ export class CodingCoordinator {
   }
   #nativeView(operationId: string, saved?: NativeObservation): JobNativeClient | undefined {
     const native = this.#native.get(operationId);
-    if (native !== undefined && this.#connected() && native.selectionId === this.#state.selectionId) return native.view;
+    const attempt = this.#store.attempt(operationId);
+    if (attempt?.binding !== undefined && attempt.binding.actual !== 'mac') return undefined;
+    const worker = this.#workerFor(attempt);
+    if (native !== undefined && worker !== undefined && this.#connected() && native.selectionId === worker.selectionId) return native.view;
     const last = native?.view ?? saved;
     if (last === undefined) return undefined;
     return {clients: last.clients, state: last.state === 'available' ? 'offline' : last.state === 'terminal-closed' ? 'terminal-closed' : 'uncertain', observedAtMs: last.observedAtMs};
   }
   #continuation(attempt: CodingAttempt | undefined): CodingJobDetail['continuation'] {
-    if (attempt === undefined || attempt.handoffToken === undefined || attempt.selectionId === undefined ||
-      attempt.selectionId !== this.#state.selectionId || !codingHarness(attempt.harness) ||
+    const worker = this.#workerFor(attempt);
+    if (worker === undefined || attempt === undefined || attempt.handoffToken === undefined || attempt.selectionId === undefined ||
+      attempt.selectionId !== worker.selectionId || !codingHarness(attempt.harness) ||
       attempt.result?.head == null || attempt.result.changedFiles.length === 0 ||
-      (attempt.status === 'completed' && attempt.result.outcome === 'tested-candidate') || !this.#connected() || !this.#uncapped()) return null;
+      (attempt.status === 'completed' && attempt.result.outcome === 'tested-candidate') || !this.#connected() || worker.capacity !== 'uncapped') return null;
     const client = this.#nativeView(attempt.operationId, attempt.context?.nativeObservation);
     if (client !== undefined && client.state !== 'available') return null;
     const harness = attempt.harness === 'claude-code' ? 'codex' : 'claude-code';
-    const choice = chooseCodingHarness(harness, this.#state.harnesses ?? [], this.context.clock.now());
+    const choice = chooseCodingHarness(harness, worker.harnesses ?? [], this.context.clock.now());
     if (choice.harness === undefined) return null;
     return {fromOperationId: attempt.operationId, harness, head: attempt.result.head, changedFiles: attempt.result.changedFiles};
   }
   #canUseCodingBrief(job: CodingJob, companion: CodingCompanion): boolean {
-    return this.#seams.jobBriefVisible?.(job, companion) !== false && this.#briefRefusal({...job, requestId: job.operationId}) === undefined;
+    const brief = {...job, requestId: job.operationId};
+    return this.#allowed(brief, this.#store.attempt(job.operationId)?.binding?.actual ?? 'mac') && this.#seams.jobBriefVisible?.(job, companion) !== false && this.#briefRefusal(brief) === undefined;
   }
   jobDetail(jobId: string): CodingJobDetail | undefined {
     const job = this.#store.jobById(jobId);
@@ -212,11 +249,11 @@ export class CodingCoordinator {
     const current = last?.operationId ?? job.operationId;
     if (!visible(current)) return undefined;
     const attempts: CodingAttemptEntry[] = saved.filter(attempt => visible(attempt.operationId, attempt.companion))
-      .map(({operationId, companion: owner, harness, sessionId, status, selectionReason, result, context}) => {
+      .map(({operationId, companion: owner, choice, harness, sessionId, status, selectionReason, result, context, binding}) => {
         const active = this.#active.get(operationId);
         const {nativeObservation, ...attemptContext} = context ?? {};
         const nativeVisible = nativeObservation !== undefined && this.#canUseCodingBrief({...job, operationId}, owner);
-        return {operationId, harness, sessionId: active?.sessionId ?? sessionId, status: active?.phase ?? status, selectionReason, result,
+        return {operationId, harness, ...(binding === undefined ? {} : {requestedHarness: choice, requestedDestination: binding.requested, selectedDestination: binding.actual, ...(this.#store.workerStarted(operationId) ? {actualDestination: binding.actual} : {})}), sessionId: active?.sessionId ?? sessionId, status: active?.phase ?? status, selectionReason, result,
           ...(context === undefined ? {} : {context: {...attemptContext, ...(nativeVisible ? {nativeObservation} : {})}})};
       });
     if (saved.length === 0) {
@@ -233,8 +270,8 @@ export class CodingCoordinator {
       briefDenied ? 'Coding brief sharing is not permitted.' :
       latest.status === 'uncertain' ? 'The previous writer may still be active.' :
       latest.status === 'completed' && latest.result?.outcome === 'tested-candidate' ? 'The previous attempt completed without a partial result.' :
-      'Continuation requires a stopped, confined writer, an unchanged checkout and an eligible subscription in the other harness.';
-    return {version: 1, jobId, choice: saved[0]?.choice ?? 'auto', activeOperationId, attempts, continuation,
+      'Continuation requires a stopped, confined writer, an unchanged checkout and an eligible subscription in the other harness. Cross-host checkout transfer is unsupported.';
+    return {version: 1, jobId, choice: saved[0]?.choice ?? 'auto', ...(saved[0]?.binding === undefined ? {} : {requestedDestination: saved[0].binding.requested}), activeOperationId, attempts, continuation,
       ...(continuationReason === undefined ? {} : {continuationReason})};
   }
   /** Called inside the assistant admission transaction. Dispatch starts only after commit. */
@@ -250,7 +287,7 @@ export class CodingCoordinator {
     if (!this.#canUseCodingBrief(job, attempt.companion)) return {code: 'forbidden', detail: 'Coding brief sharing is not permitted.'};
     const operationId = randomUUID();
     this.#store.createAttempt({jobId: job.jobId, operationId, companion: attempt.companion, choice: data.harness, harness: data.harness,
-      selectionReason: `Explicit continuation of ${data.operationId}.`, continuation: {fromOperationId: data.operationId, token: attempt.handoffToken}});
+      selectionReason: `Explicit continuation of ${data.operationId}.`, ...(attempt.binding === undefined ? {} : {binding: {...attempt.binding, requested: attempt.binding.actual}}), continuation: {fromOperationId: data.operationId, token: attempt.handoffToken}});
     this.#store.wait({operationId, taskId: job.taskId, companion: attempt.companion, repository: job.repository, brief: job.brief, traceparent: parent.traceparent});
     return {committed: () => {this.#changed(); this.#drain();}};
   }
@@ -276,9 +313,11 @@ export class CodingCoordinator {
       waiting = visibleWaits.slice(0, WAITING_LIMIT).map(({operationId, taskId, companion}) => ({operationId, taskId, companion}));
     } catch (error) {this.#storageFailure(error);}
     const first = runs[0];
-    const paged = this.#uncapped() || waitingCount > WAITING_LIMIT || runCount > 8 || runs.some(run => run.setup !== undefined) ||
+    const roster = [...this.#workers.values()].some(worker => worker.declaration !== undefined);
+    const paged = roster || this.#uncapped() || waitingCount > WAITING_LIMIT || runCount > 8 || runs.some(run => run.setup !== undefined) ||
       new Set(runs.map(run => run.companion)).size !== runs.length;
-    return structuredClone({id: 'coding', ...this.#state, active: first === undefined ? null : {operationId: first.operationId, taskId: first.taskId, status: first.status}, runs, waiting,
+    return structuredClone({id: 'coding', ...this.#state, ...(roster ? {workers: [...this.#workers.values()].flatMap(worker => worker.selectionId === undefined ? [] :
+      [{destination: worker.destination, endpointId: worker.endpointId, selectionId: worker.selectionId}])} : {}), active: first === undefined ? null : {operationId: first.operationId, taskId: first.taskId, status: first.status}, runs, waiting,
       ...(paged ? {capacity: this.#state.capacity ?? null, counts: {runs: runCount, waiting: waitingCount}} : {})});
   }
   #uncapped(): boolean {return this.#state.capacity === 'uncapped';}
@@ -286,19 +325,23 @@ export class CodingCoordinator {
    * The slot a companion's run uses: its own when the worker declared one per companion, else the one slot an older
    * worker that declares none holds for every companion.
    */
-  #slotOf(companion: CodingCompanion): string {return (this.#state.slots ?? 1) >= CODING_WORKER_SLOTS ? companion : 'shared';}
-  #busy(slot: string): boolean {
-    return !this.#uncapped() && (this.#reserved.has(slot) || [...this.#active.values()].some(active => this.#slotOf(active.companion) === slot)
-      || this.#active.size + this.#reserved.size >= (this.#state.slots ?? 1));
+  #slotOf(companion: CodingCompanion, worker = this.#workers.get('mac')): string {
+    return (worker?.slots ?? 1) >= CODING_WORKER_SLOTS ? companion : 'shared';
   }
-  #connected(): boolean {return this.#state.availability === 'available' && this.#state.endpointId !== null && !this.#closed && !this.context.signal.aborted;}
+  #busy(slot: string, worker = this.#workers.get('mac')): boolean {
+    const active = [...this.#active.values()].filter(run => run.worker === worker);
+    return worker?.capacity !== 'uncapped' && (this.#reserved.has(slot) || active.some(run => this.#slotOf(run.companion, worker) === slot)
+      || active.length + this.#reserved.size >= (worker?.slots ?? 1));
+  }
+  #connected(): boolean {return this.#workers.size > 0 && !this.#closed && !this.context.signal.aborted;}
   /**
    * What a proposal binds to: whether a worker is connected now and the state revision of the last change to the
    * endpoint or its availability (Hub #2028). Runs starting and ending leave it, so another companion's run never
    * refuses an approval; a readiness report leaves it too.
    */
-  endpoint(): {available: boolean; endpointId: string | null; revision: number} {
-    return {available: this.#connected(), endpointId: this.#state.endpointId, revision: this.#bound};
+  endpoint(): {available: boolean; endpointId: string | null; revision: number; cloudDisabled?: true} {
+    return {available: this.#connected(), endpointId: this.#state.endpointId, revision: this.#bound,
+      ...(this.#seams.allowCloud === undefined ? {cloudDisabled: true} : {})};
   }
   async start(): Promise<void> {
     this.#starting = true;
@@ -306,18 +349,27 @@ export class CodingCoordinator {
     this.#store.recoverMessages();
     // Responsibility that was pending at the last stop is uncertain now: the worker may have run, nothing is resent, and the task hears so.
     for (const record of this.#store.records('pending')) {
-      await this.#settle(record, 'uncertain', undefined, 'lost', record.started ? undefined : {result: Outcome.uncertain}, true);
+      if (record.sent === false && !record.started) await this.#settle(record, 'failed', undefined, DISCONNECTED_BEFORE_START, {result: Outcome.failed, code: 'unavailable'}, true);
+      else await this.#settle(record, 'uncertain', undefined, 'lost', record.started ? undefined : {result: Outcome.uncertain}, true);
     }
     // A hand-off whose dispatch had left without its acceptance recorded may have reached the core: its fate is unknown
     // and it is never sent again. One that never left keeps its place and is sent when its slot frees.
-    for (const record of this.#store.waiting().filter(waiting => waiting.sending)) await this.#endWait(record);
+    for (const record of this.#store.waiting()) {
+      if (record.sending) await this.#endWait(record);
+      else if (this.#store.attempt(record.operationId)?.binding?.endpointId !== undefined) {
+        await this.#endWait(record, {status: Outcome.rejected, requestId: record.operationId, error: errorBody('unavailable')}, true);
+      }
+    }
     await this.#deliverObservations();
     this.#starting = false;
     this.#subscriptions.push(await this.context.sdk.respond<CodingEndpointControl>('bunny.cmd.coding-endpoint.*', command => this.#control(command)));
     this.#subscriptions.push(await this.context.sdk.respond<CodingRun>('bunny.cmd.coding-run.assistant', command => this.#accept(command)));
     this.#subscriptions.push(await this.context.sdk.subscribe<CodingWorkerProgress>('bunny.event.coding-progress.*', message => this.#progress(message), {onOverflow: () => {this.#lost();}}));
     this.#subscriptions.push(await this.context.sdk.subscribe<CodingLost>('bunny.event.coding-lost.*', message => {
-      if (message.source === 'bunny/runtime/gateway' && this.#validator.validate(message).ok && message.data.id === this.#state.endpointId) this.#lost();
+      if (message.source === 'bunny/runtime/gateway' && this.#validator.validate(message).ok) {
+        const worker = this.#byEndpoint(message.data.id);
+        if (worker !== undefined) this.#unselect(worker, 'unavailable');
+      }
     }, {onOverflow: () => {this.#lost();}}));
     this.#changed();
   }
@@ -343,21 +395,32 @@ export class CodingCoordinator {
       const jobId = `${operationId}-job`;
       try {
         const existing = this.#store.job(operationId);
-        if (existing !== undefined && ((data.choice !== undefined && this.#store.attempt(operationId)?.choice !== data.choice) || existing.conversationId !== conversationId || existing.taskId !== taskId ||
+        const previous = this.#store.attempt(operationId);
+        if (existing !== undefined && ((data.choice !== undefined && this.#store.attempt(operationId)?.choice !== data.choice) || (previous?.binding?.requested ?? 'auto') !== (data.destination ?? 'auto') || JSON.stringify(previous?.binding?.requirements) !== JSON.stringify(data.requirements) || existing.conversationId !== conversationId || existing.taskId !== taskId ||
           existing.repository !== repository || existing.brief !== brief)) return refused('revision-conflict', 'the request ID names another coding job');
         if (existing === undefined) {
-          if (!this.#connected()) return refused('unavailable', 'no coding worker is connected');
-          if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
           const choice = data.choice ?? 'auto';
-          const legacy = (data.choice === undefined && !this.#uncapped()) || (choice === 'auto' && this.#state.harnesses === undefined);
-          const route = legacy ? {harness: undefined, reason: 'The default Claude Code worker was selected.'}
-            : chooseCodingHarness(choice, this.#state.harnesses ?? [], this.context.clock.now());
-          if (!legacy && route.harness === undefined) return refused('unavailable', route.reason);
-          if (!this.#uncapped() && this.#store.waitingCount() >= WAITING_LIMIT) return refused('capacity', 'too many coding hand-offs are waiting');
+          const requested = data.destination ?? 'auto';
+          if (!this.#connected()) return refused('unavailable', isCloudChoice(requested) ?
+            this.#route(data, choice, requested, data.requirements, []).reason : 'no coding worker is connected');
+          if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
+          const mac = this.#workers.get('mac');
+          const implicitLegacy = data.choice === undefined && data.destination === undefined && data.requirements === undefined &&
+            this.#workers.size === 1 && mac !== undefined && mac.declaration === undefined && mac.capacity !== 'uncapped';
+          const route = implicitLegacy && this.#allowed(data, 'mac') ? {worker: mac, harness: undefined, revision: undefined, forbidden: false, reason: 'The default Claude Code worker was selected.'}
+            : this.#route(data, choice, requested, data.requirements);
+          if (route.worker === undefined) return refused(route.forbidden === true ? 'forbidden' : 'unavailable', route.reason);
+          const worker = this.#workers.get(route.worker.destination);
+          if (worker === undefined) return refused('unavailable', DISCONNECTED_BEFORE_START);
+          if (worker.declaration !== undefined && (worker.selectionId === undefined || route.revision === undefined)) return refused('unavailable', 'The worker revision or connection identity is unavailable.');
+          const binding: AttemptDestination = {requested, actual: worker.destination,
+            ...(data.requirements === undefined ? {} : {requirements: data.requirements}),
+            ...(route.revision === undefined || worker.selectionId === undefined ? {} : {endpointId: worker.endpointId, selectionId: worker.selectionId, revision: route.revision})};
+          if (worker.capacity !== 'uncapped' && this.#store.waitingCount(worker.destination) >= WAITING_LIMIT) return refused('capacity', 'too many coding hand-offs are waiting');
           await this.outbox.transaction(add => {
             const job = {jobId, operationId, conversationId, taskId, repository, brief};
             this.#store.create(job);
-            this.#store.createAttempt({jobId, operationId, choice, companion, harness: route.harness ?? null, selectionReason: route.reason});
+            this.#store.createAttempt({jobId, operationId, choice, companion, harness: route.harness ?? null, selectionReason: route.reason, binding});
             this.#store.wait({operationId, taskId, companion, repository, brief, traceparent: parent.traceparent});
             this.#seams.jobQueued?.(job, add, parent);
           });
@@ -367,7 +430,8 @@ export class CodingCoordinator {
       } catch (error) {return refused(fullDisk(error) ? 'capacity' : 'internal', 'the coding job could not be saved');}
       return {status: 'queued', requestId: operationId, jobId};
     }
-    if (!this.#connected()) return refused('unavailable', 'no coding worker is connected');
+    const legacyWorker = this.#workers.get('mac');
+    if (!this.#connected() || legacyWorker === undefined) return refused('unavailable', 'no authorized default Mac coding worker is connected');
     if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
     const slot = this.#slotOf(data.companion);
     let waiting: CodingWaitingRecord[];
@@ -378,7 +442,7 @@ export class CodingCoordinator {
       try {return await this.#dispatch(data, parent);}
       finally {if (this.#reserved.get(slot) === data.requestId) this.#reserved.delete(slot); this.#drain();}
     }
-    if (!this.#uncapped() && waiting.length >= WAITING_LIMIT) return refused('capacity', 'too many coding hand-offs are waiting');
+    if (!this.#uncapped() && this.#store.waitingCount(legacyWorker.destination) >= WAITING_LIMIT) return refused('capacity', 'too many coding hand-offs are waiting');
     try {this.#store.wait({operationId: data.requestId, taskId: data.taskId, companion: data.companion, repository: data.repository, brief: data.brief, traceparent: parent.traceparent});}
     catch (error) {return refused(fullDisk(error) ? 'capacity' : 'internal', 'the coding hand-off could not be saved');}
     this.#changed();
@@ -392,6 +456,19 @@ export class CodingCoordinator {
     return refusal === 'unverified-supervisor' ? errorBody('unavailable', {detail: UNVERIFIED_SUPERVISOR})
       : refusal === 'grant-denied' ? errorBody('forbidden', {detail: 'coding brief sharing is not permitted'}) : undefined;
   }
+  #boundRefusal(data: CodingBrief, attempt: CodingAttempt | undefined, worker: Worker): ErrorBody | undefined {
+    if (this.#workers.get(worker.destination) !== worker) return errorBody('unavailable', {detail: DISCONNECTED_BEFORE_START});
+    if (!this.#allowed(data, worker.destination)) return errorBody('forbidden', {detail: 'Coding brief sharing permission was revoked before start.'});
+    const binding = attempt?.binding;
+    if (binding?.revision === undefined || attempt === undefined) {
+      return worker.destination === 'mac' || worker.destination === 'pc' ? undefined :
+        errorBody('unavailable', {detail: 'Cloud workspace authority requires an approved worker revision.'});
+    }
+    const approved = {...binding.requirements, revision: binding.revision};
+    const checked = this.#route(data, attempt.harness ?? attempt.choice, binding.actual, approved, [worker]);
+    if (checked.worker === undefined || worker.selectionId !== binding.selectionId) return errorBody('unavailable', {detail: checked.reason});
+    return undefined;
+  }
   #matchesJob(data: CodingBrief): boolean {
     const job = this.#store.job(data.requestId);
     if (job === undefined) return true;
@@ -400,17 +477,20 @@ export class CodingCoordinator {
       job.taskId === data.taskId && job.repository === data.repository && job.brief === data.brief;
   }
   #dispatch(data: Omit<HandOff, 'expectedRevision'>, parent: TraceContext): Promise<RequestResult> {
-    const endpointId = this.#state.endpointId;
+    const attempt = this.#store.attempt(data.requestId);
+    const worker = this.#workerFor(attempt);
     if (!this.#matchesJob(data)) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId,
       error: errorBody('revision-conflict', {detail: 'the dispatch does not match the approved job'})});
     const brief = this.#briefRefusal(data);
     if (brief !== undefined) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: brief});
-    if (endpointId === null) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('unavailable', {detail: 'no coding worker is connected'})});
-    const attempt = this.#store.attempt(data.requestId);
+    if (worker === undefined) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('unavailable', {detail: 'no coding worker is connected'})});
+    const {endpointId} = worker;
     const continuation = attempt?.continuation;
     let harness = attempt?.harness ?? undefined;
-    if (attempt !== undefined && harness !== undefined) {
-      const route = chooseCodingHarness(attempt.choice, this.#state.harnesses ?? [], this.context.clock.now());
+    const refusal = this.#boundRefusal(data, attempt, worker);
+    if (refusal !== undefined) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: refusal});
+    if (worker.declaration === undefined && attempt !== undefined && harness !== undefined) {
+      const route = chooseCodingHarness(attempt.choice, worker.harnesses ?? [], this.context.clock.now());
       if (continuation === undefined) this.#store.routeAttempt(data.requestId, route.harness, route.reason);
       if (route.harness === undefined || (continuation !== undefined && this.#continuation(this.#store.attempt(continuation.fromOperationId)) === null)) {
         return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('unavailable', {detail: route.harness === undefined ? route.reason : 'The verified handoff is no longer available.'})});
@@ -425,17 +505,23 @@ export class CodingCoordinator {
   }
   /** Sends the oldest waiting hand-off of each free slot, once; one whose slot is still busy keeps its place. */
   #drain(): void {
-    const {endpointId} = this.#state;
-    if (!this.#connected() || this.#starting || endpointId === null || this.#startDelivery !== undefined) return;
-    const uncapped = this.#uncapped();
+    if (!this.#connected() || this.#starting) return;
     let waiting: CodingWaitingRecord[];
     try {waiting = this.#store.waiting();} catch (error) {this.#storageFailure(error); return;}
     let dropped = false;
     // A slot whose oldest hand-off could not be checked sends nothing else this pass, so its line keeps its order.
     const held = new Set<string>();
     for (const record of waiting) {
-      const slot = uncapped ? record.operationId : this.#slotOf(record.companion);
-      if (record.sending || held.has(slot) || this.#busy(slot)) continue;
+      if (record.sending || this.#observationWrites.has(waitWriteKey(record.operationId))) continue;
+      const attempt = this.#store.attempt(record.operationId);
+      const worker = this.#workerFor(attempt);
+      if (worker === undefined) {
+        if (attempt?.binding?.endpointId !== undefined) void this.#endWait(record, {status: Outcome.rejected, requestId: record.operationId, error: errorBody('unavailable')}, true);
+        continue;
+      }
+      const {endpointId} = worker, uncapped = worker.capacity === 'uncapped';
+      const slot = uncapped ? record.operationId : this.#slotOf(record.companion, worker);
+      if (worker.delivery !== undefined || held.has(slot) || this.#busy(slot, worker)) continue;
       // A task cancelled or ended while its hand-off waited, even while this coordinator was stopped, sends nothing. A
       // task whose state could not be read keeps its hand-off waiting, ahead of the rest of its slot's line.
       let awaits: boolean | undefined;
@@ -449,9 +535,9 @@ export class CodingCoordinator {
       try {this.#store.sending(record.operationId);} catch (error) {this.#storageFailure(error); return;}
       if (uncapped) {
         const delivery: StartDelivery = {endpointId, record};
-        this.#startDelivery = delivery;
+        worker.delivery = delivery;
         void this.#sendWaiting(record, slot, delivery);
-        break;
+        continue;
       }
       this.#reserved.set(slot, record.operationId);
       void this.#sendWaiting(record, slot);
@@ -473,7 +559,10 @@ export class CodingCoordinator {
       // Core admission starts the worker request asynchronously. Do not release an uncapped delivery on the core reply alone.
       try {await delivery?.workerReply;}
       finally {
-        if (delivery !== undefined && this.#startDelivery === delivery) this.#startDelivery = undefined;
+        if (delivery !== undefined) {
+          const worker = this.#byEndpoint(delivery.endpointId);
+          if (worker?.delivery === delivery) delete worker.delivery;
+        }
         this.#drain();
       }
     }
@@ -555,8 +644,8 @@ export class CodingCoordinator {
     });
   }
   #steering(active: Active | undefined): NonNullable<CodingJobEntry['steering']> {
-    if (!this.#connected() || active === undefined || active.phase !== 'started' || active.settling || this.#state.endpointId !== active.endpointId) return 'unavailable';
-    const capability = this.#state.harnesses?.find(entry => entry.harness === active.harness)?.capabilities.steering;
+    if (!this.#connected() || active === undefined || active.phase !== 'started' || active.settling || this.#workers.get(active.worker.destination) !== active.worker) return 'unavailable';
+    const capability = active.worker.harnesses?.find(entry => entry.harness === active.harness)?.capabilities.steering;
     return capability !== 'live' ? 'unsupported' : active.sessionId === undefined ? 'unavailable' : 'live';
   }
   prepareNativeClient(input: OpenNativeClientInput & {requestId: string}, parent: TraceContext):
@@ -566,11 +655,12 @@ export class CodingCoordinator {
     if (job?.jobId !== jobId || attempt === undefined || this.#seams.jobVisible?.(job, attempt.companion) === false) return {code: 'not-found'};
     if (!this.#canUseCodingBrief(job, attempt.companion)) return {code: 'forbidden'};
     if (this.#store.attempts(jobId).at(-1)?.operationId !== operationId || !this.#store.resultSaved(operationId)) return {code: 'invalid-state'};
-    const endpointId = this.#state.endpointId, offer = this.#native.get(operationId);
-    if (endpointId === null || offer === undefined || this.#nativeView(operationId)?.state !== 'available') return {code: 'unavailable'};
+    if (attempt.binding !== undefined && attempt.binding.actual !== 'mac') return {code: 'unsupported-capability'};
+    const worker = this.#workerFor(attempt), endpointId = worker?.endpointId, offer = this.#native.get(operationId);
+    if (worker === undefined || endpointId === undefined || offer === undefined || this.#nativeView(operationId)?.state !== 'available') return {code: 'unavailable'};
     const client = action === 'open-claude-desktop' ? 'claude-desktop' : 'terminal';
     if (!offer.view.clients.includes(client)) return {code: 'unsupported-capability'};
-    const current = () => this.#connected() && this.#state.endpointId === endpointId && this.#state.selectionId === offer.selectionId &&
+    const current = () => this.#connected() && this.#workers.get(worker.destination) === worker && worker.selectionId === offer.selectionId &&
       this.#store.attempts(jobId).at(-1)?.operationId === operationId;
     const visible = () => this.#seams.jobVisible?.(job, attempt.companion) !== false && this.#canUseCodingBrief(job, attempt.companion);
     const draft = {type: 'org.bunny.coding.work.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-work/2.5'};
@@ -603,6 +693,18 @@ export class CodingCoordinator {
       this.#changed();
     }};
   }
+  #messageRefusal(job: CodingJob, active: Active): ErrorCode | undefined {
+    const {companion, operationId, worker, harness} = active;
+    const {destination, endpointId, selectionId} = worker;
+    const allowed = this.#seams.allowMessage?.(job, companion, destination);
+    if (destination === 'mac' || destination === 'pc') return allowed === false ? 'forbidden' : undefined;
+    if (allowed !== true) return 'forbidden';
+    const binding = this.#store.attempt(operationId)?.binding;
+    if (binding?.actual !== destination || binding.revision === undefined || selectionId === undefined ||
+      binding.endpointId !== endpointId || binding.selectionId !== selectionId || !codingHarness(harness)) return 'unavailable';
+    return this.#seams.allowCloud?.({operationId, destination, endpointId, selectionId, repository: job.repository,
+      revision: binding.revision, harness}, this.context.clock.now()) === true ? undefined : 'unavailable';
+  }
   prepareMessage(input: {jobId: string; operationId: string; requestId: string; text: string}, parent: TraceContext):
     {code: ErrorCode} | {committed: () => Promise<void>} {
     const {jobId, operationId, requestId, text} = input;
@@ -616,7 +718,8 @@ export class CodingCoordinator {
     const steering = this.#steering(active);
     if (steering === 'unsupported') return {code: 'unsupported-capability'};
     if (steering !== 'live' || active === undefined || active.sessionId === undefined) return {code: 'unavailable'};
-    if (this.#seams.allowMessage?.(job, active.companion) === false) return {code: 'forbidden'};
+    const refusal = this.#messageRefusal(job, active);
+    if (refusal !== undefined) return {code: refusal};
     const sessionId = active.sessionId, endpointId = active.endpointId;
     const fingerprint = createHash('sha256').update(text).digest('hex');
     const admitted = this.#store.rememberMessage({requestId, jobId, operationId, endpointId, sessionId, fingerprint, recordedAtMs: this.context.clock.now()});
@@ -627,7 +730,7 @@ export class CodingCoordinator {
       let status: 'accepted' | 'refused' | 'uncertain' = 'refused';
       let code: ErrorCode | undefined = 'unavailable';
       if (this.#active.get(operationId) === active && this.#steering(active) === 'live' &&
-          active.sessionId === sessionId && !this.#store.stopRequested(operationId) && this.#seams.allowMessage?.(job, active.companion) !== false) {
+          active.sessionId === sessionId && !this.#store.stopRequested(operationId) && this.#messageRefusal(job, active) === undefined) {
         try {
           const answer = await this.context.sdk.request(`bunny.cmd.coding-work.${endpointId}`, {
             type: 'org.bunny.coding.work.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-work/2.4',
@@ -726,44 +829,57 @@ export class CodingCoordinator {
   }
   #control(command: Command<CodingEndpointControl>): Reply {
     if (this.#closed || this.context.signal.aborted) return errorBody('unavailable');
-    if (command.source !== CODING_WORKER_SOURCE) return errorBody('forbidden');
+    const destination = codingDestinationForSource(command.source);
+    if (destination === undefined) return errorBody('forbidden');
     const checked = this.#validator.validate(command, {nowMs: this.context.clock.now()});
     if (!checked.ok) return {error: checked.error};
-    if (command.data.action === 'enable') {
-      if (this.#state.endpointId !== null && this.#state.endpointId !== command.subject) return errorBody('invalid-state', {detail: 'another coding worker endpoint is selected'});
-      // An enable from the selected endpoint is accepted again; one that carries readiness (2.1) replaces the recorded one.
-      const readiness = command.data.readiness ?? null, slots = command.data.slots ?? null, capacity = command.data.capacity, harnesses = command.data.harnesses;
-      const selected = this.#state.availability === 'available' && this.#state.endpointId === command.subject;
-      if (!selected || JSON.stringify(readiness) !== JSON.stringify(this.#state.readiness ?? null) || slots !== this.#state.slots || capacity !== this.#state.capacity ||
-        JSON.stringify(harnesses) !== JSON.stringify(this.#state.harnesses)) {
-        // The slots are the endpoint's own: an enable from the selected endpoint keeps them unless it declares others.
-        this.#state.endpointId = command.subject; this.#state.availability = 'available'; this.#state.readiness = readiness;
-        if (!selected || command.data.slots !== undefined || capacity === 'uncapped') this.#state.slots = slots;
-        if (capacity === undefined) {
-          delete this.#state.capacity;
-          delete this.#state.selectionId;
-        } else {
-          this.#state.capacity = capacity;
-          this.#state.selectionId ??= randomUUID();
-        }
-        if (harnesses === undefined) delete this.#state.harnesses;
-        else this.#state.harnesses = harnesses;
-        // A readiness report from the selected worker is published but does not move what a pending proposal is bound to.
-        this.#changed(!selected);
-        this.#drain();
-      }
+    const previous = this.#workers.get(destination);
+    if (command.data.action === 'disable') {
+      if (previous === undefined || previous.endpointId !== command.subject) return errorBody('forbidden');
+      this.#unselect(previous, 'off');
       return {status: 'accepted'};
     }
-    if (this.#state.endpointId !== command.subject) return errorBody('forbidden');
-    this.#unselect('off');
+    const {worker: declaration, harnesses, capacity} = command.data;
+    if (previous === undefined && this.#workers.size >= 32) return errorBody('capacity', {detail: 'the coding worker roster is full'});
+    if ((destination !== 'mac' || previous?.declaration !== undefined) && declaration === undefined) return errorBody('invalid-state', {detail: 'this worker requires a current destination declaration'});
+    if (previous !== undefined && previous.endpointId !== command.subject) return errorBody('invalid-state', {detail: 'another coding worker endpoint is selected'});
+    if (this.#byEndpoint(command.subject)?.destination !== undefined && this.#byEndpoint(command.subject)?.destination !== destination) return errorBody('forbidden');
+    const worker: Worker = previous ?? {destination, endpointId: command.subject, receivedAt: this.context.clock.now()};
+    const readiness = command.data.readiness ?? null;
+    const slots = command.data.slots ?? (capacity === 'uncapped' ? null : worker.slots ?? null);
+    const changed = previous === undefined || worker.capacity !== capacity || worker.slots !== slots ||
+      JSON.stringify([worker.readiness, worker.harnesses, worker.declaration]) !== JSON.stringify([readiness, harnesses, declaration]);
+    worker.receivedAt = this.context.clock.now();
+    if (changed) {
+      worker.readiness = readiness; worker.slots = slots;
+      if (declaration === undefined) delete worker.declaration; else worker.declaration = declaration;
+      if (capacity === undefined) {delete worker.capacity; delete worker.selectionId;}
+      else {worker.capacity = capacity; worker.selectionId ??= randomUUID();}
+      if (harnesses === undefined) delete worker.harnesses; else worker.harnesses = harnesses;
+      this.#workers.set(destination, worker);
+      this.#syncState('available');
+      this.#changed(previous === undefined);
+    }
+    this.#drain();
     return {status: 'accepted'};
   }
-  /** End starts owned by the old connection. Hand-offs that have never been assigned keep their places. */
-  #unselect(availability: 'off' | 'unavailable'): void {
-    const delivery = this.#startDelivery;
-    this.#startDelivery = undefined;
-    this.#workerReply = undefined;
-    this.#state.availability = availability; this.#state.endpointId = null; this.#state.readiness = null; this.#state.slots = null; delete this.#state.capacity; delete this.#state.harnesses; delete this.#state.selectionId;
+  #syncState(offline: 'available' | 'off' | 'unavailable'): void {
+    const primary = this.#primary();
+    this.#state = {revision: this.#state.revision, availability: primary === undefined ? offline : 'available',
+      endpointId: primary?.endpointId ?? null, readiness: primary?.readiness ?? null, slots: primary?.slots ?? null,
+      ...(primary?.capacity === undefined ? {} : {capacity: primary.capacity}), ...(primary?.selectionId === undefined ? {} : {selectionId: primary.selectionId}),
+      ...(primary?.harnesses == null ? {} : {harnesses: primary.harnesses})};
+  }
+  #unselect(worker: Worker, availability: 'off' | 'unavailable'): void {
+    const delivery = worker.delivery;
+    this.#workers.delete(worker.destination);
+    this.#syncState(availability);
+    for (const waiting of this.#store.waiting()) {
+      const binding = this.#store.attempt(waiting.operationId)?.binding;
+      if (!waiting.sending && binding?.endpointId === worker.endpointId && binding.selectionId === worker.selectionId) {
+        void this.#endWait(waiting, {status: Outcome.rejected, requestId: waiting.operationId, error: errorBody('unavailable')}, true);
+      }
+    }
     if (delivery !== undefined) {
       delivery.discarded = true;
       const {record} = delivery;
@@ -772,7 +888,7 @@ export class CodingCoordinator {
       }
     }
     for (const active of this.#active.values()) {
-      if (active.settling) continue;
+      if (active.worker !== worker || active.settling) continue;
       if (active.uncapped && active.deliveryStarted !== true) {
         const cancelled = active.phase === 'cancelling';
         void this.#settle(active, cancelled ? 'cancelled' : 'failed', undefined, cancelled ? 'stopped before worker start' : DISCONNECTED_BEFORE_START,
@@ -789,7 +905,9 @@ export class CodingCoordinator {
     const checked = this.#validator.validate(command, {nowMs: this.context.clock.now()});
     if (!checked.ok) return {error: checked.error};
     const data = command.data;
-    if (this.#active.has(data.requestId)) return {status: 'accepted'};
+    const repeated = this.#active.get(data.requestId);
+    if (repeated !== undefined) return repeated.endpointId === data.endpointId && (data.selectionId === undefined || data.selectionId === repeated.worker.selectionId) &&
+      this.#matchesJob(data) && (data.harness === undefined || data.harness === repeated.harness) ? {status: 'accepted'} : errorBody('duplicate-conflict');
     let approvedCompanion: CodingCompanion | undefined;
     try {
       if (this.#observationWrites.has(waitWriteKey(data.requestId)) || this.#store.accepted(data.requestId) || this.#store.resultSaved(data.requestId)) return errorBody('invalid-state', {detail: 'the coding attempt has already settled'});
@@ -804,13 +922,15 @@ export class CodingCoordinator {
         return errorBody('revision-conflict', {detail: 'the dispatch does not match the approved job'});
       }
     } catch (error) {this.#storageFailure(error, command); return errorBody('internal');}
-    if (!this.#connected() || this.#state.endpointId !== data.endpointId) return errorBody('unavailable', {detail: 'no coding worker endpoint is available for this dispatch'});
-    if (data.harness !== undefined && this.#state.harnesses?.some(entry => entry.harness === data.harness) !== true) {
+    const savedAttempt = this.#store.attempt(data.requestId);
+    const worker = this.#workerFor(savedAttempt);
+    if (!this.#connected() || worker === undefined || worker.endpointId !== data.endpointId) return errorBody('unavailable', {detail: 'no coding worker endpoint is available for this dispatch'});
+    if (worker.declaration !== undefined && (savedAttempt?.binding === undefined || savedAttempt.binding.selectionId !== worker.selectionId)) return errorBody('forbidden');
+    if (data.harness !== undefined && worker.harnesses?.some(entry => entry.harness === data.harness) !== true) {
       return errorBody('unsupported-capability', {detail: 'the selected coding worker did not declare this harness'});
     }
-    const delivery = this.#startDelivery?.record.operationId === data.requestId && this.#startDelivery.endpointId === data.endpointId
-      ? this.#startDelivery : undefined;
-    if (data.selectionId !== undefined ? data.selectionId !== this.#state.selectionId : this.#uncapped() && delivery === undefined) {
+    const delivery = worker.delivery?.record.operationId === data.requestId ? worker.delivery : undefined;
+    if (data.selectionId !== undefined ? data.selectionId !== worker.selectionId : worker.capacity === 'uncapped' && delivery === undefined) {
       return errorBody('unavailable', {detail: 'the worker selection changed before the start was sent'});
     }
     // The wait's end, which follows this refusal, forgets the cancel and tells the cancelled task nothing.
@@ -823,20 +943,24 @@ export class CodingCoordinator {
     if (companion === undefined) return errorBody('not-found', {detail: 'the dispatch names no companion task'});
     const brief = this.#briefRefusal(data);
     if (brief !== undefined) return brief;
-    const slot = this.#uncapped() ? data.requestId : this.#slotOf(companion), reserved = this.#reserved.get(slot);
-    if (reserved !== data.requestId && this.#busy(slot)) return errorBody('capacity', {detail: 'that companion\'s coding slot is busy'});
-    const active: Active = {operationId: data.requestId, taskId: data.taskId, endpointId: data.endpointId, traceparent: command.traceparent, started: false, status: 'pending',
-      companion, phase: 'dispatching', wallClockMs: data.bounds.wallClockMs, cancel: noop, settling: false, uncapped: this.#uncapped(),
+    const slot = worker.capacity === 'uncapped' ? data.requestId : this.#slotOf(companion, worker), reserved = this.#reserved.get(slot);
+    if (reserved !== data.requestId && this.#busy(slot, worker)) return errorBody('capacity', {detail: 'that companion\'s coding slot is busy'});
+    const active: Active = {worker, operationId: data.requestId, taskId: data.taskId, endpointId: data.endpointId, traceparent: command.traceparent, started: false, status: 'pending',
+      companion, phase: 'dispatching', wallClockMs: data.bounds.wallClockMs, cancel: noop, settling: false, uncapped: worker.capacity === 'uncapped',
       ...(data.harness === undefined ? {} : {harness: data.harness})};
-    try {this.#store.accept(active);}
+    try {
+      const binding = savedAttempt?.binding;
+      this.#store.accept(active, binding === undefined || binding.endpointId !== undefined ? undefined :
+        {...binding, endpointId: worker.endpointId, ...(worker.selectionId === undefined ? {} : {selectionId: worker.selectionId})});
+    }
     catch (error) {return errorBody(fullDisk(error) ? 'capacity' : 'internal', {detail: 'coding responsibility could not be saved'});}
     if (reserved === data.requestId) this.#reserved.delete(slot);
     this.#active.set(active.operationId, active); this.#changed();
     // Tracked dispatch admission remains asynchronous. All uncapped starts share the endpoint's acknowledgement queue.
-    const workerReply = (active.uncapped ? this.#workerReply ?? Promise.resolve() : Promise.resolve()).then(() => this.#start(active, data));
+    const workerReply = (active.uncapped ? worker.reply ?? Promise.resolve() : Promise.resolve()).then(() => this.#start(active, data));
     if (active.uncapped) {
-      this.#workerReply = workerReply;
-      void workerReply.finally(() => {if (this.#workerReply === workerReply) this.#workerReply = undefined;});
+      worker.reply = workerReply;
+      void workerReply.finally(() => {if (worker.reply === workerReply) delete worker.reply;});
     }
     if (delivery !== undefined) delivery.workerReply = workerReply;
     return {status: 'accepted'};
@@ -844,7 +968,7 @@ export class CodingCoordinator {
   async #start(active: Active, data: CodingRun): Promise<void> {
     if (this.#active.get(active.operationId) !== active || active.settling || this.#closed || this.context.signal.aborted) return;
     // A worker that declared slots (2.2) hears which companion asked; an older one gets the 2.0 start it knows.
-    const tagged = active.uncapped || this.#state.slots !== null || data.harness !== undefined;
+    const tagged = active.uncapped || active.worker.slots != null || data.harness !== undefined;
     try {
       const brief = this.#briefRefusal(data);
       if (brief !== undefined) {
@@ -856,11 +980,19 @@ export class CodingCoordinator {
         await this.#settle(active, 'cancelled', undefined, 'stopped before worker start', {result: Outcome.failed, code: 'cancelled'});
         return;
       }
+      const attempt = this.#store.attempt(active.operationId);
+      const routeRefusal = this.#boundRefusal(data, attempt, active.worker);
+      if (routeRefusal !== undefined) {
+        await this.#settle(active, 'failed', undefined, routeRefusal.error.detail ?? DISCONNECTED_BEFORE_START, {result: Outcome.failed, code: routeRefusal.error.code});
+        return;
+      }
+      const revision = data.continuation === undefined ? attempt?.binding?.revision : undefined;
+      this.#store.markSending(active.operationId);
       active.deliveryStarted = true;
       active.cancel = this.context.scheduler.after(START_MS, () => {void this.#settle(active, 'uncertain', undefined, 'lost', {result: Outcome.uncertain});});
       const result = await this.context.sdk.request(`bunny.cmd.coding-work.${active.endpointId}`, {type: 'org.bunny.coding.work.requested', subject: active.endpointId,
-        dataschema: `https://bunny.invalid/events/coding-work/${data.continuation !== undefined ? '2.3' : data.harness !== undefined ? '2.2' : tagged ? '2.1' : '2.0'}`,
-        data: {requestId: active.operationId, operationId: active.operationId, action: 'start', taskId: data.taskId, ...(tagged ? {companion: active.companion} : {}), repository: data.repository, brief: data.brief, bounds: data.bounds, ...(data.harness === undefined ? {} : {harness: data.harness}), ...(data.continuation === undefined ? {} : {continuation: data.continuation})}},
+        dataschema: `https://bunny.invalid/events/coding-work/${revision !== undefined ? '2.6' : data.continuation !== undefined ? '2.3' : data.harness !== undefined ? '2.2' : tagged ? '2.1' : '2.0'}`,
+        data: {requestId: active.operationId, operationId: active.operationId, action: 'start', taskId: data.taskId, ...(revision === undefined ? {} : {revision}), ...(tagged ? {companion: active.companion} : {}), repository: data.repository, brief: data.brief, bounds: data.bounds, ...(data.harness === undefined ? {} : {harness: data.harness}), ...(data.continuation === undefined ? {} : {continuation: data.continuation})}},
       {requestId: active.operationId, timeoutMs: 5000, parent: active});
       if (this.#active.get(active.operationId) !== active || active.settling) return;
       if (result.status === Outcome.uncertain) await this.#settle(active, 'uncertain', undefined, 'lost', {result: Outcome.uncertain});
@@ -868,17 +1000,18 @@ export class CodingCoordinator {
     } catch {await this.#settle(active, 'uncertain', undefined, 'lost', {result: Outcome.uncertain});}
   }
   async #progress(message: Message<CodingWorkerProgress>): Promise<void> {
-    if (this.#closed || message.source !== CODING_WORKER_SOURCE || !this.#validator.validate(message).ok) return;
+    const worker = this.#byEndpoint(message.subject);
+    if (this.#closed || worker === undefined || codingDestinationForSource(message.source) !== worker.destination || !this.#validator.validate(message).ok) return;
     if (message.data.status === 'native-client') {await this.#observeNative({...message, data: message.data}); return;}
     if (message.data.status === 'message-observed') {
       const {operationId, messageId, sessionId} = message.data;
-      if (message.subject !== this.#state.endpointId || !this.#connected()) return;
+      if (!this.#connected()) return;
       await this.#persistObservation(`observed:${messageId}`, message, () => this.outbox.transaction(() =>
         this.#store.observeMessage(messageId, operationId, message.subject, sessionId)), changed => Promise.resolve(changed ? this.#changed() : undefined));
       return;
     }
     const active = this.#active.get(message.data.operationId);
-    if (active === undefined || message.subject !== active.endpointId || active.settling) return;
+    if (active === undefined || worker !== active.worker || active.settling) return;
     if (active.uncapped && active.deliveryStarted !== true) return;
     if (message.data.status === 'attempt-context') {
       const {worktreeRef, branch, model} = message.data;
@@ -891,8 +1024,8 @@ export class CodingCoordinator {
     const progress = message.data;
     if (active.harness !== undefined && progress.harness !== active.harness) return;
     if (progress.harness !== undefined && (progress.harness !== (active.harness ?? 'claude-code') ||
-      !((active.uncapped && this.#state.harnesses === undefined && progress.harness === 'claude-code') ||
-        this.#state.harnesses?.some(entry => entry.harness === progress.harness) === true))) return;
+      !((active.uncapped && worker.harnesses === undefined && progress.harness === 'claude-code') ||
+        worker.harnesses?.some(entry => entry.harness === progress.harness) === true))) return;
     if (progress.harness !== undefined) active.harness = progress.harness;
     const freshSession = active.sessionId === undefined && progress.sessionId !== undefined;
     if (freshSession && progress.sessionId !== undefined) active.sessionId = progress.sessionId;
@@ -918,20 +1051,29 @@ export class CodingCoordinator {
       this.#changed();
       return;
     }
+    const binding = this.#store.attempt(active.operationId)?.binding;
+    if (binding?.revision !== undefined && progress.result != null &&
+      (progress.result.repository !== this.#store.job(active.operationId)?.repository ||
+       ((progress.status === 'completed' || progress.result.base !== null) && progress.result.base !== binding.revision))) {
+      await this.#settle(active, 'uncertain', undefined, 'the worker result did not match the approved repository revision');
+      return;
+    }
     if (!active.started) {await this.#settle(active, 'uncertain', progress.status === 'completed' ? progress.result : progress.result ?? undefined, 'lost', {result: Outcome.uncertain}); return;}
     if (progress.status === 'completed') await this.#settle(active, 'completed', progress.result, undefined, undefined, false, progress.handoffToken);
     else await this.#settle(active, progress.status, progress.result ?? undefined, progress.reason, undefined, false, progress.status === 'uncertain' ? undefined : progress.handoffToken);
   }
   async #observeNative(message: Message<CodingNativeClient>): Promise<void> {
-    if (message.subject !== this.#state.endpointId || !this.#connected()) return;
     const {operationId, clients, state, observedAtMs} = message.data;
-    const selectionId = this.#state.selectionId, view: NativeObservation = {clients, state, observedAtMs};
+    const attempt = this.#store.attempt(operationId), worker = this.#workerFor(attempt);
+    if (worker?.destination !== 'mac' || worker.endpointId !== message.subject || !this.#store.startSent(operationId) || !this.#connected() ||
+      (this.#active.get(operationId)?.worker !== worker && (attempt?.binding?.selectionId === undefined || attempt.binding.selectionId !== worker.selectionId))) return;
+    const selectionId = worker.selectionId, view: NativeObservation = {clients, state, observedAtMs};
     await this.#persistObservation(`native-client:${message.id}`, message, () => this.outbox.transaction(() => {
       const attempt = this.#store.attempt(operationId);
       if (attempt === undefined || (attempt.context?.nativeObservation?.observedAtMs ?? 0) > observedAtMs) return false;
       return this.#store.observeAttemptContext(operationId, {nativeObservation: view});
     }), changed => {
-      if (changed && this.#state.selectionId === selectionId) {
+      if (changed && this.#workers.get(worker.destination) === worker && worker.selectionId === selectionId) {
         this.#native.set(operationId, {selectionId, view});
         this.#changed();
       }
@@ -953,7 +1095,7 @@ export class CodingCoordinator {
   }
   #lost(): void {
     if (this.#closed) return;
-    this.#unselect('unavailable');
+    for (const worker of [...this.#workers.values()]) this.#unselect(worker, 'unavailable');
   }
   /**
    * Ends an operation once: records the status, reports the tracked outcome when the worker never reported a start, and
@@ -965,12 +1107,12 @@ export class CodingCoordinator {
     const active = 'settling' in record ? record : undefined;
     if (active !== undefined) {if (active.settling || this.#active.get(active.operationId) !== active) return; active.settling = true; active.cancel();}
     const text = describeResult(status, result, reason);
-    const handoffSelection = handoffToken === undefined ? undefined : this.#state.selectionId;
+    const handoffSelection = handoffToken === undefined ? undefined : active?.worker.selectionId;
     await this.#persistObservation(`run:${record.operationId}`, record, () => this.outbox.transaction(add => {
       const job = this.#store.job(record.operationId);
       // Acceptance survives the queue removal, even if its conversation observation could not be inserted.
-      this.#saveSent(record, this.#store.acceptedWait(record.operationId), startup);
       const knownUnsent = reason === DISCONNECTED_BEFORE_START || reason === UNVERIFIED_SUPERVISOR || reason === 'stopped before worker start';
+      if (!knownUnsent) this.#saveSent(record, this.#store.acceptedWait(record.operationId), startup);
       if (job !== undefined && !knownUnsent && this.#store.stopRequested(record.operationId)) {
         this.#saveStop(record, active?.stopEvidence ?? STOP_UNCONFIRMED, startup);
       }

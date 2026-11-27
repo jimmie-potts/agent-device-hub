@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-dispatch/2.4",
+  "description": "One guarded brightness or temperature action computed from an identified observation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "family", "target", "data", "observationBasis"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+    "family": {"enum": ["brightness-set", "catalog-action"]},
+    "command": {"enum": ["brightness-set", "lifx-temperature-set"]},
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "owner", "target", "configurationRevision", "generation"],
+      "properties": {
+        "kind": {"const": "device"},
+        "owner": {"type": "string", "maxLength": 64},
+        "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+        "configurationRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+        "generation": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ticket"}
+      }
+    },
+    "data": {"type": "object", "maxProperties": 3},
+    "observationBasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "observedAtMs", "value"],
+      "properties": {
+        "kind": {"enum": ["brightness", "temperature"]},
+        "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+        "value": {"type": "integer", "minimum": 0, "maximum": 65535}
+      }
+    }
+  },
+  "if": {"properties": {"family": {"const": "catalog-action"}}},
+  "then": {"required": ["command", "binding"], "properties": {"command": {}, "binding": {}}},
+  "else": {
+    "properties": {
+      "command": false,
+      "binding": false,
+      "data": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expectedConfigurationRevision", "expectedGeneration", "percent"],
+        "properties": {
+          "expectedConfigurationRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+          "expectedGeneration": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ticket"},
+          "percent": {"type": "integer", "minimum": 0, "maximum": 100}
+        }
+      }
+    }
+  }
+}

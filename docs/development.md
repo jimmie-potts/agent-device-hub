@@ -1014,8 +1014,8 @@ stay until #839, so run them locally when a change touches that code:
 - `npm run test:hub` and `npm run test:hub:package`, which include the setup,
   Hub MCP, automation, Wispr producer and compatibility-process tests, and
   `npm run test:hub:verify`;
-- `npm run test:agent-status`, `npm run test:lifx`, `npm run test:tidbyt`,
-  `npm run test:tidbyt:python` and `npm run test:local-controllers`;
+- `npm run test:agent-status`, `npm run test:lifx`, `npm run test:tidbyt` and
+  `npm run test:local-controllers`;
 - `npm run test:contracts:python` and `npm run test:package`, the 1.x
   contracts' Python consumer and archive check;
 - `npm run test:performance`, the early hook measurement tooling;
@@ -1028,8 +1028,7 @@ CI still covers the old code that kept checks rely on. `npm run build` and
 observability pilot import `@jimmie-potts/device-contracts` from source.
 `test:dashboard` and `test:dashboard:smoke` run because #922 copies the
 dashboard into the runtime; the copy has its own
-[checks](#runtime-dashboard-checks). The Python setup still installs
-`requirements-contracts.txt`, whose Pillow pin only the local Tidbyt check uses.
+[checks](#runtime-dashboard-checks).
 
 Native Windows is outside the supported CI matrix. Windows development uses
 Linux Node/Python runtimes inside WSL. Ubuntu CI does not establish installed
@@ -1098,6 +1097,24 @@ replaces it in CI takes about 2 s locally.
 [#862](https://github.com/jimmie-potts/agent-device-hub/issues/862) owns speedups. Measure before changing a wait,
 and keep the waits that test safety behavior.
 
+### Module test waits and manual time
+
+MicroDuck and Pixoo use `waitForObservation(read, ready, what, budget)` from
+`@jimmie-potts/sdk/testing` for real-I/O polling. Read a small fixture value that
+can appear in the test log, such as the connection state or the number of writes.
+The helper tests that value, then reports the last observation and the budget
+if time expires. The named `moduleWaitBudgets` retain the existing 4 s
+MicroDuck and 5 s Pixoo limits and their 5 ms polling interval (#2061).
+On `564f1ef3` the longest of 29 waits in the MicroDuck module test was 956 ms,
+and the longest of ten in Pixoo long playback was 270 ms (rounded up).
+Individual call sites with a different limit keep their override.
+
+`manualClock(start)` owns the test timer queue. The runtime advances a snapshot
+of the due timers in one turn. MicroDuck moves its loop clock in 5 ms turns so a
+simulated slow commit can move its transport clock independently. Pixoo uses
+`stepToNextTimer(end)` to settle work between callbacks and gives zero-delay
+timers an event-loop turn. Real I/O deadlines stay on the host clock.
+
 ## Static analysis
 
 See [Static analysis](static-analysis.md#static-analysis) for the authoritative procedure.
@@ -1150,6 +1167,23 @@ See [Lint misses and their reasons](static-analysis.md#lint-misses-and-their-rea
 
 ## CI diagnostic access
 
+Open the Actions run **Summary** for a failed test step in Checks or Runtime dashboard browser suite. A browser row names
+the journey and, where instrumented, the runner step, wait condition and last observed feed and copies states.
+`not observed` means that the step had no safe reading for that field. The renderer accepts only reviewed identifiers
+and finite state values. The production dashboard's contents, request text and error messages are never summary fields.
+
+The runtime unit, scenario and two verification steps show up to ten failing Node cases, with rounded milliseconds
+when supplied. Suite and module are reviewed identifiers. The case ID identifies the registration in the module, and
+the result number counts completed cases in that invocation's reporter order. Declaration line and column refer to the
+compiled test module when the runner attributes the case directly to it. Cases registered by a shared helper can have
+only their numeric identifiers. Other Core and App commands keep their own reporters and show the failing suite or
+browser entry. Passing test steps add no failure summary.
+
+To reproduce, check out the reported revision, run `npm ci` and `npm run build`, and run the command from the failing
+step. The dashboard browser group log names the command for an individual journey. The local journey runner prints
+its trace location on failure. Screenshots, traces, state dumps and full reports stay with the runner. The hosted
+summary remains available on the run after that machine exits.
+
 Routine merge and main-CI evidence uses the GitHub check records described in
 [the SDLC](sdlc.md#ci-evidence). Query the exact SHA with pagination:
 
@@ -1181,40 +1215,6 @@ job's `databaseId` from `gh run view <run-id> --json jobs`; `gh` refuses a run
 ID given together with `--job`. Downloaded artifacts and raw logs stay outside
 Git; summarize only the evidence needed for the task. See
 the [SDLC](sdlc.md#ci-evidence) for the evidence to record.
-
-When a hosted test job fails, its last step uploads the job's failure evidence
-(#2059): every test job in Checks except Firmware, and each group of the Runtime
-dashboard browser suite. A passing job uploads nothing. The artifact is named
-`failure-evidence-<job>-<run-id>-<attempt>` and is kept for 14 days; list and
-download it with the existing login, outside Git:
-
-```bash
-gh run view <run-id> --repo jimmie-potts/agent-device-hub --json jobs
-gh run download <run-id> --repo jimmie-potts/agent-device-hub --pattern 'failure-evidence-*' --dir <private-folder>
-```
-
-The tests write into `TEST_EVIDENCE_DIR`, which those workflows set to
-`/tmp/test-evidence`: the `bunny-browser-proof-*` folders of journeys that use
-`browserArtifactDirectory` (`DASHBOARD_RECEIPTS` still wins when set, and hosted
-CI leaves receipts mode off), and, from the runtime unit, scenario and
-verification steps, one `junit/node-test-<pid>.xml` per Node test process, which
-names each test, its duration and its failure. The
-[failure-evidence action](../.github/actions/failure-evidence/action.yml) copies
-only image, text, HTML, JSON and XML files, never a symbolic link, a hard link or
-a hidden file, up to 50 MB, JUnit files first and then the newest. Its
-`MANIFEST.txt` lists every file with `kept`, `file type not kept`,
-`over the size limit`, `hard link`, `hidden, not uploaded` or
-`not a regular file`. The JUnit reporter fails open: a folder it cannot write
-leaves the run's result and output unchanged. It reaches the runtime steps
-through `NODE_OPTIONS`, so do not give it to a suite that starts its own
-`node --test --test-reporter=...` child: that child then has one reporter too
-many and exits 1. A standalone-mode core job whose head predates the action
-skips the evidence step.
-Artifacts are a publication surface, so tests write synthetic fixtures only there
-([ADR 0011](decisions/0011-private-personal-data-retention.md)). Journeys that
-write only under `DASHBOARD_RECEIPTS`, and steps without the JUnit reporter,
-leave only their log. A job stopped by its own time limit may skip the upload,
-because GitHub can treat that stop as a cancellation.
 
 Runs before #870 were on Depot. Their GitHub check records stay readable as
 above, and their logs through the Depot CLI or dashboard while that account
@@ -1674,6 +1674,14 @@ post one profile 1.8 record and one span to the Collector, read them back
 through Grafana's Loki and Tempo proxies, then `down -v`. Hosted CI runs the
 export test with the runtime suites; it does not boot the stack.
 
+Shared device lookup and command admission use the existing Runtime unit tests,
+SDK and Companions CI groups. After the root build, run
+`node --test apps/runtime/dist/tests/shared-device-control.test.js` for the
+authenticated MCP client and Companions SDK dispatch against a disposable
+registered light. The Companions suite covers the model tool's view under
+sharing grants. Run shared type, lint, workflow, event, SDK and MCP checks as
+described in [runtime verification](../apps/runtime/DEVELOPMENT.md#runtime-checks).
+
 ### Runtime test layers
 
 See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) for the authoritative procedure.
@@ -1983,7 +1991,13 @@ network access.
 ## Runtime dashboard checks
 
 Pull request App verification runs the runtime dashboard's smoke check and some
-of its browser journeys. The full suite, `npm run test:runtime-dashboard:browser`,
+of its browser journeys. The smoke check renders expired, refused and
+uncertain layout and light outcomes in an isolated page in the existing
+browser. After a build, run
+`node apps/runtime/dashboard/tests/control-projections.ts` for that case and
+the retained command identity and lock checks. The runtime dashboard unit
+suite covers command phase, display wording and lock mapping. The full suite,
+`npm run test:runtime-dashboard:browser`,
 runs locally and, since
 [#1942](https://github.com/jimmie-potts/agent-device-hub/issues/1942), in the
 Runtime dashboard browser suite workflow (`runtime-dashboard-browser.yml`) on a
@@ -2185,14 +2199,12 @@ a real in-memory shared owner with fake cloud transport and run locally with the
 rest of `test:tidbyt`. No installed service or physical device participates.
 
 Hub #16 adds the `controllers/tidbyt` workspace package, an in-process Tidbyt cloud
-controller. Use Node 24 and Python 3.14. Run `npm run build`,
-`npm run typecheck` and `npm run test:tidbyt`. After installing
-`requirements-contracts.txt`, which pins Pillow, run `npm run test:tidbyt:python`.
-If the system Python lacks Pillow, create a virtual environment, install
-`requirements-contracts.txt` into it and run the command with that environment
-active (the #222 and #241 closeouts both hit this).
+controller. Use Node 24. Run `npm run build`, `npm run typecheck` and
+`npm run test:tidbyt`. #839 removed its Python golden check, which decoded the
+golden images with Pillow; `modules/tidbyt`'s Node golden check decodes the same
+images independently (see [Tidbyt module checks](#tidbyt-module-checks)).
 Keep running the shared controller-contract and workflow checks alongside them.
-Both are [old system checks](#old-system-checks) that run locally, not in CI.
+`npm run test:tidbyt` is an [old system check](#old-system-checks) that runs locally, not in CI.
 
 The TypeScript suite covers the renderer, including golden WebP bytes, invalid
 frames and its import boundary. It also covers the cloud connection against a
@@ -2214,17 +2226,15 @@ refresh, stale and failed-read cards, removal when nothing plays, backoff, a
 hung read and coexistence with the status publisher on one controller; the
 controller's additional installations with shared holds and per-installation
 evidence; and the runner's playback feed and optional `nowPlaying`
-configuration. A golden now-playing card is among the Pillow-decoded images. Every receipt and snapshot is checked with the controller v1 `validate()`. The
-Python check decodes the committed golden images with Pillow, independently of
-the encoder. No check reads credentials or contacts the Tidbyt cloud or a
+configuration. A golden now-playing card is among the golden images. Every receipt and snapshot is checked with the controller v1 `validate()`. No check reads credentials or contacts the Tidbyt cloud or a
 device. Visible results need the separately authorized installation in #21.
 
 Hub #426 extends these same suites with label/title/project/neutral precedence,
 a title-bearing golden frame, a snapshot 1.2 runner request and the exact frame
 sent through its queue. Run `npm run test:agent-status`, `npm run test:lifx` and
 `npm run test:local-controllers` as shared-feed consumer checks too. The feed's
-version selection is optional, and LIFX retains its default request. The title golden is independently decoded
-by `test:tidbyt:python`; it is a synthetic preview, not visible-device evidence.
+version selection is optional, and LIFX retains its default request. The title golden is a synthetic preview,
+not visible-device evidence.
 
 Hub #20 moves the per-session ranking (`sessionState`/`RANK`), the whole-owner
 reduction, `HubStatusFeed` and its bounded hub GET helpers, and the generic
@@ -2503,7 +2513,7 @@ publishers into the runtime module `modules/tidbyt`, under the
 copied test. The runtime ships it after the playback module, whose record its
 now-playing tile follows. `controllers/tidbyt` stays unchanged for the installed
 local controller host until #839, and keeps its own
-[checks](#tidbyt-controller-checks), its Pillow check included.
+[checks](#tidbyt-controller-checks).
 
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:tidbyt-module` from the worktree root. `test:tidbyt-module`
@@ -3188,12 +3198,38 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+For the Conversation catalog, run the root build and type check, JavaScript lint,
+the Companions suite, and the workflow checks. After building, the catalog
+admission cases can be isolated with
+`node --test --test-name-pattern='catalog admission|newly configured Pixoo' modules/companions/dist/tests/assistant.test.js`.
+The hosted catalog phrase cases also exercise Hub mode. They cover a direct
+polite request, an informational reply after restart, and an answer to the
+Hub's saved switch question after restart.
+The `apps/runtime/dist/tests/assistant-dispatch.test.js` suite checks the same
+typed payloads, revision guards and refusals through the tracked command path.
+These checks use synthetic adapters and disposable owner records. The
+Nanoleaf and Pixoo module suites cover their owner-local name lookups. The
+Runtime's `catalog-identity.test.js` checks the fixed owner references,
+bounded replies and timeout.
+
+
+After the root build, `npm run test:companions:built` exercises an owner asking
+for one coding job’s status while a synthetic worker is running. Its Conversation
+fixtures also verify the saved answer after restart, a changed attempt, revoked
+access and subsequent provider and title inputs.
+
 For device history, build and run `node --test --test-concurrency=2 apps/runtime/dist/tests/device-history.test.js modules/companions/dist/tests/device-history.test.js`.
 Run the Companion and runtime suites for the synthetic conversation and the
 core history and MCP readers. The Companion suite also exercises Responses
 summary scope, mismatched queries, title isolation and revocation before the
 next provider call. Their existing CI commands discover these files.
 The fixture writes only its disposable store and uses no device or hosted model.
+
+For model-interpreted Wemo control, run the root build, typecheck, lint and
+workflow checks, then run the Companions suite. Its existing CI module job
+exercises the typed proposal through the Companions engine at the dispatch
+boundary with synthetic plugs. The runtime suite and Wemo suite cover the
+tracked dispatcher and its writer. No hosted model or physical plug is needed.
 
 The Conversation maximum-on read uses a disposable Companions engine with
 synthetic Wemo and core SDK records. After the root build, the
@@ -3759,5 +3795,15 @@ After the root build, run `npm run test:companions:built`,
 The companion tests use scripted responses to run the same task and device
 guard through hosted selection, then resume an interrupted Responses task
 with its opaque items. They verify the title projection and the shared
-spend ledger with reported and uncertain usage. The disposable browser
+spend ledger with reported and uncertain usage. The same suite decodes the
+Messages and Responses fixtures for shared Conversation context and grant
+revocation. The existing Companions CI job runs these tests in
+`npm run test:companions:built`. The disposable browser
 journey uses fixture supervisors to send one task to each selected provider.
+
+Cloud coding qualification (#2172) uses a disposable provider double and the
+existing coding coordinator fixture. After the root build, run
+`node scripts/native-test.mjs test:companions:built`. Existing CI discovers
+these cases in the Companions suite. They exercise admission through the common
+selector, expiry, uncertain workspace effects and verified teardown. The
+fixtures have no provider credentials and incur zero infrastructure cost.

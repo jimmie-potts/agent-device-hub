@@ -174,7 +174,7 @@ const YAML = require('yaml');
 
 const storyHeadings = [
   'Outcome and real setup',
-  'Smallest useful implementation',
+  'Implementation approach and shared foundations',
   'Behavior and protections to preserve',
   'Observable acceptance and planned evidence',
   'Meaningful deferrals',
@@ -350,24 +350,10 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   // Each suite runs in exactly one job.
   const runs = Object.values(suites).flat().filter(run => run.startsWith('npm run test:'));
   assert.deepEqual(runs, [...new Set(runs)]);
-  // Hub #2059: a failed test job uploads what its tests wrote to TEST_EVIDENCE_DIR, as its last step; a passing job
-  // skips it. The runtime's node --test steps also write JUnit, through NODE_OPTIONS beside the spec reporter.
-  assert.deepEqual(checks.env, {
-    TEST_EVIDENCE_DIR: '/tmp/test-evidence',
-    NODE_TEST_JUNIT: '--test-reporter=spec --test-reporter-destination=stdout --test-reporter=${{ github.workspace }}/scripts/ci-selection/junit-file.mjs --test-reporter-destination=stdout',
-  });
-  const isEvidence = step => step.uses === './.github/actions/failure-evidence';
-  const withEvidence = ['core', 'runtime-unit', 'runtime-scenarios', 'app-verify', 'runtime-verify-captures', 'runtime-verify'];
-  const withJunit = { 'runtime-unit': 'npm run test:runtime:built', 'runtime-scenarios': 'npm run test:runtime:scenarios:built',
-    'runtime-verify-captures': 'npm run test:runtime:verify:captures:built', 'runtime-verify': 'npm run test:runtime:verify:rest:built' };
   let builds = 0;
   for (const [id, runs] of Object.entries(suites)) {
     const job = ci.jobs[id];
-    assert.deepEqual(job.steps.filter(isEvidence), withEvidence.includes(id) ? [{ if: "failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''", uses: './.github/actions/failure-evidence', with: { name: id } }] : [], id);
-    if (withEvidence.includes(id)) assert.ok(isEvidence(job.steps.at(-1)), `${id}: the evidence step runs last`);
-    assert.deepEqual(job.steps.filter(step => step.env?.NODE_OPTIONS !== undefined).map(step => [step.run, step.env]),
-      withJunit[id] ? [[withJunit[id], { NODE_OPTIONS: '${{ env.NODE_TEST_JUNIT }}' }]] : [], id);
-    const setup = job.steps.filter(step => step.uses && !isEvidence(step));
+    const setup = job.steps.filter(step => step.uses);
     // The select and gate jobs check out only the dependency-free selector and install nothing.
     const expectedSetup = ['select', 'gate'].includes(id) ? [
       { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', with: { 'sparse-checkout': 'scripts/ci-selection' } },
@@ -422,7 +408,7 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
     // until app-verify works under its systemd 255 (#873), so lifecycle tests skip as they did on Depot.
     assert.deepEqual(job.env, ['app-verify', 'runtime-verify-captures', 'runtime-verify'].includes(id) ? { XDG_RUNTIME_DIR: '', DBUS_SESSION_BUS_ADDRESS: '' } : undefined);
     assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
-    const originalSteps = job.steps.filter(step => !linuxSteps.includes(step) && !isEvidence(step));
+    const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     // Steps are skipped only by the selection (Hub #1080); none may fail without failing its job.
     assert(originalSteps.every(step => !step['continue-on-error']));
@@ -435,11 +421,13 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   // keeps its full browser suite out of pull request Checks too; it runs after merges to main in its own workflow (#1942).
   const { scripts } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   for (const name of ['test:hub:built', 'test:hub:package:built', 'test:hub:verify:built', 'test:agent-status:built', 'test:lifx:built',
-    'test:tidbyt:built', 'test:tidbyt:python', 'test:local-controllers:built', 'test:contracts:python', 'test:package:built',
+    'test:tidbyt:built', 'test:local-controllers:built', 'test:contracts:python', 'test:package:built',
     'test:performance', 'test:dashboard:browser', 'test:runtime-dashboard:browser']) {
     assert.ok(scripts[name], `${name} stays available for local runs`);
     assert.equal(runs.includes(`npm run ${name}`), false, `${name} runs outside pull request Checks`);
   }
+  // #839 removed the old Tidbyt Python golden check; modules/tidbyt's golden.test.ts decodes the same images in Node.
+  assert.equal(scripts['test:tidbyt:python'], undefined, 'the old Tidbyt Python golden check is gone');
   assert.equal(scripts['test:dashboard:smoke'], 'node apps/dashboard/tests/smoke.mjs');
   // Hub #1676: the two Runtime verification jobs split the suite as packaged qualification's lanes do
   // (scripts/release/packaged.mjs lanePlan). Capture shard 1/2 runs alone; the other job runs every other file

@@ -122,7 +122,7 @@ Inputs SHALL use bounded authenticated upload staging with references bound to r
 
 ### Requirement: Configured model provider
 
-The companions module SHALL run every task through one provider behind a tool-capable turn contract: a turn receives the fixed instructions, the task's own transcript, the permitted tool definitions, the current Hub mode and the prompt context, and answers with text, a question for the owner, tool calls or a refusal, plus reported usage or unknown. The module SHALL take a companions section, as every configured module does; with an empty section or one that names no provider, the provider SHALL be the labelled synthetic one, which makes no network call. A section whose `assistant.provider` is `anthropic` SHALL name the model, the effort and, under the section's `secrets`, the API key file, and MAY name `assistant.prices` with the input, output, five-minute cache write and cache read prices of each model in US dollars per million tokens, which override the built-in table; the module SHALL read the key once at start, never log, publish or store it, and SHALL refuse the section without the secret, with a malformed price table or with an unsupported provider. A section without prices SHALL start the module and run with daily pacing at the built-in prices. A 400 `invalid_request_error` whose message starts with "You have reached your specified API usage limits" or "You have reached your specified workspace API usage limits", or a 429 `rate_limit_error` whose `error.details.error_code` is `enforced_spend_limit_reached`, SHALL end the task with the capacity code and a conversation message naming the monthly spend limit at Anthropic, with nothing more sent for that turn and no retry; no other 400 or 429 SHALL be read as a spend limit. By default, every profile, `bunny`, `reachy` and `microduck`, SHALL use the configured provider and model ([Hub #2026](https://github.com/jimmie-potts/agent-device-hub/issues/2026)) with the same effort, key, prices, per-turn limits, prompt caching and shared spend limits; without a provider, or with `assistant.provider` `synthetic`, every profile SHALL use the labelled synthetic provider. The section SHALL have no per-profile provider or model, and only a test or harness MAY give one profile another provider. The prompt SHALL contain only the owner's typed text, tool definitions, tool results, the fixed instructions, the current Hub mode and the prompt context that the sectioned context builder assembles for the task's companion, as "Sectioned companion context" specifies ([Hub #2029](https://github.com/jimmie-potts/agent-device-hub/issues/2029)): its curated persona, the owner's active knowledge notes once the owner turns them on for that companion, the owner's currently active explicit preferences, an empty long-term memory slot and the recent messages and tool results of the task's own conversation, read from the module's own records at each model call and rendered as owner data that grants no tool, permission, approval or device authority. No inactive or historical entry, removed message, other conversation, other companion's message, companion exchange or private context document SHALL enter the prompt. Each section SHALL keep to its own byte budget and state what it left out; nothing SHALL be truncated silently, and an over-budget section SHALL NOT refuse the call. A provider refusal, unavailability, rate limit or malformed answer SHALL end the task failed or unavailable with a registry code and no fallback to another model; a lost answer SHALL leave the call uncertain. Each Anthropic request SHALL ask for automatic prompt caching with one top-level `cache_control` of type `ephemeral`, with the tools, the system prompt and the replayed transcript first and byte-stable between a task's calls, and the system prompt SHALL place the context sections in their fixed order, stable ones first and the recent conversation and the Hub mode last, as two text blocks: the instructions, the personality, the fixed rules, the knowledge notes, the preferences and the memory slot in the first, which carries its own `cache_control` breakpoint of type `ephemeral`, and the recent conversation and the Hub mode in the second, so a later task's request keeps the earlier one's tools and first system block byte-identical and can read them from the cache, and SHALL report usage by class: uncached input, output, cache writes and cache reads; a report without input or output counts, or with a count that is not a whole number, SHALL be unreported. Public state SHALL carry the provider, model and allowed tool names.
+The companions module SHALL run every task through one provider behind a tool-capable turn contract: a turn receives the fixed instructions, the task's own transcript, the permitted tool definitions, the current Hub mode and the prompt context, and answers with text, a question for the owner, tool calls or a refusal, plus reported usage or unknown. The module SHALL take a companions section, as every configured module does; with an empty section or one that names no provider, the provider SHALL be the labelled synthetic one, which makes no network call. A section whose `assistant.provider` is `anthropic` SHALL name the model, the effort and, under the section's `secrets`, the API key file, and MAY name `assistant.prices` with the input, output, five-minute cache write and cache read prices of each model in US dollars per million tokens, which override the built-in table; the module SHALL read the key once at start, never log, publish or store it, and SHALL refuse the section without the secret, with a malformed price table or with an unsupported provider. A section without prices SHALL start the module and run with daily pacing at the built-in prices. A 400 `invalid_request_error` whose message starts with "You have reached your specified API usage limits" or "You have reached your specified workspace API usage limits", or a 429 `rate_limit_error` whose `error.details.error_code` is `enforced_spend_limit_reached`, SHALL end the task with the capacity code and a conversation message naming the monthly spend limit at Anthropic, with nothing more sent for that turn and no retry; no other 400 or 429 SHALL be read as a spend limit. By default, every profile, `bunny`, `reachy` and `microduck`, SHALL use the configured provider and model ([Hub #2026](https://github.com/jimmie-potts/agent-device-hub/issues/2026)) with the same effort, key, prices, per-turn limits, prompt caching and shared spend limits; without a provider, or with `assistant.provider` `synthetic`, every profile SHALL use the labelled synthetic provider. The section SHALL have no per-profile provider or model, and only a test or harness MAY give one profile another provider. The prompt SHALL contain the task inputs permitted by "Field grants at each Conversation destination" and "Common external-model Conversation context". Local synthetic context SHALL continue to use the sectioned context builder. The stable sections and the local synthetic recent section SHALL keep their own byte budgets and state what they left out. Hosted Conversation history SHALL use the model token allowance defined in "Common external-model Conversation context". A provider refusal, unavailability, rate limit or malformed answer in the ordinary task turn SHALL end the task failed or unavailable with a registry code and no fallback to another model; a lost answer SHALL leave the call uncertain. Each Anthropic request SHALL ask for automatic prompt caching with one top-level `cache_control` of type `ephemeral`, with the tools, the system prompt and the replayed transcript first and byte-stable between a task's calls, and the system prompt SHALL place the context sections in their fixed order, stable ones first and the recent conversation and the Hub mode last, as two text blocks: the instructions, the personality, the fixed rules, the knowledge notes, the preferences and the memory slot in the first, which carries its own `cache_control` breakpoint of type `ephemeral`, and the recent conversation and the Hub mode in the second, so a later task's request keeps the earlier one's tools and first system block byte-identical and can read them from the cache, and SHALL report usage by class: uncached input, output, cache writes and cache reads; a report without input or output counts, or with a count that is not a whole number, SHALL be unreported. Public state SHALL carry the provider, model and allowed tool names.
 
 #### Scenario: Synthetic default
 - **WHEN** the module starts with an empty companions section or with one that names no provider
@@ -606,7 +606,7 @@ Anthropic SHALL enforce the monthly ceiling through a dedicated Console workspac
 
 ### Requirement: Model-written conversation titles
 
-The companions module SHALL give each conversation a title of the form `#<issue> <description>`, or `<repository>#<issue> <description>` for an issue in another repository, or the description alone when no issue appears, written by the profile's title model ([Hub #2025](https://github.com/jimmie-potts/agent-device-hub/issues/2025)), and the title SHALL follow the conversation's topic ([Hub #2075](https://github.com/jimmie-potts/agent-device-hub/issues/2075)). The Anthropic title model SHALL check the title after the admission of a task's first owner message while the conversation has no title, after each task finishes with `succeeded`, `failed` or `cancelled`, and after each major event the module records: an answered approval, approved or declined; a tool call that changed state, that is, a command the core accepted; an accepted coding hand-off; and a coding hand-off's result. No trigger SHALL depend on a count of tasks or on the time since earlier lifecycle evidence. A start of the module SHALL start no check: neither startup reconciliation nor the settlement at start of a coding hand-off left pending at the last stop, which reaches its task as an uncertain result; a hand-off result that arrives after the start SHALL be checked. Each check SHALL start after the commit that recorded its trigger and SHALL NOT fail, delay or roll back a task. A conversation SHALL have at most one title call in flight; the triggers that arrive while a call is in flight SHALL coalesce into one follow-up check that starts when the call settles and carries each distinct event once, oldest first, up to the latest four. Each check SHALL send the fixed title instruction and a prompt of at most 2 KiB with the current title and whether the owner or the title model set it, or that there is none; one fixed-form label for each event the check answers, made of the module's own words with at most a tool identifier, a decision or an outcome word; and the conversation's last eight owner and assistant messages, escaped and cut to fit. A check SHALL send no tool result, dispatch receipt, worker report, preference, knowledge entry or failed turn's closing reply. A coding hand-off's brief SHALL be recognized in both its approval question and its accepted hand-off message. The model SHALL answer `KEEP` when the current title still fits, or a new title; the instruction SHALL tell it that a title the owner set is their choice, to keep unless the topic has clearly changed since. `KEEP`, in any case and with surrounding quotes, emphasis or trailing punctuation, and a new title equal to the current one SHALL publish nothing. Every profile with the Anthropic provider, `bunny`, `reachy` and `microduck` alike ([Hub #2026](https://github.com/jimmie-potts/agent-device-hub/issues/2026)), SHALL use the configured `titleModel`, default `claude-haiku-5-5`, with the same key and transport as its turns, by these same rules. On the synthetic provider no profile has a real title model: each SHALL make no title call and keep its persona name; only a test or harness MAY inject the fixed `Synthetic conversation` title provider. The module SHALL keep a new title only after normalization: one line, no surrounding quotes, markdown heading or emphasis, `Title:` label or trailing punctuation, this repository's issues as a bare `#<issue>`, and a description of at most 40 characters cut at a word boundary. An empty or placeholder answer, an answer whose whole normalized form or title, also with the prompt's entity escapes undone, equals any message of the prompt or a coding hand-off's brief (ignoring case, spacing, surrounding quotes and trailing punctuation), an answer whose description after any issue reference, whole or as the title keeps it, shares a run of 6 consecutive words with an owner message or a hand-off brief, an answer long enough to be cut that appears inside another assistant reply, whole or as its whole description after any issue reference, and a title that is not session display text SHALL be refused. The title call record SHALL keep the labels of the events it answered and the model's raw answer, at most 1 KiB, privately; no log, trace, diagnostic or published record SHALL carry the answer. The module SHALL store the title on the conversation with its source, generated or owner, and publish it as the session title: at once in a `lifecycle/2.3` metadata observation while the session may be shown, and on every later lifecycle observation; until a title exists the persona name SHALL stand. A kept, failed, refused, invalid or abandoned check SHALL leave the earlier title or the persona name and SHALL NOT be retried. Each call SHALL be recorded on its conversation, admitted before it is sent and settled with its status, its outcome (applied, unchanged, kept, invalid or dropped) and its reported usage, or unknown usage. A paid call SHALL reserve its most expensive cost in the shared spend ledger as a conversation-level call, in its admission's transaction, and settle it with the reported usage, or keep the reservation counting when none is reported; a call the spend limits refuse SHALL NOT be sent and SHALL be recorded failed with `capacity`; the title model SHALL be priced like any paid model, at its configured price, else its built-in tiers, else the dearest known rate (Hub #2047), and a title call that Anthropic's monthly spend limit refuses SHALL fail with `capacity` without a retry and keep the earlier title or the persona. A title call SHALL count toward the shared spend limits and toward no task's call, unit or time limits.
+The companions module SHALL give each conversation a title of the form `#<issue> <description>`, or `<repository>#<issue> <description>` for an issue in another repository, or the description alone when no issue appears, written by the profile's title model ([Hub #2025](https://github.com/jimmie-potts/agent-device-hub/issues/2025)), and the title SHALL follow the conversation's topic ([Hub #2075](https://github.com/jimmie-potts/agent-device-hub/issues/2075)). The Anthropic title model SHALL check the title after the admission of a task's first owner message while the conversation has no title, after each task finishes with `succeeded`, `failed` or `cancelled`, and after each major event the module records: an answered approval, approved or declined; a tool call that changed state, that is, a command the core accepted; an accepted coding hand-off; and a coding hand-off's result. No trigger SHALL depend on a count of tasks or on the time since earlier lifecycle evidence. A start of the module SHALL start no check: neither startup reconciliation nor the settlement at start of a coding hand-off left pending at the last stop, which reaches its task as an uncertain result; a hand-off result that arrives after the start SHALL be checked. Each check SHALL start after the commit that recorded its trigger and SHALL NOT fail, delay or roll back a task. A conversation SHALL have at most one title call in flight; the triggers that arrive while a call is in flight SHALL coalesce into one follow-up check that starts when the call settles and carries each distinct event once, oldest first, up to the latest four. Each hosted check SHALL apply the common title purpose, select the minimum permitted current request and same-conversation excerpts needed for the title, and recheck those fields before submission. The title purpose SHALL exclude device facts and history. Each eligible hosted check SHALL send the fixed title instruction and a prompt of at most 2 KiB with one fixed-form label for each event the check answers and permitted excerpts of owner messages, escaped and cut to fit. The model SHALL receive neither a previously generated or owner-set title nor derived assistant or coding text under the retained-excerpt grant. A check SHALL send no tool result, dispatch receipt, worker report, preference, knowledge entry or failed turn's closing reply. The model SHALL answer `KEEP` when the current title still fits, or a new title; the instruction SHALL tell it that a title the owner set is their choice, to keep unless the topic has clearly changed since. `KEEP`, in any case and with surrounding quotes, emphasis or trailing punctuation, and a new title equal to the current one SHALL publish nothing. Every profile with the Anthropic provider, `bunny`, `reachy` and `microduck` alike ([Hub #2026](https://github.com/jimmie-potts/agent-device-hub/issues/2026)), SHALL use the configured `titleModel`, default `claude-haiku-5-5`, with the same key and transport as its turns, by these same rules. On the synthetic provider no profile has a real title model: each SHALL make no title call and keep its persona name; only a test or harness MAY inject the fixed `Synthetic conversation` title provider. The module SHALL keep a new title only after normalization: one line, no surrounding quotes, markdown heading or emphasis, `Title:` label or trailing punctuation, this repository's issues as a bare `#<issue>`, and a description of at most 40 characters cut at a word boundary. An empty or placeholder answer, an answer whose whole normalized form or title, also with the prompt's entity escapes undone, equals any message of the prompt or a coding hand-off's brief (ignoring case, spacing, surrounding quotes and trailing punctuation), an answer whose description after any issue reference, whole or as the title keeps it, shares a run of 6 consecutive words with an owner message or a hand-off brief, an answer long enough to be cut that appears inside another assistant reply, whole or as its whole description after any issue reference, and a title that is not session display text SHALL be refused. The title call record SHALL keep the labels of the events it answered and the model's raw answer, at most 1 KiB, privately; no log, trace, diagnostic or published record SHALL carry the answer. The module SHALL store the title on the conversation with its source, generated or owner, and publish it as the session title: at once in a `lifecycle/2.3` metadata observation while the session may be shown, and on every later lifecycle observation; until a title exists the persona name SHALL stand. A kept, failed, refused, invalid or abandoned check SHALL leave the earlier title or the persona name and SHALL NOT be retried. Each call SHALL be recorded on its conversation, admitted before it is sent and settled with its status, its outcome (applied, unchanged, kept, invalid or dropped) and its reported usage, or unknown usage. A paid call SHALL reserve its most expensive cost in the shared spend ledger as a conversation-level call, in its admission's transaction, and settle it with the reported usage, or keep the reservation counting when none is reported; a call the spend limits refuse SHALL NOT be sent and SHALL be recorded failed with `capacity`; the title model SHALL be priced like any paid model, at its configured price, else its built-in tiers, else the dearest known rate (Hub #2047), and a title call that Anthropic's monthly spend limit refuses SHALL fail with `capacity` without a retry and keep the earlier title or the persona. A title call SHALL count toward the shared spend limits and toward no task's call, unit or time limits.
 
 #### Scenario: First message
 - **WHEN** the owner starts the first task of a conversation and a fake title provider answers `"#1896 Session tracking."`, then `KEEP` for the finished task
@@ -614,7 +614,7 @@ The companions module SHALL give each conversation a title of the form `#<issue>
 
 #### Scenario: Keep or a new title
 - **WHEN** a titled conversation's later tasks finish and the model answers `KEEP`, then a new title once the topic moved
-- **THEN** each `KEEP` publishes nothing and the new title is published with source `provider`, its prompt carrying the earlier title as written by the title model and the recent conversation
+- **THEN** each `KEEP` publishes nothing and the new title is published with source `provider`, with only the permitted current request and recent owner excerpts in the hosted prompt
 
 #### Scenario: Refresh and reappearance
 - **WHEN** a titled conversation starts its third task, and later a task after a day without lifecycle evidence, and each task's model call is held
@@ -797,14 +797,14 @@ The companions module SHALL name each conversation's companion on every lifecycl
 
 ### Requirement: Sectioned companion context
 
-One context builder SHALL assemble each model call's prompt context for the task's companion as named sections in a fixed order, each with its own budget in UTF-8 bytes of its rendered text ([Hub #2029](https://github.com/jimmie-potts/agent-device-hub/issues/2029)): personality, the curated persona (4 KiB); knowledge, the owner's active knowledge notes by title and text (32 KiB), off until the owner turns it on for that companion; preferences, the owner's active explicit preferences by title and text (32 KiB); memory, a long-term memory slot that holds nothing yet (16 KiB); and recent, the recent conversation (48 KiB and at most 48 messages). The stable sections SHALL come first and the recent conversation last. The recent conversation SHALL hold only the task's own conversation's saved owner messages, companion replies and tool results, such as device reads, worker reports and refusals, up to the last message saved when the task started, oldest first, so it stays the same for all of the task's calls; a later message waits for the next task. Each line SHALL name the saved message's identity, its speaker or tool and an artwork attachment's request identity and description. It SHALL NOT hold another conversation, another companion's messages, a companion exchange, a removed message, a message the profile may not read in that conversation, as the history page reads them, or an imported message, which stays historical until the owner selects it for a copied context. When the owner removes an owner message of a task, its opening message or an answer, that task's tool results SHALL leave the recent section too, while its reply stays until the owner removes it (coordinator decision, 2026-11-24). A correction's meaning SHALL be the saved text. A task saved before this boundary existed SHALL have an empty recent section. A section over its budget SHALL keep what fits, the recent conversation its newest messages and the others their first entries, and SHALL state in its text how many items it left out; the recent section SHALL count in that statement the messages beyond its 48-message bound. The section texts SHALL frame their content as data that grants no tool, permission, approval or device authority, and the recent section SHALL tell the model to check current state with a tool before proposing a change and to ask the owner when a reference could mean more than one thing. A follow-up that names a subject from recent context SHALL still pass every current capability, guard and approval check of the proposal it leads to. Each companion SHALL have a saved knowledge switch, off until the owner turns it on with a knowledge command checked by its own revision scope. An authorized reader SHALL be able to read the context preview, `assistant-context`, for a profile: the builder's own sections, exactly as the next model call would send them, either the next call of the current conversation's unfinished task or that of a new message's task, with each section's budget, state, counts of items sent and left out, bytes and text; the read SHALL change nothing. `read_saved_art` SHALL name each listed artwork's source request, so an attachment's request identity leads to its artwork.
+One context builder SHALL assemble the local synthetic prompt context and the allowed section contents for external models for the task's companion as named sections in a fixed order, each with its own budget in UTF-8 bytes of its rendered text ([Hub #2029](https://github.com/jimmie-potts/agent-device-hub/issues/2029)): personality, the curated persona (4 KiB); knowledge, the owner's active knowledge notes by title and text (32 KiB), off until the owner turns it on for that companion; preferences, the owner's active explicit preferences by title and text (32 KiB); memory, a long-term memory slot that holds nothing yet (16 KiB); and recent, the conversation history (48 KiB and at most 48 messages for the synthetic provider, a portion of the model token budget for a hosted supervisor). The stable sections SHALL come first and the recent conversation last. For the synthetic provider, the recent conversation SHALL hold only the task's own conversation's saved owner messages, companion replies and tool results, such as device reads, worker reports and refusals, up to the last message saved when the task started, oldest first, so it stays the same for all of the task's calls; a later message waits for the next task. Each line SHALL name the saved message's identity, its speaker or tool and an artwork attachment's request identity and description. It SHALL NOT hold another conversation, another companion's messages, a companion exchange, a removed message, a message the profile may not read in that conversation, as the history page reads them, or an imported message, which stays historical until the owner selects it for a copied context. When the owner removes an owner message of a task, its opening message or an answer, that task's tool results SHALL leave the recent section too, while its reply stays until the owner removes it (coordinator decision, 2026-11-24). A correction's meaning SHALL be the saved text. A task saved before this boundary existed SHALL have an empty recent section. A byte-bounded section over its budget SHALL keep what fits, the synthetic recent section its newest messages and the others their first entries, and SHALL state in its text how many items it left out. The synthetic recent section SHALL count in that statement the messages beyond its 48-message bound. The section texts SHALL frame their content as data that grants no tool, permission, approval or device authority, and the recent section SHALL tell the model to check current state with a tool before proposing a change and to ask the owner when a reference could mean more than one thing. The common external-model policy SHALL apply before a hosted supervisor receives input from these sections. A follow-up that names a subject from recent context SHALL still pass every current capability, guard and approval check of the proposal it leads to. Each companion SHALL have a saved knowledge switch, off until the owner turns it on with a knowledge command checked by its own revision scope. An authorized reader SHALL be able to read the context preview, `assistant-context`, for a profile: the builder's own sections, for the next model call, either the next call of the current conversation's unfinished task or that of a new message's task, with each section's budget, state, counts of items sent and left out, bytes and text; the read SHALL change nothing. `read_saved_art` SHALL name each listed artwork's source request, so an attachment's request identity leads to its artwork.
 
 #### Scenario: Follow-up sees the earlier exchange
-- **WHEN** the owner asks a question whose task reads a tool and replies, then sends a follow-up
+- **WHEN** on the synthetic provider, the owner asks a question whose task reads a tool and replies, then sends a follow-up
 - **THEN** the follow-up's first call carries the first task's message, tool result with its tool name and reply, each with its saved message identity, and not its own message, which is its transcript
 
 #### Scenario: The section is fixed when the task starts
-- **WHEN** a message is saved in the conversation while a task waits on its question, and the owner then removes an earlier message
+- **WHEN** on the synthetic provider, a message is saved in the conversation while a task waits on its question, and the owner then removes an earlier message
 - **THEN** the task's next call carries the same recent section as its first, and the next task carries the later message and not the removed one
 
 #### Scenario: No other companion's conversation
@@ -834,7 +834,7 @@ One context builder SHALL assemble each model call's prompt context for the task
 
 #### Scenario: Preview equals the next call
 - **WHEN** the owner previews the context before a task, during a task that waits on a question, and after a restart
-- **THEN** each preview's sections equal the sections the next model call sends
+- **THEN** each preview's sections equal the sections the next synthetic model call sends, and the hosted request shares only the fields permitted by the common policy
 
 #### Scenario: Follow-ups across subjects
 - **WHEN** after discussing one synthetic light the owner says "dim it", after discussing two the owner says "dim it" again, and after the light is removed the owner names it
@@ -1006,6 +1006,30 @@ For an explicit request by the authorized owner in private Conversation, each co
 - **WHEN** the owner asks to pause media on a uniquely named display, clear notices for an exact session or change a named monitor setting
 - **THEN** the matching typed command dispatches once without an approval or a protocol-formatted request
 
+#### Scenario: A brightness instruction needs a device lookup first
+
+- **WHEN** the owner sets a specific brightness by exact device ID and the supervisor looks up the device first
+- **THEN** the supervisor receives only the matched permitted device and its supported brightness control
+- **AND** Conversation applies the original target and amount through the usual guarded dispatch once, without a separate approval
+- **AND** ambiguous, unsupported or denied selections send no command
+
+#### Scenario: A literal brightness ID collides with another device's label
+
+- **WHEN** the owner names `id:<device-id>` in the brightness instruction or in an answer to its clarification
+- **THEN** Conversation resolves the literal ID against the matching devices, ignoring display labels for that selection
+- **AND** a recognized read-only status question that names the literal ID selects only that ID under the current grants and sends no command
+- **AND** the device lookup for either supervisor and the brightness command tools accept the bare returned ID or an explicit `id:<device-id>` selector, which matches only that ID within the selected owner scope
+- **AND** before dispatch, Conversation checks the current access to the original request and any exact clarification
+- **AND** an unresolved or no longer permitted ID sends no command
+
+#### Scenario: A direct brightness command has a saved acceptance
+
+- **WHEN** the tracked dispatcher accepts the direct brightness command and Conversation saves its receipt
+- **THEN** Conversation completes locally from the receipt and distinguishes acceptance from correlated confirmation
+- **AND** reconciliation after restart sends no new command and makes no supervisor replay for that request
+- **AND** if current read or sharing authority no longer permits the receipt details, Conversation shows a neutral completion
+- **AND** Read aloud requires current access to the receipt at both the private Conversation and speech destinations
+
 #### Scenario: A display alias matches multiple eligible targets
 
 - **WHEN** the owner asks to show saved art on a shared display alias and another destination, even if the model proposes an exact display ID
@@ -1030,7 +1054,7 @@ For an explicit request by the authorized owner in private Conversation, each co
 
 ### Requirement: Field grants at each Conversation destination
 
-Before disclosing retained fields, the owning module SHALL check the current grant for caller, companion, purpose, source and destination. This SHALL cover discovery, counts, joins, pages, tool output, provider prompts, recent context, title requests and coding briefs. Existing collection and sharing choices SHALL remain in force. A new destination SHALL receive retained fields only after an explicit owner selection. Revocation SHALL apply before the next disclosure.
+Before disclosing retained fields, the owning module SHALL check the current grant for caller, companion, purpose, source and destination. This SHALL cover discovery, counts, joins, pages, tool output, provider prompts, recent context, title requests and coding briefs. Existing collection and sharing choices SHALL remain in force. All configured external Conversation models SHALL use the same owner-selected field policy with separate purposes for supervisor turns and title requests. Private Conversation and speech reads and approved coding briefs SHALL use their existing destination grants. Other destinations SHALL receive retained fields only after explicit owner selection. Revocation SHALL apply before the next disclosure.
 
 #### Scenario: Public metadata respects current grants
 
@@ -1053,7 +1077,7 @@ Before disclosing retained fields, the owning module SHALL check the current gra
 
 ### Requirement: Per-task companion supervisor
 
-For [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108), every companion SHALL offer the configured hosted supervisors for a new Send or Queue. The selected supervisor SHALL be independent of coding-worker selection and SHALL follow the task through questions, tool results, steers and recovery. Hosted tasks SHALL pin their supervisor, model, effort and pricing before admission. A task whose prior provider is ambiguous or whose matching configuration is unavailable SHALL remain readable and unable to resume. A request refused by one provider SHALL have no automatic retry or fallback. The existing Anthropic turn and title rules apply to Anthropic tasks. OpenAI tasks SHALL use the Responses contract and the sharing grant in ADR 0011.
+For [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108), every companion SHALL offer the configured hosted supervisors for a new Send or Queue. The selected supervisor SHALL be independent of coding-worker selection and SHALL follow the task through questions, tool results, steers and recovery. Hosted tasks SHALL pin their supervisor, model, effort and pricing before admission. A task whose prior provider is ambiguous or whose matching configuration is unavailable SHALL remain readable and unable to resume. A request refused by one provider SHALL have no automatic retry or fallback. Both hosted supervisors SHALL use the common external-model policy in ADR 0011. Each adapter SHALL keep its own request format, sizing, caching and native continuation. Provider-native continuation items SHALL be sent only to their originating task and adapter, subject to the current sharing policy.
 
 #### Scenario: Resume a task after selecting another supervisor
 
@@ -1063,14 +1087,14 @@ For [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108), e
 
 #### Scenario: Limit an OpenAI disclosure before a model call
 
-- **GIVEN** a current OpenAI task, private preferences, unrelated sessions and messages in other conversations
+- **GIVEN** a current hosted task, private preferences, unrelated sessions and messages in other conversations
 - **WHEN** the task requests a model turn or title
-- **THEN** the OpenAI request contains only the allowed current owner request and relevant scoped data for that purpose, and a revoked disclosure prevents opaque replay
+- **THEN** the request contains only the allowed current owner request and relevant scoped data for that purpose, and a revoked disclosure prevents opaque replay
 
 #### Scenario: Respect device exclusions before a Responses tool result
 
 - **GIVEN** the owner asks for a named device's state and excludes another device or a device group
-- **WHEN** Responses requests a device listing
+- **WHEN** either supervisor requests a device listing
 - **THEN** the result can include the requested device and excludes the other device or group
 
 #### Scenario: One configured hosted supervisor is unavailable
@@ -1098,7 +1122,7 @@ For [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108), e
 
 - **WHEN** a title trigger arrives while the other supervisor’s title check is running
 - **THEN** its follow-up uses its own provider and permitted inputs
-- **AND** a queued Responses title check sends no request if the conversation already has a title
+- **AND** the follow-up checks title eligibility and current grants before submission
 
 #### Scenario: A paid Responses call loses its answer
 
@@ -1133,7 +1157,9 @@ An approved coding delegation SHALL return a stable job ID and let its Conversat
 
 ### Requirement: Bounded device history in Conversation
 
-Conversation SHALL offer supported sources and read operations from the shared device contracts and check current destination grants when returning retained evidence. The core SHALL provide a versioned bounded read over its own history and open observation spans with one device identity and one half-open interval. The read SHALL return on, off and unknown durations and evidence identities, distinguish gaps and removals, and carry observed power through confirmed metadata-only deltas. A link SHALL identify the tracked request, successful transmission and later matching observation as distinct evidence, without claiming exclusive cause. Clock conversion for local yesterday SHALL use the configured time zone. A Conversation cursor SHALL bind its task, destination, normalized query and captured evidence boundary. A stale or foreign cursor SHALL be refused and a denied operation SHALL expose no request link.
+Conversation SHALL offer supported sources and read operations from the shared device contracts and check current destination grants when returning retained evidence. The core SHALL provide a versioned bounded read over its own history and open observation spans with one device identity and one half-open interval. The read SHALL return on, off and unknown durations and evidence identities, distinguish gaps and removals, and carry observed power through confirmed metadata-only deltas. A link SHALL identify the tracked request, successful transmission and later matching observation as distinct evidence, without claiming exclusive cause. Relative device history SHALL use an optional `assistant.historyTimeZone` for both supervisor paths and every companion, falling back to the runtime time zone. An unsupported zone ID SHALL refuse the section with `invalid-request`. The relative interval SHALL use the time the owner submitted the request text, including the latest saved edit to a queued message and the saved time of a steer. Explicit timestamp intervals, spend accounting periods and scheduled routines retain their existing semantics. A Conversation cursor SHALL bind its task, destination, normalized query and captured evidence boundary. A stale or foreign cursor SHALL be refused and a denied operation SHALL expose no request link.
+
+A supervisor SHALL receive summary facts for ordinary duration and last-change questions. When the owner explicitly asks for on or off times of one specific device over a specified period, either supervisor SHALL be eligible to receive the same in-period timestamps for the selected device and period, up to two pages of 12 rows. The current common detail policy SHALL apply on every page. The timestamp projection SHALL exclude raw observations, evidence and operation identifiers, raw cursors and links.
 
 #### Scenario: Power history on a local day
 
@@ -1148,10 +1174,23 @@ Conversation SHALL offer supported sources and read operations from the shared d
 
 #### Scenario: An OpenAI supervisor answers an explicit history request
 
-- **WHEN** the owner asks about one exact Wemo plug or LIFX light over a resolved interval and the current local and OpenAI grants allow its summary
-- **THEN** the supervisor receives only the requested device's bounded duration totals or last observed change, with incomplete coverage identified
-- **AND** raw observations, evidence and operation identifiers, links and cursors stay private
-- **AND** an ambiguous or mismatched query returns no retained facts, and a revoked grant prevents a saved summary from reaching another provider turn or title call
+- **WHEN** the owner asks about one exact Wemo plug or LIFX light over a resolved interval and current local and model grants allow the summary
+- **THEN** either supervisor receives the same permitted summary facts for the requested device and interval, with incomplete or unknown coverage identified
+- **AND** raw observations, evidence and operation identifiers, links and private cursors stay private
+- **AND** an ambiguous device, mismatched query, expired or foreign cursor or revoked grant exposes no retained facts
+
+#### Scenario: A Claude supervisor answers a named local-day history question
+
+- **WHEN** the owner asks how long one named Wemo plug or LIFX light was on or off yesterday
+- **THEN** the request fixes the source, device and local-day interval before any model tool call
+- **AND** Claude receives the same bounded summary facts permitted to either supervisor, with unknown time visible
+- **AND** each page rechecks current grants and an ambiguous, mismatched or foreign query exposes no retained facts
+
+#### Scenario: Explicit on and off times for one device
+
+- **WHEN** the owner asks for the on or off times of one exact device over a specified period and the current common details policy allows them
+- **THEN** each supervisor receives the same bounded in-period timestamps with unknown coverage identified
+- **AND** ordinary history questions, unresolved requests and requests with a denied details grant expose no detail timestamps
 
 ### Requirement: Separate explicit job instructions from ordinary Conversation
 
@@ -1162,3 +1201,259 @@ Conversation SHALL give each authorized coding-job receipt an attempt-specific c
 - **GIVEN** two jobs for the same companion use the same repository
 - **WHEN** the owner addresses one by a unique name and asks a separate Hub question
 - **THEN** only the named attempt receives the job instruction and the Hub question proceeds in Conversation
+
+### Requirement: Private status of one named coding job
+
+Conversation SHALL answer an owner’s status question about one full coding job ID locally, using the current attempt from the authorized Jobs projection in its originating conversation. Mixed or ambiguous requests SHALL require a separate question. The status question SHALL send no job control or provider request.
+
+#### Scenario: Status while coding continues
+
+- **GIVEN** a readable coding job with an active attempt
+- **WHEN** its owner asks for its status by full ID in the originating conversation
+- **THEN** the answer identifies the attempt and the state Jobs reported at that instant
+- **AND** the worker continues and the owner can send another ordinary message
+
+#### Scenario: Private reply after permission or attempt changes
+
+- **WHEN** the owner reads a saved status reply after restart
+- **THEN** Conversation checks current permission for the conversation and the source job and attempt
+- **AND** a foreign, unknown or inaccessible job reveals no job facts
+- **AND** a changed attempt cannot be presented as the attempt that supplied the saved status
+- **AND** later provider and title prompts receive no job facts from the private question or answer
+- **AND** a request for the last owner message cannot substitute an older message for that private question
+
+### Requirement: Common external-model Conversation context
+
+For [Hub #2180](https://github.com/jimmie-potts/agent-device-hub/issues/2180), Companions SHALL select permitted semantic inputs once for a given companion, active owner request, conversation and purpose, irrespective of the configured hosted supervisor. The supervisor purpose SHALL receive the active owner request, the eligible working context of that conversation, scoped device facts and explicitly requested bounded device-history summaries. Active knowledge and preference fields SHALL require an explicit common prompt grant for each field. The companion's knowledge switch SHALL still apply. Eligible earlier owner messages, companion replies and permitted tool results SHALL enter the working context in chronological order. The current request's wording SHALL NOT filter this history. Current device discovery and command guards SHALL resolve ambiguous references before a control can proceed. A steer that changes the subject SHALL rebuild the scope. A call SHALL deliver every newly admitted owner steer in the selected batch in order. Earlier companion replies and tool results SHALL retain proof of access to the original disclosures that their permission depends on. Credentials, raw logs, unrelated sessions and conversations, raw coding transcripts, media, bulk history and unrelated fields SHALL stay private. Other authorized non-device inputs SHALL remain within their existing purposes.
+
+The hosted working context SHALL fit within the selected model's estimated token allowance, after reserving instructions, tools, current input, continuation and output. Individual message admission, transport safety and spend limits SHALL remain independent. If the required request alone exceeds the working allowance, Companions SHALL preserve the saved input and refuse transport before reserving spend for that request. When the eligible history outgrows its allowance, Companions SHALL preserve recent exchanges verbatim and automatically attempt a bounded summary of older exchanges. The summary SHALL carry relevant decisions, unresolved requests, device references and corrections as historical background. A compaction request SHALL send no tools and SHALL use the same pinned supervisor, with its existing spend, receipt and uncertainty controls. A missing or unusable compaction MAY leave only the eligible verbatim tail while original history remains privately readable. Past messages and derived text SHALL grant no approval or authority to act.
+
+A saved summary SHALL be scoped to its conversation and covered sources. Before reuse or disclosure, Companions SHALL recheck the covered source versions and currently applicable grants. An edit, removal or revocation SHALL prevent disclosure of stale derived text. Saved replies and questions SHALL remain visible where the owner's private read grants permit them. Private display and speech SHALL also check the respective current grants against deduplicated original field requirements inherited through earlier replies or tool results. Companions SHALL save reusable private disclosure proof with finalized replies and eligible tool results, and read the direct disclosure requirements in older released ledgers. Companions SHALL preserve the raw record and withhold a derived reply whose required proof is absent. A permitted saved reply SHALL remain available irrespective of lineage length. After awaiting compaction, the ordinary call SHALL refresh any shared current state from its authoritative synced copy before admission. Companions SHALL NOT repeat a compaction with an uncertain receipt under a new identity merely to produce the same summary.
+
+The owner's explicit Send, Queue, Steer and Answer actions SHALL use the existing Conversation input path. The common policy SHALL govern submitted text and other model-bound fields. Configured credentials and secret files SHALL stay in the existing configuration and transport mechanisms, outside model input.
+
+Companions SHALL check current local access and common model grants before discovery, projection, paging and transport. A denied required field SHALL prevent submission with an existing refusal code. Derived text and native continuation SHALL be rechecked against their original disclosures before replay after a steer or restart. A missing disclosure record SHALL fail closed when current permission cannot be established. Only the originating task and adapter may reuse native items that meet the current policy.
+
+The runtime SHALL normalize existing model grants into the common policy without rewriting private originals. An explicit denial SHALL survive migration. When an old choice and common policy cannot be reconciled without widening access, the affected field SHALL stay private and a conflict SHALL be visible locally without disclosing its private values.
+
+#### Scenario: Equivalent hosted inputs for each companion
+
+- **GIVEN** a same-conversation request names two allowed devices, with unrelated devices and conversations present
+- **WHEN** the owner follows up about the two devices and then changes the subject, using each hosted supervisor on equivalent fixtures
+- **THEN** decoded requests for each companion carry the same eligible chronological history under equivalent fitting limits, with the same current request and scoped device facts for the same purpose
+- **AND** a title request exposes only its permitted title inputs
+- **AND** the changed subject does not replay ungranted device fields or incompatible native items
+
+#### Scenario: Older exchanges pass the working token allowance
+
+- **GIVEN** eligible history includes a settled owner decision, an open question, a device reference and a later correction
+- **WHEN** many short exchanges or a few long exchanges fill the model's working allowance
+- **THEN** the bounded summary carries continuity from older exchanges and recent exchanges keep their exact text in saved order
+- **AND** original messages remain privately readable, and only the current request and control guards can authorize action
+
+#### Scenario: Compaction replay and changes to sources
+
+- **GIVEN** a private checkpoint from a completed compaction and the receipt of a separate attempt with an uncertain result
+- **WHEN** the task resumes, and an input source is later edited, removed or denied
+- **THEN** the checkpoint is reusable only while its source versions and grants still match
+- **AND** stale derived text does not reach the next transport, and the uncertain attempt is not resent as new work
+
+#### Scenario: Private reply inherits grants through many exchanges
+
+- **GIVEN** a saved reply derives from an older grant-controlled reading across a long conversation
+- **WHEN** the owner reads the latest page or asks to speak the reply, including after a restart
+- **THEN** an allowed reply remains available irrespective of lineage length
+- **AND** withdrawing the original private read or speech grant withholds the reply for that recipient
+
+#### Scenario: Submit ordinary Conversation text
+
+- **GIVEN** a configured hosted supervisor and allowed owner text
+- **WHEN** the owner uses Send, Queue, Steer or Answer
+- **THEN** Conversation uses the corresponding existing control and the selected task receives permitted text through the common policy
+- **AND** configured credentials and secret file contents stay outside model input
+
+#### Scenario: Revocation after assembly
+
+- **GIVEN** a hosted request is assembled with a granted field
+- **WHEN** the grant is revoked before submission, during subsequent paging or before replay after a steer or restart
+- **THEN** the next disclosure omits the denied field or refuses with no provider request when that field is required
+- **AND** choosing the other supervisor does not restore the field or replay the first supervisor's opaque items
+
+#### Scenario: Legacy sharing choices
+
+- **GIVEN** absent, legacy-only, identical and conflicting model grant configurations
+- **WHEN** Companions loads each configuration
+- **THEN** current authority bounds the resulting common grants
+- **AND** explicit denials survive, conflicts keep affected fields private and are visible locally, and the saved configuration is preserved
+
+### Requirement: Model-interpreted Wemo power proposals
+
+The selected Conversation supervisor SHALL interpret the current authenticated owner request using the common context and grants. It SHALL distinguish a question, a request needing clarification and a power action for one or two configured Wemo plugs. The Hub SHALL bind a typed action to the current request, any eligible clarification and the eligible target references. The Hub SHALL validate the whole selection, current access, registered ownership, power capability and target guards before dispatch. It SHALL use the existing tracked generic power dispatch and the designated Wemo writer with its hold and maximum-on policy. Permitted conversation facts and a scoped lookup of configured Wemo IDs and labels MAY identify a referenced device. The current owner request supplies authorization.
+
+#### Scenario: Read before applying exact Wemo power
+
+- **WHEN** the current owner directs a power change using one complete Wemo ID and the supervisor looks up the device first
+- **THEN** the scoped lookup SHALL preserve that literal ID, including when followed by sentence punctuation, and return only its uniquely matched permitted device
+- **AND** an unknown or malformed explicit ID SHALL return no scoped device facts or dispatch, and ambiguous names SHALL require clarification before dispatch
+- **AND** a generic lookup SHALL return no device for an ambiguous name, while the typed Wemo finder MAY return matching permitted candidates for clarification and MAY discover permitted candidates for an open request with no recognized device name
+
+#### Scenario: A clear group request continues after discovery
+
+- **WHEN** the owner explicitly requests power on or off for all configured Wemo plugs and the read-only lookup resolves a supported group
+- **THEN** the supervisor proposes the whole group in a subsequent model response within the same owner request
+- **AND** the Hub dispatches once per intended target if the group passes current validation
+
+#### Scenario: Two plugs followed by one reference
+
+- **WHEN** the owner asks any companion to operate two named Wemo plugs and then asks to operate just one using the previous exchange
+- **THEN** the first request dispatches once for each intended target and the next request dispatches once for the one resolved target
+- **AND** both configured supervisors use the same proposal and validation rules
+
+#### Scenario: A relative description needs a lookup
+
+- **WHEN** the owner describes a plug without using its configured name or ID
+- **THEN** the supervisor can resolve the request using the permitted target lookup and prior Conversation facts
+- **AND** the Hub checks the chosen ID against the disclosed records and their current guards
+
+#### Scenario: Exact IDs constrain all writes
+
+- **WHEN** the current request or scoped answer supplies an `id:` selector
+- **THEN** only those complete, registered IDs can be write targets
+- **AND** an unknown or malformed selector prevents every write in the proposal, including when the model marks it as context
+- **AND** a group proposal or an additional implicit target requires clarification before the Hub sends a command
+
+#### Scenario: A request mentions two exact IDs
+
+- **WHEN** a power request explicitly contains two registered ID references
+- **THEN** the proposal accounts for each ID as a target or as context the owner intends to leave alone
+- **AND** an unaccounted ID prevents any dispatch from that proposal
+- **AND** the receipt states that the Hub sent no command to each context-only ID
+
+#### Scenario: Ambiguous or superseded request
+
+- **WHEN** the request leaves an intended target or setting unresolved
+- **THEN** the companion asks one focused question before sending any power command
+- **AND** an exact eligible ID selects that device independently of other devices' labels
+- **AND** a concrete target selection in the answer constrains the proposal, including group selections
+- **AND** a steer supersedes any part of the previous request that has yet to send
+
+#### Scenario: Questions and contextual text
+
+- **WHEN** the owner asks a state question, quotes an example, describes a hypothetical action or says to leave a plug alone
+- **THEN** the supervisor proposes no power action
+- **AND** words in device labels, prior messages, tool results and assistant suggestions supply no command authority
+
+#### Scenario: Independent results with a lost reply
+
+- **WHEN** a request reaches more than one plug and a result is unavailable, expired, failed or uncertain
+- **THEN** the original exchange reports each target's own receipt and retains any confirmed result
+- **AND** duplicate delivery and restart preserve each operation identity without resending a possibly sent effect
+- **AND** transmission alone establishes no observed plug power
+
+### Requirement: Conversation uses the runtime device lookup
+
+Conversation SHALL use the shared device lookup for supported device facts, and SHALL apply its active context-sharing and tool grants to every returned field. Proposals SHALL continue to use guarded device identity and the existing tracker, approval and receipt flow.
+
+#### Scenario: Device details are outside the conversation grant
+
+- **WHEN** a model asks for device details that the active Conversation sharing policy excludes
+- **THEN** the model receives no excluded fields, even if a different client has authority to read them
+
+#### Scenario: The supervisor reads the selected light's current controls
+
+- **WHEN** the owner names one light and the selected supervisor has permission for its current device status
+- **THEN** the supervisor can read the light's supported controls, advertised bounds and current observations for the request
+- **AND** historical timestamp permission is unnecessary for those current facts, while denying current status withholds them
+
+#### Scenario: The scoped reader selects a Wemo plug
+
+- **WHEN** the selected supervisor has current-status and power-control grants for one Wemo plug
+- **THEN** its facts include that plug's power support, allowed action and current guards, plus its existing maximum-on information when available
+
+### Requirement: Model-interpreted Conversation catalog
+
+Either registered supervisor SHALL receive the configured tools for the supported Conversation catalog. A migrated action SHALL remain bound to the current authenticated request, an eligible registered owner and target, the validated settings and the existing owner revision or generation. The Hub SHALL preserve existing approvals and field-specific sharing. A private draft mutation SHALL use its guarded revision and SHALL send no device command.
+
+#### Scenario: A catalog operation uses a current owner request
+
+- **WHEN** the owner asks for a supported operation and the supervisor supplies a unique target and valid settings
+- **THEN** the Hub sends the existing guarded owner command through the tracked dispatcher once
+- **AND** the private result follows the owner's existing evidence contract
+
+#### Scenario: Device availability follows the registered owner rule
+
+- **WHEN** a catalog request targets an unavailable device
+- **THEN** the tracked dispatcher applies the registered owner's availability rule to the guarded command
+- **AND** eligible owner-local changes such as Pixoo Now Playing and Moments preferences can be admitted
+- **AND** a physical action requiring availability is refused, and an active hold refuses these preference and physical writes
+
+#### Scenario: A Hub mode answer belongs to a question about switching
+
+- **WHEN** the current owner asks to switch Hub mode without naming a mode
+- **THEN** the supervisor can ask the Hub to render and save a question about which mode to switch to
+- **AND** a short mode answer can complete that same request after restart while the request and Hub mode revision are current
+- **AND** a short answer to a generic or informational question sends no mode command
+- **AND** a complete current owner instruction naming the requested mode can dispatch directly
+
+#### Scenario: A supervisor cites a current request to switch Hub mode
+
+- **WHEN** the supervisor interprets the current owner input as an affirmative Hub mode switch and cites the action and its selected mode verbatim
+- **THEN** the Hub checks the current owner quote and validates the selected mode against the quoted action before dispatch
+- **AND** absent or inconsistent cited evidence authorizes no write
+
+#### Scenario: A hosted catalog proposal cites the current target words
+
+- **WHEN** the hosted supervisor proposes a catalog effect against an existing target
+- **THEN** the selected supervisor cites verbatim target selections and exclusions in the current authenticated owner request or clarification, with their primary or nested roles
+- **AND** the Hub checks each cited source and resolves current named targets in their owner-local permitted records before dispatch
+- **AND** absent, inaccessible, ambiguous or conflicting named targets send no command and require clarification
+
+#### Scenario: Visible command-capable devices share a label across owners
+
+- **WHEN** a current target name matches visible devices under different owners for the requested command
+- **THEN** the Hub requires a current exact ID or an owner-qualified name, or asks for clarification before dispatch
+- **AND** a model-supplied owner alone cannot resolve the collision
+- **AND** hidden devices are excluded before matching and their absence does not change the visible result
+
+#### Scenario: The owner selects one target and excludes another
+
+- **WHEN** the current request selects one named target and rules out another
+- **THEN** the Hub resolves the selected target and rejects an excluded canonical target
+- **AND** a missing selection sends no command, even when the excluded target exists
+- **AND** a unique authorized selection with valid settings can dispatch directly
+
+#### Scenario: Earlier context identifies a genuine reference
+
+- **WHEN** a current target phrase refers back to an eligible record in the same conversation
+- **THEN** eligible prior context may identify that record for the cited role
+- **AND** a pronoun in another instruction cannot replace an absent or conflicting name in the current selection
+
+#### Scenario: The owner asks for the last scene they activated on a light
+
+- **WHEN** the current request names an eligible light and refers to its last scene activation
+- **THEN** the Hub checks tracked activation order across callers for that light and selects the latest successful activation only when its scene has eligible owner-backed evidence
+- **AND** it asks which saved scene to use if a newer activation has an unresolved outcome or eligible evidence is missing or conflicts
+- **AND** the Hub rechecks the receipt identity and permission after reading the tracker and confirms that the same receipt is still current before admitting the command
+- **AND** the normal sharing, capability and revision checks still apply
+- **AND** a receipt of transmission establishes no physical effect
+
+#### Scenario: A hold release cites an operation
+
+- **WHEN** the current request cites an operation for a held device
+- **THEN** a selected operation must match the current hold, even if the supervisor omits the operation ID from its command arguments
+- **AND** an explicitly excluded operation cannot be released
+- **AND** an authorized request to release the current hold may leave the operation unspecified
+
+#### Scenario: A stale draft edit or invalid target is proposed
+
+- **WHEN** the supervisor proposes a stale draft revision, an invalid target, or a target whose permission has changed
+- **THEN** the Hub sends no device command and leaves the affected draft unchanged
+
+#### Scenario: A stored scene or original is requested by name
+
+- **WHEN** the current owner asks to activate a saved Nanoleaf scene on an eligible light or change an original Pixoo asset by name
+- **THEN** Companions resolves the name through the selected owner and binds its opaque ID before using the existing tracked command
+- **AND** both hosted adapters tell the supervisor that the scene argument accepts the owner's exact saved name, an exact scene ID, or the explicit last-activated reference
+- **AND** private catalog names and records remain out of the hosted supervisor's results
+- **AND** a missing scene returns `not-found` without sending a command, and the supervisor asks the owner for another scene
+- **AND** an ambiguous match prompts for clarification and sends no command

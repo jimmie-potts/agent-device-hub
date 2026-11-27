@@ -9,7 +9,7 @@ import type {FieldAccess} from './sharing.js';
 
 export type DeviceHistoryRead = (query: DeviceHistoryQuery) => DeviceHistorySnapshot | ErrorBody;
 const MAX_PAGES = 32, ROWS_PER_PAGE = 12, MAX_CURSORS = 32, CURSOR_MS = 5 * 60_000;
-type Cursor = {taskId: string; destination: string; snapshot: DeviceHistorySnapshot; offset: number; expires: number};
+type Cursor = {taskId: string; destination: string; snapshot: DeviceHistorySnapshot; offset: number; expires: number; requestId?: string};
 
 function localDate(atMs: number, timeZone: string): string {
   return new Intl.DateTimeFormat('sv-SE', {timeZone, year: 'numeric', month: '2-digit', day: '2-digit'}).format(atMs);
@@ -31,9 +31,11 @@ export function localYesterday(now: number, timeZone: string): {fromAtMs: number
   return {fromAtMs: midnight(yesterday, timeZone), toAtMs: midnight(today, timeZone)};
 }
 
-type SummaryKind = 'durations' | 'last-change';
-export type DeviceHistorySummary = {query: DeviceHistoryQuery; kind: SummaryKind; yesterday: boolean};
-type HistoryRequest = {subject: string; interval: {fromAtMs: number; toAtMs: number}; kind: SummaryKind; yesterday: boolean};
+type HistoryProjection = {kind: 'durations' | 'last-change'} | {kind: 'timestamps'; power: 'on' | 'off' | 'both'};
+export type DeviceHistorySummary = {query: DeviceHistoryQuery; yesterday: boolean} & HistoryProjection;
+export type DeviceHistoryBinding = {requestId: string; history: DeviceHistorySummary | undefined};
+type HistoryScope = {taskId: string; destination: string; now: number; requestedAtMs: number; timeZone: string; bound?: DeviceHistoryBinding; pagesRead?: number};
+type HistoryRequest = {subject: string; interval: {fromAtMs: number; toAtMs: number} | undefined; yesterday: boolean} & HistoryProjection;
 
 /** Names and intervals come from the current owner message. Tool arguments cannot expand either one. */
 export function requestedHistory(text: string, requestedAt: number, timeZone: string): HistoryRequest | undefined {
@@ -43,18 +45,22 @@ export function requestedHistory(text: string, requestedAt: number, timeZone: st
   const question = normalizedControlText(yesterday ? request.slice(0, -' yesterday'.length) : explicit === null ? request : request.slice(0, explicit.index));
   const duration = /^(?:please )?(?:how long was|how long has) (?:(?:the|my) )?(.+) (?:been )?(?:on|off)$/u.exec(question)?.[1];
   const change = /^(?:please )?(?:when did|when was) (?:(?:the|my) )?(.+) last (?:change|changed)$/u.exec(question)?.[1];
-  const subject = duration ?? change;
-  if (subject === undefined || (duration !== undefined && !yesterday && explicit === null)) return undefined;
+  const turn = /^(?:please )?when did (?:(?:the|my) )?(.+) (?:turn|switch) (on|off)$/u.exec(question);
+  const times = /^(?:please )?(?:show|list|give me) (?:the )?(on off|off on|on|off) (?:timestamps|times) (?:for|of) (?:(?:the|my) )?(.+)$/u.exec(question);
+  const subject = duration ?? change ?? turn?.[1] ?? times?.[2];
+  const power = turn?.[2] ?? times?.[1];
+  if (subject === undefined || (duration !== undefined || power !== undefined) && !yesterday && explicit === null) return undefined;
   const from = explicit?.[1], to = explicit?.[2];
   let interval: HistoryRequest['interval'];
   if (from !== undefined && to !== undefined) {
     const fromAtMs = Date.parse(from), toAtMs = Date.parse(to);
     if (!Number.isFinite(fromAtMs) || !Number.isFinite(toAtMs) ||
       new Date(fromAtMs).toISOString().slice(0, 19) !== from.toUpperCase().slice(0, 19) ||
-      new Date(toAtMs).toISOString().slice(0, 19) !== to.toUpperCase().slice(0, 19)) return undefined;
-    interval = {fromAtMs, toAtMs};
+      new Date(toAtMs).toISOString().slice(0, 19) !== to.toUpperCase().slice(0, 19)) interval = undefined;
+    else interval = {fromAtMs, toAtMs};
   } else if (yesterday) interval = localYesterday(requestedAt, timeZone);
   else interval = {fromAtMs: Math.max(0, requestedAt - 7 * 86_400_000), toAtMs: requestedAt};
+  if (power !== undefined) return {subject, interval, kind: 'timestamps', power: power === 'on' || power === 'off' ? power : 'both', yesterday};
   return {subject, interval, kind: duration === undefined ? 'last-change' : 'durations', yesterday};
 }
 
@@ -73,23 +79,36 @@ export function deviceHistoryGuide(tools: ReadonlySet<string>): string {
   ].join(' ');
 }
 
+function matchesBoundQuery(input: Record<string, unknown>, requested: DeviceHistorySummary): boolean {
+  const {query, yesterday} = requested;
+  const {source, target, period, fromAtMs, toAtMs} = input;
+  const useBoundInterval = period === '' && fromAtMs === 0 && toAtMs === 0;
+  const confirmsYesterday = yesterday && period === 'yesterday' && fromAtMs === 0 && toAtMs === 0;
+  const confirmsExact = period === '' && fromAtMs === query.fromAtMs && toAtMs === query.toAtMs;
+  return (source === '' || source === query.source) && (target === '' || target === query.target) &&
+    (useBoundInterval || confirmsYesterday || confirmsExact);
+}
+
+export function canReadDeviceHistory(access: FieldAccess, target: string): boolean {
+  return access('devices', 'index', target) && access('devices', 'details', target) && access('devices', 'status', target);
+}
+
+export function sameHistoryQuery(a: DeviceHistoryQuery, b: DeviceHistoryQuery): boolean {
+  return a.source === b.source && a.target === b.target && a.fromAtMs === b.fromAtMs && a.toAtMs === b.toAtMs;
+}
+
 export class DeviceHistoryPages {
   readonly #cursors = new Map<string, Cursor>();
   constructor(readonly provider: () => DeviceHistoryRead | undefined) {}
   summary(input: Record<string, unknown>, requested: DeviceHistorySummary | undefined, access: FieldAccess): string {
-    if (requested === undefined) return 'refused: forbidden';
-    const {query, kind, yesterday} = requested;
-    const {source, target, period, fromAtMs, toAtMs, cursor} = input;
-    const useBoundInterval = period === '' && fromAtMs === 0 && toAtMs === 0;
-    const confirmsYesterday = yesterday && period === 'yesterday' && fromAtMs === 0 && toAtMs === 0;
-    const confirmsExact = period === '' && fromAtMs === query.fromAtMs && toAtMs === query.toAtMs;
-    if ((source !== '' && source !== query.source) || (target !== '' && target !== query.target) || cursor !== '' ||
-      (!useBoundInterval && !confirmsYesterday && !confirmsExact) || !access('devices', 'summary', query.target)) return 'refused: forbidden';
+    if (requested === undefined || requested.kind === 'timestamps') return 'refused: forbidden';
+    const {query, kind} = requested;
+    if (!matchesBoundQuery(input, requested) || input.cursor !== '' ||
+      !access('devices', 'index', query.target) || !access('devices', 'status', query.target) || !access('devices', 'summary', query.target)) return 'refused: forbidden';
     const snapshot = this.provider()?.(query);
     if (snapshot === undefined) return 'refused: unavailable';
     if ('error' in snapshot) return `refused: ${snapshot.error.code}`;
-    if (snapshot.query.source !== query.source || snapshot.query.target !== query.target ||
-      snapshot.query.fromAtMs !== query.fromAtMs || snapshot.query.toAtMs !== query.toAtMs) return 'refused: invalid-state';
+    if (!sameHistoryQuery(snapshot.query, query)) return 'refused: invalid-state';
     const interval = {fromAtMs: query.fromAtMs, toAtMs: query.toAtMs};
     const change = snapshot.lastChange;
     return JSON.stringify({interval, complete: snapshot.complete, ...(kind === 'durations'
@@ -97,40 +116,64 @@ export class DeviceHistoryPages {
       : {lastChange: change === null ? null : {atMs: change.atMs, from: change.from, to: change.to}})});
   }
 
-  read(input: Record<string, unknown>, scope: {taskId: string; destination: string; now: number; timeZone: string}, access: FieldAccess): string {
+  read(input: Record<string, unknown>, scope: HistoryScope, access: FieldAccess): string {
     const {cursor, period, source, target, fromAtMs, toAtMs} = input;
-    if (period !== '' && period !== 'yesterday') return 'refused: invalid-request';
-    if (period === 'yesterday' && (fromAtMs !== 0 || toAtMs !== 0)) return 'refused: invalid-request';
-    const interval = period === 'yesterday' ? localYesterday(scope.now, scope.timeZone) : {fromAtMs, toAtMs};
-    const query = deviceHistoryQuery({source, target, ...interval});
+    let query: DeviceHistoryQuery | undefined;
+    if (scope.bound === undefined) {
+      if (period !== '' && period !== 'yesterday') return 'refused: invalid-request';
+      if (period === 'yesterday' && (fromAtMs !== 0 || toAtMs !== 0)) return 'refused: invalid-request';
+      const interval = period === 'yesterday' ? localYesterday(scope.requestedAtMs, scope.timeZone) : {fromAtMs, toAtMs};
+      query = deviceHistoryQuery({source, target, ...interval});
+    } else {
+      const requested = scope.bound.history;
+      if (requested === undefined || !matchesBoundQuery(input, requested)) return 'refused: forbidden';
+      const pagesRead = scope.pagesRead ?? 0;
+      if (pagesRead >= 2 || pagesRead > 0 && cursor === '') return 'refused: history page limit reached';
+      query = requested.query;
+    }
     if (query === undefined || typeof cursor !== 'string') return 'refused: invalid-request';
-    if (!access('devices', 'index', query.target) || !access('devices', 'details', query.target) ||
-      !access('devices', 'status', query.target)) return 'refused: forbidden';
+    const {fromAtMs: from, toAtMs: to} = query;
+    if (!canReadDeviceHistory(access, query.target)) return 'refused: forbidden';
     for (const [id, page] of this.#cursors) if (page.expires <= scope.now) this.#cursors.delete(id);
     const saved = cursor === '' ? undefined : this.#cursors.get(cursor);
     if (cursor !== '' && (saved === undefined || saved.taskId !== scope.taskId || saved.destination !== scope.destination ||
-      JSON.stringify(saved.snapshot.query) !== JSON.stringify(query))) return 'refused: revision-conflict; start a fresh history read.';
+      saved.requestId !== scope.bound?.requestId || !sameHistoryQuery(saved.snapshot.query, query))) return 'refused: revision-conflict; start a fresh history read.';
     const snapshot = saved?.snapshot ?? this.provider()?.(query);
     if (snapshot === undefined) return 'refused: unavailable';
     if ('error' in snapshot) return `refused: ${snapshot.error.code}`;
+    if (scope.bound !== undefined && !sameHistoryQuery(snapshot.query, query)) return 'refused: invalid-state';
+    const projection = scope.bound?.history;
+    const evidence = projection?.kind === 'timestamps' ? snapshot.evidence.filter(row => row.kind === 'observation' &&
+      row.atMs >= from && row.atMs < to && row.power !== 'unknown' && (projection.power === 'both' || projection.power === row.power)) : snapshot.evidence;
     const offset = saved?.offset ?? 0;
-    const rows = snapshot.evidence.slice(offset, offset + ROWS_PER_PAGE);
+    const rows = evidence.slice(offset, offset + ROWS_PER_PAGE);
     const nextOffset = offset + rows.length;
     let next: string | null = null;
-    if (nextOffset < snapshot.evidence.length && nextOffset < MAX_PAGES * ROWS_PER_PAGE) {
+    const rowLimit = (scope.bound === undefined ? MAX_PAGES : 2) * ROWS_PER_PAGE;
+    if (nextOffset < evidence.length && nextOffset < rowLimit) {
       if (this.#cursors.size >= MAX_CURSORS) this.#cursors.delete(this.#cursors.keys().next().value ?? '');
       next = randomUUID();
       this.#cursors.set(next, {taskId: scope.taskId, destination: scope.destination, snapshot, offset: nextOffset,
-        expires: saved?.expires ?? scope.now + CURSOR_MS});
+        expires: saved?.expires ?? scope.now + CURSOR_MS,
+        ...(scope.bound === undefined ? {} : {requestId: scope.bound.requestId})});
     }
-    const evidence = rows;
-    const links = snapshot.links.filter(cause => rows.some(row => row.seq === cause.observationSeq) &&
-      access('operations', 'index', cause.requestId) && access('operations', 'details', cause.requestId));
     const describe = localInstant(scope.timeZone);
-    const localRange = {from: describe(query.fromAtMs), to: describe(query.toAtMs)};
-    const lastChange = snapshot.lastChange === null ? null : {...snapshot.lastChange, localTime: describe(snapshot.lastChange.atMs)};
-    const page = JSON.stringify({schema: snapshot.schema, query, boundary: snapshot.boundary, complete: snapshot.complete,
-      timeZone: scope.timeZone, localRange, durations: snapshot.durations, lastChange, evidence, links, next, capped: next === null && nextOffset < snapshot.evidence.length});
+    const localRange = {from: describe(from), to: describe(to)};
+    const change = snapshot.lastChange;
+    const common = {schema: snapshot.schema, query, complete: snapshot.complete, timeZone: scope.timeZone, localRange,
+      durations: snapshot.durations, next, capped: next === null && nextOffset < evidence.length};
+    const page = JSON.stringify(projection?.kind === 'timestamps' ? {
+      interval: {fromAtMs: from, toAtMs: to}, complete: snapshot.complete, unknownMs: snapshot.durations.unknown, next, capped: common.capped,
+      evidence: rows.map(({atMs, power}) => ({atMs, power})),
+    } : scope.bound === undefined ? {...common, boundary: snapshot.boundary,
+      lastChange: change === null ? null : {...change, localTime: describe(change.atMs)}, evidence: rows,
+      links: snapshot.links.filter(cause => rows.some(row => row.seq === cause.observationSeq) &&
+        access('operations', 'index', cause.requestId) && access('operations', 'details', cause.requestId))}
+      : {...common, lastChange: change === null || change.atMs < from || change.atMs >= to ? null :
+        {atMs: change.atMs, from: change.from, to: change.to, localTime: describe(change.atMs)},
+      evidence: rows.filter(row => row.atMs < to && row.confirmedThroughMs >= from)
+        .map(row => ({atMs: Math.max(from, row.atMs), confirmedThroughMs: Math.min(to, row.confirmedThroughMs),
+          kind: row.atMs < from ? 'continuation' : row.kind, power: row.power}))});
     if (Buffer.byteLength(page) <= LIMITS.toolBytes) return page;
     if (next !== null) this.#cursors.delete(next);
     return 'refused: too-large; narrow the history interval.';

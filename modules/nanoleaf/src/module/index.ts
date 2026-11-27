@@ -11,7 +11,7 @@ import {LINES_ADDRESS, SimulatedNanoleaf} from './simulated.js';
 import {configureNanoleaf, type NanoleafConfig} from './config.js';
 import type {MusicShowAuthoringProvider} from '../music-show-authoring-provider.js';
 import {NanoleafRuntime} from './runtime.js';
-import {nanoleafSchemas} from './schemas.js';
+import {NANOLEAF_FAMILIES, nanoleafSchemas} from './schemas.js';
 
 export {configureNanoleaf, registryFile, MAX_DEVICES, type DeviceSection, type NanoleafConfig} from './config.js';
 export {CONSUMER, CORE_OWNER, envelopeOf, SessionFeed, sharedConfig, sharedSession, type Projected} from './feed.js';
@@ -62,6 +62,13 @@ export function createNanoleafModule({transport, datagram, readWithDiagnostics, 
   return {
     manifest: {
       name: NANOLEAF_MODULE, apiVersion: '1.3', configure: configureNanoleaf,
+      deviceCommandAvailability: {
+        'device-mode-set': 'owner-admission',
+        [NANOLEAF_FAMILIES.wallEdit.family]: 'owner-admission',
+        [NANOLEAF_FAMILIES.machineEdit.family]: 'owner-admission',
+        [NANOLEAF_FAMILIES.favoriteEdit.family]: 'owner-admission',
+        [NANOLEAF_FAMILIES.acknowledge.family]: 'owner-admission',
+      },
       pages: [{id: 'wall', title: 'Wall', presentation: 'react'}, {id: 'shows', title: 'Saved shows', presentation: 'react'}],
       content: (ref, request) => running === undefined
         ? errorBody('unavailable', {detail: 'The Nanoleaf module is not running.'}) : running.content(ref, request),

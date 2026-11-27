@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type BrowserContext, type Locator, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {OTHER, approvalPrompt, sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {textOverlaps} from './layout.ts';
@@ -18,7 +19,7 @@ const checks: string[] = [];
 const errors: string[] = [];
 
 async function open(viewport: {width: number; height: number}): Promise<{context: BrowserContext; page: Page; sent: string[]}> {
-  const context = await browser.newContext({viewport, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport, reducedMotion: 'reduce'});
   context.on('weberror', error => { errors.push(error.error().name); });
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);

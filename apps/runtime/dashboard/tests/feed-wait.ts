@@ -1,4 +1,6 @@
 // The browser journeys' wait for the dashboard's feed, which says what it saw when it expires (#2068).
+import {withFailureContext} from './failure-context.ts';
+import {stripVTControlCharacters} from 'node:util';
 
 /** A response the page already has. */
 type SeenResponse = {status(): number};
@@ -99,7 +101,12 @@ function readFeed(key: string): Seen {
   return {trail, main: main === null ? null : {feed: main.getAttribute('data-feed'), copies: main.getAttribute('data-copies'), syncs: main.getAttribute('data-syncs')}};
 }
 
-async function bounded<T>(work: () => Promise<T>): Promise<{value: T} | {problem: string}> {
+/**
+ * Runs `work`, a read after an expired wait, for at most `READ_MS`: its value, or a one-line problem when it fails or
+ * gives no answer in time, so a stalled page cannot hold the failure. Journeys that describe their own expired waits
+ * read the page through it too (#2129).
+ */
+export async function bounded<T>(work: () => Promise<T>): Promise<{value: T} | {problem: string}> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<{problem: string}>(resolve => { timer = setTimeout(() => { resolve({problem: `no answer within ${String(READ_MS)} ms`}); }, READ_MS); });
   try {
@@ -154,6 +161,9 @@ function requestFacts(requests: readonly FeedRequest[], since: number, times: We
   return `stream requests (start relative to the wait): ${listed}; other SDK requests of this document with no response yet: ${String(others)}`;
 }
 
+const mainFact = (main: MainState): string => main === null ? 'main#main is absent'
+  : `main#main now has data-feed=${attribute(main.feed)} data-copies=${attribute(main.copies)} data-syncs=${attribute(main.syncs)}`;
+
 /** What the page showed and how its requests stood, from the reads after an expired wait. */
 function describe(seen: {value: Seen} | {problem: string}, requests: {value: readonly FeedRequest[]} | {problem: string},
   since: number, times: WeakMap<FeedRequest, number>): string[] {
@@ -161,7 +171,7 @@ function describe(seen: {value: Seen} | {problem: string}, requests: {value: rea
   if ('value' in seen) {
     const {trail, main} = seen.value;
     facts.push(`data-feed during the wait: ${trail === null || trail.length === 0 ? '(not observed)' : trail.join(' -> ')}`);
-    facts.push(main === null ? 'main#main is absent' : `main#main now has data-feed=${attribute(main.feed)} data-copies=${attribute(main.copies)} data-syncs=${attribute(main.syncs)}`);
+    facts.push(mainFact(main));
   } else {
     facts.push(`the page could not be read: ${seen.problem}`);
   }
@@ -170,6 +180,18 @@ function describe(seen: {value: Seen} | {problem: string}, requests: {value: rea
 }
 
 const firstLine = (error: unknown): string => error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error);
+
+/** Playwright starts its call log with the locator, then reports what kept the action from finishing. */
+export function browserStepError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const plain = stripVTControlCharacters(error.message);
+  const [message, ...lines] = plain.split('\n');
+  if (!lines.includes('Call log:')) return plain;
+  const calls = lines.map(line => line.trim()).filter(line => line.startsWith('- '));
+  const kept = calls.length > 3 ? [calls[0], '…', ...calls.slice(-2)] : calls;
+  return [message, ...kept].join('\n  ');
+}
+
 
 /**
  * Waits, with the page's default timeout, for `main#main[data-feed="${value}"]`. If the wait expires, its error says
@@ -187,18 +209,65 @@ export async function waitForFeed(page: FeedPage, value: string, clock: Clock = 
     await page.locator(`main#main[data-feed="${value}"]`).waitFor();
   } catch (error) {
     let facts: string[];
+    let observed: MainState = null;
     try {
       const [seen, requests] = await Promise.all([bounded(async () => {
         const watched = await watching;
         const read = await page.evaluate(readFeed, key);
         return watched ? read : {...read, trail: null};
       }), bounded(() => page.requests())]);
+      if ('value' in seen) observed = seen.value.main;
       facts = describe(seen, requests, since, times);
     } catch (problem) {
       facts = [`the wait's facts could not be gathered: ${firstLine(problem)}`];
     }
-    throw new Error(`feed(page, '${value}') did not see main#main[data-feed="${value}"]: ${firstLine(error)}\n  ${facts.join('\n  ')}`, {cause: error});
+    const failure = new Error(`feed(page, '${value}') did not see main#main[data-feed="${value}"]: ${firstLine(error)}\n  ${facts.join('\n  ')}`, {cause: error});
+    withFailureContext(failure, {condition: `feed ${value}`, feed: observed?.feed, copies: observed?.copies});
+    throw failure;
   }
   // Not awaited, so a successful wait takes no longer; a page that navigated or closed has dropped the record anyway.
   void watching.then(() => page.evaluate(stopFeedWatch, key)).catch(() => {});
+}
+
+/** Runs in the page: the main region's connection attributes now. `_unused` is the argument every page read here takes. */
+function readMain(_unused: null): MainState {
+  const main = document.querySelector('main#main');
+  return main === null ? null : {feed: main.getAttribute('data-feed'), copies: main.getAttribute('data-copies'), syncs: main.getAttribute('data-syncs')};
+}
+
+/**
+ * The main region's `data-feed`, `data-copies` and `data-syncs` now, in the words the feed waits use, read within
+ * `READ_MS`. A journey describing its own expired wait states the page's connection with it (#2129).
+ */
+export async function mainNow(page: Pick<FeedPage, 'evaluate'>): Promise<string> {
+  const main = await bounded(() => page.evaluate(readMain, null));
+  return 'value' in main ? mainFact(main.value) : `the page could not be read: ${main.problem}`;
+}
+
+/**
+ * Waits, with the page's default timeout, for `main#main[data-copies="synced"]`: the page holds a current copy of
+ * every owner's records it follows. A page's feed connects before its copies arrive (ADR 0012), so a card that shows
+ * records is not ready at `data-feed="connected"` (#2123). If the wait expires, its error says the main region's
+ * `data-feed`, `data-copies` and `data-syncs` at expiry and how the page's latest SDK requests stood, as the feed
+ * wait's does. The original error is its `cause`. `clock` times the requests.
+ */
+export async function waitForCopies(page: FeedPage, clock: Clock = Date.now): Promise<void> {
+  const since = clock();
+  const times = startTimes(page, clock);
+  try {
+    await page.locator('main#main[data-copies="synced"]').waitFor();
+  } catch (error) {
+    let facts: string[];
+    let observed: MainState = null;
+    try {
+      const [main, requests] = await Promise.all([bounded(() => page.evaluate(readMain, null)), bounded(() => page.requests())]);
+      if ('value' in main) observed = main.value;
+      facts = ['value' in main ? mainFact(main.value) : `the page could not be read: ${main.problem}`, 'value' in requests ? requestFacts(requests.value, since, times) : `the page's requests could not be read: ${requests.problem}`];
+    } catch (problem) {
+      facts = [`the wait's facts could not be gathered: ${firstLine(problem)}`];
+    }
+    const failure = new Error(`copiesSynced(page) did not see main#main[data-copies="synced"]: ${firstLine(error)}\n  ${facts.join('\n  ')}`, {cause: error});
+    withFailureContext(failure, {condition: 'copies synced', feed: observed?.feed, copies: observed?.copies});
+    throw failure;
+  }
 }

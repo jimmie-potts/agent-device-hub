@@ -24,7 +24,7 @@ const configuration = (repository: string) => ({schema: 'coding-worker/1.0', edg
   claude: {executable: '/nonexistent/claude', permissionMode: 'acceptEdits', allowedTools: DEFAULT_ALLOWED_TOOLS}});
 const command = (data: CodingWork, source = 'bunny/modules/companions'): Command<CodingWork> => ({specversion: '1.0', bunnyprofile: '2.0', id: `cmd-${data.requestId}`, source, kind: 'command',
   type: 'org.bunny.coding.work.requested', subject: 'worker-endpoint-1', time: new Date().toISOString(), datacontenttype: 'application/json',
-  dataschema: `https://bunny.invalid/events/coding-work/${'continuation' in data ? '2.3' : 'harness' in data ? '2.2' : 'companion' in data ? '2.1' : '2.0'}`,
+  dataschema: `https://bunny.invalid/events/coding-work/${'revision' in data ? '2.6' : 'continuation' in data ? '2.3' : 'harness' in data ? '2.2' : 'companion' in data ? '2.1' : '2.0'}`,
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', expiresat: new Date(Date.now() + 5000).toISOString(), data});
 async function until(check: () => boolean, seen: () => unknown = () => undefined): Promise<void> {
   for (let i = 0; i < 1000; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 10));}
@@ -563,6 +563,7 @@ for (const [origin, destination, scenarios] of [
     const writerHome = join(dirname(repo), 'isolated-writer-home');
     await mkdir(writerHome);
     let priorWorktree: string | undefined, resumed = 0, edited = false;
+    let finishSibling: (() => void) | undefined;
     const initialSession = `${origin}-partial-id`, resumedSession = `${destination}-continuation-id`;
     const partialReport = {outcome: 'incomplete', summary: 'Synthetic partial result.', checks: [{name: 'git diff', status: 'passed'}], findings: [], limitations: []};
     const completeReport = {outcome: 'tested-candidate', summary: 'Synthetic completion.', checks: [{name: 'unit test', status: 'passed'}], findings: [], limitations: []};
@@ -600,13 +601,23 @@ for (const [origin, destination, scenarios] of [
     const codex: CodingAdapter = {
       id: 'codex', capabilities: {steering: 'unsupported', resume: 'saved-session', review: true},
       readiness: () => Promise.resolve({installed: 'yes', signedIn: 'yes', version: 'synthetic', plan: 'plus'}),
-      async run({worktree, session, signal, brief, continuationRoot}) {
+      async run({worktree, session, signal, brief, continuationRoot, namedStop}) {
+        if (brief === 'Concurrent sibling') {
+          await new Promise<void>(resolve => {finishSibling = resolve;});
+          assert.equal(signal.aborted, false);
+          return {structured: completeReport};
+        }
         if (origin !== 'codex') {
           await complete(worktree, brief);
           await session(resumedSession);
           return {writerStopped: true, structured: completeReport};
         }
-        await partial(worktree, signal, () => session(initialSession));
+        if (scenario === 'continue') {
+          const interrupted = new AbortController();
+          namedStop?.(() => {interrupted.abort();});
+          await partial(worktree, interrupted.signal, () => session(initialSession));
+          assert.equal(signal.aborted, false, 'the named stop kept the provider channel open');
+        } else await partial(worktree, signal, () => session(initialSession));
         return {reason: 'cancelled', structured: partialReport,
           ...(scenario === 'uncertain' ? {uncertain: true} : {writerStopped: true}),
           ...(scenario === 'no-confinement' || continuationRoot === undefined ? {} : {writerFence: {root: continuationRoot, home: writerHome}})};
@@ -640,6 +651,10 @@ for (const [origin, destination, scenarios] of [
       harness: origin, repository: 'agent-device-hub', brief: 'Synthetic approved brief.', bounds: {wallClockMs: 60_000, maxTurns: 4, budgetUsd: 1}};
     assert.deepEqual(edge.respond(command(initial)), {status: 'accepted'});
     await until(() => edited);
+    if (origin === 'codex' && scenario === 'continue') {
+      assert.deepEqual(edge.respond(command({...initial, operationId: 'sibling', requestId: 'sibling', brief: 'Concurrent sibling'})), {status: 'accepted'});
+      await until(() => finishSibling !== undefined);
+    }
     if (scenario === 'root-replaced-live') {
       const original = priorWorktree ?? assert.fail('source checkout');
       await rename(original, `${original}-old`);
@@ -651,6 +666,11 @@ for (const [origin, destination, scenarios] of [
     assert.deepEqual(edge.respond(command({action: 'cancel', requestId: 'stop-partial', operationId: 'partial'})), {status: 'accepted'});
     await until(() => edge.progress.some(entry => entry.operationId === 'partial' && entry.status !== 'started'));
     const result = edge.progress.find(entry => entry.operationId === 'partial' && entry.status !== 'started');
+    if (finishSibling !== undefined) {
+      assert.equal(edge.progress.some(entry => entry.operationId === 'sibling' && entry.status !== 'started'), false);
+      finishSibling();
+      await until(() => edge.progress.some(entry => entry.operationId === 'sibling' && entry.status === 'completed'));
+    }
     if (scenario === 'uncertain') {assert.equal(result?.status, 'uncertain'); assert.equal(result?.handoffToken, undefined); return;}
     assert.ok(result?.status === 'cancelled');
     if (scenario === 'untracked' || scenario === 'no-confinement' || scenario === 'root-replaced-live') {assert.equal(result.handoffToken, undefined); return;}
@@ -738,7 +758,13 @@ for (const committed of [false, true]) {
   });
 }
 
-for (const alias of [false, true]) void test(`a saved Codex launch uses the verified checkout through the Mac repository path (alias: ${String(alias)})`,
+for (const {alias, conflictingRoute, missingToolchain} of [
+  {alias: false, conflictingRoute: false, missingToolchain: false},
+  {alias: true, conflictingRoute: false, missingToolchain: false},
+  {alias: false, conflictingRoute: true, missingToolchain: false},
+  {alias: false, conflictingRoute: false, missingToolchain: true},
+]) void test(
+  `a saved Codex launch verifies the Mac checkout, subscription route and toolchain (alias: ${String(alias)}, conflicting route: ${String(conflictingRoute)}, missing tools: ${String(missingToolchain)})`,
   {skip: process.platform !== 'darwin', timeout: 30_000}, async t => {
     const standalone = '/opt/homebrew/bin/codex';
     if (await realpath(standalone).catch(() => undefined) === undefined) {t.skip('standalone Codex unavailable'); return;}
@@ -750,14 +776,17 @@ for (const alias of [false, true]) void test(`a saved Codex launch uses the veri
     await mkdir(home, {mode: 0o700});
     const config = {sqlite_home: join(home, 'sqlite'), log_dir: join(home, 'log'), mcp_servers: {}, plugins: {}, hooks: null,
       allow_login_shell: false, cli_auth_credentials_store: 'file', forced_login_method: 'chatgpt', model_provider: 'openai',
-      chatgpt_base_url: 'https://chatgpt.com/backend-api/', openai_base_url: 'https://api.openai.com/v1',
+      chatgpt_base_url: 'https://chatgpt.com/backend-api/',
+      openai_base_url: conflictingRoute ? 'https://api.openai.com/v1' : 'https://chatgpt.com/backend-api/codex',
       otel: {exporter: 'none', trace_exporter: 'none', metrics_exporter: 'none', log_user_prompt: false},
       features: {hooks: false, apps: false, plugins: false, shell_snapshot: false}};
     await writeFile(executable, `#!${process.execPath}
 const args=process.argv.slice(2);
+if(args[0]==='sandbox' && ${String(missingToolchain)} && args.some(arg=>arg.includes('npm --version'))) process.exit(7);
 if(args[0]==='sandbox') process.exit(require('node:child_process').spawnSync(${JSON.stringify(standalone)},args,{stdio:'inherit'}).status ?? 8);
 if(args[0]==='resume') {
-  console.log(JSON.stringify({cwd:process.cwd(), threadId:args.at(-1), selectedCwd:args[args.indexOf('--cd')+1], home:process.env.CODEX_HOME}));
+  console.log(JSON.stringify({cwd:process.cwd(), threadId:args.at(-1), selectedCwd:args[args.indexOf('--cd')+1], home:process.env.CODEX_HOME,
+    modelRoute:args.filter(arg=>arg.startsWith('openai_base_url='))}));
   process.exit(0);
 }
 if(args[0]!=='app-server') process.exit(9);
@@ -816,13 +845,77 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     socket.write('native\n');
     assert.equal((await replies.next()).value, 'waiting');
     const prepare = command({action: 'prepare-native-client', client: 'terminal', requestId: 'prepare-native', operationId: 'native'});
-    assert.deepEqual(await Promise.resolve(edge.respond({...prepare, expiresat: new Date(Date.now() + 25000).toISOString()})), {status: 'accepted'});
+    const prepared = await Promise.resolve(edge.respond({...prepare, expiresat: new Date(Date.now() + 25000).toISOString()}));
+    if (missingToolchain) {
+      assert.ok('error' in prepared);
+      assert.equal(prepared.error.code, 'unavailable');
+      assert.match(prepared.error.detail ?? '', /Node 24 distribution with npm and Apple Command Line Tools Git/u);
+      return;
+    }
+    if (conflictingRoute) {
+      assert.deepEqual(prepared, errorBody('unavailable'));
+      return;
+    }
+    assert.deepEqual(prepared, {status: 'accepted'});
     const launch = command({action: 'open-native-terminal', requestId: 'launch-native', operationId: 'native', intentId: 'prepare-native'});
     assert.deepEqual(await Promise.resolve(edge.respond(launch)), {status: 'accepted'});
     const plan = JSON.parse((await replies.next()).value ?? assert.fail('native launch plan')) as {executable: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv};
     assert.notEqual(plan.cwd, original);
     assert.equal(await realpath(plan.cwd), plan.cwd);
     const {stdout} = await promisify(execFile)(plan.executable, plan.args, {cwd: plan.cwd, env: plan.env, timeout: 5000});
-    assert.deepEqual(JSON.parse(stdout), {cwd: plan.cwd, threadId: sessionId, selectedCwd: plan.cwd, home});
+    assert.deepEqual(JSON.parse(stdout), {cwd: plan.cwd, threadId: sessionId, selectedCwd: plan.cwd, home,
+      modelRoute: ['openai_base_url="https://chatgpt.com/backend-api/codex"']});
+    assert.equal(plan.env.PATH?.split(':')[0]?.startsWith(join(home, 'toolchain') + '/'), true);
+    assert.equal(plan.env.GIT_OPTIONAL_LOCKS, '0');
+    assert.equal(plan.env.npm_config_offline, 'true');
+    assert.ok(plan.args.some(arg => arg.includes(`${JSON.stringify(join(canonical, '.git'))}="deny"`)));
     assert.equal(edge.progress.some(row => row.operationId === 'sibling' && row.status !== 'started'), false);
   });
+
+void test('an enrolled worker declares exact local revisions, rejects mismatches, and starts only the pinned checkout', async t => {
+  const repo = await repository(t), edge = fakeEdge(), observed: string[] = [];
+  const revision = git(repo, 'rev-parse', 'origin/main');
+  const adapter: CodingAdapter = {
+    id: 'codex', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
+    readiness: () => Promise.resolve({installed: 'yes', signedIn: 'yes', version: '0.0.0', plan: null}),
+    run: ({worktree}) => {
+      observed.push(git(worktree, 'rev-parse', 'HEAD'));
+      return Promise.resolve({reason: 'refused', summary: 'Synthetic adapter checked its base.'});
+    },
+  };
+  const enrolled = {...configuration(repo), schema: 'coding-worker/1.3',
+    source: 'bunny/parts/coding-worker-cloud-synthetic', toolchains: ['node24']};
+  assert.throws(() => parseConfiguration(enrolled), /HTTPS edge/u);
+  const config = parseConfiguration({...enrolled, edge: 'https://edge.synthetic.invalid'});
+  const readings = [{pressure: 'normal', testSlots: 4}, {pressure: 'elevated', testSlots: 0}] as const;
+  let observations = 0;
+  t.mock.timers.enable({apis: ['setInterval']});
+  const probe = (destination: string) => {
+    assert.equal(destination, 'cloud-synthetic');
+    return Promise.resolve(readings[Math.min(observations++, readings.length - 1)] ?? readings[0]);
+  };
+  const worker = new CodingWorker(config, 'synthetic'.padEnd(43, 'x'), undefined, () => {}, edge.connect, undefined, undefined, undefined, [adapter], probe);
+  t.after(() => worker.stop());
+  await worker.start();
+  assert.equal(edge.requests[0]?.dataschema, 'https://bunny.invalid/events/coding-endpoint/2.5');
+  const facts = edge.requests[0]?.data as {worker?: {repositories: unknown; toolchains: unknown; pressure: unknown; testSlots: unknown}};
+  assert.deepEqual(facts.worker?.repositories, [{name: 'agent-device-hub', revision}]);
+  assert.deepEqual(facts.worker?.toolchains, ['node24']);
+  assert.equal(facts.worker?.pressure, 'normal');
+  assert.equal(facts.worker?.testSlots, 4);
+  t.mock.timers.tick(45_000);
+  await until(() => edge.requests.length === 2);
+  const refreshed = edge.requests[1]?.data as typeof facts;
+  assert.equal(refreshed.worker?.pressure, 'elevated');
+  assert.equal(refreshed.worker?.testSlots, 0);
+  const start: Extract<CodingWork, {action: 'start'}> = {requestId: 'pin', operationId: 'pin', action: 'start', taskId: 'task-1',
+    repository: 'agent-device-hub', brief: 'Check synthetic base.', harness: 'codex', bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}};
+  for (const request of [start, {...start, revision: 'a'.repeat(40)}]) {
+    const answer = edge.respond(command(request));
+    assert.ok('error' in answer && answer.error.code === 'invalid-state');
+  }
+  assert.equal(edge.progress.length, 0);
+  assert.deepEqual(edge.respond(command({...start, revision})), {status: 'accepted'});
+  await until(() => edge.progress.some(item => item.status === 'failed'));
+  assert.deepEqual(observed, [revision]);
+});

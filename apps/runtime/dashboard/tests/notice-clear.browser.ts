@@ -2,6 +2,7 @@ import {destinationLink, openConnections, openHabitat} from './navigation-helper
 // One focused confirmed Connections journey against the built synthetic runtime; no installed services or devices.
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {IDENTITY, OTHER, sessionStarted, turnStarted, turnEnded} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {worldClock} from './world-clock.ts';
@@ -10,7 +11,7 @@ const world = await startWorld();
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = [];
     context.on('weberror', error => {errors.push(error.error().name);});
@@ -78,7 +79,7 @@ const silent = await startWorld({clock});
 let quietBrowser: Browser | undefined;
 try {
   quietBrowser = await chromium.launch({headless: true});
-  const context = await quietBrowser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(quietBrowser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const page = await context.newPage(); page.setDefaultTimeout(12_000);
     await clock.install(page);

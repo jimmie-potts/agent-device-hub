@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import { chromium, type Page, type Route } from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import { changes, feed, startWorld } from './harness.ts';
 import { checkRoborockFrontend } from './roborock.frontend.ts';
 import { pageEvidence, statusEvidence } from './roborock-evidence.ts';
@@ -25,7 +26,7 @@ try {
     // the host-held seam instead of waiting for the production cadence.
     for (let i = 0; i < 12; i++)
         await world.roborockRefresh();
-    const context = await browser.newContext({
+    const context = await openJourneyContext(browser, {
         viewport: { width: 1280, height: 1000 },
         reducedMotion: 'reduce',
     });
@@ -344,7 +345,7 @@ try {
         await context.close();
     }
     const missing = await startWorld();
-    const missingContext = await browser.newContext({viewport: {width: 390, height: 844}, reducedMotion: 'reduce'});
+    const missingContext = await openJourneyContext(browser, {viewport: {width: 390, height: 844}, reducedMotion: 'reduce'});
     try {
         const page = await missingContext.newPage(); page.setDefaultTimeout(15000);
         const sent = changes(page);

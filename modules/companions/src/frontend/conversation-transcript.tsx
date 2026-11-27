@@ -96,11 +96,14 @@ export function ConversationTranscript({history, status, live, canStart, readLoc
         {history?.windows.flatMap((window, index) => {
           const messages = window.messages.map(message => <li key={`message:${message.id}`} tabIndex={-1} id={`conversation-message-${message.id}`} data-message={message.id} data-role={message.role}>
             {message.role === 'tool' ? <article aria-label="tool message">
-              <details className="conversation-tool-result" onToggle={remember}>
+              {message.codingRefusal === true ? <>
+                <strong>Coding job refused</strong>
+                <p className="conversation-message-text" dir="auto" role="status">{message.text}</p>
+              </> : <details className="conversation-tool-result" onToggle={remember}>
                 <summary>Tool result</summary>
                 <p className="conversation-message-text" dir="auto">{message.text}</p>
                 {renderToolEvidence(message)}
-              </details>
+              </details>}
             </article> : renderMessage(message)}
           </li>);
           const before = window.older;

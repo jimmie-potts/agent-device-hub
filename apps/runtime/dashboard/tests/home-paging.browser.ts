@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, expect, type Locator, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import type {HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, recordsLoaded, startWorld} from './harness.ts';
 import {approvalPrompt, IDENTITY} from '../../dist/tests/fixtures/agents.js';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
@@ -32,10 +33,10 @@ try {
   for (let index = 0; index < 6; index += 1) await world.observe({kind: 'session-started'}, {identity: {...IDENTITY, sessionId: `paging-${String(index)}`}, title: {value: `Synthetic agent ${String(index)}`, source: 'provider'}});
   // One column (#1672): off the unit grid the lists keep their fixed page sizes and open entries in place, which this
   // journey checks; home-shapes.browser.ts checks rows per shape and an opened entry taking the page on the grid.
-  const context = await browser.newContext({viewport: {width: 560, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
+  const context = await openJourneyContext(browser, {viewport: {width: 560, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
   const page = await context.newPage();page.setDefaultTimeout(15_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   const inbox = page.locator('[data-inbox-panel]'), inboxList = inbox.locator('[data-paged-list="Inbox"]'), inboxCard = page.locator('[data-home-card="inbox"]');
   await expect(inbox.getByText('No commands need handling.', {exact: true})).toBeVisible();

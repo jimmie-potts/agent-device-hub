@@ -6,7 +6,8 @@ Refs #
 
 Link the owning issue and relevant contracts/decisions. Identify any
 cross-repository prerequisites and explicitly state source versus installation
-or physical scope.
+or physical scope. Name the shared components reused or improved and the relevant
+consumers adopting the change. Explain any necessary deferral of integration.
 
 ## Validation
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {expect} from 'playwright/test';
 import {feed, startWorld} from './harness.ts';
 import {worldClock} from './world-clock.ts';
@@ -11,7 +12,7 @@ export async function pixooConfirmationJourney(browser: Browser): Promise<void> 
   const delayed = new Promise<number | undefined>(resolve => {release = resolve;});
   const world = await startWorld({companions: true, pixooPages: true, clock, assistantCatalog: ['control_brightness_set'],
     pixooReadback: {label: 'Studio Display', reading: () => reading}});
-  const context = await browser.newContext({reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {reducedMotion: 'reduce'});
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(12_000);

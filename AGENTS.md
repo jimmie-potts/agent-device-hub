@@ -28,6 +28,10 @@ alignment with current project direction, accepted architecture, reusable patter
 and related work; do not restrict discovery to the issue’s original sources.
 Before any code, run the [pickup check](docs/sdlc.md#pickup-check): do not start
 an issue someone else holds in progress, in review or with an open PR.
+Prioritize maintainable code, reusable components and shared foundations under
+those scope defaults, including necessary integration and consumer adoption.
+Apply the [behavior ownership and consumer evidence check](docs/sdlc.md#consumer-evidence)
+before implementation, after material design or scope changes, and in review.
 A read-only request reports the assessment without writing.
 
 At accepted child completion, reopening, material scope/prerequisite change or
@@ -138,9 +142,9 @@ npm run test:agent-state, npm run test:agent-state:python and
 npm run test:agent-state:package, plus the shared build/type, controller,
 lifecycle, MCP and workflow checks from the worktree root. All must exit zero.
 Source tests do not qualify a production storage adapter or installed provider.
-For controllers/tidbyt changes, read its README and run npm run test:tidbyt and
-npm run test:tidbyt:python plus the shared build/type, contract and workflow
-checks from the worktree root. All must exit zero.
+For controllers/tidbyt changes, read its README and run npm run test:tidbyt
+plus the shared build/type, contract and workflow checks from the worktree
+root. All must exit zero.
 For modules/pixoo changes, read its README and run npm run test:pixoo plus the
 shared build/type/lint/workflow checks from the worktree root. All must exit zero.
 Before changing the Mac operator (scripts/bunny*.mjs, scripts/deployment,

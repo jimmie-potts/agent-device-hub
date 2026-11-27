@@ -1,6 +1,8 @@
 // Actual module/core/gateway/dashboard with two synthetic plugs. No installed service or LAN requests.
 import assert from 'node:assert/strict';
 import {setTimeout as pause} from 'node:timers/promises';
+import {expect} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import {chromium} from 'playwright';
 import {type Page} from 'playwright';
 import {feed,startWorld,holdDashboardStream} from './harness.ts';
@@ -18,7 +20,7 @@ function powerCommands(page:Page):Sent[]{
  * command; its pressed state and its light follow the plug's observed power, and a lost reply leaves it locked.
  */
 async function pressPanel(browser:Awaited<ReturnType<typeof chromium.launch>>,url:string,plugs:typeof world):Promise<Record<string,unknown>>{
-  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
+  const context=await openJourneyContext(browser, {viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   const sent=powerCommands(page);
   await page.goto(`${url}/#/component/shelf-lamp`);await feed(page,'connected');
@@ -48,7 +50,7 @@ async function pressPanel(browser:Awaited<ReturnType<typeof chromium.launch>>,ur
   await button.focus();await page.keyboard.press('Enter');await same(false,'Enter');await shows(false);
   assert.equal(plugs.wemo.state()['shelf-lamp']?.power,false);
   // Touch: a tap switches it.
-  const touch=await browser.newContext({viewport:{width:1440,height:1000},hasTouch:true}),phone=await touch.newPage();phone.setDefaultTimeout(15000);
+  const touch=await openJourneyContext(browser, {viewport:{width:1440,height:1000},hasTouch:true}),phone=await touch.newPage();phone.setDefaultTimeout(15000);
   const tapped=powerCommands(phone);await phone.goto(url);await feed(phone,'connected');
   const touchButton=phone.locator('[data-plug-panel="shelf-lamp"]').getByRole('button',{name:'Shelf lamp power',exact:true});
   await phone.waitForFunction(()=>document.querySelector<HTMLButtonElement>('[data-plug-panel="shelf-lamp"] .plug-press')?.disabled===false);
@@ -65,7 +67,7 @@ async function pressPanel(browser:Awaited<ReturnType<typeof chromium.launch>>,ur
   return {pointer:true,keyboard:true,touch:true,observedPressed:true,uncertain:true,readOnly:true};
 }
 try{
-  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
+  const context=await openJourneyContext(browser, {viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   const writes:string[]=[];page.on('request',request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/v2/automation/'))writes.push(request.url());});
   await page.goto(`${world.url}/#/component/desk-lamp`);await feed(page,'connected');
@@ -112,9 +114,44 @@ try{
   await panel.getByLabel('Enable maximum on time').waitFor();
   await page.waitForFunction(()=>document.querySelector<HTMLInputElement>('[data-device="desk-lamp"] input[type="checkbox"]')?.disabled===false);
   assert.equal(writes.length,0);assert.equal(world.wemo.state()['desk-lamp']?.writes??0,0);
-  await panel.getByLabel('Maximum on time (minutes)').fill('1');const reply=page.waitForResponse(response=>response.request().method()==='PUT'&&response.url().includes('/power-limits/'));await panel.getByRole('button',{name:'Save limit',exact:true}).click();
-  const savedReply=await reply;assert.equal(savedReply.status(),200,await savedReply.text());
-  await panel.getByRole('status').filter({hasText:'Saved.'}).waitFor();assert.equal(writes.length,1);
+  const limitPath='/api/v2/automation/power-limits/desk-lamp';
+  const duration=panel.getByLabel('Maximum on time (minutes)');
+  const saveLimit=panel.getByRole('button',{name:'Save limit',exact:true});
+  const limitRevisions:number[]=[];
+  let refusalStatus=403;
+  let refusalCode='forbidden';
+  await page.route(`**${limitPath}`,async route=>{
+    const submitted=route.request().postDataJSON() as {expectedSettingsRevision:number};
+    limitRevisions.push(submitted.expectedSettingsRevision);
+    await route.fulfill({status:refusalStatus,json:{error:{code:refusalCode,retryable:false}}});
+  });
+  await duration.fill('1');
+  await saveLimit.click();
+  await expect(panel.getByRole('status')).toContainText('forbidden');
+  await expect(saveLimit).toBeEnabled();
+  refusalStatus=409;refusalCode='revision-conflict';
+  await saveLimit.click();
+  await expect(panel.getByRole('status')).toContainText('revision-conflict');
+  await expect(saveLimit).toBeEnabled();
+  await page.unroute(`**${limitPath}`);
+  // Hold the owner copy at the old revision after a valid reply. The fixture
+  // publishes the same save via the real gateway only after checking the wait.
+  await page.route(`**${limitPath}`,async route=>{
+    const submitted=route.request().postDataJSON() as {expectedSettingsRevision:number};
+    limitRevisions.push(submitted.expectedSettingsRevision);
+    await route.fulfill({status:200,json:{schema:'automation/2.0',id:'desk-lamp',settingsRevision:1,enabled:false,durationMs:60000}});
+  });
+  await saveLimit.click();
+  await expect(panel.getByRole('status')).toContainText('Waiting for');
+  await expect(saveLimit).toBeDisabled();
+  await expect(duration).toHaveValue('1');
+  assert.deepEqual(limitRevisions,[0,0,0],'every explicit request uses the current revision; waiting sends nothing');
+  await page.unroute(`**${limitPath}`);
+  const observedSave=await context.request.put(`${world.url}${limitPath}`,{headers:{'bunny-request':'1',origin:world.url},data:{enabled:false,durationMs:60000,expectedSettingsRevision:0}});
+  assert.equal(observedSave.status(),200,await observedSave.text());
+  await panel.getByRole('status').filter({hasText:'Saved.'}).waitFor();
+  await expect(duration).toHaveValue('1');
+  assert.equal(writes.length,3,'synthetic publication causes no browser replay');
   assert.equal(await panel.getByLabel('Enable maximum on time').isChecked(),false,'editing duration does not enable');
   await card.getByRole('tab',{name:'Power',exact:true}).click();
   await card.getByRole('button',{name:'Turn on',exact:true}).click();await card.getByRole('status').filter({hasText:'Completed: succeeded.'}).waitFor();

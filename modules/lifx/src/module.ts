@@ -165,7 +165,8 @@ function operationOf(family: CommandFamily, data: Record<string, unknown>): Oper
 export function createLifxModule(options: LifxModuleOptions): BunnyModule<LifxConfig> {
   let run: LifxRun | undefined;
   return {
-    manifest: {name: MODULE_NAME, apiVersion: '1.1', configure: configureLifx},
+    manifest: {name: MODULE_NAME, apiVersion: '1.1', configure: configureLifx,
+      deviceCommandAvailability: {'device-mode-set': 'owner-admission'}},
     async start(context) {
       // The runtime starts a module with `configure` only with what `configure` accepted.
       if (context.config === undefined) throw new Error('the LIFX module started without its configuration');

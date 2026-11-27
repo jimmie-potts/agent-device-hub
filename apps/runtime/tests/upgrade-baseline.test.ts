@@ -39,7 +39,7 @@ void test('baseline closure binds actual execution and dependencies to admitted 
   await mkdir(join(root, 'node-dir'), {mode: 0o700}); await mkdir(join(root, 'unit-dir'), {mode: 0o700});
   const node = join(root, 'node-dir/node'), unit = join(root, 'unit-dir/unit');
   await writeFile(node, 'synthetic executable', {mode: 0o600}); await writeFile(unit, 'synthetic unit', {mode: 0o600});
-  const script = `import {inventory,canonical,sha256} from './apps/hub/dist/install/files.js';
+  const script = `import {inventory,canonical,sha256} from './apps/runtime/dist/src/upgrade-files.js';
 import {runtimeExecutionEntries,runtimeWorkspaceMap} from './apps/runtime/bin/runtime-upgrade-baseline.mjs';
 const entries=(await inventory(process.argv[1])).entries.filter(e=>!e.path.startsWith('.git'));
 const inputs=entries.filter(e=>['apps/runtime/src/main.ts','packages/sdk/package.json'].includes(e.path)).map(e=>({path:e.path,sha256:e.sha256}));

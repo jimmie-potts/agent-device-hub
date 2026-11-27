@@ -1,5 +1,5 @@
-import { afterEach, expect, it } from 'vitest';
-import fs, { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { expect } from 'vitest';
+import fs, { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,13 +7,12 @@ import { MediaStore, DEFAULT_TRANSFORM, DEFAULT_LIMITS, SIMULATOR_PROFILE, DEVIC
 import { runWorker } from '../../src/media/worker-client.js';
 import { pathToFileURL } from 'node:url';
 import { gifFixture } from '../helpers/media-fixtures.js';
-const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.map(p=>rm(p,{recursive:true,force:true}))); roots.length=0; });
-async function setup() { const root = await mkdtemp(join(tmpdir(),'pixoo-media-test-')); roots.push(root); return {root,store:new MediaStore({directory:root,limits:{concurrency:2}})}; }
+import { mediaTest, type MediaResources } from '../helpers/media-test.js';
+async function setup(resources: MediaResources) { const root = await mkdtemp(join(tmpdir(),'pixoo-media-test-')); resources.roots.push(root); return {root,store:new MediaStore({directory:root,limits:{concurrency:2}})}; }
 async function* upload(b: Buffer) { yield Promise.resolve(b.subarray(0,10)); yield Promise.resolve(b.subarray(10)); }
 const gif = () => gifFixture(1,1,[{width:1,height:1,pixels:[1],delay:4}]);
-it('preserves streamed originals and deduplicates complete immutable renditions', async () => {
-  const {store,root} = await setup(); const original=gif();
+mediaTest('preserves streamed originals and deduplicates complete immutable renditions', async resources => {
+  const {store,root} = await setup(resources); const original=gif();
   const [a,b] = await Promise.all([store.render(upload(original)),store.render(upload(original))]);
   expect(a.id).toBe(b.id);
   expect(await readFile(join(root,'originals',a.sourceHash))).toEqual(original);
@@ -23,8 +22,8 @@ it('preserves streamed originals and deduplicates complete immutable renditions'
   expect(await readdir(join(root,'staging'))).toEqual([]);
   expect(await readdir(join(root,'renditions'))).toEqual([a.id]);
 });
-it('rejects a cached request cancelled as its producer finishes', async () => {
-  const {store,root}=await setup(); const b=gif(); const original=await store.render(upload(b));
+mediaTest('rejects a cached request cancelled as its producer finishes', async resources => {
+  const {store,root}=await setup(resources); const b=gif(); const original=await store.render(upload(b));
   const controller=new AbortController(); let sent=false;
   const stream:AsyncIterable<Uint8Array>={ [Symbol.asyncIterator]:()=>({
     next:()=>Promise.resolve(sent ? {done:true,value:undefined} : (sent=true,{done:false,value:b})),
@@ -34,8 +33,8 @@ it('rejects a cached request cancelled as its producer finishes', async () => {
   expect(await readdir(join(root,'staging'))).toEqual([]);
   expect((await store.render(upload(b))).id).toBe(original.id);
 });
-it('separates identities by transform and complete profile and preserves existing files on rejection', async () => {
-  const {store,root}=await setup(); const b=gif();
+mediaTest('separates identities by transform and complete profile and preserves existing files on rejection', async resources => {
+  const {store,root}=await setup(resources); const b=gif();
   const a=await store.render(upload(b));
   const crop=await store.render(upload(b),{transform:{...DEFAULT_TRANSFORM,fit:'crop'}});
   const smooth=await store.render(upload(b),{transform:{...DEFAULT_TRANSFORM,scaling:'smooth'}});
@@ -45,15 +44,15 @@ it('separates identities by transform and complete profile and preserves existin
   expect(await readdir(join(root,'staging'))).toEqual([]);
   expect(await readFile(join(root,'originals',a.sourceHash))).toEqual(b);
 });
-it('rejects corrupt cached bytes rather than overwriting a referenced rendition', async () => {
-  const {store,root}=await setup(); const a=await store.render(upload(gif()));
+mediaTest('rejects corrupt cached bytes rather than overwriting a referenced rendition', async resources => {
+  const {store,root}=await setup(resources); const a=await store.render(upload(gif()));
   const file=join(root,'renditions',a.id,'0.rgb'); await writeFile(file,Buffer.alloc(12288));
   await expect(store.render(upload(gif()))).rejects.toMatchObject({code:'cache-corrupt'});
   expect(await readFile(file)).toEqual(Buffer.alloc(12288));
   await expect(store.readFrame('../escape',0,'rgb')).rejects.toMatchObject({code:'invalid-input'});
 });
-it('enforces streamed byte and cached source pixel limits', async () => {
-  const {store,root}=await setup(); await store.render(upload(gif()));
+mediaTest('enforces streamed byte and cached source pixel limits', async resources => {
+  const {store,root}=await setup(resources); await store.render(upload(gif()));
   const small=new MediaStore({directory:root,limits:{maxUploadBytes:5}});
   await expect(small.render(upload(gif()))).rejects.toMatchObject({code:'upload-limit'});
   const large=gifFixture(2,2,[{width:2,height:2,pixels:[1,1,1,1]}]);
@@ -61,8 +60,8 @@ it('enforces streamed byte and cached source pixel limits', async () => {
   await expect(new MediaStore({directory:root,limits:{maxSourcePixels:3}}).render(upload(large))).rejects.toMatchObject({code:'pixel-limit'});
   expect(await readdir(join(root,'staging'))).toEqual([]);
 });
-it('bounds admission, cancels a queued job and cleans a cancelled upload', async () => {
-  const {root}=await setup(); const store=new MediaStore({directory:root,limits:{concurrency:1,maxQueued:1}});
+mediaTest('bounds admission, cancels a queued job and cleans a cancelled upload', async resources => {
+  const {root}=await setup(resources); const store=new MediaStore({directory:root,limits:{concurrency:1,maxQueued:1}});
   const active=new AbortController(), queued=new AbortController();
   let entered!:()=>void; const started=new Promise<void>(resolve=>{entered=resolve;});
   const stream:AsyncIterable<Uint8Array>={ [Symbol.asyncIterator]:()=>({next:()=>{entered();return new Promise(()=>{});},return:()=>Promise.resolve({done:true,value:undefined})}) };
@@ -74,22 +73,22 @@ it('bounds admission, cancels a queued job and cleans a cancelled upload', async
   expect(await readdir(join(root,'staging'))).toEqual([]);
   expect((await store.render(upload(gif()))).frames.length).toBe(1);
 });
-it('times out a stalled producer and can then process another request', async () => {
-  const {root}=await setup(); const store=new MediaStore({directory:root,limits:{timeoutMs:50}});
+mediaTest('times out a stalled producer and can then process another request', async resources => {
+  const {root}=await setup(resources); const store=new MediaStore({directory:root,limits:{timeoutMs:50}});
   const stream:AsyncIterable<Uint8Array>={ [Symbol.asyncIterator]:()=>({next:()=>new Promise(()=>{}),return:()=>Promise.resolve({done:true,value:undefined})}) };
   await expect(store.render(stream)).rejects.toMatchObject({code:'timeout'});
   expect(await readdir(join(root,'staging'))).toEqual([]);
   expect((await new MediaStore({directory:root}).render(upload(gif()))).frames.length).toBe(1);
 });
-it('reaps a stalled child before returning its timeout', async () => {
-  const {root}=await setup(); const entry=join(root,'stalled.cjs');
+mediaTest('reaps a stalled child before returning its timeout', async resources => {
+  const {root}=await setup(resources); const entry=join(root,'stalled.cjs');
   await writeFile(entry,'process.on("message",()=>{setInterval(()=>{},1000)});');
   const req={input:'unused',output:'unused',sourceHash:'unused',id:'unused',transform:DEFAULT_TRANSFORM,profile:SIMULATOR_PROFILE,limits:{...DEFAULT_LIMITS,maxUploadBytes:100,maxSourcePixels:100,maxGifCanvasPixels:100,concurrency:1,maxQueued:1,timeoutMs:100}};
   await expect(runWorker(req,AbortSignal.timeout(100),pathToFileURL(entry))).rejects.toMatchObject({code:'timeout'});
 });
 
-it('imports 1001 frames and reads the final PNG with its original delay', async () => {
-  const {store, root} = await setup();
+mediaTest('imports 1001 frames and reads the final PNG with its original delay', async resources => {
+  const {store, root} = await setup(resources);
   const delays = Array.from({length: 1001}, (_, i) => i === 1000 ? 65535 : 1 + i % 17);
   const original = gifFixture(1, 1, delays.map((delay, i) => ({width: 1, height: 1, pixels: [i % 4], delay})));
   const rendition = await store.render(upload(original));
@@ -100,8 +99,8 @@ it('imports 1001 frames and reads the final PNG with its original delay', async 
   expect(selected.bytes).toEqual(await readFile(join(root, 'renditions', rendition.id, '1000.png')));
 }, 30_000);
 
-it('reads all four historical profiles using their prechange rendition IDs', async () => {
-  const {root, store} = await setup();
+mediaTest('reads all four historical profiles using their prechange rendition IDs', async resources => {
+  const {root, store} = await setup(resources);
   const original = gifFixture(1, 1, [{width: 1, height: 1, pixels: [1], delay: 50}]);
   // Captured from 6d18ffbc. Hashing the expected values with today's renderer would miss an identity break.
   const ids = [
@@ -121,8 +120,8 @@ it('reads all four historical profiles using their prechange rendition IDs', asy
   expect(ids).not.toContain(current.id);
 });
 
-it('rejects a tiny GIF that exceeds the scaled pixel budget, including a cache hit', async () => {
-  const {store, root} = await setup();
+mediaTest('rejects a tiny GIF that exceeds the scaled pixel budget, including a cache hit', async resources => {
+  const {store, root} = await setup(resources);
   const input = gifFixture(1, 1, [0, 1].map(i => ({width: 1, height: 1, pixels: [i]})));
   const limited = new MediaStore({directory: root, limits: {maxSourcePixels: 2 * 64 * 64 - 1}});
   await expect(limited.render(upload(input))).rejects.toMatchObject({code: 'pixel-limit'});
@@ -133,8 +132,8 @@ it('rejects a tiny GIF that exceeds the scaled pixel budget, including a cache h
   expect(await store.getRendition(retained.id)).toEqual(retained);
 });
 
-it('refuses an oversized immutable manifest before publishing any files', async () => {
-  const {root} = await setup();
+mediaTest('refuses an oversized immutable manifest before publishing any files', async resources => {
+  const {root} = await setup(resources);
   const limits = {maxManifestBytes: 128, maxQueued: 0};
   const limited = new MediaStore({directory: root, limits});
   await expect(limited.render(upload(gif()))).rejects.toMatchObject({code: 'storage-limit'});
@@ -143,24 +142,26 @@ it('refuses an oversized immutable manifest before publishing any files', async 
   }
 });
 
-it.each(['ENOSPC', 'EDQUOT'])('reports %s during a parent frame write as capacity and keeps existing media readable', async code => {
-  const {root, store} = await setup();
-  const existing = await store.render(upload(gif()));
-  const originalWrite = fs.writeFile;
-  fs.writeFile = async (...args: Parameters<typeof fs.writeFile>) => {
-    if (typeof args[0] === 'string' && args[0].endsWith('0.png')) throw Object.assign(new Error('private filesystem failure'), {code});
-    await originalWrite(...args);
-  };
-  syncBuiltinESMExports();
-  try {
-    const different = gifFixture(1, 1, [{width: 1, height: 1, pixels: [2]}]);
-    await expect(store.render(upload(different))).rejects.toMatchObject({code: 'storage-capacity', message: 'storage-capacity'});
-    expect(await readdir(join(root, 'originals'))).toEqual([existing.sourceHash]);
-    expect(await readdir(join(root, 'renditions'))).toEqual([existing.id]);
-    expect(await readdir(join(root, 'staging'))).toEqual([]);
-    expect(await store.getRendition(existing.id)).toEqual(existing);
-  } finally {
-    fs.writeFile = originalWrite;
+for (const code of ['ENOSPC', 'EDQUOT']) {
+  mediaTest(`reports ${code} during a parent frame write as capacity and keeps existing media readable`, async resources => {
+    const {root, store} = await setup(resources);
+    const existing = await store.render(upload(gif()));
+    const originalWrite = fs.writeFile;
+    fs.writeFile = async (...args: Parameters<typeof fs.writeFile>) => {
+      if (typeof args[0] === 'string' && args[0].endsWith('0.png')) throw Object.assign(new Error('private filesystem failure'), {code});
+      await originalWrite(...args);
+    };
     syncBuiltinESMExports();
-  }
-});
+    try {
+      const different = gifFixture(1, 1, [{width: 1, height: 1, pixels: [2]}]);
+      await expect(store.render(upload(different))).rejects.toMatchObject({code: 'storage-capacity', message: 'storage-capacity'});
+      expect(await readdir(join(root, 'originals'))).toEqual([existing.sourceHash]);
+      expect(await readdir(join(root, 'renditions'))).toEqual([existing.id]);
+      expect(await readdir(join(root, 'staging'))).toEqual([]);
+      expect(await store.getRendition(existing.id)).toEqual(existing);
+    } finally {
+      fs.writeFile = originalWrite;
+      syncBuiltinESMExports();
+    }
+  });
+}

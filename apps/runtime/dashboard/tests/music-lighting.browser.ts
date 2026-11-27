@@ -4,13 +4,14 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
-import {chromium, type Locator, type Page, type Request} from 'playwright';
+import type {Locator, Page, Request} from 'playwright';
 import {expect} from 'playwright/test';
 import {LINES_ADDRESS, PANELS_ADDRESS} from '@jimmie-potts/nanoleaf';
 import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {connectRemote} from '@jimmie-potts/sdk/remote';
 import {CAPTURE_VALIDITY_MS, CAPTURE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/music-capture-data';
-import {startWorld, changes, feed, holdDashboardStream} from './harness.ts';
+import {changes, feed, holdDashboardStream} from './harness.ts';
+import {runJourney, viewport} from './journey-runner.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {worldClock} from './world-clock.ts';
@@ -18,346 +19,349 @@ import {worldClock} from './world-clock.ts';
 type Control = {target: string; requestId: string; data: {action: 'start' | 'start-show' | 'stop'; expectedRevision: number; capture?: {endpointId: string; generation: string}; presetId?: string; generation?: string}};
 const RECIPE = {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], intensity: 0.5, sensitivity: 1, smoothingMs: 0};
 const clock = worldClock(Date.now(), {paused: true});
-const world = await startWorld({nanoleaf: true, nanoleafPanels: true, musicCapture: true, clock});
-const ACTIVE = 'Active. The light reported that it is playing this session.';
-const STARTING = 'Starting. The core saved the session and is waiting for the light to report playing.';
+await runJourney('Music lighting', {nanoleaf: true, nanoleafPanels: true, musicCapture: true, clock}, async (run, world) => {
+  const ACTIVE = 'Active. The light reported that it is playing this session.';
+  const STARTING = 'Starting. The core saved the session and is waiting for the light to report playing.';
 
-/** Let a named worker poll or reconnect advance while its real I/O settles between windows. */
-async function advanceUntil(observed: () => Promise<boolean> | boolean, withinMs: number): Promise<void> {
-  const deadline = clock.clock.now() + withinMs;
-  await clock.advance(0);
-  while (!await observed() && clock.clock.now() < deadline) {
-    await clock.advance(Math.min(CAPTURE_WINDOW_MS, deadline - clock.clock.now()));
-  }
-}
-async function wallLighting(): Promise<LightingState> {
-  const reader = await connectRemote({url: world.url, source: 'bunny/parts/reader', token: world.readerToken});
-  try {
-    const result = await reader.sync<LightingState>(['music-lighting-state'], () => {}, {owner: 'bunny/core', timeoutMs: 5000});
-    assert.equal(result.status, 'synced');
-    const record = result.copy.states().find(message => message.data.id === 'wall')?.data;
-    assert.ok(record !== undefined);
-    return record;
-  } finally {await reader.close();}
-}
-const datagrams = (address: string): number => world.nanoleafState().devices[address]?.streamed ?? 0;
-async function playing(light: Locator, address: string, previousFrames: number): Promise<void> {
-  const active = light.getByText(ACTIVE, {exact: true});
-  await advanceUntil(async () => datagrams(address) > previousFrames && await active.isVisible(), 2000);
-  await active.waitFor();
-  assert.ok(datagrams(address) > previousFrames, 'the simulated light received a fresh Music frame');
-}
-async function reconnect(page: Page): Promise<void> {
-  const connected = page.locator('main#main[data-feed="connected"]');
-  await advanceUntil(() => connected.isVisible(), 1000);
-  await feed(page, 'connected');
-}
-/** Sets a light's mode outside the lighting card, as the light card would, and waits until the module applied it. */
-async function mode(value: 'free' | 'work', light: 'wall' | 'nl22' = 'wall'): Promise<void> {
-  assert.equal((await world.credentialAction('device-mode-set', light, {mode: value})).status, 200);
-  const address = light === 'wall' ? LINES_ADDRESS : PANELS_ADDRESS;
-  const applied = async (): Promise<boolean> => {
-    const wall = await world.nanoleafWall(light) as unknown as {mode?: string; modePending?: boolean};
-    return wall.mode === value && wall.modePending === false && world.nanoleafState().devices[address]?.select !== undefined;
-  };
-  await advanceUntil(applied, 1000);
-  await expect.poll(applied, {timeout: 10_000}).toBe(true);
-}
-let producer: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
-const browser = await chromium.launch({headless: true});
-const artifacts = await browserArtifactDirectory();
-/** The page's API requests still without an answer, which a failure prints: a hung request is told apart from a slow card. */
-const unanswered = new Map<Request, string>();
-try {
-  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
-  const page = await context.newPage(); page.setDefaultTimeout(12_000);
-  await clock.install(page);
-  await clock.advance(0);
-  // Playwright stops intercepting when a page's last route goes, and a request paused at that moment can hang with no
-  // answer and no failure, whatever its URL (#1664). This pass-through route stays, so each `unroute` below only removes
-  // its own handler. With interception on, Playwright also keeps the page's HTTP cache off for the whole journey; no
-  // assertion here depends on caching.
-  await page.route('**/*', route => route.fallback());
-  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-  const sent = changes(page), controls: Control[] = [];
-  page.on('request', request => {
-    const {pathname} = new URL(request.url());
-    if (pathname.startsWith('/api/')) unanswered.set(request, `${request.method()} ${pathname}`);
-    if (request.method() === 'POST' && pathname === '/api/v2/commands/music-lighting-control') controls.push(request.postDataJSON() as Control);
-  });
-  page.on('response', response => {unanswered.delete(response.request());}); page.on('requestfailed', request => {unanswered.delete(request);});
-  await page.goto(world.url + '/#/audio'); await feed(page, 'connected');
-  const card = page.getByRole('article', {name: 'Music lighting', exact: true});
-  // One section per light: the Lines (`wall`) and the NL22 Light Panels (`nl22`).
-  await expect(card.getByRole('region', {name: /Music lighting$/})).toHaveCount(2);
-  const light = card.getByRole('region', {name: 'wall Music lighting', exact: true});
-  const panels = card.getByRole('region', {name: 'nl22 Music lighting', exact: true});
-  const start = light.getByRole('button', {name: 'Start Music lighting', exact: true});
-  const stop = light.getByRole('button', {name: 'Stop Music lighting', exact: true});
-  const preset = light.getByRole('combobox', {name: 'Saved reactive preset', exact: true});
-  await light.getByText('Idle. No Music lighting session is running.', {exact: true}).waitFor();
-  await card.getByText(/No saved reactive presets yet/).waitFor();
-  await expect(card.getByRole('link', {name: 'Music effect preview', exact: true})).toHaveAttribute('href', '#/module/nanoleaf/wall');
-  await expect(start).toBeDisabled(); await expect(stop).toBeDisabled(); await expect(preset).toBeDisabled();
-  await light.getByText(/Start unavailable: Music input is unavailable\./).waitFor();
-  await page.screenshot({path: join(artifacts, 'music-lighting-empty-desktop.png'), fullPage: true});
-
-  // Free on a named scene, one saved preset and an active Music capture, all outside the lighting card.
-  await mode('free');
-  assert.equal((await world.credentialAction('nanoleaf-reactive-preset-save', 'reactive-presets',
-    {presetId: 'preset-green', expectedRevision: 0, name: 'Synthetic green', recipe: RECIPE})).status, 200);
-  await expect(preset).toHaveValue('preset-green');
-  await light.getByText(/Start unavailable: Music input is unavailable\./).waitFor();
-  producer = await musicCaptureProducer(world.url, world.musicCaptureToken, undefined, clock);
-  await light.getByText(/Start unavailable: Start measuring Music.app first/).waitFor();
-  await page.getByRole('article', {name: 'Music input measurement', exact: true}).getByRole('button', {name: 'Start measuring Music', exact: true}).click();
-  await expect(start).toBeEnabled();
-  assert.equal(controls.length, 0, 'opening Audio and every state change send no lighting command');
-  // #1614: before any read, the card explains what an ending will and won't put back.
-  await light.getByText(/^Start reads what the light shows\. .*scene saved on the light or a plain colour, and leaves anything else on the last Music frame\./).waitFor();
-
-  const firstFrames = datagrams(LINES_ADDRESS);
-  await start.focus(); await page.keyboard.press('Enter');
-  await light.getByText(/Start request: Completed: succeeded\. The core saved it; the light reports separately\./).waitFor();
-  await playing(light, LINES_ADDRESS, firstFrames);
-  await light.getByText(/Start light work: Completed: succeeded\. Written to the light; the physical effect was not observed\./).waitFor();
-  await light.getByText(/Preset: Synthetic green\./).waitFor();
-  await light.getByText(/^This session started over a scene saved on the light\. .*puts it back at its brightness\./).waitFor();
-  const first = controls[0];
-  assert.equal(controls.length, 1); assert.ok(first?.data.action === 'start');
-  assert.equal(first.target, 'wall'); assert.equal(first.data.presetId, 'preset-green');
-  assert.equal(first.data.capture?.endpointId, producer.endpointId);
-  assert.equal(first.data.capture.generation, producer.commands.at(-1)?.data.generation, 'Start binds the current capture generation');
-  await expect(start).toBeDisabled(); await expect(stop).toBeEnabled();
-  await page.screenshot({path: join(artifacts, 'music-lighting-active-desktop.png'), fullPage: true});
-
-  await page.reload(); await feed(page, 'connected');
-  await light.getByText(ACTIVE, {exact: true}).waitFor();
-  const releaseStream = await holdDashboardStream(page); world.dropDashboardStreams();
-  await expect(stop).toBeDisabled();
-  releaseStream(); await reconnect(page); await expect(stop).toBeEnabled();
-  assert.equal(controls.length, 1, 'reload and reconnect send no lighting command');
-
-  await stop.click();
-  const idle = light.getByText('Idle. No Music lighting session is running.', {exact: true});
-  await advanceUntil(() => idle.isVisible(), 1000);
-  await idle.waitFor();
-  await light.getByText(/Last session ended: stopped on request\. The current base scene and brightness were restored\./).waitFor();
-  await light.getByText(/Stop request: Completed: succeeded/).waitFor();
-  assert.deepEqual(controls.map(control => control.data.action), ['start', 'stop']);
-
-  // Source loss ends the session; capture coming back restarts nothing.
-  const repeatedFrames = datagrams(LINES_ADDRESS);
-  await start.click();
-  await light.getByText(STARTING, {exact: true}).waitFor();
-  await playing(light, LINES_ADDRESS, repeatedFrames);
-  producer.pause();
-  await clock.advance(CAPTURE_WINDOW_MS);
-  await expect(light.getByText(ACTIVE, {exact: true})).toBeVisible();
-  await clock.advance(CAPTURE_VALIDITY_MS);
-  await light.getByText(/Last session ended: the Music input was lost or went stale/).waitFor({timeout: 15_000});
-  await feed(page, 'connected');
-  await producer.start(); await expect(start).toBeEnabled(); await clock.advance(500);
-  await light.getByText('Idle. No Music lighting session is running.', {exact: true}).waitFor();
-  assert.deepEqual(controls.map(control => control.data.action), ['start', 'stop', 'start'], 'no automatic restart');
-
-  // Outside Free, Start is admitted by the core and refused by the light; nothing switches the mode.
-  await mode('work');
-  await light.getByText(/saved mode is not Free, so a Start would be refused/).waitFor();
-  await start.click();
-  await light.getByText(/Last session ended: the light refused the start \(invalid-state\)\. No restoration was attempted\./).waitFor();
-  await light.getByText(/Start light work: Refused \(invalid-state\)/).waitFor();
-  assert.equal(controls.length, 4);
-  await mode('free'); await expect(light.getByText(/saved mode is not Free/)).toHaveCount(0);
-
-  // #1614: a light that is off refuses the Start; the card then says what it read and what an ending would put back.
-  world.nanoleafPower(false);
-  await start.click();
-  await light.getByText(/^Last read at .+?: (a scene saved on the light|a plain colour|streamed frames|an effect|a selection)[^.]*\. /).waitFor();
-  await light.getByText(/Start light work: Refused \(invalid-state\)/).waitFor();
-  assert.equal(controls.length, 5);
-  world.nanoleafPower(true);
-
-  // A stale lighting read disables controls until an explicit refresh succeeds.
-  let refusedReads = 0;
-  await page.route('**/api/sdk/v1/sync', async route => {
-    const request = route.request().postDataJSON() as {request?: {data?: {families?: string[]}}};
-    if (request.request?.data?.families?.includes('music-lighting-state') === true) {refusedReads += 1; await route.abort(); return;}
-    await route.continue();
-  });
-  const refresh = card.getByRole('button', {name: 'Refresh lighting status', exact: true});
-  await refresh.click();
-  await card.getByText('Lighting status is stale or unavailable. Controls are disabled until a fresh read.', {exact: true}).waitFor();
-  await expect(start).toBeDisabled(); await light.getByText(/Last known: Idle/).waitFor();
-  // The stale view shows as soon as a refresh starts; the failed read must also have settled before the route goes.
-  await expect.poll(() => refusedReads).toBeGreaterThan(0); await expect(refresh).toBeEnabled();
-  await page.unroute('**/api/sdk/v1/sync'); await refresh.click();
-  await expect(start).toBeEnabled();
-
-  // A lost Start reply stays locked and uncertain across reload; Stop remains available and nothing is resent.
-  let lost = 0;
-  const releaseLostReplyStream = await holdDashboardStream(page);
-  await page.route('**/api/sdk/v1/sync', route => route.abort());
-  await page.route('**/api/v2/commands/music-lighting-control', async route => {
-    world.dropDashboardStreams(); const reply = await route.fetch(); assert.equal(reply.status(), 200); lost += 1; await reply.dispose(); await route.abort();
-  }, {times: 1});
-  const lostReplyFrames = datagrams(LINES_ADDRESS);
-  await start.click(); await light.getByText(/Start request: Uncertain result/).waitFor();
-  await expect(start).toBeDisabled(); await expect(stop).toBeDisabled();
-  await page.unroute('**/api/sdk/v1/sync'); releaseLostReplyStream(); await reconnect(page);
-  await playing(light, LINES_ADDRESS, lostReplyFrames);
-  await expect(stop).toBeEnabled(); await page.reload(); await feed(page, 'connected');
-  await light.getByText(ACTIVE, {exact: true}).waitFor();
-  await expect(stop).toBeEnabled(); await expect(start).toBeDisabled(); assert.equal(lost, 1); assert.equal(controls.length, 6);
-
-  for (const colorScheme of ['light', 'dark'] as const) for (const width of [1280, 390, 320]) {
-    await page.emulateMedia({colorScheme}); await page.setViewportSize({width, height: 900});
-    await stop.focus();
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({path: join(artifacts, `music-lighting-${colorScheme}-${String(width)}.png`), fullPage: true});
-  }
-  await page.setViewportSize({width: 1280, height: 900});
-  await stop.click();
-  const stopped = light.getByText(/Last session ended: stopped on request/);
-  await advanceUntil(() => stopped.isVisible(), 1000);
-  await stopped.waitFor();
-  assert.deepEqual(controls.map(control => control.data.action), ['start', 'stop', 'start', 'start', 'start', 'start', 'stop']);
-
-  // #1272: the Panels card starts and stops the NL22's own session through its version 1 stream; the Lines stay idle.
-  const panelsStart = panels.getByRole('button', {name: 'Start Music lighting', exact: true});
-  const panelsStop = panels.getByRole('button', {name: 'Stop Music lighting', exact: true});
-  await panels.getByText(/saved mode is not Free, so a Start would be refused/).waitFor();
-  await mode('free', 'nl22');
-  await expect(panels.getByText(/saved mode is not Free/)).toHaveCount(0);
-  await expect(panelsStart).toBeEnabled();
-  const linesBefore = world.nanoleafState().devices[LINES_ADDRESS];
-  await panelsStart.click();
-  await panels.getByText(STARTING, {exact: true}).waitFor();
-  await playing(panels, PANELS_ADDRESS, 0);
-  await panels.getByText(/Start light work: Completed: succeeded\. Written to the light; the physical effect was not observed\./).waitFor();
-  await light.getByText('Idle. No Music lighting session is running.', {exact: true}).waitFor();
-  // Past the session's first once-a-second check: the Panels keep playing while they report `*Dynamic*` (#1777).
-  await advanceUntil(() => datagrams(PANELS_ADDRESS) > 15, 2000);
-  assert.ok(datagrams(PANELS_ADDRESS) > 15);
-  await expect(panels.getByText(ACTIVE, {exact: true})).toBeVisible();
-  const streaming = world.nanoleafState().devices[PANELS_ADDRESS];
-  // The simulated NL22 reports `*Dynamic*` while it streams, as the installed one did (#1777).
-  assert.deepEqual({select: streaming?.select, streaming: streaming?.streaming}, {select: '*Dynamic*', streaming: {version: 'v1', port: 60221}});
-  assert.deepEqual(Object.keys(streaming?.frame ?? {}).sort(), ['200', '201', '202', '203'], 'the NL22 frames light its own panels');
-  const linesNow = world.nanoleafState().devices[LINES_ADDRESS];
-  assert.deepEqual({writes: linesNow?.writes, streamed: linesNow?.streamed}, {writes: linesBefore?.writes, streamed: linesBefore?.streamed}, 'the Lines are untouched');
-  await page.screenshot({path: join(artifacts, 'music-lighting-panels-active-desktop.png'), fullPage: true});
-  await panelsStop.click();
-  const panelsStopped = panels.getByText(/Last session ended: stopped on request\. The current base scene and brightness were restored\./);
-  await advanceUntil(() => panelsStopped.isVisible(), 1000);
-  await panelsStopped.waitFor();
-  assert.equal(world.nanoleafState().devices[PANELS_ADDRESS]?.select, 'Beach Waves');
-  assert.deepEqual(controls.slice(-2).map(control => [control.target, control.data.action]), [['nl22', 'start'], ['nl22', 'stop']]);
-
-  // Read-only access disables both controls and sends nothing.
-  await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
-  await page.reload(); await feed(page, 'connected');
-  await light.getByText(/Start unavailable: Read-only access/).waitFor();
-  await expect(start).toBeDisabled(); await expect(stop).toBeDisabled();
-  await page.unroute('**/api/v2/authority?scope=control');
-
-  // A microphone measurement is never offered to lights.
-  const capture = page.getByRole('article', {name: 'Music input measurement', exact: true});
-  await producer.close();
-  // The core refuses a new producer's endpoint until it has retired the closed one, as the capture journey also waits.
-  await capture.getByText('Music input is unavailable.', {exact: true}).waitFor();
-  producer = await musicCaptureProducer(world.url, world.musicCaptureToken, 'studio-mic', clock);
-  await page.reload(); await feed(page, 'connected');
-  await capture.getByRole('combobox', {name: 'Audio input'}).selectOption('microphone');
-  await capture.getByRole('button', {name: 'Start measuring studio-mic', exact: true}).click();
-  const receiving = capture.getByText('Receiving studio-mic measurements.', {exact: true});
-  await capture.getByText(/Start: Completed: succeeded/).waitFor();
-  await advanceUntil(() => receiving.isVisible(), CAPTURE_VALIDITY_MS);
-  await receiving.waitFor();
-  await light.getByText(/Start unavailable: Lights use Music.app input only, never a microphone/).waitFor();
-  await expect(start).toBeDisabled();
-  assert.equal(controls.length, 9);
-  assert.equal(sent.filter(path => path === '/api/v2/commands/music-lighting-control').length, 9);
-  // Saved playback is independent of the active microphone measurement and pins the selected version.
-  const savedStart = light.getByRole('button', {name: 'Start saved show', exact: true});
-  const savedVersion = light.getByRole('combobox', {name: 'Saved show and version', exact: true});
-  await expect(savedStart).toBeDisabled();
-  const saved = {showId: 'show-audio-test', expectedVersion: 0, name: 'Synthetic show', versionName: 'Original',
-    timeline: {version: 1, durationMs: 10_000, cues: [{id: 'cue', offsetMs: 0, durationMs: 10_000,
-      recipe: {preset: 'ocean'}, intensity: 0.5}]}};
-  assert.equal((await world.credentialAction('nanoleaf-show-save', 'shows', saved)).status, 200);
-  await savedVersion.selectOption({label: 'Synthetic show · v1 · Original'});
-  assert.equal((await world.credentialAction('nanoleaf-show-save', 'shows',
-    {...saved, expectedVersion: 1, versionName: 'Edited'})).status, 200);
-  await expect(savedVersion.locator('option', {hasText: 'Edited'})).toHaveCount(1);
-  await expect(savedVersion.locator('option:checked')).toHaveText('Synthetic show · v1 · Original');
-  assert.equal(controls.length, 9, 'selecting and saving send no lighting command');
-  await refresh.click();
-  await expect(savedStart).toBeEnabled();
-  await expect(savedVersion.locator('option:checked')).toHaveText('Synthetic show · v1 · Original');
-  await page.setViewportSize({width: 390, height: 900});
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await light.screenshot({path: join(artifacts, 'saved-show-picker-phone.png')});
-  await page.setViewportSize({width: 1280, height: 900});
-  assert.equal(controls.length, 9, 'refresh preserves selection without starting playback');
-
-
-  world.nanoleafPower(false);
-  await savedStart.click();
-  await light.getByText(/Start light work: Refused \(invalid-state\)/).waitFor();
-  assert.equal(controls.length, 10);
-  world.nanoleafPower(true);
-  const showFrames = datagrams(LINES_ADDRESS);
-  const beforeShow = await wallLighting();
-  assert.equal(beforeShow.session.status, 'idle');
-  await savedStart.click();
-  const showActive = light.getByText('Active. The light module reports that the show is running.', {exact: true});
-  await advanceUntil(async () => datagrams(LINES_ADDRESS) > showFrames && await showActive.isVisible(), 2000);
-  await expect(showActive).toBeVisible();
-  assert.ok(datagrams(LINES_ADDRESS) > showFrames);
-  const selectedControl = controls.at(-1);
-  assert.equal(selectedControl?.target, 'wall');
-  assert.deepEqual(selectedControl.data, {action: 'start-show', expectedRevision: beforeShow.revision,
-    showId: saved.showId, version: 1, positionMs: 0, startDelayMs: 0});
-  await light.getByText(/Saved show show-audio-test, version 1/).waitFor();
-  const savedRestoration = light.getByText(/^This show started over a scene saved on the light\. Stop, an alert or completion can restore it at its previous brightness\./);
-  await expect(savedRestoration).toBeVisible();
-  await expect(light.getByText(/This session started over.*lost Music input/)).toHaveCount(0);
-  await capture.getByRole('button', {name: 'Stop measuring', exact: true}).click();
-  await capture.getByText(/Stop: Completed: succeeded/).waitFor();
-  await expect(showActive).toBeVisible();
-
-  await light.screenshot({path: join(artifacts, 'saved-show-active-desktop.png')});
-  await page.reload(); await feed(page, 'connected');
-  await expect(showActive).toBeVisible();
-  await expect(savedStart).toBeDisabled();
-  assert.equal(controls.length, 11, 'reload leaves the accepted show running without another Start');
-  const beforeStop = await wallLighting();
-  assert.equal(beforeStop.session.status, 'active');
-  await stop.click();
-  await advanceUntil(() => stopped.isVisible(), 1000);
-  await expect(stopped).toBeVisible();
-  assert.equal(controls.at(-1)?.target, 'wall');
-  assert.deepEqual(controls.at(-1)?.data, {action: 'stop', expectedRevision: beforeStop.revision, generation: beforeStop.session.generation});
-  assert.equal(controls.length, 12);
-  assert.deepEqual(errors, []);
-  console.log(JSON.stringify({journey: 'music-lighting', lightingCommands: controls.length, lostReplies: lost, artifacts, physical: false}));
-  await context.close();
-} catch (error) {
-  // Hosted runs keep no screenshot, so a failure prints what each page showed before the browser closes (#1664). Each
-  // page read has its own 2 s limit, since `evaluate` ignores the default timeout, and the original error always follows.
-  try {
-    for (const context of browser.contexts()) for (const open of context.pages()) {
-      const limit = new AbortController();
-      const shown = await Promise.race([open.evaluate(() => ({feed: document.querySelector('main#main')?.getAttribute('data-feed'),
-        statuses: [...document.querySelectorAll('main [role=status]')].map(item => (item as HTMLElement).innerText.replace(/\s+/g, ' ').trim())}))
-        .catch((failure: unknown) => String(failure)), delay(2000, 'timed out', {signal: limit.signal})]);
-      limit.abort();
-      console.error(JSON.stringify({journey: 'music-lighting', failed: new URL(open.url()).hash, shown}));
+  /** Let a named worker poll or reconnect advance while its real I/O settles between windows. */
+  async function advanceUntil(observed: () => Promise<boolean> | boolean, withinMs: number): Promise<void> {
+    const deadline = clock.clock.now() + withinMs;
+    await clock.advance(0);
+    while (!await observed() && clock.clock.now() < deadline) {
+      await clock.advance(Math.min(CAPTURE_WINDOW_MS, deadline - clock.clock.now()));
     }
-    console.error(JSON.stringify({journey: 'music-lighting', unanswered: [...unanswered.values()]}));
-    console.error(JSON.stringify({journey: 'music-lighting', warnings: world.logs.filter(record => record.severity_text !== 'INFO').slice(-20)
-      .map(record => [record.event_name, record.attributes])}));
-  } catch (failure) {console.error(JSON.stringify({journey: 'music-lighting', dumpFailed: String(failure)}));}
-  throw error;
-} finally {await browser.close(); await producer?.close(); await world.close();}
+  }
+  async function wallLighting(): Promise<LightingState> {
+    const reader = await connectRemote({url: world.url, source: 'bunny/parts/reader', token: world.readerToken});
+    try {
+      const result = await reader.sync<LightingState>(['music-lighting-state'], () => {}, {owner: 'bunny/core', timeoutMs: 5000});
+      assert.equal(result.status, 'synced');
+      const record = result.copy.states().find(message => message.data.id === 'wall')?.data;
+      assert.ok(record !== undefined);
+      return record;
+    } finally {await reader.close();}
+  }
+  const datagrams = (address: string): number => world.nanoleafState().devices[address]?.streamed ?? 0;
+  async function playing(light: Locator, address: string, previousFrames: number): Promise<void> {
+    const active = light.getByText(ACTIVE, {exact: true});
+    await advanceUntil(async () => datagrams(address) > previousFrames && await active.isVisible(), 2000);
+    await active.waitFor();
+    assert.ok(datagrams(address) > previousFrames, 'the simulated light received a fresh Music frame');
+  }
+  async function reconnect(page: Page): Promise<void> {
+    const connected = page.locator('main#main[data-feed="connected"]');
+    await advanceUntil(() => connected.isVisible(), 1000);
+    await feed(page, 'connected');
+  }
+  /** Sets a light's mode outside the lighting card, as the light card would, and waits until the module applied it. */
+  async function mode(value: 'free' | 'work', light: 'wall' | 'nl22' = 'wall'): Promise<void> {
+    assert.equal((await world.credentialAction('device-mode-set', light, {mode: value})).status, 200);
+    const address = light === 'wall' ? LINES_ADDRESS : PANELS_ADDRESS;
+    const applied = async (): Promise<boolean> => {
+      const wall = await world.nanoleafWall(light) as unknown as {mode?: string; modePending?: boolean};
+      return wall.mode === value && wall.modePending === false && world.nanoleafState().devices[address]?.select !== undefined;
+    };
+    await advanceUntil(applied, 1000);
+    await expect.poll(applied, {timeout: 10_000}).toBe(true);
+  }
+  let producer: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
+  const artifacts = await browserArtifactDirectory();
+  /** The page's API requests still without an answer, which a failure prints: a hung request is told apart from a slow card. */
+  const unanswered = new Map<Request, string>();
+  try {
+    run.step('Load Music lighting controls');
+    const context = await run.newContext({viewport: viewport.desktop});
+    const page = await run.page(context, 'musicLighting');
+    await clock.install(page);
+    await clock.advance(0);
+    const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    const sent = changes(page), controls: Control[] = [];
+    page.on('request', request => {
+      const {pathname} = new URL(request.url());
+      if (pathname.startsWith('/api/')) unanswered.set(request, `${request.method()} ${pathname}`);
+      if (request.method() === 'POST' && pathname === '/api/v2/commands/music-lighting-control') controls.push(request.postDataJSON() as Control);
+    });
+    page.on('response', response => {unanswered.delete(response.request());}); page.on('requestfailed', request => {unanswered.delete(request);});
+    await page.goto(world.url + '/#/audio'); await feed(page, 'connected');
+    const card = page.getByRole('article', {name: 'Music lighting', exact: true});
+    // One section per light: the Lines (`wall`) and the NL22 Light Panels (`nl22`).
+    await expect(card.getByRole('region', {name: /Music lighting$/})).toHaveCount(2);
+    const light = card.getByRole('region', {name: 'wall Music lighting', exact: true});
+    const panels = card.getByRole('region', {name: 'nl22 Music lighting', exact: true});
+    const start = light.getByRole('button', {name: 'Start Music lighting', exact: true});
+    const stop = light.getByRole('button', {name: 'Stop Music lighting', exact: true});
+    const preset = light.getByRole('combobox', {name: 'Saved reactive preset', exact: true});
+    await light.getByText('Idle. No Music lighting session is running.', {exact: true}).waitFor();
+    await card.getByText(/No saved reactive presets yet/).waitFor();
+    await expect(card.getByRole('link', {name: 'Music effect preview', exact: true})).toHaveAttribute('href', '#/module/nanoleaf/wall');
+    await expect(start).toBeDisabled(); await expect(stop).toBeDisabled(); await expect(preset).toBeDisabled();
+    await light.getByText(/Start unavailable: Music input is unavailable\./).waitFor();
+    await page.screenshot({path: join(artifacts, 'music-lighting-empty-desktop.png'), fullPage: true});
+
+    run.step('Start a light from a saved preset');
+    // Free on a named scene, one saved preset and an active Music capture, all outside the lighting card.
+    await mode('free');
+    assert.equal((await world.credentialAction('nanoleaf-reactive-preset-save', 'reactive-presets',
+      {presetId: 'preset-green', expectedRevision: 0, name: 'Synthetic green', recipe: RECIPE})).status, 200);
+    await expect(preset).toHaveValue('preset-green');
+    await light.getByText(/Start unavailable: Music input is unavailable\./).waitFor();
+    producer = await musicCaptureProducer(world.url, world.musicCaptureToken, undefined, clock);
+    await light.getByText(/Start unavailable: Start measuring Music.app first/).waitFor();
+    await page.getByRole('article', {name: 'Music input measurement', exact: true}).getByRole('button', {name: 'Start measuring Music', exact: true}).click();
+    await expect(start).toBeEnabled();
+    assert.equal(controls.length, 0, 'opening Audio and every state change send no lighting command');
+    // #1614: before any read, the card explains what an ending will and won't put back.
+    await light.getByText(/^Start reads what the light shows\. .*scene saved on the light or a plain colour, and leaves anything else on the last Music frame\./).waitFor();
+
+    const firstFrames = datagrams(LINES_ADDRESS);
+    await start.focus(); await page.keyboard.press('Enter');
+    await light.getByText(/Start request: Completed: succeeded\. The core saved it; the light reports separately\./).waitFor();
+    await playing(light, LINES_ADDRESS, firstFrames);
+    await light.getByText(/Start light work: Completed: succeeded\. Written to the light; the physical effect was not observed\./).waitFor();
+    await light.getByText(/Preset: Synthetic green\./).waitFor();
+    await light.getByText(/^This session started over a scene saved on the light\. .*puts it back at its brightness\./).waitFor();
+    const first = controls[0];
+    assert.equal(controls.length, 1); assert.ok(first?.data.action === 'start');
+    assert.equal(first.target, 'wall'); assert.equal(first.data.presetId, 'preset-green');
+    assert.equal(first.data.capture?.endpointId, producer.endpointId);
+    assert.equal(first.data.capture.generation, producer.commands.at(-1)?.data.generation, 'Start binds the current capture generation');
+    await expect(start).toBeDisabled(); await expect(stop).toBeEnabled();
+    await page.screenshot({path: join(artifacts, 'music-lighting-active-desktop.png'), fullPage: true});
+
+    await page.reload(); await feed(page, 'connected');
+    await light.getByText(ACTIVE, {exact: true}).waitFor();
+    const releaseStream = await holdDashboardStream(page); world.dropDashboardStreams();
+    await expect(stop).toBeDisabled();
+    releaseStream(); await reconnect(page); await expect(stop).toBeEnabled();
+    assert.equal(controls.length, 1, 'reload and reconnect send no lighting command');
+
+    await stop.click();
+    const idle = light.getByText('Idle. No Music lighting session is running.', {exact: true});
+    await advanceUntil(() => idle.isVisible(), 1000);
+    await idle.waitFor();
+    await light.getByText(/Last session ended: stopped on request\. The current base scene and brightness were restored\./).waitFor();
+    await light.getByText(/Stop request: Completed: succeeded/).waitFor();
+    assert.deepEqual(controls.map(control => control.data.action), ['start', 'stop']);
+
+    run.step('Stop when the music source disappears');
+    // Source loss ends the session; capture coming back restarts nothing.
+    const repeatedFrames = datagrams(LINES_ADDRESS);
+    await start.click();
+    await light.getByText(STARTING, {exact: true}).waitFor();
+    await playing(light, LINES_ADDRESS, repeatedFrames);
+    producer.pause();
+    await clock.advance(CAPTURE_WINDOW_MS);
+    await expect(light.getByText(ACTIVE, {exact: true})).toBeVisible();
+    await clock.advance(CAPTURE_VALIDITY_MS);
+    await light.getByText(/Last session ended: the Music input was lost or went stale/).waitFor({timeout: 15_000});
+    await feed(page, 'connected');
+    await producer.start(); await expect(start).toBeEnabled(); await clock.advance(500);
+    await light.getByText('Idle. No Music lighting session is running.', {exact: true}).waitFor();
+    assert.deepEqual(controls.map(control => control.data.action), ['start', 'stop', 'start'], 'no automatic restart');
+
+    // Outside Free, Start is admitted by the core and refused by the light; nothing switches the mode.
+    await mode('work');
+    await light.getByText(/saved mode is not Free, so a Start would be refused/).waitFor();
+    await start.click();
+    await light.getByText(/Last session ended: the light refused the start \(invalid-state\)\. No restoration was attempted\./).waitFor();
+    await light.getByText(/Start light work: Refused \(invalid-state\)/).waitFor();
+    assert.equal(controls.length, 4);
+    await mode('free'); await expect(light.getByText(/saved mode is not Free/)).toHaveCount(0);
+
+    // #1614: a light that is off refuses the Start; the card then says what it read and what an ending would put back.
+    world.nanoleafPower(false);
+    await start.click();
+    await light.getByText(/^Last read at .+?: (a scene saved on the light|a plain colour|streamed frames|an effect|a selection)[^.]*\. /).waitFor();
+    await light.getByText(/Start light work: Refused \(invalid-state\)/).waitFor();
+    assert.equal(controls.length, 5);
+    world.nanoleafPower(true);
+
+    run.step('Recover after a stale lighting read');
+    // A stale lighting read disables controls until an explicit refresh succeeds.
+    let refusedReads = 0;
+    await page.route('**/api/sdk/v1/sync', async route => {
+      const request = route.request().postDataJSON() as {request?: {data?: {families?: string[]}}};
+      if (request.request?.data?.families?.includes('music-lighting-state') === true) {refusedReads += 1; await route.abort(); return;}
+      await route.continue();
+    });
+    const refresh = card.getByRole('button', {name: 'Refresh lighting status', exact: true});
+    await refresh.click();
+    await card.getByText('Lighting status is stale or unavailable. Controls are disabled until a fresh read.', {exact: true}).waitFor();
+    await expect(start).toBeDisabled(); await light.getByText(/Last known: Idle/).waitFor();
+    // The stale view shows as soon as a refresh starts; the failed read must also have settled before the route goes.
+    await expect.poll(() => refusedReads).toBeGreaterThan(0); await expect(refresh).toBeEnabled();
+    await page.unroute('**/api/sdk/v1/sync'); await refresh.click();
+    await expect(start).toBeEnabled();
+
+    run.step('Recover from a lost Start reply');
+    // A lost Start reply stays locked and uncertain across reload; Stop remains available and nothing is resent.
+    let lost = 0;
+    const releaseLostReplyStream = await holdDashboardStream(page);
+    await page.route('**/api/sdk/v1/sync', route => route.abort());
+    await page.route('**/api/v2/commands/music-lighting-control', async route => {
+      world.dropDashboardStreams(); const reply = await route.fetch(); assert.equal(reply.status(), 200); lost += 1; await reply.dispose(); await route.abort();
+    }, {times: 1});
+    const lostReplyFrames = datagrams(LINES_ADDRESS);
+    await start.click(); await light.getByText(/Start request: Uncertain result/).waitFor();
+    await expect(start).toBeDisabled(); await expect(stop).toBeDisabled();
+    await page.unroute('**/api/sdk/v1/sync'); releaseLostReplyStream(); await reconnect(page);
+    await playing(light, LINES_ADDRESS, lostReplyFrames);
+    await expect(stop).toBeEnabled(); await page.reload(); await feed(page, 'connected');
+    await light.getByText(ACTIVE, {exact: true}).waitFor();
+    await expect(stop).toBeEnabled(); await expect(start).toBeDisabled(); assert.equal(lost, 1); assert.equal(controls.length, 6);
+
+    for (const colorScheme of ['light', 'dark'] as const) for (const width of [1280, 390, 320]) {
+      await page.emulateMedia({colorScheme}); await page.setViewportSize({width, height: 900});
+      await stop.focus();
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({path: join(artifacts, `music-lighting-${colorScheme}-${String(width)}.png`), fullPage: true});
+    }
+    await page.setViewportSize({width: 1280, height: 900});
+    await stop.click();
+    const stopped = light.getByText(/Last session ended: stopped on request/);
+    await advanceUntil(() => stopped.isVisible(), 1000);
+    await stopped.waitFor();
+    assert.deepEqual(controls.map(control => control.data.action), ['start', 'stop', 'start', 'start', 'start', 'start', 'stop']);
+
+    run.step('Play on NL22 panels');
+    // #1272: the Panels card starts and stops the NL22's own session through its version 1 stream; the Lines stay idle.
+    const panelsStart = panels.getByRole('button', {name: 'Start Music lighting', exact: true});
+    const panelsStop = panels.getByRole('button', {name: 'Stop Music lighting', exact: true});
+    await panels.getByText(/saved mode is not Free, so a Start would be refused/).waitFor();
+    await mode('free', 'nl22');
+    await expect(panels.getByText(/saved mode is not Free/)).toHaveCount(0);
+    await expect(panelsStart).toBeEnabled();
+    const linesBefore = world.nanoleafState().devices[LINES_ADDRESS];
+    await panelsStart.click();
+    await panels.getByText(STARTING, {exact: true}).waitFor();
+    await playing(panels, PANELS_ADDRESS, 0);
+    await panels.getByText(/Start light work: Completed: succeeded\. Written to the light; the physical effect was not observed\./).waitFor();
+    await light.getByText('Idle. No Music lighting session is running.', {exact: true}).waitFor();
+    // Past the session's first once-a-second check: the Panels keep playing while they report `*Dynamic*` (#1777).
+    await advanceUntil(() => datagrams(PANELS_ADDRESS) > 15, 2000);
+    assert.ok(datagrams(PANELS_ADDRESS) > 15);
+    await expect(panels.getByText(ACTIVE, {exact: true})).toBeVisible();
+    const streaming = world.nanoleafState().devices[PANELS_ADDRESS];
+    // The simulated NL22 reports `*Dynamic*` while it streams, as the installed one did (#1777).
+    assert.deepEqual({select: streaming?.select, streaming: streaming?.streaming}, {select: '*Dynamic*', streaming: {version: 'v1', port: 60221}});
+    assert.deepEqual(Object.keys(streaming?.frame ?? {}).sort(), ['200', '201', '202', '203'], 'the NL22 frames light its own panels');
+    const linesNow = world.nanoleafState().devices[LINES_ADDRESS];
+    assert.deepEqual({writes: linesNow?.writes, streamed: linesNow?.streamed}, {writes: linesBefore?.writes, streamed: linesBefore?.streamed}, 'the Lines are untouched');
+    await page.screenshot({path: join(artifacts, 'music-lighting-panels-active-desktop.png'), fullPage: true});
+    await panelsStop.click();
+    const panelsStopped = panels.getByText(/Last session ended: stopped on request\. The current base scene and brightness were restored\./);
+    await advanceUntil(() => panelsStopped.isVisible(), 1000);
+    await panelsStopped.waitFor();
+    assert.equal(world.nanoleafState().devices[PANELS_ADDRESS]?.select, 'Beach Waves');
+    assert.deepEqual(controls.slice(-2).map(control => [control.target, control.data.action]), [['nl22', 'start'], ['nl22', 'stop']]);
+
+    run.step('Exercise read-only controls');
+    // Read-only access disables both controls and sends nothing.
+    await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
+    await page.reload(); await feed(page, 'connected');
+    await light.getByText(/Start unavailable: Read-only access/).waitFor();
+    await expect(start).toBeDisabled(); await expect(stop).toBeDisabled();
+    await page.unroute('**/api/v2/authority?scope=control');
+
+    run.step('Refuse a microphone source');
+    // A microphone measurement is never offered to lights.
+    const capture = page.getByRole('article', {name: 'Music input measurement', exact: true});
+    await producer.close();
+    // The core refuses a new producer's endpoint until it has retired the closed one, as the capture journey also waits.
+    await capture.getByText('Music input is unavailable.', {exact: true}).waitFor();
+    producer = await musicCaptureProducer(world.url, world.musicCaptureToken, 'studio-mic', clock);
+    await page.reload(); await feed(page, 'connected');
+    await capture.getByRole('combobox', {name: 'Audio input'}).selectOption('microphone');
+    await capture.getByRole('button', {name: 'Start measuring studio-mic', exact: true}).click();
+    const receiving = capture.getByText('Receiving studio-mic measurements.', {exact: true});
+    await capture.getByText(/Start: Completed: succeeded/).waitFor();
+    await advanceUntil(() => receiving.isVisible(), CAPTURE_VALIDITY_MS);
+    await receiving.waitFor();
+    await light.getByText(/Start unavailable: Lights use Music.app input only, never a microphone/).waitFor();
+    await expect(start).toBeDisabled();
+    assert.equal(controls.length, 9);
+    assert.equal(sent.filter(path => path === '/api/v2/commands/music-lighting-control').length, 9);
+    // Saved playback is independent of the active microphone measurement and pins the selected version.
+    const savedStart = light.getByRole('button', {name: 'Start saved show', exact: true});
+    const savedVersion = light.getByRole('combobox', {name: 'Saved show and version', exact: true});
+    await expect(savedStart).toBeDisabled();
+    const saved = {showId: 'show-audio-test', expectedVersion: 0, name: 'Synthetic show', versionName: 'Original',
+      timeline: {version: 1, durationMs: 10_000, cues: [{id: 'cue', offsetMs: 0, durationMs: 10_000,
+        recipe: {preset: 'ocean'}, intensity: 0.5}]}};
+    assert.equal((await world.credentialAction('nanoleaf-show-save', 'shows', saved)).status, 200);
+    await savedVersion.selectOption({label: 'Synthetic show · v1 · Original'});
+    assert.equal((await world.credentialAction('nanoleaf-show-save', 'shows',
+      {...saved, expectedVersion: 1, versionName: 'Edited'})).status, 200);
+    await expect(savedVersion.locator('option', {hasText: 'Edited'})).toHaveCount(1);
+    await expect(savedVersion.locator('option:checked')).toHaveText('Synthetic show · v1 · Original');
+    assert.equal(controls.length, 9, 'selecting and saving send no lighting command');
+    await refresh.click();
+    await expect(savedStart).toBeEnabled();
+    await expect(savedVersion.locator('option:checked')).toHaveText('Synthetic show · v1 · Original');
+    await page.setViewportSize({width: 390, height: 900});
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await light.screenshot({path: join(artifacts, 'saved-show-picker-phone.png')});
+    await page.setViewportSize({width: 1280, height: 900});
+    assert.equal(controls.length, 9, 'refresh preserves selection without starting playback');
+
+
+    world.nanoleafPower(false);
+    await savedStart.click();
+    await light.getByText(/Start light work: Refused \(invalid-state\)/).waitFor();
+    assert.equal(controls.length, 10);
+    world.nanoleafPower(true);
+    const showFrames = datagrams(LINES_ADDRESS);
+    const beforeShow = await wallLighting();
+    assert.equal(beforeShow.session.status, 'idle');
+    await savedStart.click();
+    const showActive = light.getByText('Active. The light module reports that the show is running.', {exact: true});
+    await advanceUntil(async () => datagrams(LINES_ADDRESS) > showFrames && await showActive.isVisible(), 2000);
+    await expect(showActive).toBeVisible();
+    assert.ok(datagrams(LINES_ADDRESS) > showFrames);
+    const selectedControl = controls.at(-1);
+    assert.equal(selectedControl?.target, 'wall');
+    assert.deepEqual(selectedControl.data, {action: 'start-show', expectedRevision: beforeShow.revision,
+      showId: saved.showId, version: 1, positionMs: 0, startDelayMs: 0});
+    await light.getByText(/Saved show show-audio-test, version 1/).waitFor();
+    const savedRestoration = light.getByText(/^This show started over a scene saved on the light\. Stop, an alert or completion can restore it at its previous brightness\./);
+    await expect(savedRestoration).toBeVisible();
+    await expect(light.getByText(/This session started over.*lost Music input/)).toHaveCount(0);
+    await capture.getByRole('button', {name: 'Stop measuring', exact: true}).click();
+    await capture.getByText(/Stop: Completed: succeeded/).waitFor();
+    await expect(showActive).toBeVisible();
+
+    await light.screenshot({path: join(artifacts, 'saved-show-active-desktop.png')});
+    await page.reload(); await feed(page, 'connected');
+    await expect(showActive).toBeVisible();
+    await expect(savedStart).toBeDisabled();
+    assert.equal(controls.length, 11, 'reload leaves the accepted show running without another Start');
+    const beforeStop = await wallLighting();
+    assert.equal(beforeStop.session.status, 'active');
+    await stop.click();
+    await advanceUntil(() => stopped.isVisible(), 1000);
+    await expect(stopped).toBeVisible();
+    assert.equal(controls.at(-1)?.target, 'wall');
+    assert.deepEqual(controls.at(-1)?.data, {action: 'stop', expectedRevision: beforeStop.revision, generation: beforeStop.session.generation});
+    assert.equal(controls.length, 12);
+    assert.deepEqual(errors, []);
+    console.log(JSON.stringify({journey: 'music-lighting', lightingCommands: controls.length, lostReplies: lost, artifacts, physical: false}));
+    await run.closeContext(context);
+  } catch (error) {
+    // Hosted runs keep no screenshot, so a failure prints what each page showed before the browser closes (#1664). Each
+    // page read has its own 2 s limit, since `evaluate` ignores the default timeout, and the original error always follows.
+    try {
+      for (const context of run.contexts()) for (const open of context.pages()) {
+        const limit = new AbortController();
+        const shown = await Promise.race([open.evaluate(() => ({feed: document.querySelector('main#main')?.getAttribute('data-feed'),
+          statuses: [...document.querySelectorAll('main [role=status]')].map(item => (item as HTMLElement).innerText.replace(/\s+/g, ' ').trim())}))
+          .catch((failure: unknown) => String(failure)), delay(2000, 'timed out', {signal: limit.signal})]);
+        limit.abort();
+        console.error(JSON.stringify({journey: 'music-lighting', failed: new URL(open.url()).hash, shown}));
+      }
+      console.error(JSON.stringify({journey: 'music-lighting', unanswered: [...unanswered.values()]}));
+      console.error(JSON.stringify({journey: 'music-lighting', warnings: world.logs.filter(record => record.severity_text !== 'INFO').slice(-20)
+        .map(record => [record.event_name, record.attributes])}));
+    } catch (failure) {console.error(JSON.stringify({journey: 'music-lighting', dumpFailed: String(failure)}));}
+    throw error;
+  } finally {await producer?.close();}
+});

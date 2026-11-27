@@ -19,9 +19,6 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: read
-# A failed group uploads the screenshots and dumps its journeys wrote here (#2059).
-env:
-  TEST_EVIDENCE_DIR: /tmp/test-evidence
 # One run per pushed revision or pull request; a newer push never cancels a run in progress.
 concurrency:
   group: runtime-dashboard-browser-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
@@ -80,14 +77,11 @@ jobs:
       # Every journey of this group's `npm run test:runtime-dashboard:browser:<group>`, in its order, stopping at the
       # first failure.
       - id: suite
+        shell: bash scripts/ci-selection/failure-summary.sh browser group {0}
         if: steps.select.outputs.run == 'true'
         env:
           SUITE_GROUP: ${{ matrix.group }}
         run: node scripts/ci-selection/runtime-browser.mjs run "$SUITE_GROUP"
-      - if: failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''
-        uses: ./.github/actions/failure-evidence
-        with:
-          name: runtime-dashboard-browser-${{ matrix.group }}
   report:
     name: Report runtime dashboard browser failures
     needs: suite

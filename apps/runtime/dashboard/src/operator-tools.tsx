@@ -2,7 +2,7 @@
 import React, {useEffect, useId, useRef, useState} from 'react';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {SessionsCopy} from './connection.ts';
-import {sendAction, type ActionReply} from './actions.ts';
+import {sendSaveAction, useSaveLifecycle} from './save-lifecycle.ts';
 import {currentNotice, noticeAttempt, noticeEvidence, overrideAvailable, type NoticeAttempt} from './notice-clear.ts';
 import {sessionName} from './sessions.ts';
 
@@ -11,12 +11,9 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
 }): React.JSX.Element {
   const [selectedId, setSelectedId] = useState('');
   const [confirmation, setConfirmation] = useState<NoticeAttempt>();
-  const [attempt, setAttempt] = useState<NoticeAttempt>();
-  const [answer, setAnswer] = useState<ActionReply>();
   const trigger = useRef<HTMLButtonElement>(null), confirm = useRef<HTMLButtonElement>(null);
-  const inFlight = useRef(false), alive = useRef(true), returnFocus = useRef(false);
+  const returnFocus = useRef(false);
   const id = useId();
-  useEffect(() => {alive.current = true; return () => {alive.current = false;};}, []);
   useEffect(() => {
     if (confirmation !== undefined) confirm.current?.focus();
     else if (returnFocus.current) {returnFocus.current = false; trigger.current?.focus();}
@@ -26,26 +23,31 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
   const available = overrideAvailable(selected, {control, live, synced: sessions.synced});
   const unchanged = selected !== undefined && confirmation !== undefined && selected.generation === confirmation.generation &&
     selected.revision === confirmation.revision && current?.id === confirmation.noticeId;
-  const pending = attempt !== undefined && answer === undefined;
-  const evidence = attempt === undefined ? undefined : noticeEvidence(attempt, selected, available, operations, operationsSynced, answer);
+  const observe = (attempt: NoticeAttempt): ReturnType<typeof noticeEvidence> =>
+    noticeEvidence(attempt, selected, available, operations, operationsSynced);
+  // Send once per confirmation dialog. Closing and reopening is a new explicit attempt.
+  const save = useSaveLifecycle<NoticeAttempt>({
+    accepted: () => true, uncertain: () => true,
+    confirm: state => state.kind === 'accepted' && observe(state.input).completed,
+  });
+  const phase = save.state;
+  const pending = phase.kind === 'sending';
+  const evidence = phase.kind === 'idle' ? undefined : observe(phase.input);
   const acknowledgments = evidence?.acknowledgedBy?.join(', ') ?? '';
-  const close = (): void => {if (inFlight.current) return; returnFocus.current = true; setConfirmation(undefined);};
+  const close = (): void => {if (pending) return; returnFocus.current = true; setConfirmation(undefined);};
   const open = (): void => {
-    if (!available || selected === undefined || current === undefined || inFlight.current) return;
-    setAttempt(undefined); setAnswer(undefined); setConfirmation(noticeAttempt(selected, crypto.randomUUID()));
+    if (!available || selected === undefined || current === undefined || pending) return;
+    save.reset(); setConfirmation(noticeAttempt(selected, crypto.randomUUID()));
   };
-  const submit = async (): Promise<void> => {
-    if (!available || !unchanged || confirmation === undefined || attempt !== undefined || inFlight.current) return;
-    inFlight.current = true; setAttempt(confirmation); setAnswer(undefined);
-    const reply = await sendAction({family: 'notice-clear', target: confirmation.id, requestId: confirmation.requestId,
-      data: {noticeId: confirmation.noticeId, expectedRevision: confirmation.revision}});
-    inFlight.current = false;
-    if (alive.current) setAnswer(reply);
+  const submit = (): void => {
+    if (!available || !unchanged || confirmation === undefined || phase.kind !== 'idle') return;
+    void save.run(confirmation, () => sendSaveAction({family: 'notice-clear', target: confirmation.id, requestId: confirmation.requestId,
+      data: {noticeId: confirmation.noticeId, expectedRevision: confirmation.revision}}));
   };
   return <div className="card" aria-label="Operator tools"><h2>Operator tools</h2>
     <p>This override acknowledges the selected current notice for every configured consumer. It proves no provider readership or physical device result.</p>
     <label htmlFor={id}>Session</label><select id={id} value={selectedId} disabled={pending || confirmation !== undefined}
-      onChange={event => {setSelectedId(event.target.value); setAttempt(undefined); setAnswer(undefined);}}>
+      onChange={event => {setSelectedId(event.target.value); save.reset();}}>
       <option value="">Choose a session</option>
       {sessions.views.map(view => <option key={view.id} value={view.id}>{sessionName(view)}</option>)}
     </select>
@@ -57,14 +59,14 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
     {confirmation !== undefined && <form className="edit" aria-label="Confirm notice override" onSubmit={event => {event.preventDefault(); void submit();}}
       onKeyDown={event => {if (event.key === 'Escape' && !pending) {event.preventDefault(); close();}}}>
       <p>Confirm clearing this notice for {selected === undefined ? 'the selected session' : sessionName(selected)} on every configured device.</p>
-      <div className="actions"><button ref={confirm} type="submit" disabled={!available || !unchanged || attempt !== undefined}>Confirm clear</button>
-        <button type="button" onClick={close} disabled={pending}>{attempt === undefined ? 'Cancel' : 'Close'}</button></div>
-      {!unchanged && attempt === undefined && <p className="warning">The session or notice changed. Cancel and select the current notice.</p>}
+      <div className="actions"><button ref={confirm} type="submit" disabled={!available || !unchanged || phase.kind !== 'idle'}>Confirm clear</button>
+        <button type="button" onClick={close} disabled={pending}>{phase.kind === 'idle' ? 'Cancel' : 'Close'}</button></div>
+      {!unchanged && phase.kind === 'idle' && <p className="warning">The session or notice changed. Cancel and select the current notice.</p>}
       <div role="status">
-        {evidence?.reply === 'requested' && <p>Requested. Waiting for a reply.</p>}
-        {evidence?.reply === 'accepted' && <p>Accepted. Completion and acknowledgments are shown separately.</p>}
-        {evidence?.reply === 'uncertain' && <p>The reply is uncertain. The action was not sent again.</p>}
-        {evidence?.reply === 'refused' && <p>The override was refused. Code: {answer !== undefined && 'error' in answer ? answer.error.code : ''}.</p>}
+        {phase.kind === 'sending' && <p>Requested. Waiting for a reply.</p>}
+        {(phase.kind === 'accepted' || phase.kind === 'confirmed') && <p>Accepted. Completion and acknowledgments are shown separately.</p>}
+        {phase.kind === 'uncertain' && <p>The reply is uncertain. The action was not sent again.</p>}
+        {phase.kind === 'refused' && <p>The override was refused. Code: {phase.code}.</p>}
         {evidence !== undefined && <p>Completion: {evidence.completion}.</p>}
         {evidence?.acknowledgedBy !== undefined && <p>Synced session acknowledgments: {acknowledgments.length > 0 ? acknowledgments : 'None observed'}.</p>}
         {evidence !== undefined && !evidence.retired && evidence.acknowledgedBy === undefined && <p>Current session acknowledgment evidence is unavailable.</p>}

@@ -4,9 +4,10 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
-import {chromium, expect, type Locator, type Page} from 'playwright/test';
+import {expect, type Locator, type Page} from 'playwright/test';
 import type {HomeLayoutRecord, HomePlacement, HomeShape} from '@jimmie-potts/event-contracts/v2/families';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, feed, recordsLoaded} from './harness.ts';
+import {runJourney, viewport} from './journey-runner.ts';
 import {approvalPrompt, IDENTITY} from '../../dist/tests/fixtures/agents.js';
 import {listFit} from '../src/paging.ts';
 import {idleChanges} from './list-idle.ts';
@@ -15,14 +16,24 @@ import {gifFixture} from '../../../../modules/pixoo/dist/tests/helpers/media-fix
 const receipts = process.env.DASHBOARD_RECEIPTS;
 const only = process.env.HOME_SHAPES_ONLY?.split(',');
 const part = (name: string): boolean => only === undefined || only.includes(name);
-// The main page keeps the browser's real clock (#1712), so the Wispr card judges its Today window by the wall clock: the
-// files report in a zone whose day has just begun, or a run that crosses UTC midnight would read Stale (#2063).
-const world = await startWorld({lighting: true, pixooPages: true, tidbyt: true, wemo: true, roborock: true, volcano: true, companions: true, art: true, inbox: true,
-  wispr: {exposeToDashboard: true, wholeDay: true}});
-const browser = await chromium.launch({headless: true});
 const shapes: readonly HomeShape[] = ['square', 'wide', 'tall', 'large-square'];
 const storedSize = {square: 'small', tall: 'small', wide: 'medium', 'large-square': 'medium'} as const;
 
+/**
+ * What the page held when a wait on a Home card expired: the feed, the copies, whether Home's layout was stale and the
+ * card's text and buttons (#2123). It reads the page once and adds nothing to the wait.
+ */
+async function held(page: Page, id: string): Promise<string> {
+  try {
+    return await page.evaluate(widget => {
+      const main = document.querySelector('main#main'), card = document.querySelector(`[data-home-card="${CSS.escape(widget)}"]`);
+      const buttons = card === null ? [] : [...card.querySelectorAll('button')].map(button => `${button.textContent.trim()}${button.disabled ? ' (disabled)' : ''}`);
+      return [`data-feed=${String(main?.getAttribute('data-feed'))}`, `data-copies=${String(main?.getAttribute('data-copies'))}`,
+        `layout stale: ${String(document.body.innerText.includes('Home layout is unavailable or stale'))}`,
+        card === null ? `no card ${widget}` : `card: ${(card as HTMLElement).innerText.replace(/\s+/g, ' ').slice(0, 160)}; buttons: ${buttons.join(', ')}`].join('; ');
+    }, id);
+  } catch (problem) {return `the page could not be read: ${String(problem).split('\n')[0] ?? ''}`;}
+}
 async function settle(page: Page): Promise<void> {
   await page.evaluate(async () => {await document.fonts.ready;await new Promise<void>(resolve => {requestAnimationFrame(() => {requestAnimationFrame(() => {resolve();});});});});
 }
@@ -292,14 +303,18 @@ function tiles(value: Awaited<ReturnType<typeof measure>>): void {
   }
 }
 
-try {
+// The main page keeps the browser's real clock (#1712), so the Wispr card judges its Today window by the wall clock: the
+// files report in a zone whose day has just begun, or a run that crosses UTC midnight would read Stale (#2063).
+await runJourney('Home shapes', {lighting: true, pixooPages: true, tidbyt: true, wemo: true, roborock: true, volcano: true, companions: true, art: true, inbox: true,
+  wispr: {exposeToDashboard: true, wholeDay: true}}, async (run, world) => {
+  run.step('Prepare the Home layout and its records');
   // F23: a provider title long enough to wrap four lines in a tile; first in record order, so the first page shows it.
   await world.observe({kind: 'session-started'}, {identity: {...IDENTITY, sessionId: 'shape-long-title'}, title: {value: 'Rework the Home card shapes so every list fits its card at each window width, then report back', source: 'provider'}});
   for (let index = 0; index < 5; index += 1) await world.observe({kind: 'session-started'}, {identity: {...IDENTITY, sessionId: `shape-${String(index)}`}, title: {value: `Synthetic agent ${String(index + 1)}`, source: 'provider'}});
   await world.observe(approvalPrompt('shapes-attention'));
   for (let index = 0; index < 13; index += 1) await world.failCommand();
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
-  const page = await context.newPage();page.setDefaultTimeout(20_000);
+  const context = await run.newContext({viewport: viewport.wide, deviceScaleFactor: receipts === undefined ? 1 : 2});
+  const page = await run.page(context, 'homeShapes');
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
   /**
    * A page in a context of its own, on a clock the journey moves (#1712). It keeps real time until a check runs it on.
@@ -307,13 +322,13 @@ try {
    * with a page clock there, the canvas cards' frame loops slowed its resizes past their bounds under CPU throttling.
    */
   const clocked = async (trackRequests = false): Promise<{page: Page; close: () => Promise<void>}> => {
-    const own = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
+    const own = await run.newContext({viewport: viewport.wide, deviceScaleFactor: receipts === undefined ? 1 : 2});
     own.on('weberror', error => {errors.push(error.error().message);});
     if (trackRequests) await own.addInitScript(trackPageRequests);
-    const opened = await own.newPage();opened.setDefaultTimeout(20_000);await opened.clock.install();
-    return {page: opened, close: () => own.close()};
+    const opened = await run.page(own, 'homeShapes');await opened.clock.install();
+    return {page: opened, close: () => run.closeContext(own)};
   };
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   for (const prefix of ['device:bunny/modules/pixoo:', 'device:bunny/modules/tidbyt:', 'light:device:']) await page.locator(`[data-home-card^="${prefix}"]`).first().waitFor();
   // Setup only: a room for the room card, through the existing lighting metadata command.
@@ -330,6 +345,7 @@ try {
 
   const order = async (): Promise<string[]> => page.locator('.home-layout-grid > [data-home-card]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''));
   if (part('tiles')) {
+    run.step('tiles');
     // AC1: the built-in layout, before any save, tiles on the unit grid; so do three mixed layouts with all four shapes.
     const value = await measure(page);assert.equal(value.columns, 5);assert.ok(Math.abs(value.cell - 225.6) < 1, String(value.cell));tiles(value);
     assert.deepEqual(misfits(value.cards), []);assert.deepEqual(halfEmpty(value.cards), []);assert.deepEqual(await listFits(page), []);
@@ -384,6 +400,7 @@ try {
   }
 
   if (part('picker')) {
+    run.step('picker');
     // AC2: the owner changes a shape in Edit Home; it saves, reloads and sends no device command.
     await save(page, representative);
     const sent = changes(page);
@@ -414,7 +431,7 @@ try {
     await page.getByRole('button', {name: 'Done', exact: true}).click();
     await expect(page.getByText('Home layout saved.', {exact: true})).toBeVisible();
     assert.deepEqual(sent, ['/api/v2/commands/home-layout-set'], 'only the layout save is sent');
-    await page.reload();await feed(page, 'connected');
+    await page.reload();await recordsLoaded(page);
     await expect(page.locator('[data-home-card="music-visualizer"]')).toHaveAttribute('data-home-shape', 'large-square');
     const stored = await page.evaluate(async () => {
       const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}};
@@ -431,6 +448,7 @@ try {
   }
 
   if (part('convert')) {
+    run.step('convert');
     // AC3: a layout saved with Small / Standard / Wide only loads with the same widgets and order in stated shapes,
     // and loading writes nothing.
     const old: HomePlacement[] = [{widget: 'hub-mode', size: 'medium', hidden: false}, {widget: 'inbox', size: 'small', hidden: false}, {widget: 'sessions', size: 'medium', hidden: false},
@@ -455,6 +473,7 @@ try {
   }
 
   if (part('paging')) {
+    run.step('paging');
     // AC5: Inbox rows per page follow its shape; an opened item takes the page and stays reachable; F11 stuck-row case.
     await save(page, [placement('inbox', 'tall'), placement('music-visualizer', 'wide')]);
     const inbox = page.locator('[data-home-card="inbox"]'), list = inbox.locator('[data-paged-list="Inbox"]'), rows = list.locator('[data-paged-key]:not([hidden])');
@@ -504,6 +523,7 @@ try {
   }
 
   if (part('fit')) {
+    run.step('fit');
     // AC4: every card in every shape it offers fits at 1100, 1440 and 1920 px: no overflow, clipped control or scrolling.
     await save(page, all.map(widget => ({widget, size: 'medium', hidden: false})));
     const offers = new Map((await measure(page)).cards.map(card => [card.id, card.offers as HomeShape[]]));
@@ -547,6 +567,7 @@ try {
   }
 
   if (part('results')) {
+    run.step('results');
     // F4: a command's result shows on the face of a Small square and a Wide light card, inside the card.
     await save(page, [placement(lamps[0] ?? '', 'square'), placement(lamps[1] ?? '', 'wide')]);
     const square = page.locator(`[data-home-card="${lamps[0] ?? ''}"]`), wide = page.locator(`[data-home-card="${lamps[1] ?? ''}"]`);
@@ -640,6 +661,7 @@ try {
   }, {fit: listFit, id});
 
   if (part('opened')) {
+    run.step('opened');
     // F22: an opened session or Inbox item scrolls inside its card; nothing outside the scroll area is clipped.
     for (const shape of ['large-square', 'tall'] as const) {
       await save(page, [placement('sessions', shape), placement('music-visualizer', 'wide')]);
@@ -680,6 +702,7 @@ try {
   }
 
   if (part('long')) {
+    run.step('long');
     // F23: long names stay inside their fixed rows. The long session title comes from the synthetic world; for Inbox and
     // Timeline rows this check puts a long name into the first rows' text, then reloads.
     await save(page, [placement('sessions', 'large-square'), placement('inbox', 'tall'), placement('timeline', 'tall'), placement('music-visualizer', 'wide')]);
@@ -697,12 +720,13 @@ try {
   }
 
   if (part('short')) {
+    run.step('short');
     // A short or empty Inbox in each shape (#1672 owner decision 2026-11-11): one item sits at the top at its normal
     // height with no pager and the rest of the card plain; an empty Inbox centres its short message. Fresh synthetic
     // world and browser context, since browser sessions are cookies on the shared loopback host.
-    const quiet = await startWorld({inbox: true}), quietContext = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
+    const quiet = await run.startWorld({inbox: true}), quietContext = await run.newContext({viewport: viewport.wide, deviceScaleFactor: receipts === undefined ? 1 : 2});
     try {
-      const fresh = await quietContext.newPage();fresh.setDefaultTimeout(20_000);await fresh.goto(quiet.url);await feed(fresh, 'connected');
+      const fresh = await run.page(quietContext, 'homeShapes');await fresh.goto(quiet.url);await recordsLoaded(fresh);
       await expect(fresh.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
       const inbox = fresh.locator('[data-home-card="inbox"]'), pictures: string[] = [];
       for (const count of [0, 1]) {
@@ -732,7 +756,7 @@ try {
         }
       }
       await sheet('final5-inbox-one-item-and-empty-1440', pictures);
-    } finally {await quietContext.close();await quiet.close();}
+    } finally {await run.closeContext(quietContext);await run.closeWorld(quiet);}
   }
 
   /**
@@ -754,6 +778,7 @@ try {
   };
 
   if (part('menus')) {
+    run.step('menus');
     // F1: the Pixoo menu in Small square and Wide, and a light card's menu, each with a card directly below it.
     const failures: string[] = [];
     await page.setViewportSize({width: 1440, height: 1000});
@@ -783,6 +808,7 @@ try {
   }
 
   if (part('modules')) {
+    run.step('modules');
     // PR B: Pixoo, Tidbyt and Wispr draw compact content of their own in every shape, from the presentation hint the
     // shell passes in their module context. Each fits its card at 1100, 1440 and 1920 px (nothing past the card, even
     // where the card hides overflow), shows no generic face, and nothing inside it changes for two idle seconds.
@@ -956,6 +982,7 @@ try {
   }
 
   if (part('recorder')) {
+    run.step('recorder');
     // F6 (#1672 PR B round 2): the idle recorder reports churn that ends where it began, as a render loop does. A static
     // page with one list card flips an attribute, a row's `hidden` and a class every frame and restores each; a write
     // of the value an attribute already has is not a change.
@@ -1006,6 +1033,7 @@ try {
   }
 
   if (part('idle')) {
+    run.step('idle');
     // F18: once Home has settled, nothing inside a list card changes while nobody acts, at widths where measured rows
     // used to re-render every frame. home-idle.browser.ts sweeps every 20 px with 0 to 13 Inbox items.
     await save(page, representative);
@@ -1038,6 +1066,7 @@ try {
   }
 
   if (receipts !== undefined && part('shots')) {
+    run.step('Capture Home shape screenshots');
     await save(page, [placement(lamps[0] ?? '', 'large-square'), placement(lamps[1] ?? '', 'wide'), placement(lamps[2] ?? '', 'tall'), placement('light:room:studio', 'square')]);
     await shot(page, 'final5-lights-four-shapes-1440');
     // The Inbox's three shapes with a full list, and Agent sessions in its two.
@@ -1053,6 +1082,7 @@ try {
     await page.setViewportSize({width: 1440, height: 1000});
   }
   if (part('stale')) {
+    run.step('stale');
     // F2: while the compact Pixoo card's controls are disabled, its line says why. A runtime restart ends the browser's
     // session, so the card's records go stale; reloading signs in again on the trusted loopback.
     await save(page, [placement(pixoo, 'wide')]);
@@ -1063,11 +1093,12 @@ try {
     const line = card.locator('.pixoo-compact-result');
     await expect(line).toHaveText('Pixoo records are stale.');await expect(line).toHaveAttribute('title', 'Pixoo records are stale.');
     assert.deepEqual(misfits((await measure(page)).cards), [], 'the reason line stays inside the card');
-    await page.reload();await feed(page, 'connected');
-    await expect(card.getByRole('button', {name: 'Screen off', exact: true})).toBeEnabled();
+    // A connected feed is the session link alone: the page syncs the owners' records after it, so the card waits for
+    // those copies, as Home does (#2123). On one CPU they arrived up to 5.1 s after `connected`.
+    await page.reload();await recordsLoaded(page);
+    await expect(card.getByRole('button', {name: 'Screen off', exact: true})).toBeEnabled()
+      .catch(async (error: unknown) => {throw new Error(`the Pixoo card after the reload: ${await held(page, pixoo)}`, {cause: error});});
   }
   assert.deepEqual(errors, []);
-} finally {
-  await browser.close();await world.close();
-}
+});
 void changes;void ({} as Locator);

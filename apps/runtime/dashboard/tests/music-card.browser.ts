@@ -1,19 +1,20 @@
+import {browserEntry} from './failure-context.ts';
 import {destinationLink, openAudio} from './navigation-helpers.ts';
 // Shared Music card journey through a real disposable runtime; all media and receivers are synthetic.
 import assert from 'node:assert/strict';
-import {chromium, type Route} from 'playwright';
+import type {Route} from 'playwright';
 import {expect} from 'playwright/test';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
-import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
+import {changes, feed, recordsLoaded, holdDashboardStream} from './harness.ts';
+import {runJourney, viewport} from './journey-runner.ts';
 
 const speakers = new SimulatedSpeakers({sony: {input: 'airplay', status: 'playing', title: 'Synthetic song', artist: 'Synthetic artist', album: 'Synthetic album'}});
-const world = await startWorld({lighting: true, playbackArtwork: {speakers, fetch: () => Promise.resolve({ok: false, code: 'unavailable', transient: false})}});
-const browser = await chromium.launch({headless: true});
-try {
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
-  const page = await context.newPage(); page.setDefaultTimeout(10_000);
+await runJourney('Music card', {lighting: true, playbackArtwork: {speakers, fetch: () => Promise.resolve({ok: false, code: 'unavailable', transient: false})}}, async (run, world) => {
+  run.step('Open Music on Home and Audio');
+  const context = await run.newContext({viewport: viewport.tallDesktop});
+  const page = await run.page(context, 'controls');
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message)); const sent = changes(page);
-  await page.goto(world.url); await feed(page, 'connected');
+  await page.goto(world.url); await recordsLoaded(page);
   // The wide Home grid (#1672) shows Music as the generic compact face; Open leads to its Music page with the full card.
   const face = page.locator('[data-home-compact="music:bunny/modules/playback:living-room"]');
   await face.getByText('Playing · Synthetic song', {exact: true}).waitFor();
@@ -43,6 +44,7 @@ try {
   await (await destinationLink(page, 'Rooms')).click();
   const room = page.getByRole('region', {name: 'Studio audio', exact: true}); await room.getByRole('article', {name: 'Music living-room', exact: true}).waitFor();
   assert.equal(await page.getByRole('region', {name: 'Kitchen audio', exact: true}).count(), 0);
+  run.step('Read Music from another room page');
   const second = await context.newPage(); const secondSent = changes(second); await second.goto(world.url + '/#/rooms'); await feed(second, 'connected');
   await second.getByRole('region', {name: 'Studio audio', exact: true}).waitFor(); assert.equal(secondSent.length, 0); await second.close();
   await world.restart(); await page.reload(); await feed(page, 'connected'); await room.waitFor();
@@ -67,12 +69,14 @@ try {
   await openAudio(page); await page.getByText('Show in rooms', {exact: true}).click();
   await studio.waitFor(); assert.equal(await studio.isChecked(), true);
   await page.route('**/api/sdk/v1/sync', route => route.abort());
+  run.step('Keep playback controls stale during disconnect');
   const releaseStream = await holdDashboardStream(page); world.dropDashboardStreams();
   await card.getByText('Stale', {exact: true}).waitFor(); assert.equal(await card.getByRole('button', {name: 'Next', exact: true}).isDisabled(), true);
   assert.equal(await page.getByRole('button', {name: 'Save room placement', exact: true}).isDisabled(), true);
   await page.unroute('**/api/sdk/v1/sync'); releaseStream(); await feed(page, 'connected');
   await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
   await page.getByRole('checkbox', {name: 'Show living-room in Kitchen', exact: true}).check();
+  run.step('Hold a room-placement save');
   let releaseSave = (): void => {};
   const saveReplyGate = new Promise<void>(resolve => {releaseSave = resolve;});
   let competingSaved = false;
@@ -130,9 +134,10 @@ try {
   assert.equal(await studio.isDisabled(), true, 'a failed refresh cannot be satisfied by automatic sync recovery');
   await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
   await expect(studio).toBeEnabled();
-  const faultContext = await browser.newContext();
+  run.step('Recover the room placement after a lost reply');
+  const faultContext = await run.newContext();
   try {
-    const fault = await faultContext.newPage(); fault.setDefaultTimeout(10_000); const faultSends = changes(fault); let forwarded = 0;
+    const fault = await run.page(faultContext, 'controls'); const faultSends = changes(fault); let forwarded = 0;
     await fault.goto(world.url + '/#/audio'); await feed(fault, 'connected'); await fault.getByText('Show in rooms', {exact: true}).click();
     await fault.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
     await fault.getByRole('checkbox', {name: 'Show living-room in Kitchen', exact: true}).check();
@@ -156,7 +161,7 @@ try {
     await fault.getByText('Show in rooms', {exact: true}).click();
     await expect(fault.getByRole('checkbox', {name: 'Show living-room in Kitchen', exact: true})).toBeChecked();
     assert.equal(forwarded, 1); assert.equal(faultSends.length, 1, 'reload reconciles the actual committed placement without replay');
-  } finally {await faultContext.close();}
+  } finally {await run.closeContext(faultContext);}
   await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
   await page.reload(); await feed(page, 'connected'); await page.getByText('Show in rooms', {exact: true}).click();
   assert.equal(await studio.isDisabled(), true); assert.equal(await card.getByRole('button', {name: 'Next', exact: true}).isDisabled(), true);
@@ -168,14 +173,14 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({journey: 'reusable-music', home: true, audio: true, rooms: true, restart: true, readOnly: true, stale: true,
     failedRefreshAborts: [...failedRefreshFamilies].sort(), physical: false}));
-  await context.close();
-} finally {await browser.close(); await world.close();}
+  await run.closeContext(context);
+});
 
 // The music visualizer (#1619) reads the same numeric producer fixture and sends nothing itself.
-await import('./music-visualizer.browser.ts');
+await browserEntry('music-visualizer.browser.ts', import('./music-visualizer.browser.ts'));
 
 // Explicit Music input measurements use only a numeric producer fixture.
-await import('./music-capture.browser.ts');
+await browserEntry('music-capture.browser.ts', import('./music-capture.browser.ts'));
 
 // Explicit Music lighting uses the real core and Nanoleaf module on a simulated Lines controller.
-await import('./music-lighting.browser.ts');
+await browserEntry('music-lighting.browser.ts', import('./music-lighting.browser.ts'));

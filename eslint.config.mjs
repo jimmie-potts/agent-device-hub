@@ -256,6 +256,12 @@ export default defineConfig(
     rules: {'bunny/no-raw-outcome-literal': 'error'},
   },
   {
+    name: 'bunny/frontend-command-phase',
+    files: ['apps/runtime/dashboard/src/**/*.{ts,tsx}', 'modules/*/src/frontend/**/*.{ts,tsx}'],
+    plugins: {bunny},
+    rules: {'bunny/no-command-text-decision': 'error'},
+  },
+  {
     name: 'bunny/react-hooks',
     files: ['apps/dashboard/**/*.{ts,tsx}', 'apps/runtime/dashboard/**/*.{ts,tsx}', 'modules/*/src/frontend/**/*.{ts,tsx}'],
     plugins: {'react-hooks': reactHooks},

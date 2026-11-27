@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser, type Page, type Request} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {chooseConversation, openDeviceMenu} from './navigation-helpers.ts';
 import {installSyntheticSpeech} from '../../dist/verify/speech-fixture.js';
@@ -49,7 +50,7 @@ async function assertNarrowProfile(page: Page, expected: string): Promise<void> 
 /** Real runtime and page, with only browser identity and the audio device replaced by explicit synthetic fixtures. */
 export async function speechJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, speech: true});
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
   try {
     await context.addInitScript(installSyntheticSpeech);
@@ -161,7 +162,7 @@ export async function speechJourney(browser: Browser): Promise<void> {
 export async function homeSpeechLifetimeJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, speech: true});
   // Reachy's full card on Home is in one column (#1672); the wide grid shows its generic compact face.
-  const context = await browser.newContext({viewport: {width: 560, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 560, height: 1000}, reducedMotion: 'reduce'});
   try {
     await context.addInitScript(installSyntheticSpeech);
     const page = await context.newPage(), other = await context.newPage();
@@ -198,7 +199,7 @@ export async function homeSpeechLifetimeJourney(browser: Browser): Promise<void>
 /** Typed requests on the Conversation page are answered aloud through the same endpoint, with Speak, Stop and Quiet behaving as documented (Hub #500). */
 export async function spokenRepliesJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, speech: true});
-  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
   try {
     await context.addInitScript(installSyntheticSpeech, '151.0.0.1');

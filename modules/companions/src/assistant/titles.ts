@@ -371,9 +371,9 @@ export type TitleDependencies = {
   metadata: (conversationId: string, title: Title, observedAtMs: number) => {key: string; draft: object};
 };
 type TitleTrigger = {label: string; allowed: () => boolean};
-type ScopedTitle = {provider: TitleProvider; pricing: PriceSchedule; messages: () => TitleMessage[]};
+type ScopedTitle = {provider: TitleProvider; pricing: PriceSchedule; messages: () => TitleMessage[]; firstTitleOnly?: boolean};
 type TitleCheck = {events: readonly TitleTrigger[]; scoped?: ScopedTitle};
-type InFlight = {controller: AbortController; pending: Map<'ordinary' | 'scoped', TitleCheck>; work: Promise<void>};
+type InFlight = {controller: AbortController; pending: Map<'ordinary' | 'scoped' | 'hosted', TitleCheck>; work: Promise<void>};
 const persona = (profile: AssistantProfile): string => PROFILES.find(value => value.id === profile)?.name ?? profile;
 /** The labels with one more, each once, oldest first, keeping the latest `TITLE_EVENTS`. */
 function merged(triggers: readonly TitleTrigger[], next: TitleTrigger): TitleTrigger[] {
@@ -468,6 +468,7 @@ export class ConversationTitles {
     const check: TitleCheck = {events: [trigger], ...(scoped === undefined ? {} : {scoped})};
     if (running !== undefined) {
       if (scoped === undefined) running.pending.set('ordinary', {events: merged(running.pending.get('ordinary')?.events ?? [], trigger)});
+      else if (scoped.firstTitleOnly === false) running.pending.set('hosted', {scoped, events: merged(running.pending.get('hosted')?.events ?? [], trigger)});
       else running.pending.set('scoped', check);
       return running.work;
     }
@@ -511,7 +512,7 @@ export class ConversationTitles {
     let call: TitleCall | undefined, prompt: string | undefined, said: TitleMessage[] = [], priorTitle: StoredTitle | null = null;
     await this.deps.outbox.transaction(() => {
       const record = this.record(conversationId) ?? this.#fresh();
-      if (controller.signal.aborted || scoped !== undefined && record.title !== null) return;
+      if (controller.signal.aborted || scoped !== undefined && scoped.firstTitleOnly !== false && record.title !== null) return;
       admittedTriggers = allowedTriggers();
       if (admittedTriggers.length === 0) return;
       const events = admittedTriggers.map(trigger => trigger.label);

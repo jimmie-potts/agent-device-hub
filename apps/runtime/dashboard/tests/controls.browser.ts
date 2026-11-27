@@ -1,9 +1,11 @@
+import {browserEntry} from './failure-context.ts';
 import {destinationLink, deviceTab, openConnections} from './navigation-helpers.ts';
 // Focused #922 control/navigation acceptance against a synthetic process, never an installed service or real device.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {checkControlProjections} from './control-projections.ts';
 
@@ -11,7 +13,7 @@ const world = await startWorld({devices: true});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = [];
     context.on('weberror', error => { errors.push(error.error().name); });
@@ -75,4 +77,4 @@ try {
 } finally { await browser?.close(); await world.close(); }
 
 // This suite also exercises the shared lighting composition against its own disposable world.
-await import('./lighting.browser.ts');
+await browserEntry('lighting.browser.ts', import('./lighting.browser.ts'));

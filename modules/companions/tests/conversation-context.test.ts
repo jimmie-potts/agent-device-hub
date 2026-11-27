@@ -16,6 +16,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import {sharing} from '../src/assistant/sharing.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore} from '../src/assistant/store.js';
 import {buildContext, entriesLeftOut, leftOutNote, RECENT_MESSAGES, SECTION_BUDGETS, SECTION_ORDER, sectionOf, type ContextSource, type SectionName} from '../src/assistant/context.js';
@@ -486,7 +487,10 @@ void test('a device follow-up resolves the light discussed, asks which of two, a
 void test('an artwork follow-up resolves "that animation" to the attachment of this conversation, not another library item', async context => {
   const target = 'display-blue';
   const requests: AssistantDispatch[] = [];
-  const w = await world(context, {tools: ['read_saved_art', 'control_art_show'], dispatch: data => {
+  const policy = sharing();
+  let attachmentVisible = true;
+  const w = await world(context, {share: query => policy(query) && (attachmentVisible ||
+    query.source !== 'artwork' || query.field !== 'attachment' || query.record !== 'pennant-generation'), tools: ['read_saved_art', 'control_art_show'], dispatch: data => {
     requests.push(data); return Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {} as never});
   }});
   await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
@@ -526,12 +530,33 @@ void test('an artwork follow-up resolves "that animation" to the attachment of t
   const attached = library.artworks.find(item => item.sourceRequestId === 'pennant-generation');
   assert.equal(attached?.artworkId, 'pennant');
   assert.equal(library.artworks.length, 2);
-  second.resolve(call('control_art_show', {owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: attached.artworkId, targets: [target]})}));
+  const references = (quote: string, kind: 'prior' | 'named') => [{role: 'artwork', quote, kind, source: 'request'},
+    {role: 'primary', quote: 'blue panel', kind: 'named', source: 'request'}];
+  second.resolve(call('control_art_show', {owner: 'bunny/core', target: 'hub',
+    references: references('that animation', 'prior'), arguments: JSON.stringify({artworkId: attached.artworkId, targets: [target]})}));
   (await w.providers.bunny.next()).resolve(reply('The request was accepted.'));
   await settle(() => w.task('bunny')?.status === 'succeeded');
   assert.equal(requests.length, 1);
   assert.partialDeepStrictEqual(requests[0], {family: 'catalog-action', command: 'art-show', data: {artworkId: 'pennant', targets: [target]}});
   assert.equal((await w.recent('bunny')).currentTask?.question, null);
+  const refuses = async (prompt: string, artworkId: string) => {
+    accepted(await w.send('bunny', prompt));
+    (await w.providers.bunny.next()).resolve(call('control_art_show', {owner: 'bunny/core', target: 'hub',
+      references: prompt.includes('id:meadow') ? references('id:meadow', 'named') : references('that animation', 'prior'),
+      arguments: JSON.stringify({artworkId, targets: [target]})}));
+    const refused = await w.providers.bunny.next();
+    assert.match(JSON.stringify(refused.input.transcript.at(-1)), /refused: not-found/);
+    refused.resolve(reply('No artwork was shown.'));
+    await settle(() => w.task('bunny')?.status === 'succeeded');
+    assert.equal(requests.length, 1);
+  };
+  await refuses('Show that animation on the blue panel again.', 'meadow');
+  await refuses('Show id:meadow on the blue panel.', 'pennant');
+  attachmentVisible = false;
+  await refuses('Show that animation on the blue panel.', 'pennant');
+  attachmentVisible = true;
+  accepted(await w.fresh('bunny'));
+  await refuses('Show that animation on the blue panel.', 'pennant');
 });
 
 void test('a troubleshooting follow-up drafts the brief from the reported symptom, and approval still decides', async context => {
@@ -626,9 +651,10 @@ void test('on one configured provider each companion gets its own sections, and 
   for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
     const preview = await w.preview(profile);
     assert.deepEqual([preview.provider, preview.model], ['anthropic', 'model-a']);
-    accepted(await w.send(profile, `PRIVATE-${profile} follow-up`));
+    assert.equal(previewed(preview, 'recent').included, 2);
+    accepted(await w.send(profile, `Tell me more about the previous PRIVATE-${profile} request.`));
     const next = await shared.next();
-    assert.deepEqual(next.input.context.sections, preview.sections, `${profile}: the preview is the next call`);
+    assert.deepEqual(next.input.context.sections.filter(section => section.name !== 'recent'), preview.sections.filter(section => section.name !== 'recent'));
     assert.equal(next.input.context.profile, profile);
     const recent = text(next.input, 'recent');
     assert.match(recent, new RegExp(`PRIVATE-${profile} first`));

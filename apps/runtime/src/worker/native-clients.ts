@@ -3,7 +3,7 @@ import {lstat} from 'node:fs/promises';
 import {createConnection, createServer, type Server, type Socket} from 'node:net';
 import {dirname, isAbsolute} from 'node:path';
 import {promisify} from 'node:util';
-import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import type {Reply} from '@jimmie-potts/sdk';
 import type {CodingNativeClient, CodingNativeClientKind} from '@jimmie-potts/event-contracts/v2/coding';
 import {checkStateDirectory, prepareStateDirectory} from '../state.js';
@@ -13,13 +13,13 @@ const ATTEMPT = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MAX_LINE = 32_768;
 export const NATIVE_UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu;
 type State = CodingNativeClient['state'];
-export type NativeTerminalPlan = {executable: string; cwd: string; args: string[]; env: Record<string, string>};
+export type NativeTerminalPlan = {executable: string; cwd: string; args: string[]; env: Record<string, string>; validate?: () => Promise<void>};
 type PreparedLaunch = {intentId: string; client: CodingNativeClientKind; plan: NativeTerminalPlan;
   fresh: () => boolean; socket: Socket | undefined};
 type Target = {
   session: string;
   clients: readonly CodingNativeClientKind[];
-  build: (client: CodingNativeClientKind) => Promise<NativeTerminalPlan | undefined>;
+  build: (client: CodingNativeClientKind) => Promise<NativeTerminalPlan | ErrorBody | undefined>;
   changed: (state: State) => Promise<void>;
   state: State;
   opening: boolean;
@@ -111,6 +111,7 @@ export class NativeClients {
     try {
       const plan = await target.build(client);
       if (plan === undefined || !fresh() || this.#targets.get(operationId) !== target || socket?.destroyed === true) return errorBody('unavailable');
+      if ('error' in plan) return plan;
       target.prepared = {intentId, client, plan, fresh, socket};
       return {status: 'accepted'};
     } finally {target.opening = false;}
@@ -123,6 +124,13 @@ export class NativeClients {
     if (prepared?.intentId !== intentId || prepared.client !== client || !prepared.fresh() || !fresh()) return errorBody('unavailable');
     const {plan, socket} = prepared;
     if (client === 'terminal' && (socket === undefined || socket.destroyed || this.#waiting.get(operationId) !== socket)) return errorBody('unavailable');
+    if (plan.validate !== undefined) {
+      target.opening = true;
+      try {await plan.validate();}
+      catch {delete target.prepared; return errorBody('unavailable');}
+      finally {target.opening = false;}
+      if (!prepared.fresh() || !fresh() || this.#targets.get(operationId) !== target || socket?.destroyed === true) return errorBody('unavailable');
+    }
     delete target.prepared;
     if (client === 'claude-desktop') {
       this.#waiting.get(operationId)?.destroy();

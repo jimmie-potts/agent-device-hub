@@ -2,7 +2,7 @@
 import {join} from 'node:path';
 import {validateInstallReceipt} from '@jimmie-potts/device-contracts';
 import {childOf, MODULE_API_VERSION, noSpans, startSpan} from '@jimmie-potts/sdk';
-import {canonical, readRegular, sha256} from '../../hub/dist/install/files.js';
+import {canonical, readRegular, sha256} from '../dist/src/upgrade-files.js';
 import {createRoutineUpgradeSourceAdapter, verifyRuntimeUpgradeRelease} from './runtime-upgrade-source.mjs';
 import {inspectRuntimeBaselineClosure} from './runtime-upgrade-baseline.mjs';
 import {readPrivateFile, readRuntimeConfig} from '../dist/src/state.js';

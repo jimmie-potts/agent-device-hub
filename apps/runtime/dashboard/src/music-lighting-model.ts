@@ -1,3 +1,4 @@
+import {frontendCommandView, type FrontendCommandPhase} from '@jimmie-potts/sdk/frontend';
 // Audio-page Music lighting presentation (#722 over #1272, first-trial policy in #40). Pure text and eligibility only:
 // the card sends nothing on its own, and every reason here only explains a disabled control.
 import type {Message} from '@jimmie-potts/event-contracts/v2';
@@ -219,12 +220,11 @@ const CONTROL_HINTS: Partial<Record<string, string>> = {
   'unsupported-capability': 'Only Music.app capture can drive lights.',
 };
 /** The operator command's outcome: the core saving the request, which is not the light's result. */
-export function controlText(text: string): string {
-  const refused = /^Refused \(([^)]+)\)/.exec(text)?.[1];
-  const hint = refused === undefined ? undefined : CONTROL_HINTS[refused];
-  return text.replace('The module observed the result.', 'The core saved it; the light reports separately.')
-    .replace('Nothing was sent to the device.', 'No lighting work was sent.').replace('No evidence of a device effect.', 'No light evidence.') +
-    (hint === undefined ? '' : ` ${hint}`);
+export function controlText(phase: FrontendCommandPhase): string {
+  const hint = phase.kind === 'refused' && phase.code !== undefined ? CONTROL_HINTS[phase.code] : undefined;
+  return frontendCommandView(phase, {
+    observed: 'The core saved it; the light reports separately.', expiredEffect: 'No lighting work was sent.', noEvidence: 'No light evidence.',
+  }).text + (hint === undefined ? '' : ` ${hint}`);
 }
 const MEASURED_WORK_REFUSALS: ReadonlySet<string> = new Set([
   'Play the Music item and wait for a fresh position.',
@@ -233,10 +233,11 @@ const MEASURED_WORK_REFUSALS: ReadonlySet<string> = new Set([
 ]);
 
 /** The light module's answer to the core's work command, which is still not proof of a physical effect. */
-export function workText(text: string, detail?: string): string {
+export function workText(phase: FrontendCommandPhase, detail?: string): string {
   const hint = detail !== undefined && MEASURED_WORK_REFUSALS.has(detail) ? ` ${detail}` : '';
-  return text.replace('The module observed the result.', 'The light module observed the result.')
-    .replace('Transmitted; physical effect was not observed.', 'Written to the light; the physical effect was not observed.') + hint;
+  return frontendCommandView(phase, {
+    observed: 'The light module observed the result.', transmitted: 'Written to the light; the physical effect was not observed.',
+  }).text + hint;
 }
 
 /** The core's work request ID for one operator command and light, as `lightingWorkRequestId` derives it in the core. */

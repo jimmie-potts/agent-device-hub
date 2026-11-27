@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {deviceTab} from './navigation-helpers.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium, type Browser} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import type {Identity} from '@jimmie-potts/event-contracts/v2/families';
 import {sessionStarted, turnStarted, turnEnded} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
@@ -13,7 +14,7 @@ const world = await startWorld({pixooPages: true, desktopMetadata: true});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); });
     const page = await context.newPage(); page.setDefaultTimeout(8000);

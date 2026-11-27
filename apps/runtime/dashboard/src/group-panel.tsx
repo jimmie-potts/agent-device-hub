@@ -1,7 +1,6 @@
 import React, {useEffect, useRef} from 'react';
 import type {LightingGroup, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {FrontendCommand} from '@jimmie-potts/sdk/frontend';
-import {useAttempt} from './command-control.tsx';
+import {useAttempt, type TrackedCommand} from './command-control.tsx';
 import {lightCapabilities, memberPower, type GroupGuards, type LightingDevice, type PlugDevice} from './lighting.ts';
 import {wemoCardState} from './wemo.ts';
 import {newerRequest} from './requested.ts';
@@ -27,9 +26,10 @@ export type GroupPanelProps = {
   notice?: string;
 };
 type Member = {id: string; name: string; plug: boolean; power: boolean | undefined; state: string};
-type Commands = Map<string, FrontendCommand>;
-/** Results that need the operator's attention: anything but no command or a completed success. */
-const attention = (command: FrontendCommand | undefined): boolean => command !== undefined && command.text !== 'No command sent from this page.' && !/^Completed: succeeded/.test(command.text);
+type Commands = Map<string, TrackedCommand>;
+/** A saved individual mode remains visible until superseded. Routine successful device commands stay quiet. */
+const attention = ({phase}: TrackedCommand): boolean => phase.kind !== 'none' &&
+  (phase.kind !== 'completed' || phase.result !== 'succeeded' || phase.family === 'mode-override-set');
 
 /**
  * A member's power as its switch shows it: the newest of its observation and its latest power request that succeeded
@@ -64,7 +64,7 @@ function memberOf(id: string, group: GroupPanelProps['group'], devices: readonly
 function Binding({target, operations, operationsLive, commands, changed}: {target: string; operations: readonly OperationRecord[]; operationsLive: boolean; commands: Commands; changed: () => void}): null {
   const command = useAttempt(target, operations, operationsLive);
   commands.set(target, command);
-  useEffect(changed, [command.text, command.locked, command.requestId, changed]);
+  useEffect(changed, [command.phase, command.locked, command.requestId, changed]);
   useEffect(() => () => {commands.delete(target);}, [commands, target]);
   return null;
 }
@@ -92,7 +92,7 @@ export function GroupPanel({id, name, group, devices, plugs, control, operations
   };
   // All off while any member is on (as its switch shows it); All on otherwise.
   const anyOn = members.some(member => member.power === true), all = !anyOn;
-  const problems = members.flatMap(member => {const command = commands.get(member.id);return attention(command) ? [`${member.name}: ${command?.text ?? ''}`] : [];});
+  const problems = members.flatMap(member => {const command = commands.get(member.id);return command !== undefined && attention(command) ? [`${member.name}: ${command.text}`] : [];});
   const count = `${String(members.length)} ${members.every(member => member.plug) ? 'plugs' : members.some(member => member.plug) ? 'lights and plugs' : 'lights'}`;
   return <article className="card group-panel" aria-label={name} data-group-panel={id}>
     {group.devices.map(id => <Binding key={id} target={id} operations={operations} operationsLive={operationsLive} commands={commands} changed={changed}/>)}

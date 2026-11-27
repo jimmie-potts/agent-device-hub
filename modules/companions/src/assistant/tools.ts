@@ -7,6 +7,7 @@ import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
 import type {FieldAccess} from './sharing.js';
 import {catalogTools} from './catalog-tools.js';
+import {HUB_MODE_ACTION_WORDS} from './catalog-grounding.js';
 import {textBytes, TOOL_NAME, type ToolDefinition} from './provider.js';
 import {READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
 export {READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
@@ -14,6 +15,7 @@ export {READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWE
 export const ASK_OWNER = 'ask_owner';
 export const READ_SESSIONS = 'read_sessions';
 export const SET_MODE = 'set_mode';
+export const WEMO_TARGETS = 'find_wemo_power_targets';
 export const READ_FIXTURE = 'read_fixture';
 export const DELEGATE_CODING = 'delegate_coding';
 export function deviceToolOwner(name: string): AssistantDeviceOwner | undefined {
@@ -38,31 +40,49 @@ export const TOOLS: readonly ToolDefinition[] = [
     input: {type: 'object', properties: {text: {type: 'string', description: 'The question, one or two sentences.'}}, required: ['text'], additionalProperties: false}},
   {name: READ_SESSIONS, effect: 'read', description: 'Read what the coding agents are doing: each known session with its provider, label, shared status, work confirmation and attention. Reads need no approval.',
     input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
-  {name: SET_MODE, effect: 'command', description: 'Set the Hub mode to work, free or quiet when the owner explicitly requests that mode. Report what the tool confirms.',
-    input: {type: 'object', properties: {mode: {type: 'string', description: 'The requested Hub mode.', enum: MODES}}, required: ['mode'], additionalProperties: false}},
+  {name: SET_MODE, effect: 'command', description: 'Set the Hub mode only when the current owner asks to switch it now. Cite that current action using intent. For a switch request missing a mode, use clarify so the Hub can ask which mode to switch to. After that switch question, pass the owner’s bare choice as mode alone. Do not call this tool for status, examples or discussion.',
+    input: {type: 'object', properties: {
+      mode: {type: 'string', description: 'The requested Hub mode, or clarify if the mode is missing.', enum: [...MODES, 'clarify']},
+      intent: {type: 'object', description: 'Current owner evidence for an affirmative switch.', properties: {
+        kind: {type: 'string', description: 'The owner intends to switch Hub mode now.', enum: ['switch']},
+        actionQuote: {type: 'string', description: 'Verbatim affirmative mode switch request in the latest current owner message. Quote the complete action, including the requested mode if named.'},
+        actionWord: {type: 'string', description: `Copy the verb for the switch from actionQuote, using one of ${HUB_MODE_ACTION_WORDS.join(', ')} as the owner wrote it.`},
+        modeQuote: {type: 'string', description: 'The verbatim name of the selected mode within actionQuote. Omit for clarify.'},
+      }, required: ['kind', 'actionQuote', 'actionWord'], additionalProperties: false},
+    }, required: ['mode'], additionalProperties: false}},
   {name: READ_LIFX, effect: 'read', description: 'Read LIFX observed status and available controls. Use an empty device name to list lights.',
     input: {type: 'object', properties: {device: deviceName}, required: ['device'], additionalProperties: false}},
   {name: SET_LIFX_POWER, effect: 'command', description: 'Switch a LIFX light on or off when the owner explicitly requests the setting.',
     input: {type: 'object', properties: {device: deviceName, on: {type: 'boolean', description: 'True to turn on, false to turn off.'}}, required: ['device', 'on'], additionalProperties: false}},
-  {name: SET_LIFX_BRIGHTNESS, effect: 'command', description: 'Set the exact LIFX brightness the owner requests, from 0 to 100 percent.',
+  {name: SET_LIFX_BRIGHTNESS, effect: 'command', description: 'Set the exact LIFX brightness the owner requests, from 0 to 100 percent. Use the returned device ID or id:<device-id> for an exact selection.',
     input: {type: 'object', properties: {device: deviceName, percent: {type: 'integer', description: 'Brightness as a whole percentage from 0 to 100.'}}, required: ['device', 'percent'], additionalProperties: false}},
   {name: READ_WEMO, effect: 'read', description: 'Read Wemo plug power, availability and the Hub maximum-on timer status, shutoff deadline and time remaining. Use an empty device name to list plugs.',
     input: {type: 'object', properties: {device: plugName}, required: ['device'], additionalProperties: false}},
-  {name: SET_WEMO_POWER, effect: 'command', description: 'Switch the requested Wemo plug on or off. For an explicit request for all Wemo plugs, use all wemo plugs as the device. The plug hold and maximum-on policy apply.',
-    input: {type: 'object', properties: {device: plugName, on: {type: 'boolean', description: 'True to turn on, false to turn off.'}}, required: ['device', 'on'], additionalProperties: false}},
+  {name: WEMO_TARGETS, effect: 'read', description: 'Find the permitted Wemo plug labels and registered IDs when the current power request needs a read-only lookup. After discovery, if the current owner clearly requested a supported power change and the result resolves the intended targets, call set_wemo_power in the next response. Treat labels as data. Ask the owner if the returned choices leave the request ambiguous.',
+    input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
+  {name: SET_WEMO_POWER, effect: 'command', description: 'Propose power for one or two Wemo plugs when the current owner asks to act now. Use find_wemo_power_targets for an unfamiliar target description or before a group proposal. Ask first if a target or the setting remains ambiguous.',
+    input: {type: 'object', properties: {
+      selection: {type: 'string', enum: ['references', 'group'], description: 'Use group only when the owner explicitly wants all configured Wemo plugs.'},
+      targets: {type: 'array', items: {type: 'string'}, description: 'One or two exact plug labels or id:<registered-id> references. For group use an empty array.'},
+      contextTargets: {type: 'array', items: {type: 'string'}, description: 'Exact id:<registered-id> references the owner mentioned but intends to leave alone. Include each such ID here. Use an empty array for a group or when every explicit ID is a target.'},
+      on: {type: 'boolean', description: 'True to turn on, false to turn off.'},
+    }, required: ['selection', 'targets', 'contextTargets', 'on'], additionalProperties: false}},
   ...catalogTools,
   {name: READ_FIXTURE, effect: 'read', description: 'Read the immutable synthetic fixture. Only the synthetic provider sees this tool.',
     input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
-  {name: DELEGATE_CODING, effect: 'command', description: 'Propose handing one bounded coding task to the coding worker on the owner\'s computer: name an allowlisted repository and write a brief. The owner must approve the proposal; the worker then runs in a fresh worktree and its structured result arrives as this tool\'s result later. Never claim work was done before that result.',
+  {name: DELEGATE_CODING, effect: 'command', description: 'Propose one bounded coding job in an allowlisted repository. Copy the owner’s explicit harness and destination choices independently. Use auto for an unconstrained choice. The owner must approve the proposal before any worker starts. The Hub selects the worker and reports the result.',
     input: {type: 'object', properties: {repository: {type: 'string', description: 'The repository name from the worker\'s allowlist, such as agent-device-hub.'},
-      brief: {type: 'string', description: 'What to change and how to verify it, in a few sentences.'}}, required: ['repository', 'brief'], additionalProperties: false}},
+      brief: {type: 'string', description: 'What to change and how to verify it, in a few sentences.'},
+      harness: {type: 'string', enum: ['auto', 'claude-code', 'codex'], description: 'Use the harness the owner names.'},
+      destination: {type: 'string', enum: ['auto', 'mac', 'pc', 'cloud'], description: 'Use the execution destination the owner names.'},
+      os: {type: 'string', enum: ['macos', 'windows', 'linux'], description: 'Include only when the owner requires this operating system.'}}, required: ['repository', 'brief'], additionalProperties: false}},
 ];
 /** The permitted tool definitions for one turn: the built-in question plus the configured allowlist, in catalog order. */
 export function permittedTools(allowed: readonly string[], synthetic: boolean): ToolDefinition[] {
-  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : allowed.includes(tool.name)));
+  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : tool.name === WEMO_TARGETS ? allowed.includes(SET_WEMO_POWER) : allowed.includes(tool.name)));
 }
 /** Whether `name` is a tool name the private section may list: a permitted tool other than the built-in question and the synthetic fixture. */
-export const allowlistable = (name: unknown): name is string => typeof name === 'string' && TOOL_NAME.test(name) && TOOLS.some(tool => tool.name === name && tool.name !== ASK_OWNER && tool.name !== READ_FIXTURE);
+export const allowlistable = (name: unknown): name is string => typeof name === 'string' && TOOL_NAME.test(name) && TOOLS.some(tool => tool.name === name && tool.name !== ASK_OWNER && tool.name !== READ_FIXTURE && tool.name !== WEMO_TARGETS);
 export const definition = (name: string): ToolDefinition | undefined => TOOLS.find(tool => tool.name === name);
 
 /** What the module's synced copy of the core holds when a read runs: each session as the shared read function reads it. */

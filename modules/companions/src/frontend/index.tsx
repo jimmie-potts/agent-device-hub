@@ -65,7 +65,7 @@ function ReachyView({context, advanced = false}: {context: FrontendContext; adva
       <button type="button" className="companion-secondary" aria-label={snoozed ? 'Clear social snooze' : 'Not now — snooze social for one hour'}
         onClick={() => {save(state.settings.enabled, state.settings.muted, snoozed ? 'clear' : 'one-hour');}}>{snoozed ? 'Resume social' : 'Snooze social · 1h'}</button>
     </fieldset>
-      {command.text !== '' && <p className="companion-small" role="status">{command.text}</p>}</>;
+      <p className="companion-small" role="status">{command.text}</p></>;
   }}</Command>;
   return <section aria-label="Reachy" className="companion-page">
     <CompanionCard companion="reachy" name="Reachy" caption="Text companion"
@@ -122,7 +122,7 @@ function ReachyView({context, advanced = false}: {context: FrontendContext; adva
             <button type="button" onClick={() => {fixture('visit');}}>Simulate visit</button>
             <button type="button" onClick={() => {fixture('question-and-arrival');}}>Simulate question and arrival</button>
           </fieldset>
-          {command.text !== '' && <p role="status">{command.text}</p>}
+          <p role="status">{command.text}</p>
         </>;
       }}</Command>
     </>}

@@ -3,7 +3,7 @@ import {mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {browserArtifactDirectory, browserArtifactParent} from './browser-artifacts.ts';
+import {browserArtifactDirectory} from './browser-artifacts.ts';
 
 async function ownedParent(context: TestContext): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'bunny-browser-artifacts-test-'));
@@ -35,11 +35,4 @@ void test('an unusable selected output parent refuses instead of writing elsewhe
   await writeFile(file, 'retained');
   await assert.rejects(browserArtifactDirectory(file));
   assert.equal(await readFile(file, 'utf8'), 'retained');
-});
-
-void test('receipts take precedence over the CI evidence folder, which takes precedence over the temporary folder', () => {
-  assert.equal(browserArtifactParent({DASHBOARD_RECEIPTS: '/receipts', TEST_EVIDENCE_DIR: '/evidence'}), '/receipts');
-  assert.equal(browserArtifactParent({TEST_EVIDENCE_DIR: '/evidence'}), '/evidence');
-  assert.equal(browserArtifactParent({}), tmpdir());
-  assert.equal(browserArtifactParent({TEST_EVIDENCE_DIR: ''}), tmpdir(), 'an empty evidence folder is unset');
 });

@@ -1,3 +1,4 @@
+import {browserEntry} from './failure-context.ts';
 // CI's smoke check of the runtime's dashboard (Hub #922), as PR #986 gave the old one: the full browser suite
 // (`npm run test:runtime-dashboard:browser`) runs locally and after merges to main (#1942). One trusted loopback page
 // on the built runtime with the core: the gateway serves the built page, which signs in without a form, shows a
@@ -6,7 +7,9 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
+import {checkLightingOutcomes} from './control-projections.ts';
 
 const started = performance.now();
 const world = await startWorld({pixooPages: true});
@@ -17,7 +20,7 @@ const checks: string[] = [];
 try {
   await world.observe({kind: 'session-started'}, {title: {value: 'Port the wall', source: 'provider'}});
   await world.observe({kind: 'turn-ended'});
-  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   const errors: string[] = [];
   context.on('weberror', error => { errors.push(error.error().name); });
   const page = await context.newPage();
@@ -57,6 +60,8 @@ try {
   if (output !== undefined) await page.screenshot({path: `${output}/runtime-smoke-home.png`, fullPage: true});
 
   assert.deepEqual(sent, [], 'loading and inspecting send no command');
+  await checkLightingOutcomes(context);
+  checks.push('the Lights page and light card show expired, refused, and uncertain command outcomes');
   assert.deepEqual(errors, []);
   await context.close();
   process.stdout.write(`${JSON.stringify({passed: true, checks, seconds: Math.round((performance.now() - started) / 100) / 10})}\n`);
@@ -66,26 +71,26 @@ try {
 }
 
 // Keep the focused real-owner Tidbyt journey in the hosted smoke entry.
-await import('./tidbyt-card.browser.ts');
-await import('./shell.browser.ts');
-await import('./devices-menu.browser.ts');
+await browserEntry('tidbyt-card.browser.ts', import('./tidbyt-card.browser.ts'));
+await browserEntry('shell.browser.ts', import('./shell.browser.ts'));
+await browserEntry('devices-menu.browser.ts', import('./devices-menu.browser.ts'));
 
-await import('./habitat.browser.ts');
-await import('./hub-mode.browser.ts');
-await import('./inbox-history.browser.ts');
+await browserEntry('habitat.browser.ts', import('./habitat.browser.ts'));
+await browserEntry('hub-mode.browser.ts', import('./hub-mode.browser.ts'));
+await browserEntry('inbox-history.browser.ts', import('./inbox-history.browser.ts'));
 
-await import('./home-layout.browser.ts');
+await browserEntry('home-layout.browser.ts', import('./home-layout.browser.ts'));
 
-await import('./wispr.browser.ts');
+await browserEntry('wispr.browser.ts', import('./wispr.browser.ts'));
 
-await import('./card-consistency.browser.ts');
+await browserEntry('card-consistency.browser.ts', import('./card-consistency.browser.ts'));
 
-await import('./automation.browser.ts');
+await browserEntry('automation.browser.ts', import('./automation.browser.ts'));
 
-await import('./read-receipts.browser.ts');
+await browserEntry('read-receipts.browser.ts', import('./read-receipts.browser.ts'));
 
 // Explicit Music input measurements use only a numeric producer fixture.
-await import('./music-capture.browser.ts');
+await browserEntry('music-capture.browser.ts', import('./music-capture.browser.ts'));
 
 // Explicit Music lighting uses the real core and Nanoleaf module on a simulated Lines controller.
-await import('./music-lighting.browser.ts');
+await browserEntry('music-lighting.browser.ts', import('./music-lighting.browser.ts'));

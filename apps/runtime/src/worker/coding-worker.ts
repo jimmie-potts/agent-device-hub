@@ -10,18 +10,20 @@ import {execFile} from 'node:child_process';
 import {mkdir, mkdtemp, readFile, realpath, rm, rmdir, stat} from 'node:fs/promises';
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
+import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
-import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingNativeClient, type CodingNativeClientKind, type CodingProgress, type CodingProgressReason,
-  type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {codingDestinationForSource, continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingDestination, type CodingEndpointControl, type CodingHarnessReadiness, type CodingNativeClient, type CodingNativeClientKind, type CodingProgress, type CodingProgressReason,
+  type CodingReadiness, type CodingResult, type CodingWork, type CodingWorkerDeclaration} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
 import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
 import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type AdapterSteer, type CodingAdapter} from './adapter.js';
-import {codexAdapter, codexArguments, codexEnvironment, verifyCodexNativeResume, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
+import {checkCodexUserConfig, codexAdapter, codexArguments, codexEnvironment, verifyCodexNativeResume, verifyCodexToolchain, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
+import {CODEX_TOOLCHAIN_REFUSAL} from './codex-toolchain.js';
 import {NATIVE_UUID, NativeClients, nativeTerminal, type NativeTerminalPlan} from './native-clients.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX, verifyClaudeWriterBoundary} from './claude-writer.js';
 
@@ -29,6 +31,27 @@ const run = promisify(execFile);
 const CLAUDE = 'claude-code';
 const CLAUDE_CAPABILITIES = {steering: 'unsupported', resume: 'unsupported', review: true} as const;
 export const WORKER_SCHEMA = 'coding-worker/1.2';
+const ENROLLED_SCHEMA = 'coding-worker/1.3';
+const ENROLLED_ENDPOINT_SCHEMA = 'https://bunny.invalid/events/coding-endpoint/2.5';
+const WORKER_REFRESH_MS = 45_000;
+type TestResources = Pick<CodingWorkerDeclaration, 'pressure' | 'testSlots'>;
+type ResourceProbe = (destination: CodingDestination) => Promise<TestResources>;
+const unknownResources: TestResources = {pressure: 'unknown', testSlots: null};
+async function observeResources(destination: CodingDestination): Promise<TestResources> {
+  if (destination !== 'mac' && destination !== 'pc') return unknownResources;
+  try {
+    const observer = fileURLToPath(new URL('../../../../../scripts/test-container/observe.mjs', import.meta.url));
+    const {stdout} = await run(process.execPath, [observer, destination], {encoding: 'utf8', maxBuffer: 1024, timeout: 6_000});
+    const sample: unknown = JSON.parse(stdout);
+    if (!isRecord(sample)) return unknownResources;
+    const {pressure, testSlots} = sample;
+    if (pressure !== 'normal' && pressure !== 'elevated' && pressure !== 'high' && pressure !== 'unknown') return unknownResources;
+    if (testSlots === null) return {pressure, testSlots};
+    return typeof testSlots === 'number' && Number.isInteger(testSlots) && testSlots >= 0 && testSlots <= 64
+      ? {pressure, testSlots} : unknownResources;
+  } catch {return unknownResources;}
+}
+
 const MAX_CONFIG_BYTES = 8192;
 /**
  * One stream event longer than this many characters (UTF-16 code units, so up to about three times as many bytes) is
@@ -62,6 +85,7 @@ export const DENIED_TOOLS = ['Bash(git push*)', 'Bash(git -C *)', 'Bash(git --gi
   'Bash(ssh *)', 'Bash(scp *)', 'Bash(sudo *)', 'Edit(.claude/**)', 'Write(.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Edit(~/.claude.json)', 'Write(~/.claude.json)', 'WebFetch', 'WebSearch'];
 export type WorkerConfiguration = {
   edge: string; tokenFile: string; uncapped?: true;
+  enrollment?: {source: string; os: CodingWorkerDeclaration['os']; toolchains: string[]};
   repositories: readonly {name: string; path: string}[];
   /** `environment` names further variables the harness may inherit; a provider credential or switch is refused. */
   claude: {executable: string; model?: string; permissionMode: string; allowedTools: readonly string[]; maxTurns?: number; environment?: readonly string[]};
@@ -80,9 +104,21 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 /** Reads and checks the worker's private configuration file. Throws `coding-worker-config` with a fixed reason; never quotes the file. */
 export function parseConfiguration(value: unknown): WorkerConfiguration {
   const bad = (reason: string): never => {throw new Error(`coding-worker-config: ${reason}`);};
-  if (!isRecord(value) || (value.schema !== WORKER_SCHEMA && value.schema !== 'coding-worker/1.0' && value.schema !== 'coding-worker/1.1')) return bad('not a coding-worker/1.0, 1.1 or 1.2 document');
-  if (Object.keys(value).some(key => !['schema', 'edge', 'tokenFile', 'repositories', 'claude', ...(value.schema !== 'coding-worker/1.0' ? ['codex'] : []), ...(value.schema === WORKER_SCHEMA ? ['nativeClients'] : [])].includes(key))) return bad('unknown member');
-  const {edge, tokenFile, repositories, claude, codex, nativeClients} = value;
+  if (!isRecord(value) || (value.schema !== WORKER_SCHEMA && value.schema !== ENROLLED_SCHEMA && value.schema !== 'coding-worker/1.0' && value.schema !== 'coding-worker/1.1')) return bad('not a coding-worker/1.0, 1.1, 1.2 or 1.3 document');
+  const enrolled = value.schema === ENROLLED_SCHEMA, uncapped = value.schema === WORKER_SCHEMA || enrolled;
+  if (Object.keys(value).some(key => !['schema', 'edge', 'tokenFile', 'repositories', 'claude', ...(value.schema !== 'coding-worker/1.0' ? ['codex'] : []), ...(uncapped ? ['nativeClients'] : []), ...(enrolled ? ['source', 'toolchains'] : [])].includes(key))) return bad('unknown member');
+  const {edge, tokenFile, repositories, claude, codex, nativeClients, source, toolchains} = value;
+  let enrollment: WorkerConfiguration['enrollment'];
+  if (enrolled) {
+    const destination = typeof source === 'string' ? codingDestinationForSource(source) : undefined;
+    const os = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : process.platform === 'linux' ? 'linux' : undefined;
+    if (destination === undefined || typeof source !== 'string' || os === undefined ||
+      (destination === 'mac' && os !== 'macos') || (destination === 'pc' && os === 'macos')) return bad('source does not match an enrolled host');
+    if (destination !== 'mac' && nativeClients !== undefined) return bad('native clients are configured only on the Mac worker');
+    if (!Array.isArray(toolchains) || toolchains.length > 16 || new Set(toolchains).size !== toolchains.length ||
+      !toolchains.every((item): item is string => typeof item === 'string' && item.length <= 80 && NAME.test(item))) return bad('invalid toolchain identifiers');
+    enrollment = {source, os, toolchains};
+  }
   let nativeConfig: WorkerConfiguration['nativeClients'];
   if (nativeClients !== undefined) {
     if (!isRecord(nativeClients) || Object.keys(nativeClients).some(key => !['socket', 'harnesses', 'claudeDesktop'].includes(key)) ||
@@ -94,7 +130,8 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
   }
   let url: URL;
   try {url = new URL(String(edge));} catch {return bad('edge is not a URL');}
-  if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search !== '' || url.hash !== '' || url.username !== '') return bad('edge must be an origin');
+  if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search !== '' || url.hash !== '' || url.username !== '' || url.password !== '') return bad('edge must be an origin');
+  if (enrollment !== undefined && codingDestinationForSource(enrollment.source) !== 'mac' && url.protocol !== 'https:') return bad('an enrolled remote worker needs an HTTPS edge');
   if (typeof tokenFile !== 'string' || !isAbsolute(tokenFile)) return bad('tokenFile must be an absolute path');
   if (!Array.isArray(repositories) || repositories.length === 0 || repositories.length > 16) return bad('repositories must list one to sixteen entries');
   const names = new Set<string>();
@@ -121,7 +158,7 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
     if (codex.model !== undefined && (typeof codex.model !== 'string' || !/^[a-z0-9.-]{1,64}$/.test(codex.model))) return bad('codex.model is not a model name');
     codexConfig = {executable: codex.executable, home: codex.home, ...(codex.model === undefined ? {} : {model: codex.model})};
   }
-  return {edge: url.origin, tokenFile, repositories: list, ...(nativeConfig === undefined ? {} : {nativeClients: nativeConfig}), ...(value.schema === WORKER_SCHEMA ? {uncapped: true} : {}), ...(value.schema !== 'coding-worker/1.0' ? {adapterProtocol: true} : {}), ...(codexConfig === undefined ? {} : {codex: codexConfig}), claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
+  return {edge: url.origin, tokenFile, repositories: list, ...(nativeConfig === undefined ? {} : {nativeClients: nativeConfig}), ...(uncapped ? {uncapped: true} : {}), ...(enrollment === undefined ? {} : {enrollment}), ...(value.schema !== 'coding-worker/1.0' ? {adapterProtocol: true} : {}), ...(codexConfig === undefined ? {} : {codex: codexConfig}), claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
     ...(claude.maxTurns === undefined ? {} : {maxTurns: Number(claude.maxTurns)}), ...(environment === undefined ? {} : {environment: environment as string[]})}};
 }
 
@@ -131,7 +168,7 @@ type WriterHandoff = {
   base: string; writerHome?: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
   crossHarness: boolean;
 };
-type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
+type Running = {namedStop?: () => void; operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; model?: string; modelReport?: Promise<void>; steer: AdapterSteer | undefined; controller: AbortController};
 export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true; writerStopped?: boolean; fencedRoot?: string};
 export type Harness = {
@@ -378,20 +415,25 @@ export class CodingWorker {
   readonly #timer: ProbeTimer;
   /** What the declaration carries: the latest readiness probe and the limit windows the latest run reported. */
   #readiness: CodingReadiness | undefined;
+  #declaration: CodingWorkerDeclaration | undefined;
+  #refreshTimer: NodeJS.Timeout | undefined;
+  #refreshing = false;
   /** `log` is the process's own line writer, owned by the entry point; the library writes nothing itself. */
   constructor(readonly configuration: WorkerConfiguration, readonly token: string, harness?: Harness, readonly log: (line: string) => void = () => {}, connect: typeof connectRemote = connectRemote,
-    now: () => number = Date.now, runGit: GitRunner = git, timer: ProbeTimer = realTimer, adapters: readonly CodingAdapter[] = []) {
+    now: () => number = Date.now, runGit: GitRunner = git, timer: ProbeTimer = realTimer, adapters: readonly CodingAdapter[] = [], readonly resources: ResourceProbe = observeResources) {
     this.#harness = harness ?? claudeHarness(configuration.claude.executable, process.env,
       {...(configuration.claude.environment === undefined ? {} : {environment: configuration.claude.environment}), ...(configuration.repositories[0] === undefined ? {} : {probeCwd: configuration.repositories[0].path})});
     const cwd = configuration.repositories[0]?.path;
-    const configured = configuration.codex === undefined || cwd === undefined ? [] : [codexAdapter(configuration.codex, {})];
+    // Remote enrollment alone does not qualify the built-in Mac writer adapters on another host.
+    const macAdapters = configuration.enrollment === undefined || codingDestinationForSource(configuration.enrollment.source) === 'mac';
+    const configured = !macAdapters || configuration.codex === undefined || cwd === undefined ? [] : [codexAdapter(configuration.codex, {})];
     const claudeAdapter: CodingAdapter = {
       id: CLAUDE,
       capabilities: CLAUDE_CAPABILITIES,
       readiness: () => this.#harness.readiness?.() ?? Promise.resolve(UNKNOWN_READINESS),
       run: input => this.#runClaude(input),
     };
-    const available = new Map<string, CodingAdapter>([[CLAUDE, claudeAdapter]]);
+    const available = new Map<string, CodingAdapter>(macAdapters ? [[CLAUDE, claudeAdapter]] : []);
     for (const adapter of [...configured, ...adapters]) {
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(adapter.id) || adapter.id.length > 32 || adapter.id === CLAUDE || available.has(adapter.id)) {
         throw new Error('coding-worker-config: duplicate or invalid harness identity');
@@ -448,14 +490,30 @@ export class CodingWorker {
   }
   #enable(readiness: CodingReadiness | undefined): {type: string; dataschema: string; data: CodingEndpointControl} {
     const uncapped = this.configuration.uncapped === true;
-    const schema = uncapped ? 'https://bunny.invalid/events/coding-endpoint/2.4' : ENDPOINT_SCHEMA;
-    const data: CodingEndpointControl = {requestId: randomUUID(), action: 'enable', ...(uncapped ? {capacity: 'uncapped'} : {slots: CODING_WORKER_SLOTS}), ...(readiness === undefined ? {} : {readiness})};
+    const schema = this.#declaration === undefined ? uncapped ? 'https://bunny.invalid/events/coding-endpoint/2.4' : ENDPOINT_SCHEMA : ENROLLED_ENDPOINT_SCHEMA;
+    const data: CodingEndpointControl = {requestId: randomUUID(), action: 'enable', ...(uncapped ? {capacity: 'uncapped'} : {slots: CODING_WORKER_SLOTS}), ...(readiness === undefined ? {} : {readiness}), ...(this.#declaration === undefined ? {} : {worker: this.#declaration})};
     if (!this.#adapterProtocol || readiness === undefined) return {type: 'org.bunny.coding.endpoint.requested', dataschema: schema, data};
-    data.harnesses = [...this.#adapters.keys()].flatMap(id => {
+    const harnesses = [...this.#adapters.keys()].flatMap(id => {
       const health = this.#adapterHealth.get(id);
       return health === undefined ? [] : [health];
     });
+    if (harnesses.length > 0) data.harnesses = harnesses;
     return {type: 'org.bunny.coding.endpoint.requested', dataschema: uncapped ? schema : 'https://bunny.invalid/events/coding-endpoint/2.3', data};
+  }
+  async #probeDeclaration(): Promise<CodingWorkerDeclaration | undefined> {
+    const enrollment = this.configuration.enrollment;
+    if (enrollment === undefined) return undefined;
+    const destination = codingDestinationForSource(enrollment.source);
+    if (destination === undefined) throw new Error('coding-worker: invalid enrollment source');
+    const resourceSample = this.resources(destination).catch(() => unknownResources);
+    const repositories = (await Promise.all(this.configuration.repositories.map(async ({name, path}) => {
+      try {
+        const revision = await this.#git(path, ['rev-parse', '--verify', 'origin/main^{commit}'], {timeoutMs: 10_000});
+        return SHA.test(revision) ? [{name, revision}] : [];
+      } catch {return [];}
+    }))).flat();
+    if (repositories.length === 0) throw new Error('coding-worker: no declared repository revision is available');
+    return {os: enrollment.os, toolchains: enrollment.toolchains, repositories, ...await resourceSample};
   }
   #stopping = false;
   #redeclaring = false;
@@ -469,7 +527,8 @@ export class CodingWorker {
   async start(): Promise<void> {
     // The probe runs before the connection opens, so a slow tool never holds an undeclared endpoint.
     this.#readiness = await this.#probe();
-    this.#participant = await this.#connect({url: this.configuration.edge, token: this.token, source: CODING_WORKER_SOURCE,
+    this.#declaration = await this.#probeDeclaration();
+    this.#participant = await this.#connect({url: this.configuration.edge, token: this.token, source: this.configuration.enrollment?.source ?? CODING_WORKER_SOURCE,
       onDiagnostic: diagnostic => {
         this.log(`coding-worker ${diagnostic.event}`);
         // A lost stream closed the connection-bound endpoint; the new stream needs a fresh declaration, which the core hears as a new endpoint.
@@ -480,6 +539,7 @@ export class CodingWorker {
       await this.#native?.start().catch(() => this.log('coding-worker: native terminal access unavailable'));
       await this.#declare();
       this.#declared = true;
+      if (this.configuration.enrollment !== undefined) this.#refreshTimer = setInterval(() => {void this.#refresh();}, WORKER_REFRESH_MS).unref();
     } catch (error) {
       this.#native?.stop();
       this.#stopping = true;
@@ -501,7 +561,14 @@ export class CodingWorker {
       // companion ever has two runs and the other companions are not held without a worker.
       await this.#stoppedRunsEnded();
       for (let attempt = 0; attempt < REDECLARE_ATTEMPTS && !this.#stopping; attempt += 1) {
-        try {await this.#declare(); return;} catch { /* refused, timed out or lost again: wait and try once more */ }
+        try {
+          if (this.configuration.enrollment !== undefined) {
+            this.#readiness = await this.#probe();
+            this.#declaration = await this.#probeDeclaration();
+          }
+          if (!this.#stopping) await this.#declare();
+          return;
+        } catch { /* refused, timed out or lost again: wait and try once more */ }
         await new Promise<void>(resolvePromise => {setTimeout(resolvePromise, REDECLARE_MS * 2 ** attempt).unref();});
       }
       this.log('coding-worker could not declare its endpoint again; the core keeps reporting it lost');
@@ -543,6 +610,7 @@ export class CodingWorker {
   }
   async stop(): Promise<void> {
     this.#stopping = true;
+    clearInterval(this.#refreshTimer);
     this.#native?.stop();
     this.#stopAll();
     try {await this.#endpoint?.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: ENDPOINT_SCHEMA,
@@ -578,7 +646,9 @@ export class CodingWorker {
     if (data.action === 'cancel') {
       const running = this.#running.get(data.operationId);
       if (running === undefined) return errorBody('not-found');
-      this.#stopRun(running); return {status: 'accepted'};
+      if (running.namedStop === undefined) this.#stopRun(running);
+      else running.namedStop();
+      return {status: 'accepted'};
     }
     if (this.#running.has(data.operationId)) return {status: 'accepted'};
     const harness = data.harness ?? CLAUDE;
@@ -589,6 +659,11 @@ export class CodingWorker {
     if (this.configuration.uncapped !== true && data.companion !== undefined && [...this.#running.values()].some(running => running.companion === data.companion)) return errorBody('capacity', {detail: 'that companion\'s slot is busy'});
     const repository = this.configuration.repositories.find(entry => entry.name === data.repository);
     if (repository === undefined) return errorBody('invalid-request', {detail: 'the repository is not on the worker\'s allowlist'});
+    const revision = data.revision;
+    if (this.configuration.enrollment !== undefined && data.continuation === undefined &&
+      (revision === undefined || this.#declaration?.repositories.some(declared => declared.name === repository.name && declared.revision === revision) !== true)) {
+      return errorBody('invalid-state', {detail: 'the requested repository revision is not in the current worker declaration'});
+    }
     let proof: WriterHandoff | undefined;
     if (data.continuation !== undefined) {
       proof = this.#handoffs.get(data.continuation.token);
@@ -605,7 +680,7 @@ export class CodingWorker {
       harness, steer: undefined, controller: new AbortController(),
       ended: new Promise<void>(resolvePromise => {end = resolvePromise;})};
     this.#running.set(running.operationId, running);
-    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter, proof).catch(async () => {
+    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter, proof, revision).catch(async () => {
       if (running.timer !== undefined) clearTimeout(running.timer);
       await this.#progress(running, running.cancelled ? {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}
         : {operationId: running.operationId, status: 'failed', reason: 'exit', result: null});
@@ -617,20 +692,24 @@ export class CodingWorker {
     return {status: 'accepted'};
   }
   /**
-   * After a run that reported limit windows, probes again and sends the selected endpoint one more enable carrying the new
-   * readiness, which the core records. It is a report, not a retry: nothing is sent again if it is refused or lost.
+   * Refreshes enrollment facts periodically and publishes new harness limit windows after a run. Each observation
+   * stays on the endpoint that requested it while it was current.
    */
   async #refresh(): Promise<void> {
-    if (this.#stopping) return;
-    const readiness = await this.#probe();
-    this.#readiness = readiness;
     const endpoint = this.#endpoint;
-    if (endpoint === undefined || this.#stopping) return;
-    const draft = this.#enable(readiness);
+    if (endpoint === undefined || this.#stopping || this.#refreshing || this.#redeclaring) return;
+    this.#refreshing = true;
     try {
+      const [readiness, declaration] = await Promise.all([this.#probe(), this.#probeDeclaration()]);
+      if (endpoint !== this.#endpoint || this.#stopping) return;
+      this.#readiness = readiness;
+      this.#declaration = declaration;
+      const draft = this.#enable(readiness);
       const answer = await endpoint.request('coding-endpoint', draft, {timeoutMs: 5000, requestId: draft.data.requestId});
       if (answer.status !== 'accepted') this.log(`coding-worker readiness ${answer.status}: ${answer.error.error.code} request ${answer.requestId}`);
-    } catch {this.log(`coding-worker readiness uncertain: request ${draft.data.requestId}`);}
+    } catch {
+      if (endpoint === this.#endpoint) this.log('coding-worker could not refresh its declaration');
+    } finally {this.#refreshing = false;}
   }
   async #message({requestId, operationId, text}: Extract<CodingWork, {action: 'message'}>): Promise<Reply> {
     const running = this.#running.get(operationId);
@@ -696,7 +775,7 @@ export class CodingWorker {
     } catch {this.log('coding-worker: git facts unavailable after the run');}
     return {head, changedFiles};
   }
-  async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter, proof?: WriterHandoff): Promise<void> {
+  async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter, proof?: WriterHandoff, pinnedRevision?: string): Promise<void> {
     if (proof !== undefined) {
       await this.#continue(running, repository.name, brief, bounds, adapter, proof);
       return;
@@ -723,9 +802,14 @@ export class CodingWorker {
         }
         if (uncapped && running.cancelled) return undefined;
         await stat(join(repository.path, '.git'));
-        try {await this.#git(repository.path, ['fetch', '--quiet', 'origin', 'main'], {timeoutMs: 120_000});} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
+        if (pinnedRevision === undefined) {
+          try {await this.#git(repository.path, ['fetch', '--quiet', 'origin', 'main'], {timeoutMs: 120_000});} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
+        }
         if (uncapped && running.cancelled) return undefined;
-        const revision = await this.#git(repository.path, ['rev-parse', 'origin/main']), checked = SHA.test(revision) ? revision : null;
+        const revision = pinnedRevision === undefined ? await this.#git(repository.path, ['rev-parse', 'origin/main'])
+          : await this.#git(repository.path, ['rev-parse', '--verify', `${pinnedRevision}^{commit}`], {timeoutMs: 10_000});
+        if (pinnedRevision !== undefined && (!SHA.test(pinnedRevision) || revision !== pinnedRevision)) throw new Error('the requested revision is unavailable');
+        const checked = SHA.test(revision) ? revision : null;
         const root = join(repository.path, '.local', 'worktrees'); await mkdir(root, {recursive: true, mode: 0o700});
         const fresh = join(root, `bunny-${taskId.slice(0, 8)}-${randomUUID().slice(0, 8)}`);
         if (uncapped && running.cancelled) return undefined;
@@ -875,7 +959,7 @@ export class CodingWorker {
     const original = await identity(worktree).catch(() => undefined);
     if (original === undefined || endpoint !== this.#endpoint ||
       (adapter.id === 'codex' && (proof === undefined || !sameCheckout(original, proof.worktree.identity)))) return;
-    const build = async (client: CodingNativeClientKind): Promise<NativeTerminalPlan | undefined> => {
+    const build = async (client: CodingNativeClientKind): Promise<NativeTerminalPlan | ErrorBody | undefined> => {
       const current = await identity(worktree).catch(() => undefined);
       if (current === undefined || !sameCheckout(original, current) || endpoint !== this.#endpoint) return undefined;
       const readiness = await adapter.readiness();
@@ -890,15 +974,23 @@ export class CodingWorker {
         const successor = join(proof.protectedRoot.path, `bunny-native-${randomUUID()}`);
         const target = await copyWorktree(proof.worktree, successor, proof.protectedRoot, home, proof.base, git);
         if (target === undefined) return undefined;
-        const cwd = target.identity.root, profile = `bunny-native-${randomUUID()}`, env = codexEnvironment(process.env, home);
+        const cwd = target.identity.root, profile = `bunny-native-${randomUUID()}`;
+        const toolchain = await verifyCodexToolchain(codex.executable, cwd, profile, home, process.env, original.root, undefined, proof.worktree.identity.common)
+          .catch(() => undefined);
+        if (toolchain === undefined) {
+          await rm(cwd, {recursive: true, force: true}).catch(() => {});
+          return errorBody('unavailable', {detail: CODEX_TOOLCHAIN_REFUSAL});
+        }
+        const env = codexEnvironment(process.env, home, toolchain);
         if (!await verifyClaudeWriterBoundary(cwd, original.root) ||
-          !await verifyCodexWriterBoundary(codex.executable, cwd, home, original.root, profile, env) ||
-          !await verifyCodexNativeResume(codex.executable, cwd, original.root, home, profile, sessionId, env)) {
+          !await verifyCodexWriterBoundary(codex.executable, cwd, home, original.root, profile, env, toolchain) ||
+          !await verifyCodexNativeResume(codex.executable, cwd, original.root, home, profile, sessionId, env, toolchain)) {
           await rm(cwd, {recursive: true, force: true}).catch(() => {});
           return undefined;
         }
-        const args = ['resume', '--no-daemon', '--cd', cwd, ...codexArguments(cwd, profile, home, original.root), sessionId];
-        return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(original.root, codex.executable, args, [proof.worktree.identity.common])};
+        const args = ['resume', '--no-daemon', '--cd', cwd, ...codexArguments(cwd, profile, home, original.root, toolchain), sessionId];
+        return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(original.root, codex.executable, args, [proof.worktree.identity.common]),
+          validate: () => checkCodexUserConfig(home)};
       }
       const {claude} = this.configuration;
       if (process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined || await projectSettingsRefusal(original.root) !== undefined) return undefined;
@@ -934,6 +1026,7 @@ export class CodingWorker {
     try {
       evidence = await adapter.run({worktree, brief, bounds, signal: running.controller.signal,
         ...(protectedRoot === undefined || sourceIdentity === undefined ? {} : {continuationRoot: protectedRoot.path}),
+        namedStop: stop => {running.namedStop = stop;},
         session: id => this.#session(running, id), steering: steer => {running.steer = steer;},
         observedMessage: messageId => {void this.#observedMessage(running, messageId);},
         reportedModel: model => {
@@ -988,7 +1081,7 @@ export class CodingWorker {
     const handoff = proofToken === undefined || !crossHarness ? {} : {handoffToken: proofToken};
     await this.#offerNative(running, adapter, worktree, evidence, proofToken);
     if (reason === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'completed', result, ...handoff}); return;}
-    const status = evidence.uncertain === true && !timedOut ? 'uncertain' : running.cancelled ? 'cancelled' : 'failed';
+    const status = evidence.uncertain === true && !timedOut ? 'uncertain' : reason === 'cancelled' ? 'cancelled' : 'failed';
     await this.#progress(running, {operationId: running.operationId, status, reason, result, ...handoff});
 
   }

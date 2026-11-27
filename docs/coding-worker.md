@@ -278,6 +278,36 @@ run under the narrowed environment: a variable a check needs beyond the
 allowlist must be listed in `claude.environment`, and proxy variables cannot
 be listed.
 
+## Enrolled worker declarations
+
+A worker enrolled for destination routing uses private configuration
+`coding-worker/1.3`. Its `source` must match its coding-worker credential.
+The established Mac source is `bunny/parts/coding-worker`, the PC source is
+`bunny/parts/coding-worker-pc`, and each cloud enrollment uses
+`bunny/parts/coding-worker-cloud-<slug>`. The owner assigns a separate credential
+with zero ordinary scopes to each source. Only the enrolled non-Mac workers can
+use the worker SDK endpoint calls through the authenticated private proxy.
+The credential has no state read, dashboard, device, terminal sign-in or
+installation authority.
+
+On startup and every 45 seconds, the worker sends the Hub its operating system,
+configured `toolchains` names, the exact local `origin/main` commit for each
+available allowlisted repository and the harness readiness it can establish.
+On the Mac and in WSL on the PC, the worker samples one-minute load and the
+free test slots from the documented host profile. It reads process and local
+Docker status without creating a container or reserving a slot. The Hub uses
+the aggregate observation to choose a destination. The worker's normal test
+commands apply the host's admission checks again before starting anything.
+An unreadable count leaves the slot estimate unknown.
+The declaration includes repository names and revisions. Token and worktree
+paths stay on the worker. A revision-pinned start requires the exact declared
+commit and creates the worktree at that commit without fetching a newer one.
+
+Existing Mac configurations and credential paths continue to work. A routing
+declaration does not qualify a new host or harness. The bundled Mac adapters
+remain Mac-only for enrolled workers. The PC and cloud delivery tasks own
+their adapters, qualification and any installed changes.
+
 ## Readiness
 
 Workers declare each configured adapter through `coding-endpoint/2.4`
@@ -343,11 +373,38 @@ CODEX_HOME="$worker_codex_home" HOME="$worker_codex_home" /ABSOLUTE/REVIEWED/cod
   -c 'cli_auth_credentials_store="file"' -c 'forced_login_method="chatgpt"' login
 ```
 
-Keep this profile free of `config.toml` and a nested `.codex` directory.
+Keep this profile dedicated to the worker and its supported native terminal.
+Codex 0.163.0 can save a private `config.toml` containing only its Boolean
+`tui.screen_reader_detection_done` marker. Leave that file in place and keep
+any other user settings and nested `.codex` directories out of the profile.
+The worker checks the file before launch and blocks delegated commands from
+accessing it. Make operator changes to the profile only while the worker and
+its native terminal are stopped.
 Use the dedicated ChatGPT login and keep personal credentials in their own profile.
 The worker launches the private stdio app-server from that directory with
 both `HOME` and `CODEX_HOME` set to it. It pins the SQLite files and logs to
 the profile's `sqlite` and `log` directories in the launch arguments.
+Fresh app-server threads and saved terminal launches pin the built-in OpenAI
+provider to the ChatGPT subscription model endpoint at
+`https://chatgpt.com/backend-api/codex`. The worker checks that effective setting
+alongside the ChatGPT backend used for the account.
+For repository checks the worker selects the Node 24 distribution that runs it,
+that distribution's npm, and Git from Apple Command Line Tools. It prepares a
+private directory with links to those three tools and checks that each runs in
+the same worktree sandbox before sending a brief or releasing a saved terminal
+plan. The sandbox reads only the selected tool paths, the npm package and the
+required macOS OpenSSL config for this toolchain. Git uses no user or system
+configuration and skips optional index locks. npm runs offline with its update
+notifier and user and global configuration disabled.
+For a linked worktree, `git status` reads the actual files and index.
+`git diff` shows unstaged edits against the detached HEAD when the index has
+no staged changes. If an outside process stages a change, status still reports
+it and diff refuses. The sandbox denies shared Git metadata except the exact
+read-only index and HEAD files. A private shallow copy supplies the detached
+HEAD's objects. The worker removes this copy after confirming the Codex writer
+has stopped. A later attempt uses a new copy. A saved terminal successor uses
+its own read-only Git directory, with the earlier checkout and its common Git
+directory denied.
 The process can open its local stores during startup. The worker checks the
 effective configuration before reading the account or opening a thread.
 A reported path or route override, enabled telemetry, configured MCP servers
@@ -378,7 +435,7 @@ loss after dispatch is uncertain. There is no automatic retry.
 | --- | --- | --- |
 | Subscription evidence | Preflight rejects contrary evidence. Stream init names the credential source. | Account must identify a ChatGPT sign-in before the turn. |
 | Usage limits | Windows observed during a run, or unknown | Account windows when reported, or unknown |
-| Cancellation | The worker terminates the child | The worker terminates the app-server process group |
+| Cancellation | The worker terminates the child | Once the turn is acknowledged, the worker requests its interruption, waits up to four seconds for the acknowledgement and matching terminal event, then verifies the process group has exited. A missing proof leaves the stop uncertain. |
 | Native identity | First validated session ID in the stream | Validated thread ID before the turn |
 | Review a named revision | Yes | Yes |
 | Message a running job | Unsupported | The worker sends the message to the named thread and active turn. A matching turn receipt confirms acceptance. |
@@ -410,7 +467,7 @@ needed in the current contract.
    installation's private `edge-credentials/1.0` file, bound to the source
    `bunny/parts/coding-worker` with no scopes; the digest is the SHA-256 of a
    token you generate and keep in an owner-only file. The runtime reads the
-   credentials file at start and on reload. Any other source, a scope, or a
+   credentials file at start and on reload. An unrecognized coding-worker source, a scope, or a
    robot ID on that role refuses the file. The Mac container admits this role
    on its private-proxy and production profiles; its host-local profile, and
    images from before Hub #1350, refuse the whole file, so grant it only on an
@@ -472,12 +529,12 @@ needed in the current contract.
 
 ## One credential, one endpoint
 
-Run one worker at a time. The core selects one worker endpoint and refuses
-another while that endpoint is selected, so stop the old worker before you
-start a new one. That includes handing over to launchd: stop a worker you
+Run one worker per enrolled source. The core selects one endpoint for that source
+and refuses another while its endpoint is selected, so stop the old worker
+before you start its replacement. That includes handing over to launchd: stop a worker you
 started by hand before loading the agent.
 
-A second worker started while the first is still declared connects, opens its
+A second worker using the same credential while the first is still declared connects, opens its
 own endpoint and has its `enable` refused with `invalid-state`. It closes that
 endpoint and its connection, writes the line below to standard error and exits
 with status 1, at once when refused and within about eleven seconds if the core
@@ -548,3 +605,24 @@ against the installed core with a real `claude` is the installed check the
 owner records under the running checklist. The handoff between two supervised
 workers, and the interval launchd actually takes, is an installed check on
 [#508](https://github.com/jimmie-potts/agent-device-hub/issues/508).
+
+## Cloud workspace qualification
+
+The installed module supplies no cloud workspace authority. Enrollment and
+a sharing grant alone do not make a cloud worker eligible for Auto or a pinned
+request. A qualified workspace must bind the approved operation, repository
+commit, harness and worker connection. The Hub checks that authority again
+before sending the brief. Installed and local device operations remain
+ineligible for cloud. Live steering also requires a current workspace and
+sharing permission for the message. A successor needs its own operation
+authority and the existing verified writer handoff.
+
+The disposable test provider uses zero infrastructure spend and exercises
+provider enforcement evidence for compute, storage, cost and an absolute
+workspace removal deadline. A positively identified workspace that exceeds its
+allowance is torn down without authorizing work. Loss of launch, writer or
+cleanup evidence keeps the qualification held. Disposable qualification instances
+share the one-shot claim for each operation on their provider instance. Live activation requires an owner-selected provider,
+account, authentication and allowance, plus verified provider-side limits,
+durable workspace claims and reconciliation. The supervisor model budget is
+separate from cloud infrastructure allowance.

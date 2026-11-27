@@ -4,6 +4,7 @@ import {mkdir} from 'node:fs/promises';
 import {setTimeout as pause} from 'node:timers/promises';
 import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import {chromium, type Browser, type Page} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {expect} from 'playwright/test';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {feed, startWorld} from './harness.ts';
@@ -23,7 +24,7 @@ try {
   const yourTime = (minute: string): string => `(?:[A-Z][a-z]{2} )?\\d\\d:${minute} your time \\(${viewerZone}\\)`;
   const timeHint = (time: string): RegExp => new RegExp(`^${time} Hub time is ${yourTime(time.slice(3))} at the next occurrence\\.$`);
   const weekdays = 'Monday, Tuesday, Wednesday, Thursday, Friday';
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', timezoneId: viewerZone});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', timezoneId: viewerZone});
   try {
     const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); });
     const writes: {method: string; path: string; header: string | undefined}[] = [];
@@ -244,6 +245,14 @@ try {
     await expect(automation().getByRole('button', {name: 'Save settings', exact: true})).toBeDisabled();
     await tab('Routines').click(); await expect(routines().getByLabel('Routine name', {exact: true})).toHaveValue('Reply lost');
     await page.unroute('**/api/v2/automation/routines');
+    const reconnectedRead = page.waitForResponse(response => response.request().method() === 'GET' && response.url().endsWith('/api/v2/automation/routines'));
+    world.dropDashboardStreams();
+    await reconnectedRead;
+    await routines().getByRole('heading', {name: 'Reply lost Disabled', exact: true}).waitFor();
+    await expect(automation().getByRole('alert')).toContainText('The last change has no reliable reply.');
+    await expect(automation().getByRole('status').filter({hasText: 'Up to date.'})).toHaveCount(0);
+    await expect(submit('Create disabled routine')).toBeDisabled();
+    assert.equal(writes.length, beforeLost + 1, 'reconnect reads the changed snapshot without resolving uncertainty or replaying the mutation');
     await automation().getByRole('button', {name: 'Refresh rules and logs', exact: true}).click(); await loaded();
     await routines().getByRole('heading', {name: 'Reply lost Disabled', exact: true}).waitFor();
     await automation().getByText('Recent attempts', {exact: true}).click();

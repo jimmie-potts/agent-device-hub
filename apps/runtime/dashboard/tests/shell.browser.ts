@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, type Locator, type Request} from 'playwright';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, copiesSynced, feed, startWorld} from './harness.ts';
 import {destinationLink, destinationNames, openDirectory, openSettings} from './navigation-helpers.ts';
 import {PINS_KEY} from '../src/pins.ts';
@@ -10,7 +11,7 @@ import {RAIL_PREFERENCE_KEY} from '../src/rail-preference.ts';
 
 const world = await startWorld({devices: true, pixooPages: true, tidbyt: true});
 const browser = await chromium.launch({headless: true});
-const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
 const page = await context.newPage();
 page.setDefaultTimeout(15_000);
 const sent = changes(page);
@@ -453,7 +454,7 @@ try {
   checks.push('an ended session shows the full rail, and its recovery on a phone without opening the drawer');
 
   // The journey above runs with reduced motion. With motion allowed, the drawer's slide and its delayed hiding still finish.
-  const moving = await browser.newContext({viewport: {width: 390, height: 844}});
+  const moving = await openJourneyContext(browser, {viewport: {width: 390, height: 844}});
   try {
     const phone = await moving.newPage();
     phone.setDefaultTimeout(15_000);

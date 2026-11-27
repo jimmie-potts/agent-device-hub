@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import type {HistoryRow} from '../src/timeline-model.ts';
@@ -9,7 +10,7 @@ import {destinationLink} from './navigation-helpers.ts';
 
 const world = await startWorld({inbox: true}), browser = await chromium.launch({headless: true});
 try {
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  const context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage();page.setDefaultTimeout(12_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
   const historyRequests: URL[] = [];page.on('request', request => {if (new URL(request.url()).pathname === '/api/v2/history') historyRequests.push(new URL(request.url()));});
@@ -144,7 +145,7 @@ try {
 
   // Spans, a gap, a closing row and an open span (#1773), on a fixed page clock, in UTC, at twice the pixel density.
   const fixed = Date.UTC(2026, 10, 12, 15, 0), H = 3_600_000, M = 60_000;
-  const spanContext = await browser.newContext({viewport: {width: 1440, height: 1000}, deviceScaleFactor: 2, timezoneId: 'UTC', locale: 'en-US', reducedMotion: 'reduce'});
+  const spanContext = await openJourneyContext(browser, {viewport: {width: 1440, height: 1000}, deviceScaleFactor: 2, timezoneId: 'UTC', locale: 'en-US', reducedMotion: 'reduce'});
   const spanPage = await spanContext.newPage();spanPage.setDefaultTimeout(12_000);await spanPage.clock.setFixedTime(fixed);
   const spanErrors: string[] = [];spanContext.on('weberror', error => {spanErrors.push(error.error().message);});
   const spanSent = changes(spanPage), spanCard = spanPage.locator('[data-timeline-card]');

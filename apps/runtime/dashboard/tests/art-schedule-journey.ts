@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {chromium, expect, type Page} from 'playwright/test';
+import {openJourneyContext} from './browser-context.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {feed, startWorld} from './harness.ts';
 
 /** Real core policy, gateway and synced browser state; providers and storage are disposable. */
 export async function artScheduleJourney(): Promise<void> {
   const world = await startWorld({art: true}), browser = await chromium.launch({headless: true});
-  const artifacts = await browserArtifactDirectory(), context = await browser.newContext({viewport: {width: 1440, height: 1100}});
+  const artifacts = await browserArtifactDirectory(), context = await openJourneyContext(browser, {viewport: {width: 1440, height: 1100}});
   const page = await context.newPage(), other = await context.newPage();
   const writes: string[] = [], errors: string[] = [];
   const panel = (view: Page) => view.getByRole('region', {name: 'Daily art', exact: true});
