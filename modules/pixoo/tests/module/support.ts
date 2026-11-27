@@ -12,9 +12,9 @@ import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-con
 import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, SESSION_SCHEMA, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session';
 import {
-  InProcessBus, type BunnyModule, type Cancel, type CommandDraft, type Participant, type RequestResult, type Scheduler, type StateDraft, type Subscription,
+  InProcessBus, type BunnyModule, type CommandDraft, type Participant, type RequestResult, type Scheduler, type StateDraft, type Subscription,
 } from '@jimmie-potts/sdk';
-import {ModuleHarness, RecordedSpans} from '@jimmie-potts/sdk/testing';
+import {ModuleHarness, RecordedSpans, manualClock, moduleWaitBudgets, waitForObservation} from '@jimmie-potts/sdk/testing';
 import {Library} from '../../src/library/index.js';
 import {encodeHostedGif} from '../../src/media/index.js';
 import {FAMILIES, pixooOwnSchemas, schemaOf, type DisplayRecord} from '../../src/module/schemas.js';
@@ -66,24 +66,19 @@ export function validator(): MessageValidator {
  * clock: its request deadlines are a test's backstop, not the module's behavior.
  */
 export class ManualClock {
-  #now: number;
-  #next = 0;
-  readonly #timers = new Map<number, {at: number; callback: () => void}>();
+  readonly #clock: ReturnType<typeof manualClock>;
   #settle: () => Promise<void> = turns;
 
   constructor(start = Date.now()) {
-    this.#now = start;
+    this.#clock = manualClock(start);
   }
 
-  readonly now = (): number => this.#now;
+  readonly now = (): number => this.#clock.now();
 
   readonly scheduler: Scheduler = {after: (delayMs, callback) => {
-    const id = this.#next;
-    this.#next += 1;
-    this.#timers.set(id, {at: this.#now + delayMs, callback});
-    // A timer due now needs no time to pass: it runs after the current turn, as a real zero-delay timer would.
-    if (delayMs === 0) setImmediate(() => { this.#runDue(); });
-    const cancel: Cancel = () => { this.#timers.delete(id); };
+    const cancel = this.#clock.scheduler.after(delayMs, callback);
+    // A zero-delay timer gives work a turn even when the test leaves time still.
+    if (delayMs === 0) setImmediate(() => { this.#clock.advance(0); });
     return cancel;
   }};
 
@@ -97,26 +92,10 @@ export class ManualClock {
    * each timer, and at the end, the work the earlier timers started settles, so no timer runs ahead of it.
    */
   async advance(ms: number): Promise<void> {
-    const end = this.#now + ms;
-    for (;;) {
-      await this.#settle();
-      let due: [number, {at: number; callback: () => void}] | undefined;
-      for (const entry of this.#timers) if (entry[1].at <= end && (due === undefined || entry[1].at < due[1].at)) due = entry;
-      if (due === undefined) break;
-      this.#timers.delete(due[0]);
-      this.#now = due[1].at;
-      due[1].callback();
-    }
-    this.#now = end;
+    const end = this.now() + ms;
     await this.#settle();
-  }
-
-  /** Runs the timers due at the current time, in order of their scheduling. */
-  #runDue(): void {
-    for (const [id, timer] of [...this.#timers]) {
-      if (timer.at > this.#now || !this.#timers.delete(id)) continue;
-      timer.callback();
-    }
+    while (this.#clock.stepToNextTimer(end)) await this.#settle();
+    await this.#settle();
   }
 }
 /** A few turns of the event loop, for promised work and zero-delay timers in this process. */
@@ -126,14 +105,8 @@ async function turns(): Promise<void> {
 
 export const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 /** Polls until `find` returns something, or fails after `timeoutMs`. */
-export async function waitFor<T>(find: () => T | undefined, what: string, timeoutMs = 5000): Promise<T> {
-  const deadline = performance.now() + timeoutMs;
-  for (;;) {
-    const found = find();
-    if (found !== undefined) return found;
-    if (performance.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await sleep(5);
-  }
+export function waitFor<T>(find: () => T | undefined, what: string, timeoutMs: number = moduleWaitBudgets.pixoo.timeoutMs): Promise<T> {
+  return waitForObservation(find, (value): value is T => value !== undefined, what, {...moduleWaitBudgets.pixoo, timeoutMs});
 }
 
 /** A PNG that declares `width` x `height` pixels and holds one row of image data: a pixel bomb's header, a few bytes long. */
@@ -363,7 +336,7 @@ export class World {
   }
 
   /** The outcome of one request, once the module has published it. */
-  outcome(requestId: string, timeoutMs = 5000): Promise<Message<{requestId: string; result: string; evidence: string; error?: {code: string}}>> {
+  outcome(requestId: string, timeoutMs: number = moduleWaitBudgets.pixoo.timeoutMs): Promise<Message<{requestId: string; result: string; evidence: string; error?: {code: string}}>> {
     return waitFor(() => this.seen.find(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === requestId) as
       Message<{requestId: string; result: string; evidence: string; error?: {code: string}}> | undefined, `the outcome of ${requestId}`, timeoutMs);
   }

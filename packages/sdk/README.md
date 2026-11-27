@@ -918,6 +918,11 @@ Known limits:
 `@jimmie-potts/sdk/testing` holds one conformance suite that every module runs,
 so all modules behave the same. Its tests import it; the runtime never does.
 
+The same test-only entry exports `manualClock(start)` for fixtures that drive a
+scheduler and `waitForObservation(read, ready, what, budget)` for real I/O.
+The [development guide](../../docs/development.md#module-test-waits-and-manual-time)
+describes the MicroDuck and Pixoo budgets and how each fixture advances time.
+
 ```ts
 import {moduleConformance} from '@jimmie-potts/sdk/testing';
 

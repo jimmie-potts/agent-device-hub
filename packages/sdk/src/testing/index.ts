@@ -6,3 +6,5 @@ export {countCommits} from './commits.js';
 export {RecordedSpans, lostParents, type RecordedSpan} from './spans.js';
 export {copyCovers, entryOf} from '../sync.js';
 export {watchRemotePublications} from '../remote-edge.js';
+export {manualClock} from './manual-clock.js';
+export {moduleWaitBudgets, waitForObservation} from './wait.js';
