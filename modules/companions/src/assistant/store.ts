@@ -38,7 +38,10 @@ export {LIMITS} from './limits.js';
 type SavedTranscriptItem = (Extract<TranscriptItem, {role: 'owner'}> & {submittedAtMs?: number})
   | Exclude<TranscriptItem, {role: 'owner'}>;
 type ConversationQuestion = SavedQuestion & {call: string; codingChoice?: CodingChoice; codingDestination?: CodingDestinationChoice; codingRequirements?: CodingRequirements};
-export type Question = ConversationQuestion & {modeClarification?: {requestId: string; requestRevision: number; modeRevision: number}};
+export type Question = ConversationQuestion & {
+  modeClarification?: {requestId: string; requestRevision: number; modeRevision: number};
+  deviceReadClarification?: {requestId: string};
+};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   /** Only the private Conversation page renders this receipt, after a fresh exact Jobs lookup. */
   localJobStatus?: {question: string; visible?: {jobId: string; operationId: string; status: string}};

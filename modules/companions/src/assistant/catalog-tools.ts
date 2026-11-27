@@ -117,6 +117,8 @@ const references = {
   }, required: ['role', 'kind', 'disposition', 'source', 'quote'], additionalProperties: false},
 } as const satisfies ToolInputSchema['properties'][string];
 export function catalogToolWithReferences(tool: ToolDefinition): ToolDefinition {
+  if (tool.name === READ_DEVICES) return {...tool,
+    description: 'Read status and permitted controls for one device in the current owner request. Use an explicit device name or ID when known. Retry a missing selector once as instructed. Ask which device the owner means if it is still unclear. Do not look up a cancelled or excluded device.'};
   if (!modelCatalogTool(tool.name) || tool.name === CREATE_SHOW) return tool;
   return {...tool, description: `${tool.description} If the Hub refuses a target selection or it is unclear, ask the owner which target they mean. Do not substitute a target.`,
     input: {...tool.input, properties: {...tool.input.properties, references}, required: [...tool.input.required, 'references']}};

@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {containsControlValue, literalToolDeviceId, literalDeviceId, normalizedControlText, type SceneReceipt} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
+import {exactControlIds} from './model-control.js';
 import {catalogCueReferences, catalogQuoteNames, catalogSelectorId, type CatalogReferenceRole} from './catalog-grounding.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -192,9 +193,20 @@ export class ConversationActions {
   }
 
   async namedDeviceMatch({owner, target, request}: NamedDeviceLookup, granted: (id: string) => boolean, parent: TraceContext): Promise<Match | undefined> {
-    const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
+    const owners = owner === 'auto' || target === '' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     const {rows} = await this.#deviceRecords(owners, parent);
     const visible = rows.filter(({device}) => granted(device.id));
+    if (target === '') {
+      const selectors = exactControlIds(request);
+      if (selectors.length > 1 || selectors.some(id => literalDeviceId(`id:${id}`) !== id)) return undefined;
+      const literal = selectors[0];
+      const words = request.replace(/\bid:[^\s,()[\]{}"'‘’“”`<>]*/gu, ' ');
+      const matches = visible.filter(({device}) => device.id === literal ||
+        [device.id, deviceLabel(device)].some(value => containsControlValue(words, value)));
+      const [selected] = matches;
+      return matches.length === 1 && selected !== undefined && (literal === undefined || selected.device.id === literal) &&
+        (owner === 'auto' || selected.owner === owner) ? selected : undefined;
+    }
     const literal = literalToolDeviceId(target);
     // A longer permitted name in the request cannot authorize a shorter alias.
     if (literal === undefined && visible.some(({device}) => [device.id, deviceLabel(device)].some(value =>
@@ -854,7 +866,7 @@ export class ConversationActions {
       const selected = scopedFacts.named !== undefined ? await this.namedDeviceMatch(scopedFacts.named, scopedFacts.granted, parent)
         : matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
-          target !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
+          target.trim() !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
       const {owner: source, device} = selected;
       scopedFacts.resolve(device.id);
       if (!access('devices', 'index', device.id) || !access('devices', 'label', device.id) || !access('devices', 'status', device.id)) {

@@ -237,13 +237,20 @@ function deviceRequestSubject(text: string): string | undefined {
 
 const exclusionsInDeviceRequest = /\b(?:except|rather than|instead of|not|don t|without|leave)\b/u;
 
+const deviceLookupQuestion = 'Which exact device should I look up?';
+const deviceLookupNotResolved = JSON.stringify({devices: [], instruction: deviceLookupQuestion});
+const lookupRepair = JSON.stringify({devices: [], instruction: 'Retry read_devices once with an explicit device name or ID from the current owner request. If the target is still unclear, ask which exact device the owner means.'});
+const deviceLookupCancelled = /(?:^|[.!?;]\s+)(?:never mind|cancel (?:that|the request))[.!?]?\s*$/iu;
 type DeviceLookupAdmission = {kind: 'named'; lookup: NamedDeviceLookup} | {kind: 'contextual'} | {kind: 'blocked'};
 
 function namedDeviceLookup(request: string, call: ToolCall): DeviceLookupAdmission {
   if (call.name !== READ_DEVICES) return {kind: 'contextual'};
   if (typeof call.input.target !== 'string' || typeof call.input.owner !== 'string') return {kind: 'blocked'};
   const target = call.input.target.trim();
-  if (target === '') return {kind: 'blocked'};
+  const words = normalizedControlText(request);
+  if (deviceLookupCancelled.test(request)) return {kind: 'blocked'};
+  if (target === '') return exclusionsInDeviceRequest.test(words) ? {kind: 'blocked'}
+    : {kind: 'named', lookup: {owner: call.input.owner, target, request}};
   // Exclusions apply within their clause. Scene wording and the position of a
   // contrast do not decide whether the owner cited the device for a read.
   const affirmative: string[] = [], excluded: string[] = [];
@@ -1735,29 +1742,53 @@ export class AssistantEngine {
     const catalogSubject = malformedSelector || group !== undefined || exact.length > 1 ? undefined
       : subject !== undefined && (!refers || references.length === 0) ? subject
         : selected.length === 1 && selected[0] !== undefined ? `id:${selected[0].device.id}` : undefined;
-    const deviceLookupAdmission = (call: ToolCall): DeviceLookupAdmission => {
-      if (purpose !== 'supervisor' || brightnessTarget !== undefined) return {kind: 'contextual'};
+    const question = task.question;
+    const lookupAnswerId = question?.deviceReadClarification?.requestId === requestId && question.answer !== null
+      ? `${question.id}-answer` : undefined;
+    const lookupAnswer = lookupAnswerId === undefined ? undefined : transcript.find(item => item.role === 'tool' &&
+      'effect' in item && item.effect === lookupAnswerId && item.result === question?.answer);
+    if (lookupAnswerId !== undefined && lookupAnswer !== undefined) ownerInputs.add(lookupAnswerId);
+    const deviceLookupAdmissionFor = (call: ToolCall, repairing: boolean, answered: boolean): DeviceLookupAdmission => {
+      if (purpose !== 'supervisor' || call.name !== READ_DEVICES) return {kind: 'contextual'};
       if (!access('conversation', 'request', requestId) || !canReadMessage(requestId)) return {kind: 'blocked'};
-      return namedDeviceLookup(request, call);
-    };
-    const namedLookup = (call: ToolCall) => {
-      const admission = deviceLookupAdmission(call);
-      return admission.kind === 'named' ? admission.lookup : undefined;
+      let lookupRequest = request;
+      if (answered) {
+        if (lookupAnswerId === undefined || lookupAnswer?.role !== 'tool' ||
+            !access('conversation', 'request', lookupAnswerId) || !canReadMessage(lookupAnswerId)) return {kind: 'blocked'};
+        lookupRequest = lookupAnswer.result;
+      }
+      const admission = namedDeviceLookup(lookupRequest, call);
+      if (repairing && !answered && (admission.kind !== 'named' || admission.lookup.target === '')) return {kind: 'blocked'};
+      if (brightnessTarget !== undefined && !repairing && !answered && typeof call.input.target === 'string' &&
+          call.input.target.trim() !== '' && !exclusionsInDeviceRequest.test(words) && !deviceLookupCancelled.test(request)) return {kind: 'contextual'};
+      return admission;
     };
     const lookupGranted = (id: string) => discover('devices', 'index', id) && (['index', 'label', 'status'] as const).every(field =>
       local('devices', field, id) && recordedSupervisorField(this.options.share, task.profile, 'supervisor', 'devices', field, id));
     const namedReads = new Map<string, {lookup: NamedDeviceLookup | undefined; owner: string; id: string}>();
     let preceding: ToolCall | undefined;
+    let lookupRepairPending = false, lookupRepairFailed = false, lookupClarified = false;
     for (const item of transcript) {
       if (item.role === 'assistant') {
         preceding = item.calls[0];
       } else if (item.role === 'tool' && preceding?.id === item.call && 'effect' in item && typeof item.effect === 'string') {
-        const lookup = namedLookup(preceding);
+        const admission = deviceLookupAdmissionFor(preceding, lookupRepairPending, lookupClarified);
         const resolved = this.store.call(item.effect)?.namedDeviceRead;
-        if (resolved !== undefined) namedReads.set(item.effect, {lookup, ...resolved});
+        if (resolved !== undefined) namedReads.set(item.effect, {lookup: admission.kind === 'named' ? admission.lookup : undefined, ...resolved});
+        if (item.name === READ_DEVICES) {
+          if (item.result === lookupRepair) lookupRepairPending = true;
+          if (item.result === deviceLookupNotResolved) lookupRepairFailed = true;
+          if (resolved !== undefined) lookupRepairPending = false;
+          if (item === lookupAnswer) {
+            lookupClarified = true;
+            lookupRepairPending = false;
+            lookupRepairFailed = false;
+          }
+        }
         preceding = undefined;
       }
     }
+    const deviceLookupAdmission = (call: ToolCall) => deviceLookupAdmissionFor(call, lookupRepairPending, lookupClarified);
     const priorCatalogIds = new Set(this.store.calls(task.id).filter(call => effects.has(call.id) && call.kind === 'tool' && call.action === undefined && !namedReads.has(call.id))
       .flatMap(call => call.disclosures?.flatMap(field => field.source === 'devices' && field.record !== undefined ? [field.record] : []) ?? [])
       .filter(id => !devices.has(id)));
@@ -1782,7 +1813,7 @@ export class AssistantEngine {
       }
       return access(source, field, record);
     };
-    return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, deviceLookupAdmission, lookupGranted, namedReads, priorCatalogIds, resolvedCatalogDevice,
+    return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, deviceLookupAdmission, lookupRepairPending, lookupRepairFailed, lookupClarified, lookupGranted, namedReads, priorCatalogIds, resolvedCatalogDevice,
       brightnessTarget: brightnessTarget === undefined ? undefined : catalogSubject ?? brightnessTarget, selectedDevice, history};
   }
   #hostedHistory(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>): Map<string, HostedHistoryMessage> {
@@ -2388,7 +2419,8 @@ export class AssistantEngine {
     let sceneReceipt: SceneReceipt | undefined;
     const clarificationDevices = new Set<string>();
     const currentTask = this.#task(state.taskId);
-    const clarificationAccess = paid ? this.#supervisorScope(currentTask).fields : modelFields;
+    const deviceScope = paid ? this.#supervisorScope(currentTask) : undefined;
+    const clarificationAccess = deviceScope?.fields ?? modelFields;
     const discover = this.#fields(task.profile, 'discovery', 'private-conversation'), read = this.#fields(task.profile, 'read', 'private-conversation');
     const canNameDevice = (id: string, access = clarificationAccess): boolean => {
       const allowed = discover('devices', 'index', id) && read('devices', 'index', id) && read('devices', 'label', id)
@@ -2406,6 +2438,11 @@ export class AssistantEngine {
     if (savedControl !== undefined) {
       direct = savedControl;
       next = 'act';
+    } else if (call !== undefined && deviceScope !== undefined &&
+        (deviceScope.lookupRepairFailed || deviceScope.lookupRepairPending &&
+          (call.name === ASK_OWNER || call.name === READ_DEVICES && deviceScope.deviceLookupAdmission(call).kind === 'blocked'))) {
+      question = {id: `${state.taskId}-q${String(currentTask.questions + 1)}`, kind: 'clarification',
+        text: deviceLookupQuestion, answer: null, call: call.id, proposal: null, deviceReadClarification: {requestId: deviceScope.requestId}};
     } else if (next === 'approve' && call !== undefined && lighting) {
       const bound = await this.#bindLightingControl(currentTask, call, id, state.step + 1, active.span.context);
       this.#fence(active);
@@ -2463,6 +2500,9 @@ export class AssistantEngine {
       }
     } else if ((next === 'ask' || next === 'approve') && call !== undefined) {
       question = this.#question(state.taskId, call, proposalCopy, canNameDevice, id);
+    }
+    if (call === undefined && (deviceScope?.lookupRepairPending === true || deviceScope?.lookupRepairFailed === true)) {
+      result = deviceLookupQuestion;
     }
     const proposal = question?.proposal;
     if (call !== undefined && question !== undefined && proposal != null && proposal.family !== 'coding-dispatch' && command !== 'art-request') {
@@ -3298,6 +3338,11 @@ export class AssistantEngine {
             recordNamed: (owner, id) => {namedDeviceRead = {owner, id};},
             brightnessControl: scope.brightnessTarget !== undefined, resolve: scope.resolvedCatalogDevice,
           }) ?? fail('invalid-state');
+        if (scope !== undefined && namedDeviceRead === undefined && call.name === READ_DEVICES) {
+          if (scope.lookupRepairPending) text = deviceLookupNotResolved;
+          else if (!scope.lookupClarified && typeof call.input.target === 'string' && call.input.target.trim() === '' &&
+              !deviceLookupCancelled.test(scope.request)) text = lookupRepair;
+        }
         return {text, units: 0, evidence, disclosures: ledger.fields,
           ...(namedDeviceRead === undefined ? {} : {namedDeviceRead}),
           ...(lightingReadTarget === undefined ? {} : {lightingReadTarget}),

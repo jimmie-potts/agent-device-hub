@@ -4425,9 +4425,38 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     assert.deepEqual(await ask('Apply Night Sky on Hidden Wall.', 'Hidden Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Missing Wall.', 'Missing Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall XL.', 'Studio Wall'), {devices: []});
-    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', ''), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', ''), statusFacts);
+    assert.deepEqual(await ask('Read id:studio-wall.', ''), statusFacts);
+    const missing = {devices: [], instruction: /Retry read_devices once/u};
+    const requireRepair = (facts: unknown) => {
+      assert.ok(typeof facts === 'object' && facts !== null && 'instruction' in facts);
+      assert.match(String(facts.instruction), missing.instruction);
+      assert.deepEqual(facts, {...missing, instruction: facts.instruction});
+    };
+    requireRepair(await ask('How bright is it now?', ''));
+    requireRepair(await ask('Read Studio Wall or Studio Wall XL.', ''));
+    requireRepair(await ask('Read id:studio-wall and id:studio-wall-xl.', ''));
+    requireRepair(await ask('Instead of Studio Wall, apply Dusk to Side Wall.', ''));
+    assert.deepEqual(await ask('Read Studio Wall. Never mind.', ''), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall, not Dusk.', '', 'auto', 'Studio Wall'), statusFacts);
+    const beforeRepair = task(w)?.taskId;
+    lookups = [{owner: 'auto', target: ''}, {owner: 'auto', target: ''}];
+    assert.equal((await input(w.core, w.module(), 'What is its status?', false, randomUUID(), {provider})).status, 'accepted');
+    await until(() => task(w)?.taskId !== beforeRepair && status(w) === 'waiting');
+    assert.equal((await page(w)).currentTask?.question?.text, 'Which exact device should I look up?');
+    const repairTask = task(w)?.taskId ?? assert.fail('The repair task is saved');
+    const seenRepair = resultByProvider[provider].length;
+    await w.restart();
+    assert.equal(resultByProvider[provider].length, seenRepair, 'restart must not reset the repair or call a supervisor again');
+    assert.equal(w.store().task(repairTask)?.question?.text, 'Which exact device should I look up?');
+    lookups.push({owner: 'auto', target: 'id:studio-wall'});
+    const questionId = w.store().task(repairTask)?.question?.id;
+    assert.equal((await input(w.core, w.module(), 'id:studio-wall', true, randomUUID(),
+      {taskId: repairTask, questionId})).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.deepEqual(JSON.parse(resultByProvider[provider].at(-1) ?? ''), statusFacts);
     assert.deepEqual(await ask('Apply Night Sky without changing Studio Wall.', 'Studio Wall'), {devices: []});
-    lookups = [{owner: 'auto', target: 'Studio Wall'}];
+    lookups = [{owner: 'auto', target: ''}];
     replaceOwner = true;
     const previous = task(w)?.taskId, before = resultByProvider[provider].length;
     assert.equal((await input(w.core, w.module(), 'Apply Night Sky on Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
@@ -4819,12 +4848,12 @@ void test('Responses resolves an exact brightness instruction before sending one
   assert.equal(requests.length, 3);
   active = {...active, id: 'shared-a', attempt: false};
   await ask('Set Shared Display brightness to 37%');
-  assert.equal(lookup.at(-1), '{"devices":[]}');
+  assert.deepEqual((JSON.parse(lookup.at(-1) ?? '{}') as {devices: unknown}).devices, []);
   active = {...active, id: target};
   for (const destination of ['private-conversation', 'external-model'] as const) {
     denied = destination;
     await ask('Set fixture-display brightness to 37%');
-    assert.equal(lookup.at(-1), '{"devices":[]}');
+    assert.deepEqual((JSON.parse(lookup.at(-1) ?? '{}') as {devices: unknown}).devices, []);
   }
   denied = undefined;
   active = {...active, attempt: false};
@@ -4851,7 +4880,7 @@ void test('Responses resolves an exact brightness instruction before sending one
   devices.push({...unsupported, id: 'unsupported-alias', label: target});
   active = {...active, id: target, bypassLookup: true};
   await ask('Set fixture-display brightness to 37%', 'reachy');
-  assert.equal(lookup.at(-1), '{"devices":[]}');
+  assert.deepEqual((JSON.parse(lookup.at(-1) ?? '{}') as {devices: unknown}).devices, []);
   assert.equal(requests.length, 3);
   const reachy = () => w.module().inspectAssistant()?.tasks.find(item => item.profile === 'reachy');
   for (const response of ['yes', 'other-display', 'maybe fixture-display']) {
