@@ -1,8 +1,11 @@
 import {writerGone} from './writer-proof.js';
+import {WSL_LOCATION_REFUSAL, wslCheckoutIdentity, wslCheckoutPath, wslProfileStorage, WslStorageError} from './wsl-storage.js';
 import {execFile, spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {lstat, mkdtemp, readdir, realpath, rm, symlink, writeFile} from 'node:fs/promises';
-import {userInfo} from 'node:os';
+import {lstat, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile} from 'node:fs/promises';
+import {release, tmpdir, userInfo} from 'node:os';
+import {createServer} from 'node:net';
+import {once} from 'node:events';
 import {isAbsolute, join, relative, resolve, sep} from 'node:path';
 import {promisify} from 'node:util';
 import {Ajv2020} from 'ajv/dist/2020.js';
@@ -12,12 +15,15 @@ import {checkStateDirectory, prepareStateDirectory, PrivateFileError, readPrivat
 import {CODEX_RESULT_SCHEMA, nativeSessionId, reportedModel, type AdapterEvidence, type AdapterHealth, type AdapterRun, type CodingAdapter} from './adapter.js';
 import {harnessEnvironment, parseVersion, UNKNOWN_READINESS, type HarnessReadiness} from './claude-stream.js';
 import {CODEX_TOOLCHAIN_REFUSAL, codexToolchainVariables, prepareCodexToolchain, prepareLinkedGitView, releaseCodexToolchain,
-  type CodexToolchain} from './codex-toolchain.js';
+  type CodexToolchain, type CodexToolchainHost} from './codex-toolchain.js';
 
 const execute = promisify(execFile);
 // Validate independently of the provider's structured-output promise.
 const validOutput = new Ajv2020({strict: true}).compile(CODEX_RESULT_SCHEMA);
 const PROBE_MS = 10_000;
+export const WSL_CODEX_VERSION = '0.163.0';
+export const isWsl2Host = (platform = process.platform, osRelease = release()): boolean =>
+  platform === 'linux' && /microsoft.*wsl2/iu.test(osRelease);
 const QUOTA_MS = 2000;
 const STEER_MS = 4000;
 const INTERRUPT_MS = 4000;
@@ -104,7 +110,7 @@ export function codexEnvironment(environment: NodeJS.ProcessEnv, home: string, t
   const allowed = harnessEnvironment(environment);
   delete allowed.CLAUDE_CODE_OAUTH_TOKEN;
   return {...allowed, ...(toolchain === undefined ? {} : {...codexToolchainVariables(toolchain.bin),
-    PATH: [toolchain.gitView?.bin, toolchain.bin, allowed.PATH ?? '/usr/bin:/bin'].filter(path => path !== undefined).join(':')}),
+    PATH: [toolchain.gitView?.bin, toolchain.bin, toolchain.linux === true ? '/usr/bin:/bin' : allowed.PATH ?? '/usr/bin:/bin'].filter(path => path !== undefined).join(':')}),
     HOME: home, CODEX_HOME: home, SHELL: '/bin/sh'};
 }
 
@@ -148,8 +154,11 @@ export async function checkCodexUserConfig(home: string): Promise<void> {
   }
 }
 
-export async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise<string> {
+export async function workerHome(home: string, environment: NodeJS.ProcessEnv,
+  verifyStorage?: (home: string, directories: readonly string[]) => Promise<void>): Promise<string> {
   const path = await checkStateDirectory(home);
+  const directories = Object.values(startupStorage(path));
+  await verifyStorage?.(path, directories);
   const userHomes = await Promise.all([userInfo().homedir, environment.HOME]
     .flatMap(value => value === undefined || value === '' ? [] : [canonical(resolve(value))]));
   const profileRoots = userHomes.map(userHome => join(userHome, '.codex'));
@@ -165,7 +174,7 @@ export async function workerHome(home: string, environment: NodeJS.ProcessEnv): 
     throw new Error('codex worker credentials must be private to this profile');
   }
   await checkPrivateEntries(path);
-  for (const directory of Object.values(startupStorage(path))) {
+  for (const directory of directories) {
     await prepareStateDirectory(directory);
     await checkPrivateEntries(directory);
   }
@@ -180,7 +189,8 @@ export function codexArguments(cwd: string, profile: string, home: string, prote
   const toolReads = toolchain === undefined ? {} : Object.fromEntries([toolchain.bin, ...toolchain.readable, ...gitReads].map(path => [path, 'read']));
   const commonDeny = Object.fromEntries([toolchain?.gitView?.common, toolchain?.protectedGit]
     .flatMap(path => path === undefined ? [] : [[path, 'deny']]));
-  const filesystem = {':minimal': 'read', ...commonDeny, ...toolReads, [cwd]: 'write', [join(cwd, '.git')]: 'read',
+  const linuxDenials = toolchain?.linux === true ? {'/mnt': 'deny', '/init': 'deny', '/run/WSL': 'deny'} : {};
+  const filesystem = {':minimal': 'read', ...linuxDenials, ...commonDeny, ...toolReads, [cwd]: 'write', [join(cwd, '.git')]: 'read',
     [join(cwd, '.codex')]: 'read', [join(home, 'auth.json')]: 'deny', [join(home, USER_CONFIG)]: 'deny', ...(protectedRoot === undefined ? {} : {[protectedRoot]: 'deny'})};
   const rules = Object.entries(filesystem).map(([path, access]) => `${JSON.stringify(path)}=${JSON.stringify(access)}`).join(',');
   const {sqlite, logs} = startupStorage(home);
@@ -201,27 +211,103 @@ export function codexArguments(cwd: string, profile: string, home: string, prote
     '-c', `shell_environment_policy.include_only=${JSON.stringify(shellKeys)}`,
     ...Object.entries(toolVariables).flatMap(([name, value]) => configArg(`shell_environment_policy.set.${name}`, value)),
     '-c', `projects={${JSON.stringify(cwd)}={trust_level="untrusted"}}`,
+    ...(toolchain?.linux === true ? configArg('features.use_legacy_landlock', false) : []),
     ...configArg('default_permissions', profile),
     '-c', `permissions.${profile}.filesystem={${rules}}`,
     ...configArg(`permissions.${profile}.network.enabled`, false)];
 }
 
+const WSL_BOUNDARY_REFUSAL = 'Codex could not verify the WSL2 bubblewrap boundary, Node 24/npm and Linux Git. Check the PC worker profile and local sandbox setup.';
+/** The shell must execute, write in its own checkout and fail to reach the synthetic outside file or listener. */
+async function verifyLinuxBoundary(cwd: string, home: string, runSandbox: (command: string[]) => Promise<unknown>): Promise<void> {
+  const canary = randomUUID();
+  const port = createServer(socket => socket.destroy());
+  let insideProbe: string | undefined, outsideProbe: string | undefined;
+  try {
+    insideProbe = await mkdtemp(join(cwd, '.bunny-sandbox-'));
+    outsideProbe = await mkdtemp(join(home, 'sandbox-sentinel-'));
+    const target = join(outsideProbe, 'private'), alias = join(insideProbe, 'alias'), marker = join(insideProbe, 'marker');
+    await writeFile(target, canary, {mode: 0o600});
+    await symlink(target, alias);
+    port.listen(0, '127.0.0.1');
+    await once(port, 'listening');
+    const address = port.address();
+    if (address === null || typeof address === 'string') throw new Error('the qualification listener did not start');
+    const script = [
+      'const fs = require("node:fs"), net = require("node:net");',
+      'const [marker, target, alias, port] = process.argv.slice(1);',
+      'for (const path of [target, alias]) {',
+      '  try { fs.openSync(path, "r"); process.exit(2); } catch {}',
+      '  try { fs.openSync(path, "a"); process.exit(3); } catch {}',
+      '}',
+      'const socket = net.createConnection({host:"127.0.0.1", port:Number(port)});',
+      'socket.on("connect", () => process.exit(4));',
+      'socket.on("timeout", () => process.exit(5));',
+      'socket.on("error", () => fs.writeFileSync(marker, "confined"));',
+      'socket.setTimeout(1000);',
+    ].join('\n');
+    await runSandbox(['node', '-e', script, marker, target, alias, String(address.port)]);
+    if (await readFile(marker, 'utf8') !== 'confined' || await readFile(target, 'utf8') !== canary) {
+      throw new Error('the Linux sandbox did not prove filesystem and network isolation');
+    }
+  } finally {
+    port.close();
+    await Promise.all([insideProbe, outsideProbe].flatMap(path => path === undefined ? [] : [rm(path, {recursive: true, force: true}).catch(() => {})]));
+  }
+}
+
 /** Prove that the same CLI sandbox can execute the selected tools before it receives a brief or releases a terminal plan. */
 export async function verifyCodexToolchain(executable: string, cwd: string, profile: string, home: string,
-  environment: NodeJS.ProcessEnv, protectedRoot?: string, signal?: AbortSignal, protectedGit?: string): Promise<CodexToolchain> {
-  const distribution = await prepareCodexToolchain(home);
-  const gitView = await prepareLinkedGitView(cwd, home, signal);
+  environment: NodeJS.ProcessEnv, protectedRoot?: string, signal?: AbortSignal, protectedGit?: string,
+  host: CodexToolchainHost = 'darwin'): Promise<CodexToolchain> {
+  if (host === 'linux') {
+    if (!(await Promise.all([executable, cwd].map(wslCheckoutPath))).every(Boolean)) throw new WslStorageError();
+    await wslProfileStorage(home, [...Object.values(startupStorage(home)), join(home, 'toolchain')]);
+  }
+  const distribution = await prepareCodexToolchain(home, host, executable);
+  if (host === 'linux') {
+    const version = (await execute(executable, ['--version'], {cwd: home, env: codexEnvironment(environment, home, distribution),
+      signal, timeout: 5000, maxBuffer: 4096})).stdout.trim();
+    if (version !== `codex-cli ${WSL_CODEX_VERSION}`) throw new Error('the Linux Codex CLI version is not qualified');
+  }
+  const gitView = await prepareLinkedGitView(cwd, home, signal, host);
   const toolchain = {...distribution, ...(gitView === undefined ? {} : {gitView}), ...(protectedGit === undefined ? {} : {protectedGit})};
   try {
     const git = gitView === undefined ? 'git --no-optional-locks -c core.fsmonitor=false' : 'git';
     await checkCodexUserConfig(home);
     const probe = `node --version && npm --version && ${git} status --porcelain >/dev/null`;
-    await execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
-      '--', '/bin/sh', '-c', probe], {cwd: home, env: codexEnvironment(environment, home, toolchain), signal, timeout: 5000, maxBuffer: 8192});
+    const runSandbox = (command: string[]) => execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot, toolchain),
+      '--', ...command], {cwd: home, env: codexEnvironment(environment, home, toolchain), signal, timeout: 5000, maxBuffer: 8192});
+    await runSandbox(['/bin/sh', '-c', probe]);
+    if (host === 'linux') await verifyLinuxBoundary(cwd, home, runSandbox);
     return toolchain;
   } catch (error) {
     await releaseCodexToolchain(toolchain);
     throw error;
+  }
+}
+
+/** A signed-out and network-isolated smoke of the selected CLI. Used before a PC worker advertises Codex. */
+export async function qualifyWslCodex(configuration: CodexConfiguration, environment: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  if (!isWsl2Host() || process.getuid?.() === 0) return false;
+  const signal = AbortSignal.timeout(15_000);
+  let cwd: string | undefined, probeHome: string | undefined, toolchain: CodexToolchain | undefined;
+  try {
+    const scratch = await realpath(tmpdir());
+    if (!await wslCheckoutPath(scratch) || !await wslCheckoutPath(configuration.executable)) return false;
+    const home = await workerHome(configuration.home, environment, wslProfileStorage);
+    cwd = await mkdtemp(join(scratch, 'bunny-wsl-codex-'));
+    probeHome = await mkdtemp(join(home, 'signed-out-probe-'));
+    await execute('/usr/bin/git', ['-c', 'init.templateDir=', 'init', '--quiet'], {
+      cwd, env: {PATH: '/usr/bin:/bin', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null'}, signal, maxBuffer: 4096,
+    });
+    toolchain = await verifyCodexToolchain(configuration.executable, cwd, `bunny-worker-${randomUUID()}`, probeHome,
+      environment, undefined, signal, undefined, 'linux');
+    return true;
+  } catch {return false;}
+  finally {
+    if (toolchain !== undefined) await releaseCodexToolchain(toolchain);
+    await Promise.all([cwd, probeHome].flatMap(path => path === undefined ? [] : [rm(path, {recursive: true, force: true}).catch(() => {})]));
   }
 }
 
@@ -406,8 +492,12 @@ async function isolatedSettings(wire: Wire, cwd: string, home: string): Promise<
 
 export function codexAdapter(configuration: CodexConfiguration, options: {
   environment?: NodeJS.ProcessEnv; transport?: CodexTransport; version?: () => Promise<string | null>; toolchain?: typeof verifyCodexToolchain;
+  host?: CodexToolchainHost;
 }): CodingAdapter {
-  const environment = options.environment ?? process.env;
+  const inherited = options.environment ?? process.env;
+  const environment = options.host === 'linux' ? {...inherited, PATH: '/usr/bin:/bin'} : inherited;
+  const checkStorage = options.host === 'linux' ? wslProfileStorage : undefined;
+  let linuxQualified = false;
   const transport = options.transport ?? openCodex;
   // All wires in this adapter use the same private profile. Evidence from an older probe cannot clear a newer refusal.
   let quotaRevision = 0, quotaBlocked = false;
@@ -449,15 +539,22 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const signal = AbortSignal.timeout(PROBE_MS);
       let home: string, version: string | null;
       try {
-        home = await workerHome(configuration.home, environment);
+        if (options.host === 'linux' && !linuxQualified) {
+          linuxQualified = await qualifyWslCodex(configuration, environment);
+          if (!linuxQualified) return UNKNOWN_READINESS;
+        }
+        if (checkStorage !== undefined && !await wslCheckoutPath(configuration.executable)) return UNKNOWN_READINESS;
+        home = await workerHome(configuration.home, environment, checkStorage);
         version = options.version === undefined ? parseVersion((await execute(configuration.executable, ['--version'], {cwd: home, env: codexEnvironment(environment, home), signal, maxBuffer: 4096})).stdout.replace(/^codex-cli\s+/, '')) : await options.version();
       } catch (error) {
         return {...UNKNOWN_READINESS, installed: object(error) && error.code === 'ENOENT' ? 'no' : 'unknown'};
       }
       const health: AdapterHealth = {...UNKNOWN_READINESS, installed: version === null ? 'unknown' : 'yes', version};
+      if (options.host === 'linux' && version !== WSL_CODEX_VERSION) return health;
       let wire: Wire | undefined;
       let unauthorized = false;
       try {
+        await checkStorage?.(home, Object.values(startupStorage(home)));
         await checkCodexUserConfig(home);
         const command = prepare(home, home, signal);
         wire = transport({...command, event: (method, data) => {if (observeAccount(method, data)) unauthorized = true;}, closed: () => {}});
@@ -475,9 +572,15 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const profileRefusal = {reason: 'refused' as const, summary: 'Codex needs a dedicated private worker profile with only its supported TUI marker.'};
       const revision = quotaRevision;
       if (input.signal.aborted) return {reason: 'cancelled'};
+      if (options.host === 'linux') {
+        if (!linuxQualified) return {reason: 'refused', summary: WSL_BOUNDARY_REFUSAL};
+        try {
+          await wslCheckoutIdentity(input.worktree);
+        } catch {return {reason: 'refused', summary: WSL_LOCATION_REFUSAL};}
+      }
       let home: string;
-      try {home = await workerHome(configuration.home, environment);}
-      catch {return profileRefusal;}
+      try {home = await workerHome(configuration.home, environment, checkStorage);}
+      catch (error) {return error instanceof WslStorageError ? {reason: 'refused', summary: WSL_LOCATION_REFUSAL} : profileRefusal;}
       const cwd = await realpath(input.worktree);
       if (inside(cwd, home) || inside(home, cwd)) return {reason: 'refused', summary: 'The Codex worker profile must be outside the worktree.'};
       const {signal} = input;
@@ -500,8 +603,14 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const protection = separated ? protectedRoot : undefined;
       const profile = `bunny-worker-${randomUUID()}`;
       let toolchain: CodexToolchain;
-      try {toolchain = await (options.toolchain ?? verifyCodexToolchain)(configuration.executable, cwd, profile, home, environment, protection, signal);}
-      catch {return signal.aborted ? {reason: 'cancelled'} : {reason: 'refused', summary: CODEX_TOOLCHAIN_REFUSAL};}
+      try {toolchain = await (options.toolchain ?? verifyCodexToolchain)(configuration.executable, cwd, profile, home, environment, protection, signal, undefined, options.host);}
+      catch {
+        if (signal.aborted) return {reason: 'cancelled'};
+        if (options.host === 'linux') linuxQualified = false;
+        return {reason: 'refused', summary: options.host === 'linux' ? WSL_BOUNDARY_REFUSAL : CODEX_TOOLCHAIN_REFUSAL};
+      }
+      try {await checkStorage?.(home, Object.values(startupStorage(home)));}
+      catch {await releaseCodexToolchain(toolchain); return {reason: 'refused', summary: WSL_LOCATION_REFUSAL};}
       try {await checkCodexUserConfig(home);}
       catch {await releaseCodexToolchain(toolchain); return profileRefusal;}
       if (signal.aborted) {await releaseCodexToolchain(toolchain); return {reason: 'cancelled'};}

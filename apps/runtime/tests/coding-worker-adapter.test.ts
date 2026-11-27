@@ -7,9 +7,10 @@ import {join} from 'node:path';
 import {after, test} from 'node:test';
 import {promisify} from 'node:util';
 import type {AdapterRun, AdapterSteer} from '../src/worker/adapter.js';
-import {codexAdapter, codexArguments, codexEnvironment, openCodex, verifyCodexToolchain, verifyCodexWriterBoundary, type CodexTransport} from '../src/worker/codex-adapter.js';
+import {codexAdapter, codexArguments, codexEnvironment, isWsl2Host, openCodex, qualifyWslCodex, verifyCodexToolchain, verifyCodexWriterBoundary, workerHome, type CodexTransport} from '../src/worker/codex-adapter.js';
 import {codexToolchainVariables, releaseCodexToolchain} from '../src/worker/codex-toolchain.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX} from '../src/worker/claude-writer.js';
+import {WSL_LOCATION_REFUSAL, wslProfileStorage} from '../src/worker/wsl-storage.js';
 import {claudeHarness} from '../src/worker/coding-worker.js';
 
 const profileHome = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-profile-')));
@@ -251,6 +252,47 @@ void test('an unavailable Codex toolchain refuses before creating the app-server
   assert.equal(result.reason, 'refused');
   assert.match(result.summary ?? '', /Node 24 distribution with npm and Apple Command Line Tools Git/u);
   assert.deepEqual(worker.requests, []);
+});
+
+void test('only WSL2 selects the PC Codex backend, and an unqualified backend opens no app-server', async () => {
+  assert.equal(isWsl2Host('linux', '6.6.1-microsoft-standard-WSL2'), true);
+  assert.equal(isWsl2Host('linux', '6.6.1-microsoft-standard'), false);
+  assert.equal(isWsl2Host('linux', '6.6.1-generic'), false);
+  assert.equal(isWsl2Host('win32', '6.6.1-microsoft-standard-WSL2'), false);
+  assert.equal(isWsl2Host('darwin', '6.6.1-microsoft-standard-WSL2'), false);
+  const config = {home: profileHome, executable: '/nonexistent/qualified-codex'};
+  assert.equal(await qualifyWslCodex(config), false);
+  const adapter = codexAdapter(config, {host: 'linux', transport: () => assert.fail('an unqualified worker attempted to start Codex')});
+  assert.deepEqual(await adapter.readiness(), {installed: 'unknown', signedIn: 'unknown', plan: null, version: null});
+  const result = await adapter.run({worktree: '/unused', brief, bounds, signal: new AbortController().signal, session: () => Promise.resolve()});
+  assert.equal(result.reason, 'refused');
+  assert.match(result.summary ?? '', /WSL2 bubblewrap/u);
+});
+
+void test('WSL refuses external worker storage before creating SQLite or log directories', async t => {
+  const profile = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-wsl-storage-')));
+  t.after(() => rm(profile, {recursive: true, force: true}));
+  const sqlite = join(profile, 'sqlite'), log = join(profile, 'log');
+  const inspect = (blocked: string) => (home: string, directories: readonly string[]) =>
+    wslProfileStorage(home, directories, path => Promise.resolve(path !== blocked));
+  await assert.rejects(workerHome(profile, {}, inspect(profile)), {message: WSL_LOCATION_REFUSAL});
+  for (const path of [sqlite, log]) await assert.rejects(access(path), {code: 'ENOENT'});
+  await mkdir(log, {mode: 0o700});
+  await assert.rejects(workerHome(profile, {}, inspect(log)), {message: WSL_LOCATION_REFUSAL});
+  await assert.rejects(access(sqlite), {code: 'ENOENT'});
+});
+
+void test('the Linux worktree profile retains subscription routing and fences WSL host bridges', () => {
+  const args = codexArguments('/home/synthetic/worktree', 'bunny-fixture', '/home/synthetic/profile', undefined,
+    {linux: true, bin: '/home/synthetic/shim', readable: ['/opt/synthetic/codex', '/usr/bin/bwrap']});
+  const rules = args.find(value => value.startsWith('permissions.bunny-fixture.filesystem='));
+  assert.ok(rules !== undefined);
+  for (const path of ['/mnt', '/init', '/run/WSL', '/home/synthetic/profile/auth.json']) assert.ok(rules.includes(`"${path}"="deny"`), path);
+  assert.ok(rules.includes('"/home/synthetic/worktree"="write"'));
+  assert.ok(rules.includes('"/usr/bin/bwrap"="read"'));
+  assert.ok(args.includes('permissions.bunny-fixture.network.enabled=false'));
+  assert.ok(args.includes('features.use_legacy_landlock=false'));
+  assert.ok(args.includes('openai_base_url="https://chatgpt.com/backend-api/codex"'));
 });
 
 void test('the qualified macOS Codex sandbox runs the narrow toolchain with fresh and successor worktrees',

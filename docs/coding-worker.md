@@ -303,10 +303,9 @@ The declaration includes repository names and revisions. Token and worktree
 paths stay on the worker. A revision-pinned start requires the exact declared
 commit and creates the worktree at that commit without fetching a newer one.
 
-Existing Mac configurations and credential paths continue to work. A routing
-declaration does not qualify a new host or harness. The bundled Mac adapters
-remain Mac-only for enrolled workers. The PC and cloud delivery tasks own
-their adapters, qualification and any installed changes.
+Existing Mac configurations and credential paths continue to work. An enrolled
+PC needs the local WSL2 Codex check below. Cloud workers have a separate
+qualification procedure.
 
 ## Readiness
 
@@ -444,6 +443,129 @@ loss after dispatch is uncertain. There is no automatic retry.
 Claude Code's first-event check observes the credential after the CLI starts.
 Installed qualification in #2115 still owns evidence of real sign-in,
 billing, sandbox behavior and opening the reported session in a native client.
+
+## Run the PC worker in WSL2
+
+The Mac still owns Hub state, devices and installation. The PC worker uses its
+existing private HTTPS route to the Mac and holds only its own coding-worker
+credential. Use the supported release after the installation coordinator
+confirms the selected Mac batch. [Private HTTPS route](../apps/runtime/PRIVATE-ACCESS.md)
+
+1. In Windows, use `wsl --list --verbose` to confirm the selected distro runs
+   WSL version 2. In that distro, run the worker as the ordinary owner account.
+   Keep the source, worktrees, worker configuration, token and Codex profile
+   on the distro's Linux filesystem.
+2. Use Node 24 with the npm installation beside it, distro Git at
+   `/usr/bin/git`, and bubblewrap at `/usr/bin/bwrap`. Install the standalone
+   Codex 0.163.0 Linux release binary for the architecture shown by `uname -m`.
+   Use the canonical path to the native binary in the configuration.
+   Verify the binary against its published release asset digest.
+   [Codex 0.163.0 release](https://github.com/openai/codex/releases/tag/rust-v0.163.0)
+3. Build the pinned Hub source with `npm ci` and `npm run build`. Prepare a new
+   owner-only Codex profile directory and an allowlisted checkout with the
+   requested commit at its local `origin/main`. Use a disposable checkout for
+   the first trial.
+4. Write an owner-only `coding-worker/1.3` JSON configuration. Use the existing
+   private HTTPS origin for `edge` and a private Linux path for `tokenFile`.
+   Set `source` to `bunny/parts/coding-worker-pc`, `toolchains` to
+   `["node24", "wsl2"]`, and `repositories` to the selected repository name
+   and checkout path. Set `codex.executable` to the canonical binary and
+   `codex.home` to the separate profile. The PC uses Codex alone, so omit
+   `claude` and `nativeClients`.
+5. From the pinned source directory, run the signed-out preflight.
+
+   ```sh
+   node apps/runtime/bin/coding-worker.mjs verify-wsl /absolute/private/coding-worker.json
+   ```
+
+   Expect `coding-worker: WSL2 Codex sandbox and toolchain verified without an account or a model turn`.
+   The preflight checks each configured checkout, its actual Git metadata
+   and its `.local/worktrees` path before testing in a disposable checkout.
+   Keep the checkout and Git metadata on the distro's root filesystem, with
+   no symlink in either worktree-parent component. If `/tmp` is a separate
+   filesystem, set `TMPDIR` to an owner-only directory on the distro's root
+   filesystem for the preflight and worker. It uses an empty child profile
+   and requires a real checkout write, tests an outside file and a private
+   loopback listener, and checks Node, npm and Git in the same Codex profile.
+   The preflight opens no worker token and sends no model request.
+   A namespace or toolchain refusal leaves the worker unqualified. Keep the
+   existing kernel protections. [Codex Linux sandbox](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/linux-sandbox/README.md)
+6. After the installation coordinator confirms enrollment and the pinned Hub
+   release, sign in on the PC under its dedicated Codex profile. Use the personal
+   ChatGPT sign-in with file-based storage. The owner can use the device-code
+   flow if the distro cannot open the browser callback.
+   [Codex CLI authentication](https://developers.openai.com/codex/auth)
+7. Verify that the owner grants the approved repository, brief and needed
+   input fields to `coding-worker:pc`. The Mac's worker grant does not apply
+   to PC jobs. Keep the owner-issued PC bearer token in the private
+   `tokenFile`. From the
+   pinned runtime source, start one worker with this configuration.
+
+   ```sh
+   node apps/runtime/bin/coding-worker.mjs /absolute/private/coding-worker.json
+   ```
+
+   Keep the foreground shell open. To stop the worker, interrupt that process
+   and wait for it to exit. Before any replacement, confirm the old endpoint
+   has gone and reconcile attempts whose delivery or writer release is unclear.
+   Keep token, account and checkout paths out of the receipt.
+
+Read back **PC** and **Codex** in Jobs after approving a bounded synthetic job.
+Confirm the exact pinned revision and checkout marker, then compare the
+named check result. For the PC Docker test profile, follow the measured WSL
+test settings and set `BUNNY_TEST_HOST=pc` when invoking a test command that
+uses it. [Test work on the PC](development.md#test-work-on-the-pc)
+
+The WSL worker accepts named live messages and stop requests through Jobs when
+the exact attempt is running. The headless CLI has no attachable terminal.
+Saved terminal continuation requires a stopped writer and a successor checkout.
+The Mac also applies an outer write fence to the whole interactive Codex CLI,
+separate from the sandbox used for its model commands. The PC does not yet have
+qualified evidence for that outer fence, so Jobs offers no terminal or Desktop
+launch for PC attempts. Keep the native attempt unopened until that route has its
+own qualification.
+
+### Try the signed-out preflight before enrollment
+
+From the built candidate source on the PC, set `CODEX_EXECUTABLE` to the
+verified standalone Linux binary. This example uses a fresh local repository,
+an empty profile and an example HTTPS origin. It leaves the token path absent.
+
+```sh
+(
+  set -eu
+  umask 077
+  probe="$(mktemp -d "$HOME/bunny-wsl-probe.XXXXXXXX")"
+  trap 'rm -rf -- "$probe"' EXIT
+  mkdir -m 700 "$probe/profile" "$probe/repository" "$probe/tmp"
+  git -C "$probe/repository" init --quiet --initial-branch=main --template=
+  git -C "$probe/repository" -c core.hooksPath=/dev/null \
+    -c user.name='Synthetic fixture' -c user.email='fixture@example.invalid' \
+    commit --quiet --allow-empty -m 'Signed-out preflight fixture'
+  git -C "$probe/repository" update-ref refs/remotes/origin/main HEAD
+  node - "$probe" "$CODEX_EXECUTABLE" <<'NODE'
+const {writeFileSync, realpathSync} = require('node:fs');
+const {join} = require('node:path');
+const [, , root, executable] = process.argv;
+const config = {
+  schema: 'coding-worker/1.3',
+  source: 'bunny/parts/coding-worker-pc',
+  edge: 'https://example.invalid',
+  tokenFile: join(root, 'unused-token'),
+  repositories: [{name: 'fixture', path: join(root, 'repository')}],
+  toolchains: ['node24', 'wsl2'],
+  codex: {executable: realpathSync(executable), home: join(root, 'profile')},
+};
+writeFileSync(join(root, 'worker.json'), JSON.stringify(config), {mode: 0o600, flag: 'wx'});
+NODE
+  env -u CODEX_HOME TMPDIR="$probe/tmp" \
+    node apps/runtime/bin/coding-worker.mjs verify-wsl "$probe/worker.json"
+)
+```
+
+Share the success line or fixed refusal and the tool versions. Keep host
+paths and account information private. The signed-out result qualifies the
+local sandbox and toolchain only.
 
 ## Install once
 

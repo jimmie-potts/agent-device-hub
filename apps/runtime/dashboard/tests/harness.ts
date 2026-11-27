@@ -87,6 +87,8 @@ export type WorldOptions = {
   artRecentLimit?: number;
   /** A coding-worker credential and the delegation tool, so a journey can connect a fake worker through the real gateway (Hub #502). */
   coding?: boolean;
+  /** Give the synthetic PC endpoint the fixture repository and brief grants. */
+  codingPc?: boolean;
   /** Synthetic browser qualification only; never a real voice or installed receipt. */
   speech?: boolean;
   microduck?:boolean;
@@ -159,6 +161,7 @@ export type World = {
   readonly readerToken: string;
   /** The coding-worker credential's token when the world was started with `coding`; never written anywhere else. */
   readonly codingToken: string;
+  readonly codingPcToken: string;
   readonly musicCaptureToken: string;
   readonly musicPlaybackToken: string;
   readonly stateDir: string;
@@ -259,6 +262,7 @@ export async function startWorld(options: WorldOptions = {}, currentStep?: () =>
   const consumerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const readerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const codingToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
+  const codingPcToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const musicCaptureToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const musicPlaybackToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const receiptToken = randomBytes(32).toString('base64url');
@@ -269,6 +273,7 @@ export async function startWorld(options: WorldOptions = {}, currentStep?: () =>
     {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readerToken), scopes: ['read']},
     ...(options.readReceipts === true ? [{id: receipt.slice('bunny/parts/'.length), source: receipt, digest: tokenDigest(receiptToken), scopes: ['read', 'ingest']}] : []),
     ...(options.coding === true ? [{id: 'coding-worker', source: 'bunny/parts/coding-worker', digest: tokenDigest(codingToken), scopes: [], role: 'coding-worker'}] : []),
+    ...(options.codingPc === true ? [{id: 'coding-worker-pc', source: 'bunny/parts/coding-worker-pc', digest: tokenDigest(codingPcToken), scopes: [], role: 'coding-worker'}] : []),
     ...(options.musicCapture === true ? [{id: 'music-producer', source: 'bunny/parts/music-producer', digest: tokenDigest(musicCaptureToken), scopes: [], role: 'music-producer'}] : []),
     ...(options.musicPlayback === true ? [{id: 'music-playback', source: MUSIC_PLAYBACK_SOURCE, digest: tokenDigest(musicPlaybackToken), scopes: [], role: 'music-playback-producer'}] : []),
   ]}));
@@ -305,12 +310,18 @@ export async function startWorld(options: WorldOptions = {}, currentStep?: () =>
   const wisprConfig = options.wispr === undefined ? undefined : await prepareWisprFixture(configDir, now(), {
     observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true, wholeDay: options.wispr.wholeDay ?? false,
   });
+  const pcSharing = options.codingPc === true ? [
+    {source: 'coding', field: 'repository', record: 'agent-device-hub'},
+    {source: 'coding', field: 'brief', record: 'agent-device-hub'},
+    {source: 'conversation', field: 'text'},
+    {source: 'devices', field: 'status', record: 'hub'},
+  ].map(grant => ({...grant, caller: 'owner', companion: 'bunny', destination: 'coding-worker:pc', purpose: 'brief', allow: true})) : [];
   const moduleConfig = {
     ...(options.art === true ? {art: options.artRecentLimit === undefined ? {} : {recentLimit: options.artRecentLimit}} : {}),
     ...(options.artSchedule === undefined ? {} : {weather: WEATHER_SECTION}),
     ...(options.tidbyt === true ? {tidbyt: {...(options.tronbyt === undefined ? TIDBYT_SECTION : TRONBYT_SIMULATED_SECTION), secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
-    ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : []), ...(options.assistantLights === true ? ['read_lifx', 'set_lifx_power', 'set_lifx_brightness'] : []), ...(options.assistantWemo === true ? ['read_wemo', 'set_wemo_power'] : []), ...(options.assistantCatalog ?? [])]}}} : {}),
+    ...(options.companions === true ? {companions: {...(pcSharing.length === 0 ? {} : {sharing: pcSharing}), assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : []), ...(options.assistantLights === true ? ['read_lifx', 'set_lifx_power', 'set_lifx_brightness'] : []), ...(options.assistantWemo === true ? ['read_wemo', 'set_wemo_power'] : []), ...(options.assistantCatalog ?? [])]}}} : {}),
     ...(options.microduck===true?{microduck:options.microduckSection??MICRODUCK_SIMULATED_SECTION}:{}),
     ...(options.reachy === true ? {'reachy-mini':REACHY_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
@@ -448,7 +459,7 @@ export async function startWorld(options: WorldOptions = {}, currentStep?: () =>
       assert.ok(!('error' in result));assert.equal(result.browser?.status, 'tracked');
     },
     ...(options.readReceipts === true ? {readProducer} : {}),
-    readerToken, codingToken, musicCaptureToken, musicPlaybackToken,
+    readerToken, codingToken, codingPcToken, musicCaptureToken, musicPlaybackToken,
     credentialAction:async(family,target,data)=>{
       const response=await fetch(`${runtime.url}/api/v2/commands/${family}`,{method:'POST',headers:{authorization:`Bearer ${consumerToken}`,'content-type':'application/json'},body:JSON.stringify({target,data,requestId:randomUUID()})});
       return {status:response.status,body:await response.json()};

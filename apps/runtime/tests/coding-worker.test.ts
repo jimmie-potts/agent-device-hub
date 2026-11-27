@@ -3,7 +3,7 @@
 // and stops the harness on cancel. No real `claude`, edge or network.
 import assert from 'node:assert/strict';
 import {execFile, execFileSync} from 'node:child_process';
-import {cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
+import {access, cp, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile} from 'node:fs/promises';
 import {once} from 'node:events';
 import {createConnection} from 'node:net';
 import {tmpdir} from 'node:os';
@@ -16,6 +16,7 @@ import type {Command, Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
 import type {CodingAdapter} from '../src/worker/adapter.js';
+import {WSL_LOCATION_REFUSAL, wslCheckoutIdentity, wslGit, wslWorktreeParent} from '../src/worker/wsl-storage.js';
 import {CodingWorker, DEFAULT_ALLOWED_TOOLS, DENIED_TOOLS, STOPPED_RUN_MS, assembleResult, parseConfiguration, type GitRunner, type Harness, type ProbeTimer} from '../src/worker/coding-worker.js';
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], {encoding: 'utf8', env: {...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 't@example', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 't@example'}}).trim();
@@ -79,7 +80,7 @@ function fakeEdge() {
 
 void test('the configuration names an origin, a token file, allowlisted repositories and a bounded harness', () => {
   const good = parseConfiguration(configuration('/tmp/repo'));
-  assert.equal(good.edge, 'http://127.0.0.1:18788'); assert.deepEqual(good.repositories, [{name: 'agent-device-hub', path: '/tmp/repo'}]); assert.equal(good.claude.permissionMode, 'acceptEdits');
+  assert.equal(good.edge, 'http://127.0.0.1:18788'); assert.deepEqual(good.repositories, [{name: 'agent-device-hub', path: '/tmp/repo'}]); assert.equal(good.claude?.permissionMode, 'acceptEdits');
   for (const [changed, reason] of [[{schema: 'other'}, /not a coding-worker/], [{edge: 'http://127.0.0.1:18788/path'}, /origin/], [{tokenFile: 'relative'}, /absolute/],
     [{repositories: []}, /one to sixteen/], [{repositories: [{name: 'Bad Name', path: '/tmp/x'}]}, /distinct lowercase name/], [{claude: {executable: 'claude'}}, /absolute path/],
     [{claude: {executable: '/x/claude', permissionMode: 'bypassPermissions'}}, /permissionMode/], [{claude: {executable: '/x/claude', allowedTools: ['Bash(git push*)']}}, /without push/],
@@ -918,4 +919,29 @@ void test('an enrolled worker declares exact local revisions, rejects mismatches
   assert.deepEqual(edge.respond(command({...start, revision})), {status: 'accepted'});
   await until(() => edge.progress.some(item => item.status === 'failed'));
   assert.deepEqual(observed, [revision]);
+});
+
+
+void test('WSL storage checks the actual Git common directory and both worktree-parent components before mutation', async t => {
+  const repo = await realpath(await repository(t));
+  const external = join(dirname(repo), 'external-volume'), linked = join(dirname(repo), 'linked');
+  await mkdir(external);
+  const gitRepo = join(external, 'source');
+  await wslGit(dirname(repo), ['clone', '--quiet', '--no-local', repo, gitRepo]);
+  await wslGit(gitRepo, ['worktree', 'add', '--quiet', '--detach', linked]);
+  const onDistro = (path: string) => Promise.resolve(path !== external && !path.startsWith(external + '/'));
+  const identity = await wslCheckoutIdentity(repo, wslGit, onDistro);
+  assert.equal(identity.common, join(repo, '.git'));
+  assert.equal(await wslWorktreeParent(repo, onDistro), join(repo, '.local', 'worktrees'));
+  await assert.rejects(access(join(repo, '.local')), {code: 'ENOENT'});
+  await assert.rejects(wslCheckoutIdentity(linked, wslGit, onDistro), {message: WSL_LOCATION_REFUSAL});
+  await assert.rejects(access(join(linked, '.local')), {code: 'ENOENT'});
+  await symlink(external, join(repo, '.local'));
+  await assert.rejects(wslWorktreeParent(repo, onDistro), {message: WSL_LOCATION_REFUSAL});
+  await assert.rejects(access(join(external, 'worktrees')), {code: 'ENOENT'});
+  await rm(join(repo, '.local'));
+  const local = join(repo, '.local');
+  await mkdir(local);
+  await symlink(external, join(local, 'worktrees'));
+  await assert.rejects(wslWorktreeParent(repo, onDistro), {message: WSL_LOCATION_REFUSAL});
 });

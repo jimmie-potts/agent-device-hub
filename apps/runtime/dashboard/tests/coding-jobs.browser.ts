@@ -7,7 +7,7 @@ import type {CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {feed, startWorld} from './harness.ts';
 
 export async function codingJobsJourney(browser: Browser): Promise<void> {
-  const world = await startWorld({companions: true, coding: true, assistantProvider: {
+  const world = await startWorld({companions: true, coding: true, codingPc: true, assistantProvider: {
     name: 'synthetic', model: 'synthetic', turn: input => {
       const owner = input.transcript.find(item => item.role === 'owner');
       if (owner?.text.startsWith('Please delegate') === true && input.transcript.length === 1) {
@@ -231,5 +231,57 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await page.goto(`${world.url}/#/module/companions/assistant`);
     await page.locator('.rail-conversations').getByRole('link', {name: /B\.U\.N\.N\.Y\./u}).click();
     await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).waitFor();
+
+    const pc = await connectRemote({url: world.url, source: 'bunny/parts/coding-worker-pc', token: world.codingPcToken});
+    try {
+      const pcCommands: CodingWork[] = [];
+      const pcEndpoint = await pc.openEndpoint<CodingWork>({family: 'coding-work', respond: command => {
+        pcCommands.push(command.data);
+        return {status: 'accepted'};
+      }});
+      const pcRevision = 'c'.repeat(40);
+      const pcEnabled = await pcEndpoint.request('coding-endpoint', {
+        type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.5',
+        data: {requestId: randomUUID(), action: 'enable', capacity: 'uncapped', harnesses: [{
+          harness: 'codex', capabilities: {steering: 'live', resume: 'unsupported', review: true},
+          installed: 'yes', version: '0.163.0', signedIn: 'yes', plan: 'plus', limits: null, limitsObservedAtMs: null, checkedAtMs: Date.now(),
+        }], worker: {os: 'linux', toolchains: ['wsl2', 'node24'], repositories: [{name: 'agent-device-hub', revision: pcRevision}], pressure: 'normal', testSlots: 8}},
+      }, {timeoutMs: 5000});
+      assert.equal(pcEnabled.status, 'accepted');
+      await conversation.getByRole('button', {name: 'Cancel task', exact: true}).click();
+      await newConversation.click();
+      await page.goto(`${world.url}/#/module/companions/jobs`);
+      await jobs.locator('summary').filter({hasText: /^New coding job$/u}).click();
+      await jobs.getByRole('combobox', {name: 'Companion'}).selectOption('bunny');
+      await jobs.getByRole('combobox', {name: 'Coding harness'}).selectOption('codex');
+      await jobs.getByRole('combobox', {name: 'Execution destination'}).selectOption('pc');
+      await jobs.getByRole('link', {name: 'Continue in Conversation'}).click();
+      const pcDraft = conversation.getByRole('form', {name: 'New coding job'});
+      await pcDraft.getByRole('textbox', {name: 'Job brief'}).fill('Check the synthetic fixture in agent-device-hub.');
+      await pcDraft.getByRole('button', {name: 'Request coding job'}).click();
+      await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).click();
+      await waitFor(() => pcCommands.length === 1);
+      const pcRun = pcCommands[0] ?? assert.fail('expected a job on the synthetic PC');
+      assert.ok(pcRun.action === 'start' && pcRun.harness === 'codex');
+      assert.equal(pcRun.revision, pcRevision);
+      await pcEndpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed',
+        dataschema: 'https://bunny.invalid/events/coding-progress/2.3',
+        data: {operationId: pcRun.operationId, status: 'started', setup: 'ready', harness: 'codex', sessionId: 'fixture-pc-session'}});
+      await page.goto(`${world.url}/#/module/companions/jobs`);
+      const pcCard = card(pcRun);
+      await pcCard.getByText('fixture-pc-session', {exact: true}).waitFor();
+      assert.equal(await pcCard.locator('dt').filter({hasText: /^Actual destination$/u}).locator('xpath=following-sibling::dd[1]').innerText(), 'PC');
+      await pcCard.getByText('Native clients are unavailable on PC.', {exact: true}).waitFor();
+      assert.equal(await pcCard.getByRole('button', {name: native}).count(), 0);
+      await pcCard.getByRole('button', {name: 'Message job', exact: true}).click();
+      await pcCard.getByRole('textbox', {name: 'Job instruction'}).fill('Keep the synthetic fixture.');
+      await pcCard.getByRole('button', {name: 'Send job message', exact: true}).click();
+      await waitFor(() => pcCommands.length === 2);
+      await pcCard.getByRole('button', {name: /Stop coding job/}).click();
+      await waitFor(() => pcCommands.length === 3);
+      assert.deepEqual(pcCommands.map(command => [command.action, command.operationId]),
+        [['start', pcRun.operationId], ['message', pcRun.operationId], ['cancel', pcRun.operationId]]);
+      assert.equal(commands.length, 8, 'PC actions also leave the Mac endpoint untouched');
+    } finally {await pc.close();}
   } finally {acceptMessage(); await worker.close(); await context.close(); await world.close();}
 }

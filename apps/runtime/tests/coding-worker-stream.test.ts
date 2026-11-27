@@ -287,7 +287,7 @@ void test('the harness environment is an allowlist plus configured names, with t
   assert.throws(() => parseConfiguration({schema: 'coding-worker/1.0', edge: 'http://127.0.0.1:18788', tokenFile: '/private/token', repositories: [{name: 'agent-device-hub', path: '/tmp/repo'}],
     claude: {executable: '/nonexistent/claude', environment: ['AWS_PROFILE']}}), /claude\.environment/);
   assert.deepEqual(parseConfiguration({schema: 'coding-worker/1.0', edge: 'http://127.0.0.1:18788', tokenFile: '/private/token', repositories: [{name: 'agent-device-hub', path: '/tmp/repo'}],
-    claude: {executable: '/nonexistent/claude', environment: ['SOME_TOOL_HOME']}}).claude.environment, ['SOME_TOOL_HOME']);
+    claude: {executable: '/nonexistent/claude', environment: ['SOME_TOOL_HOME']}}).claude?.environment, ['SOME_TOOL_HOME']);
 });
 
 /**
@@ -423,7 +423,7 @@ void test('the configuration may not add credential-named or loader variables; t
     'CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST', 'AWS_PROFILE']) {
     assert.throws(() => parse([name]), /claude\.environment/, name);
   }
-  assert.deepEqual(parse(['CLAUDE_CODE_OAUTH_TOKEN', 'SOME_TOOL_HOME', 'MAX_THINKING_TOKENS']).claude.environment, ['CLAUDE_CODE_OAUTH_TOKEN', 'SOME_TOOL_HOME', 'MAX_THINKING_TOKENS']);
+  assert.deepEqual(parse(['CLAUDE_CODE_OAUTH_TOKEN', 'SOME_TOOL_HOME', 'MAX_THINKING_TOKENS']).claude?.environment, ['CLAUDE_CODE_OAUTH_TOKEN', 'SOME_TOOL_HOME', 'MAX_THINKING_TOKENS']);
   // The harness filter applies the same rule, so a configured name the loader would have refused never passes either.
   const kept = harnessEnvironment({PATH: '/bin', GITHUB_TOKEN: 'synthetic', DYLD_INSERT_LIBRARIES: '/synthetic/lib', SOME_TOOL_HOME: '/synthetic'}, ['GITHUB_TOKEN', 'DYLD_INSERT_LIBRARIES', 'SOME_TOOL_HOME']);
   assert.deepEqual(Object.keys(kept).sort(), ['PATH', 'SOME_TOOL_HOME']);
@@ -541,5 +541,5 @@ void test('the configured-name rule also refuses personal access tokens, private
     assert.throws(() => parse([name]), /claude\.environment/, name);
   }
   // Whole words only: these carry no credential word.
-  assert.deepEqual(parse(['AUTHOR_NAME', 'PATCH_LEVEL', 'SOME_TOOL_HOME']).claude.environment, ['AUTHOR_NAME', 'PATCH_LEVEL', 'SOME_TOOL_HOME']);
+  assert.deepEqual(parse(['AUTHOR_NAME', 'PATCH_LEVEL', 'SOME_TOOL_HOME']).claude?.environment, ['AUTHOR_NAME', 'PATCH_LEVEL', 'SOME_TOOL_HOME']);
 });
