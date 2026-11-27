@@ -16,11 +16,8 @@ import {checkModuleRecord} from '@jimmie-potts/sdk/testing';
 import sharp from 'sharp';
 import {DEFAULT_LIMITS, DEFAULT_TRANSFORM, MediaStore, SIMULATOR_PROFILE} from '../../src/media/index.js';
 import {runWorker} from '../../src/media/worker-client.js';
-import {DashboardPager} from '../../src/presentation/agent-dashboard.js';
-import {renderDashboard} from '../../src/presentation/dashboard-pixels.js';
 import {momentContent, renderMomentContent} from '../../src/presentation/moment-content.js';
 import {nowPlayingView, renderNowPlaying} from '../../src/presentation/now-playing.js';
-import {monitorView} from '../../src/presentation/sources.js';
 import {STATUS_REFRESH_MS} from '../../src/presentation/monitor-presentation.js';
 import {PixooStore} from '../../src/module/store.js';
 import {HOSTED_PROFILE} from '../../src/module/configuration.js';
@@ -86,16 +83,13 @@ void describe('Monitor', () => {
       const requestId = await mode(world, 'work');
       assert.deepEqual((await world.outcome(requestId)).data, {requestId, result: 'succeeded', evidence: 'observed'});
       // The device shows the dashboard the presentation renders from the synced session: two frames, pulsing for approval.
-      const layout = new DashboardPager().layout(monitorView({state: 'current', revision: session.revision, sessions: [session]}), Date.now());
-      const expected = renderDashboard(layout).map(frameDigest);
-      assert.equal(expected.length, 2);
-      await waitFor(() => JSON.stringify(world.device.state().shown?.digests) === JSON.stringify(expected) ? true : undefined, 'the approval dashboard on the device');
+      const approval = await world.waitForSessionDashboard(session);
+      assert.equal(approval.length, 2);
       const display = await waitFor(() => world.display()?.showing === 'dashboard' ? world.display() : undefined, 'the display record');
       assert.deepEqual([display.mode, display.base, display.participating, display.monitor.matched, display.monitor.attention], ['work', 'status', true, 1, 1]);
       // The approval resolves: the dashboard stops pulsing, and the device shows it.
       const resolved = await world.publishSession({attention: []});
-      const calm = renderDashboard(new DashboardPager().layout(monitorView({state: 'current', revision: resolved.revision, sessions: [resolved]}), Date.now())).map(frameDigest);
-      await waitFor(() => JSON.stringify(world.device.state().shown?.digests) === JSON.stringify(calm) ? true : undefined, 'the calm dashboard on the device', 8000);
+      await world.waitForSessionDashboard(resolved, 8000);
       // Its own paints are the device's last transmission, with no request ID.
       const record = await waitFor(() => world.deviceRecord()?.lastTransmission.status === 'known' ? world.deviceRecord() : undefined, 'a transmission');
       assert.deepEqual(record.lastTransmission.status === 'known' ? record.lastTransmission.operationIds : [], ['dashboard']);
@@ -463,8 +457,7 @@ void describe('moments', () => {
       const capabilities = await waitFor(() => world.deviceRecord()?.capabilities.moments, 'the capability');
       assert.deepEqual(capabilities, {supported: true, moods: ['celebrate', 'setback', 'reminder'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png', 'gif'], maxBytes: 163_840, notices: ['rain-forecast']}});
       await world.outcome(await mode(world, 'work'));
-      await world.publishSession();
-      const dashboard = await world.tickUntil(() => world.device.state().shown?.digests[0], 'the dashboard on the device', 2000);
+      const dashboard = await world.waitForSessionDashboard(await world.publishSession(), 2000);
       const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-monitor', {startAtMs: world.now()})));
       await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 2000);
       const shownAt = world.now();
@@ -480,7 +473,7 @@ void describe('moments', () => {
       assert.equal(outcome.data.result, 'succeeded');
       assert.equal(outcome.data.evidence, 'transmitted');
       assert.deepEqual({...ended(world, requestId), endedAtMs: 0}, {requestId, momentId: 'm-monitor', ending: 'completed', endedAtMs: 0});
-      await world.tickUntil(() => world.device.state().shown?.digests[0] === dashboard ? true : undefined, 'the dashboard back on the device', 1000);
+      await world.waitForDashboard(dashboard, 1000);
       assert.equal(world.display()?.participating, true);
     });
   });
@@ -753,8 +746,7 @@ void describe('moments', () => {
     await within(world, async () => {
       await world.start();
       await world.outcome(await mode(world, 'free'));
-      await world.publishSession();
-      const dashboard = await world.tickUntil(() => world.device.state().shown?.digests[0], 'the dashboard on the device', 2000);
+      const dashboard = await world.waitForSessionDashboard(await world.publishSession(), 2000);
       const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-idle', {startAtMs: world.now(), durationMs: 1000, priorityClass: 'flourish', coversStatus: false})));
       await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 2000);
       const shownAt = world.now();
@@ -762,7 +754,7 @@ void describe('moments', () => {
       assert.equal(world.now() - shownAt, 1000, 'the moment lasted its second of the module\'s time');
       assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
       assert.equal(ended(world, requestId)?.ending, 'completed');
-      await world.tickUntil(() => world.device.state().shown?.digests[0] === dashboard ? true : undefined, 'the dashboard back on the device', 1000);
+      await world.waitForDashboard(dashboard, 1000);
       assert.deepEqual([world.display()?.mode, world.display()?.base], ['free', 'status']);
       assert.equal(world.display()?.player.intent, 'stopped');
     });
