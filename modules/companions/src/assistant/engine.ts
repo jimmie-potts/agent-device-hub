@@ -1714,7 +1714,7 @@ export class AssistantEngine {
       if (source === 'devices') {
         if (record === undefined || !local(source, field, record) || field === 'index' && !discover(source, field, record)) return false;
         if ((field === 'summary' || field === 'details') && (!local(source, 'status', record) || !local(source, 'details', record))) return false;
-        if (matchesCatalogSubject(catalogSubject, record)) devices.add(record);
+        if (matchesCatalogSubject(existingCatalogSubject, record)) devices.add(record);
       }
       return access(source, field, record);
     };
