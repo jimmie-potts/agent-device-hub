@@ -8,6 +8,17 @@ export const LIFX_COLOR_PARAMETERS = {
   saturation: {unit: 'percent', minimum: 0, maximum: 100, step: 1},
 } as const;
 
+export type ObservationBasis = {kind: 'brightness' | 'temperature'; observedAtMs: number; value: number};
+
+export function observationBasis(value: unknown): ObservationBasis | undefined {
+  if (!object(value) || Object.keys(value).length !== 3) return undefined;
+  const {kind, observedAtMs, value: reading} = value;
+  if ((kind !== 'brightness' && kind !== 'temperature') ||
+    typeof observedAtMs !== 'number' || !Number.isSafeInteger(observedAtMs) || observedAtMs < 0 ||
+    typeof reading !== 'number' || !Number.isInteger(reading) || reading < 0 || reading > (kind === 'brightness' ? 100 : 65535)) return undefined;
+  return {kind, observedAtMs, value: reading};
+}
+
 const lifx = 'bunny/modules/lifx', wemo = 'bunny/modules/wemo', nanoleaf = 'bunny/modules/nanoleaf';
 const pixoo = 'bunny/modules/pixoo', tidbyt = 'bunny/modules/tidbyt', volcano = 'bunny/modules/volcano';
 export const assistantDeviceOwners = [lifx, wemo, nanoleaf, pixoo, tidbyt, 'bunny/modules/roborock', volcano] as const;

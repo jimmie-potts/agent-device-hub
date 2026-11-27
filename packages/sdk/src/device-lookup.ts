@@ -1,4 +1,4 @@
-import {assistantRoutes, catalogFamily, LIFX_COLOR_PARAMETERS, catalogRoute, permitsDevice} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {assistantRoutes, catalogFamily, LIFX_COLOR_PARAMETERS, catalogRoute, permitsDevice, type ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {Sdk} from './sdk.js';
 import type {SyncOptions} from './sync.js';
@@ -70,26 +70,52 @@ export function deviceActionFamily(family: string): boolean {
   return generalAction(family) || catalogFamily(family) && catalogRoute(family).binding === 'device';
 }
 
+const maxObservationAge = (owner: string): number => owner === 'bunny/modules/wemo' ? WEMO_OBSERVATION_AGE_MS : MAX_OBSERVATION_AGE_MS;
+
+function colorObservationStale(device: DeviceRecord, stamp: number, now: number): boolean {
+  return stamp > now || now - stamp >= MAX_OBSERVATION_AGE_MS ||
+    (device.lastTransmission.status === 'known' && stamp < device.lastTransmission.transmittedAtMs);
+}
+
+export function currentObservationBasis(row: OwnedDevice, kind: ObservationBasis['kind'], now: number,
+  lifx?: LifxDeviceFacts): ObservationBasis | undefined {
+  const {owner, device} = row;
+  if (device.availability !== 'available' || device.held !== undefined) return undefined;
+  if (kind === 'temperature') {
+    const color = owner === LIFX && lifx?.id === device.id ? lifx.observed : undefined;
+    return color?.status === 'known' && !colorObservationStale(device, color.observedAtMs, now)
+      ? {kind, observedAtMs: color.observedAtMs, value: color.kelvin} : undefined;
+  }
+  const {observed} = device;
+  return observed.status === 'known' && observed.brightness.status === 'known' && !observationStale(device, now, maxObservationAge(owner))
+    ? {kind, observedAtMs: observed.observedAtMs, value: observed.brightness.value} : undefined;
+}
+
 export function deviceFacts(row: OwnedDevice, now: number, canControl: (family: string) => boolean,
   options: {maxAgeMs?: number; lifx?: LifxDeviceFacts} = {}) {
   const {device, owner} = row;
-  const age = owner === 'bunny/modules/wemo' ? WEMO_OBSERVATION_AGE_MS : MAX_OBSERVATION_AGE_MS;
+  const age = maxObservationAge(owner);
   const {brightness, power, modes, media, scenes, moments, zones} = device.capabilities;
   const observation = device.observed;
   const freshness = observation.status === 'unknown' ? 'unknown' :
     device.availability !== 'available' || observationStale(device, now, Math.min(age, options.maxAgeMs ?? Number.POSITIVE_INFINITY)) ? 'stale' : 'current';
   const light = owner === LIFX && options.lifx?.id === device.id ? options.lifx : undefined;
   const color = light?.observed;
-  const colorStale = color?.status === 'known' && (color.observedAtMs > now || now - color.observedAtMs >= age ||
-    device.lastTransmission.status === 'known' && color.observedAtMs < device.lastTransmission.transmittedAtMs);
+  const colorStale = color?.status === 'known' && colorObservationStale(device, color.observedAtMs, now);
   const actions = [...new Set([...Object.keys(generalDeviceActions), ...Object.keys(assistantRoutes)])].filter(family => canControl(family) && supportsDeviceAction(row, family) &&
     (family === 'lifx-color-set' ? light?.capabilities.color.supported === true
       : family === 'lifx-temperature-set' ? light?.capabilities.temperature.supported === true : true));
+  const observationBases = (['brightness', 'temperature'] as const).flatMap(kind => {
+    if (!actions.includes(kind === 'brightness' ? 'brightness-set' : 'lifx-temperature-set')) return [];
+    const basis = currentObservationBasis(row, kind, now, light);
+    return basis === undefined ? [] : [basis];
+  });
   return {
     owner, id: device.id, name: deviceLabel(device), configurationRevision: device.configurationRevision, generation: device.generation,
     lastReportedAvailability: device.availability, hold: device.held ?? null,
-    choices: {modes, media, scenes, moments, zones, power, brightness: brightness.supported ? {...brightness, unit: 'percent' as const, step: 1} : brightness},
-    observation: {freshness, value: observation}, actions,
+    choices: {modes, media: media.supported && owner === 'bunny/modules/pixoo'
+      ? {...media, playlistIdsComplete: false, renditionIdsComplete: false} : media, scenes, moments, zones, power, brightness: brightness.supported ? {...brightness, unit: 'percent' as const, step: 1} : brightness},
+    observation: {freshness, value: observation}, observationBases, actions,
     ...(light === undefined ? {} : {
       lightCapabilities: {
         color: light.capabilities.color.supported ? {supported: true, ...LIFX_COLOR_PARAMETERS} : light.capabilities.color,

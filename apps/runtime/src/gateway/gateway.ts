@@ -1,3 +1,4 @@
+import type {ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {historyFilter, type HistoryFilter, type HistoryPage} from '../core/history.js';
 import type {AutomationControls} from '../core/automation-part.js';
 import {holdsAutomationSecret, isAutomationDefinitionFamily} from '../core/automation-definitions.js';
@@ -908,14 +909,14 @@ export class Gateway {
       ? await readLifxDeviceFacts(this.#participant(principal.source), {timeoutMs: SYNC_TIMEOUT_MS, parent}) : undefined;
     if (!this.access.live(principal)) return errorBody('unauthenticated');
     const lifx = colors?.find(light => light.id === row.device.id);
-    return {devices: [deviceFacts(row, this.#options.clock.now(), () => principal.scopes.has('control'), lifx === undefined ? {} : {lifx})], unreadable};
+    return {devices: [deviceFacts(row, this.#options.clock.now(), family => principal.scopes.has('control') && credentialDeviceRefusal(family) === undefined, lifx === undefined ? {} : {lifx})], unreadable};
   }
 
   async #dispatchFor(id: string, input: ActionInput & {family: string}): Promise<ActionAnswer> {
     const credential = this.access.current(id);
     if (credential === undefined) return errorBody('unauthenticated', {detail: 'the credential was revoked'});
-    if (input.family.startsWith('reachy-')) return errorBody('forbidden', {detail: 'Reachy motion requires its explicit dashboard controls'});
-    if (input.family.startsWith('bb8-')) return errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'});
+    const restricted = credentialDeviceRefusal(input.family);
+    if (restricted !== undefined) return restricted;
     if (input.family === 'inbox-handle' && input.data.action === 'send-again') {
       try {
         const copy = await this.#copy('inbox-item', 'bunny/core');
@@ -975,6 +976,7 @@ export class Gateway {
       return await this.#options.host.invoke(CORE_MODULE, () => !this.access.live(principal)
         ? Promise.resolve(errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'})) : actions.dispatch({
         ...command, requestedBy: principal.source, ...(input.requestId === undefined ? {} : {requestId: input.requestId}),
+        ...(input.observationBasis === undefined ? {} : {observationBasis: input.observationBasis}),
         ...(request === undefined && principal.kind === 'credential' && deviceActionFamily(family) ? {deviceAdmission: {kind: 'mcp', live: () => this.access.live(principal)}} : {}),
         ...(parent === undefined ? {} : {parent}),
       }));
@@ -1167,7 +1169,14 @@ function recoveryInput(input: Record<string, unknown>): RecoveryInput {
 }
 
 /** An action's input (#782): its target's routing ID, the command's payload without its request ID, and an optional request ID. */
-type ActionInput = {target: string; data: Record<string, unknown>; requestId?: string};
+function credentialDeviceRefusal(family: string): ErrorBody | undefined {
+  if (family.startsWith('reachy-')) return errorBody('forbidden', {detail: 'Reachy motion requires its explicit dashboard controls'});
+  if (family.startsWith('bb8-')) return errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'});
+  if (family.startsWith('microduck-')) return errorBody('forbidden', {detail: 'MicroDuck controls require the operator dashboard session'});
+  return undefined;
+}
+
+type ActionInput = {target: string; data: Record<string, unknown>; requestId?: string; observationBasis?: ObservationBasis};
 
 function actionInput(input: Record<string, unknown>): ActionInput {
   const {target, data, requestId} = input;

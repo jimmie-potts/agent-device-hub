@@ -972,6 +972,73 @@ void test('Conversation reads shared device facts under its active sharing grant
   assert.deepEqual(JSON.parse(readings[1] ?? '{}'), {devices: [], unreadable: []});
 });
 
+for (const host of ['anthropic', 'openai'] as const) {
+  void test(`${host} receives exact current Kelvin facts under the device status grant`, async context => {
+    const now = 1_700_000_000_000, owner = 'bunny/modules/lifx';
+    const device: DeviceRecord = {...light('fixture-light', 'Fixture light'),
+      observed: {status: 'known', observedAtMs: now, power: {status: 'known', value: true}, brightness: {status: 'known', value: 35}}};
+    const hidden = light('hidden-light', 'PRIVATE_HIDDEN_FIXTURE');
+    const baseline = sharing(), readings: string[] = [];
+    let calls = 0, allowStatus = true;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {
+        messages?: {content: {type: string; content?: string}[]}[];
+        input?: {type?: string; output?: string}[];
+      };
+      const result = body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output ??
+        body.messages?.flatMap(message => message.content).filter(item => item.type === 'tool_result').at(-1)?.content;
+      const read = ++calls % 2 === 1, id = `call_facts_${String(calls)}`;
+      if (!read) {
+        assert.ok(result);
+        readings.push(result);
+      }
+      const tool = {name: 'read_devices', input: {owner, target: 'id:fixture-light'}};
+      return Promise.resolve(Response.json(host === 'anthropic'
+        ? {content: read ? [{type: 'tool_use', id, ...tool}] : [{type: 'text', text: 'Read complete.'}],
+          stop_reason: read ? 'tool_use' : 'end_turn', usage: {input_tokens: 20, output_tokens: 10}}
+        : {status: 'completed', output: read
+          ? [{type: 'function_call', id: `fc_${id}`, call_id: id, name: tool.name, arguments: JSON.stringify(tool.input)}]
+          : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Read complete.'}]}],
+          usage: {input_tokens: 20, output_tokens: 10}}));
+    };
+    const provider = host === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const w = await world(context, {provider, tools: ['read_devices', 'control_lifx_temperature_set'],
+      devices: source => source === owner ? [device, hidden] : [],
+      share: query => baseline(query) && !(query.destination === 'external-model' && query.source === 'devices' &&
+        (query.field === 'details' || query.record === hidden.id || query.field === 'status' && !allowStatus)),
+      dispatch: () => assert.fail('device discovery sends no command')}, undefined, now);
+    const lamp = w.bus.connect(owner);
+    context.after(() => lamp.close());
+    await lamp.serveSync(['device'], () => ({revision: 1, states: [device, hidden].map(row => ({type: 'org.bunny.device.updated', subject: row.id,
+      dataschema: DEVICE_POWER_READBACK_SCHEMA, data: row}))}));
+    await lamp.serveSync(['lifx-light'], () => ({revision: 1, states: [{type: 'org.bunny.lifx-light.updated', subject: device.id,
+      dataschema: 'https://bunny.invalid/events/lifx-light/2.1',
+      data: {id: device.id, revision: 1, capabilities: {color: {supported: false}, temperature: {supported: true, minimum: 2700, maximum: 6500}},
+        observed: {status: 'known', observedAtMs: now, hue: 0, saturation: 0, brightness: 35, kelvin: 3600}}}]}));
+    await control(w.core, w.module(), 'enable');
+
+    assert.equal((await input(w.core, w.module(), 'Set id:fixture-light to its warmest setting.')).status, 'accepted');
+    await until(() => readings.length === 1 && status(w) === 'succeeded');
+    const supplied = JSON.parse(readings[0] ?? '{}') as {devices: {id: string; lastReportedAvailability: string; actions: string[];
+      observationBases: {kind: string; observedAtMs: number; value: number}[];
+      lightCapabilities: {temperature: {minimum: number; maximum: number; unit: string}};
+    }[]};
+    const [facts] = supplied.devices;
+    assert.deepEqual(supplied.devices.map(row => row.id), [device.id]);
+    assert.equal(facts?.lastReportedAvailability, 'available');
+    assert.deepEqual(facts?.actions, ['lifx-temperature-set']);
+    assert.deepEqual(facts?.lightCapabilities.temperature, {supported: true, minimum: 2700, maximum: 6500, unit: 'kelvin', step: 1});
+    assert.deepEqual(facts?.observationBases, [{kind: 'temperature', observedAtMs: now, value: 3600}]);
+    assert.doesNotMatch(readings[0] ?? '', /PRIVATE_HIDDEN_FIXTURE|hidden-light/);
+
+    allowStatus = false;
+    assert.equal((await input(w.core, w.module(), 'Set id:fixture-light to its warmest setting.')).status, 'accepted');
+    await until(() => readings.length === 2 && status(w) === 'succeeded');
+    assert.deepEqual(JSON.parse(readings[1] ?? '{}'), {devices: []});
+  });
+}
+
 void test('Conversation reads a Wemo maximum-on deadline and recovers a lost copy through both read tools', async context => {
   const plug: DeviceRecord = {...light(PLUG_ID, 'Test plug'), kind: 'wemo', observed: {
     status: 'known', observedAtMs: TIMER_READ, power: {status: 'known', value: true}, brightness: unknown,

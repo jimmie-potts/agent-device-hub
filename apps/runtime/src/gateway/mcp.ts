@@ -1,3 +1,4 @@
+import {observationBasis, type ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 // MCP on the runtime (Hub #835), through `packages/mcp` unchanged: each module's read tools from its manifest, named
 // `<module>_<tool>`, the core's operator action, `core_recover_approval`, which sends the 2.0 `approval-recover`
 // command, and `core_send_command`, which sends a device's command, a moment or a mode change through the core's
@@ -49,7 +50,7 @@ export type McpHost = {
   /** Sends `approval-recover` to the core as the credential's source; resolves with the reply or a refusal. */
   recover: (credentialId: string, input: {session: string; turnId: string; expectedRevision: number; requestId?: string}) => Promise<{status: 'accepted'; requestId: string} | ErrorBody>;
   /** Sends one action through the core's dispatcher as the credential's source (#782); resolves with its answer. */
-  dispatch: (credentialId: string, input: {family: string; target: string; data: Record<string, unknown>; requestId?: string}) => Promise<ActionAnswer>;
+  dispatch: (credentialId: string, input: {family: string; target: string; data: Record<string, unknown>; requestId?: string; observationBasis?: ObservationBasis}) => Promise<ActionAnswer>;
   lookup: (credentialId: string, input: {owner: string; target: string}, parent: TraceContext) => Promise<DeviceLookupResult | ErrorBody>;
   access: Access;
   scheduler: {after: (delayMs: number, callback: () => void) => () => void};
@@ -206,6 +207,11 @@ function commandTool(host: McpHost, handling = false): ServiceExtension {
       properties: {
         family: {type: 'string', pattern: '^[a-z][a-z0-9]*(-[a-z0-9]+)+$', maxLength: 64}, target: {type: 'string', pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 128},
         data: {type: 'object'}, requestId: {type: 'string', pattern: ID},
+        observationBasis: {type: 'object', additionalProperties: false, required: ['kind', 'observedAtMs', 'value'], properties: {
+          kind: {enum: ['brightness', 'temperature']},
+          observedAtMs: {type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER},
+          value: {type: 'integer', minimum: 0, maximum: 65535},
+        }},
       },
     },
     outputSchema: resultSchema({
@@ -217,6 +223,7 @@ function commandTool(host: McpHost, handling = false): ServiceExtension {
       + 'or playback-control {"action": "pause"}, or label a session with session-label-set {"label": "Name", "expectedRevision": 1} '
       + '(null clears the label), through the core, which tracks it until its outcome. family is the command family, target the device\'s '
       + "routing ID or qualified session ID, and data the command's payload without a requestId. Use core_device_lookup for device choices and current guards. "
+      + 'For a relative change, pass the exact observation basis returned by lookup, plus device guards in data. '
       + 'accepted means the owner took responsibility; read its state to confirm the change. '
       + 'Never retry an uncertain or failed result automatically, and never reuse a requestId for another command.',
     annotations: {readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true},
@@ -228,7 +235,13 @@ function commandTool(host: McpHost, handling = false): ServiceExtension {
       const {family, target, data, requestId} = selected as {family: string; target: string; data: Record<string, unknown>; requestId?: string};
       if (family.startsWith('bb8-')) return failure(errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'}));
       if (Object.hasOwn(data, 'requestId')) return failure(errorBody('invalid-request', {detail: 'the command\'s payload names no requestId; pass it beside data'}));
-      const answer = await host.dispatch(credential.id, {family, target, data, ...(requestId === undefined ? {} : {requestId})});
+      const basis = observationBasis(args.observationBasis);
+      if (args.observationBasis !== undefined && (basis === undefined ||
+        (basis.kind === 'brightness' ? family !== 'brightness-set' : family !== 'lifx-temperature-set'))) {
+        return failure(errorBody('invalid-request', {detail: 'the observation basis must match the device command'}));
+      }
+      const answer = await host.dispatch(credential.id, {family, target, data, ...(requestId === undefined ? {} : {requestId}),
+        ...(basis === undefined ? {} : {observationBasis: basis})});
       return 'error' in answer ? failure(answer) : {data: {result: answer}};
     },
   };

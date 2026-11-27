@@ -1491,8 +1491,12 @@ requestId?}`, which sends a device's command or tracked session label through th
 the action route does. For actions that take device guards, pass the lookup's
 `configurationRevision` and `generation` as `expectedConfigurationRevision`
 and `expectedGeneration`. New MCP device requests and approved Conversation
-requests pass through the same tracker admission. Repeating an existing
-request ID follows the tracker's existing receipt rules. A tool's result is `{kind: "extension", data: {result}}`, and a refusal
+requests pass through the same tracker admission. For a relative brightness or
+Kelvin change, pass the matching entry from `observationBases` as the optional
+top-level `observationBasis`. A newer observation or device action requires a
+fresh read before a new relative command. Repeating the same request and basis
+follows the existing receipt rules. Pixoo's media lists are previews, and its
+writer validates exact IDs against the complete catalog. A tool's result is `{kind: "extension", data: {result}}`, and a refusal
 `{kind: "extension", data: {error}}` with the shared error body and
 `isError: true`. The refusals the MCP package makes itself, before a tool runs,
 such as arguments a tool does not take, keep its released 1.x `gateway-error`

@@ -2292,3 +2292,14 @@ The runtime SHALL expose the device lookup to read-scoped MCP clients using the 
 - **WHEN** equally authorized Conversation and MCP callers inspect the same configured device
 - **THEN** they receive equivalent identity, capability, availability and observation evidence
 - **AND** an invalid, conflicting or held request reaches no device writer, while repeating an admitted request ID retains the previous result without sending another command
+
+#### Scenario: A relative device command supplies the identified observation
+
+- **WHEN** a client sends a brightness or color-temperature change computed from a current reading
+- **THEN** the runtime SHALL check the exact observed time and value, target configuration and generation, plus pending and newer effects for the selected target before any send
+- **AND** a stale basis causes zero effects and needs a fresh reading and request, while an exact replay retains the original receipt
+
+#### Scenario: A device publishes a bounded catalog preview
+
+- **WHEN** a client supplies an exact playlist ID absent from the Pixoo preview
+- **THEN** the designated owner checks its complete catalog before admitting the action

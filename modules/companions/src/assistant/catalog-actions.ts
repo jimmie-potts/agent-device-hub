@@ -507,12 +507,18 @@ export class ConversationActions {
         return textResult({devices: [{owner: source, id: device.id, name: facts.name,
           lastReportedAvailability: facts.lastReportedAvailability, controls,
           brightness: controls.length > 0 ? facts.choices.brightness : undefined, actions: facts.actions,
-          observation: access('devices', 'details', device.id) ? facts.observation : undefined}]});
+          observation: facts.observation, observationBases: facts.observationBases}]});
       }
-      const facts = deviceFacts(selected, this.context.clock.now(), () => false);
-      return textResult({devices: [{owner: source, id: device.id, name: facts.name,
+      const now = this.context.clock.now();
+      const colors = source === LIFX ? await readLifxDeviceFacts(this.context.sdk, {timeoutMs: 1200, parent}) : undefined;
+      const lifx = colors?.find(light => light.id === device.id);
+      const facts = deviceFacts(selected, now, family => catalogFamily(family) && this.enabled.includes(catalogTool(family)) ||
+        family === 'brightness-set' && source === LIFX && this.enabled.includes(SET_LIFX_BRIGHTNESS),
+      lifx === undefined ? {} : {lifx});
+      if (source === WEMO) return textResult({devices: [{owner: source, id: device.id, name: facts.name,
         lastReportedAvailability: facts.lastReportedAvailability, observation: facts.observation.value, freshness: facts.observation.freshness,
-        ...(source === WEMO ? {maximumOnLimit: this.deviceDisplay.powerLimit(device.id, this.context.clock.now())} : {})}]});
+        maximumOnLimit: this.deviceDisplay.powerLimit(device.id, now)}]});
+      return textResult({devices: [facts]});
     }
     const {rows, unreadable} = await this.#deviceRecords(owners, parent);
     const visible = rows.filter(({device}) => access('devices', 'index', device.id) && access('devices', 'label', device.id));

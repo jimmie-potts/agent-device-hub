@@ -4,6 +4,9 @@
 - [x] Route both readers through the same SDK lookup with caller-specific grants.
 - [x] Route new device commands through common tracker admission and preserve replay and writer checks.
 
+- [x] Bind relative brightness and temperature to the observed value and time, and preserve exact replay.
+- [x] Maintain exact Pixoo playlist lookup beyond the advertised preview.
+
 ## 2. Verification
 
 - [x] Exercise both public readers and shared command admission against disposable device state.

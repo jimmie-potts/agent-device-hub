@@ -126,6 +126,7 @@ export class CompanionPart implements CorePart {
       const {family, target, requestId} = action;
       const type = family === 'mode-set' ? 'org.bunny.mode.set.requested' : family === 'power-set' ? 'org.bunny.power.set.requested' : 'org.bunny.brightness.set.requested';
       const answer = await core.dispatch({key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
+        ...(action.observationBasis === undefined ? {} : {observationBasis: action.observationBasis}),
         ...(family === 'mode-set' ? {} : {deviceAdmission: {kind: 'conversation', owner: 'owner' in action ? action.owner : ASSISTANT_LIGHT_OWNER, expiresAt: command.expiresat}}),
         draft: {type, subject: target, dataschema: `https://bunny.invalid/events/${family}/2.0`, data: action.data}});
       return 'error' in answer ? answer : {status: 'accepted'};

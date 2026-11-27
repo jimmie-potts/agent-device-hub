@@ -1,3 +1,4 @@
+import type {ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 // The core's action dispatcher, tracker and outcome intake (Hub #782, ADR 0012 "High-impact messages", "Errors,
 // effects and outcomes" and "Inbox and history"). It is part of the core, `bunny/core`, and keeps its rows in the core
 // store, so each step commits with its history rows in one transaction.
@@ -29,14 +30,14 @@ import {extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-
 import {CORE_SOURCE, coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {LIGHTING_SHOW_LIMITS} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {PrivateRequestDigest, SdkError,
-  acknowledgmentOf, readLifxDeviceFacts, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
+  acknowledgmentOf, deviceActionFamily, readLifxDeviceFacts, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing, Outcome} from '@jimmie-potts/sdk';
 import {DASHBOARD_SOURCE} from '../credentials.js';
 import {REGISTRY_REASONS} from '../diagnostics.js';
 import {kept, type OperationStep} from './history.js';
 import {DEADLINES, advance, kindOf, type Operation, type OperationEvent, type TakenOutcome} from './operations.js';
 import type {CoreStore, CoreTransaction} from './store.js';
-import {deviceRefusal, type DeviceAdmission} from './device-admission.js';
+import {deviceRefusal, observationRefusal, type DeviceAdmission} from './device-admission.js';
 
 /**
  * The core's own operator commands, which a remote grant may request directly (Hub #835's `control` scope): an approval
@@ -93,6 +94,7 @@ export type Action = {
   /** Who asks: an authenticated caller's source, or the core part that dispatches it. */
   readonly requestedBy: string;
   readonly deviceAdmission?: DeviceAdmission;
+  readonly observationBasis?: ObservationBasis;
   /** The request ID to send. One is generated otherwise. A request ID names one action, ever. */
   readonly requestId?: string;
   /** The context being handled, which the action joins; a new trace otherwise. */
@@ -217,7 +219,7 @@ class Refused extends Error {
   }
 }
 
-type Statements = {read: StatementSync; insert: StatementSync; update: StatementSync; due: StatementSync; next: StatementSync};
+type Statements = {read: StatementSync; insert: StatementSync; update: StatementSync; due: StatementSync; next: StatementSync; changesSince: StatementSync};
 /** What one message of an intake group records once its group's transaction commits, or is refused with `refusal`. */
 type Settle = (refusal: Refused | undefined) => void | Promise<void>;
 type Admission = {readonly facts: string; readonly data: string; commandId?: string};
@@ -256,6 +258,11 @@ export class Tracker {
       update: database.prepare('UPDATE core_operations SET status = ?, record = ? WHERE request_id = ?'),
       due: database.prepare('SELECT record FROM core_operations WHERE status IN (\'sent\', \'accepted\') AND deadline_at_ms <= ? ORDER BY deadline_at_ms'),
       next: database.prepare('SELECT MIN(deadline_at_ms) AS next FROM core_operations WHERE status IN (\'sent\', \'accepted\')'),
+      changesSince: database.prepare(`SELECT json_extract(record, '$.family') AS family FROM core_operations
+        WHERE json_extract(record, '$.target') = ? AND
+          (status IN ('sent', 'accepted') OR
+            (json_extract(record, '$.updatedAtMs') >= ? AND
+              (status NOT IN ('rejected', 'expired') OR json_array_length(record, '$.outcomes') > 0)))`),
     };
   }
 
@@ -389,10 +396,14 @@ export class Tracker {
       return body;
     };
     const action: Action = {...input, draft: {...input.draft, data: structuredClone(input.draft.data)},
-      ...(input.parent === undefined ? {} : {parent: {...input.parent}})};
+      ...(input.parent === undefined ? {} : {parent: {...input.parent}}),
+      ...(input.observationBasis === undefined ? {} : {observationBasis: {...input.observationBasis}})};
     const parsed = KEY.exec(action.key);
     const family = parsed?.[1], target = parsed?.[2];
-    const {draft} = action;
+    const {draft, observationBasis} = action;
+    if (observationBasis !== undefined && action.deviceAdmission === undefined) {
+      return refuse('invalid-request', 'an observation basis requires a device command');
+    }
     if (family === undefined || target === undefined) return refuse('invalid-request', 'an action is a command on a key bunny.cmd.<family>.<target>');
     if (DIRECT_COMMANDS.includes(family)) return refuse('invalid-request', 'the core\'s operator commands are not tracked actions; send them as they are');
     if (OPERATOR_ACTIONS.includes(family) !== operator) return refuse('forbidden', 'this action requires its dedicated operator admission');
@@ -434,6 +445,7 @@ export class Tracker {
       const now = clock.now();
       sent = {
         requestId, kind, key: action.key, family, command: draft.type, dataschema: draft.dataschema, target, data, requestedBy: action.requestedBy,
+        ...(observationBasis === undefined ? {} : {observationBasis}),
         status: 'sent', outcomes: [], sentAtMs: now, deadlineAtMs: now + DEADLINES[kind].outcomeMs + startDelayMs, updatedAtMs: now, traceparent: span.traceparent,
       };
       earlier = await this.#transaction(tx => {
@@ -450,6 +462,12 @@ export class Tracker {
           const refusal = deviceRefusal({admission: action.deviceAdmission, current,
             registered: this.#options.registeredDevice?.(target) === true, family, data, lifx});
           if (refusal !== undefined) throw new Refused(refusal.code, refusal.detail);
+          if (observationBasis !== undefined && current !== undefined) {
+            const changed = this.#required().changesSince.all(target, observationBasis.observedAtMs)
+              .some(row => typeof row.family === 'string' && deviceActionFamily(row.family));
+            const stale = observationRefusal({current, family, data, basis: observationBasis, lifx, now: clock.now(), changed});
+            if (stale !== undefined) throw new Refused(stale.code, stale.detail);
+          }
         }
         if (known === undefined && draft.dataschema === EXTENDED_ART_STAGE_SCHEMA &&
             !extendedArtStageSupported(this.#options.currentDevice?.(target), {format: data.format, base64: data.base64})) {
@@ -515,7 +533,8 @@ export class Tracker {
   #again(earlier: Operation, action: Action, data: Record<string, unknown>, payload?: Operation['payload']): ActionAnswer {
     const {requestId} = earlier;
     const same = earlier.requestedBy === action.requestedBy && earlier.key === action.key && earlier.command === action.draft.type &&
-      earlier.dataschema === action.draft.dataschema && (payload === undefined
+      earlier.dataschema === action.draft.dataschema &&
+      canonical(earlier.observationBasis ?? null) === canonical(action.observationBasis ?? null) && (payload === undefined
         ? earlier.payload === undefined && canonical(earlier.data) === canonical(data)
         : earlier.payload?.status === 'omitted' && earlier.payload.hmac === payload.hmac);
     const fields = {'bunny.participant': action.requestedBy, ...requestField(requestId)};

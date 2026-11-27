@@ -1,12 +1,12 @@
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {CONVERSATION_ART_SCHEMA} from '@jimmie-potts/event-contracts/v2/art';
-import {artDescription, catalogProposal, catalogRoute, SHOW_SAVE_WINDOW_MS, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {artDescription, catalogProposal, catalogRoute, SHOW_SAVE_WINDOW_MS, type CatalogProposal, type ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {CoreHandle} from './core.js';
 import type {InboxHandleRequest} from './inbox.js';
 import type {Action, ActionAnswer} from './tracker.js';
 import {OPERATOR_ACTIONS} from './tracker.js';
 
-export async function dispatchCatalogAction(core: Pick<CoreHandle, 'dispatch' | 'clock'>, command: Message<{requestId: string; admitByMs?: number} & CatalogProposal>,
+export async function dispatchCatalogAction(core: Pick<CoreHandle, 'dispatch' | 'clock'>, command: Message<{requestId: string; admitByMs?: number; observationBasis?: ObservationBasis} & CatalogProposal>,
   dispatchOperator: (action: Action) => Promise<ActionAnswer>,
   handleInbox: (action: Action, input: InboxHandleRequest) => Promise<ActionAnswer>): Promise<ActionAnswer> {
   const approved = catalogProposal(command.data);
@@ -35,6 +35,7 @@ export async function dispatchCatalogAction(core: Pick<CoreHandle, 'dispatch' | 
   } else if (admitByMs !== undefined) return errorBody('invalid-request');
   const minor = family === 'nanoleaf-show-save' || family === 'art-show' && 'guards' in data ? '2.1' : route.binding === 'device' ? route.guardedMinor ?? '2.0' : '2.0';
   const action: Action = {key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
+    ...(command.data.observationBasis === undefined ? {} : {observationBasis: command.data.observationBasis}),
     ...(binding.kind === 'device' ? {deviceAdmission: {kind: 'conversation', owner: binding.owner, expiresAt: command.expiresat}} : {}),
     draft: {type, subject: target, dataschema: `https://bunny.invalid/events/${family}/${minor}`, data: payload}};
   if (family === 'inbox-handle') {

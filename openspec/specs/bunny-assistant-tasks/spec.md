@@ -1352,3 +1352,9 @@ Conversation SHALL use the shared device lookup for supported device facts, and 
 
 - **WHEN** a model asks for device details that the active Conversation sharing policy excludes
 - **THEN** the model receives no excluded fields, even if a different client has authority to read them
+
+#### Scenario: The supervisor reads the selected light's current controls
+
+- **WHEN** the owner names one light and the selected supervisor has permission for its current device status
+- **THEN** the supervisor can read the light's supported controls, advertised bounds and current observations for the request
+- **AND** historical timestamp permission is unnecessary for those current facts, while denying current status withholds them
