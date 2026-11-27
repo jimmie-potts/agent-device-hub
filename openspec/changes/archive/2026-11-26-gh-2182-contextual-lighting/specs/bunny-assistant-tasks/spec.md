@@ -49,8 +49,8 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 - **THEN** the selected supervisor distinguishes them and the Hub validates the whole desired quantity in the registered unit, including signed digits and whole numbers written in words.
 - **WHEN** a proposed absolute setting drops a sign, uses a malformed quantity, conflicts with the cited owner value or exceeds the registered bounds
 - **THEN** the Hub sends no command.
-- **WHEN** the owner supplies a numeric lighting value in an unsupported unit, either beside the quantity or separately for that setting
-- **THEN** Conversation asks for the setting in a supported unit and sends no command before the owner answers.
+- **WHEN** the owner supplies a numeric lighting value with repeated or conflicting signs, or declares an unsupported unit beside the quantity or separately for that setting
+- **THEN** Conversation asks for an unambiguous value in a supported unit and sends no command before the owner answers.
 - **AND** a corrected numeric answer binds to the same selected device, operation and current guards. Clearly bare and natural-language settings remain supported.
 
 #### Scenario: Relative and extreme settings use registered limits

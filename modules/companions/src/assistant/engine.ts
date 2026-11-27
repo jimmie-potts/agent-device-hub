@@ -2596,7 +2596,7 @@ export class AssistantEngine {
     if (previous !== undefined) {
       if (scope.answer?.id !== `${previous.questionId}-answer` || previous.owner !== row.owner || previous.target !== row.device.id) return 'refused: invalid-request';
       if (previous.reference !== reference || previous.modeRevision !== scope.modeRevision) return 'refused: revision-conflict';
-      if (input.setting.family !== (previous.kind === 'unsupported-unit' ? previous.family : 'lifx-color-set')) return 'refused: invalid-request';
+      if (input.setting.family !== (previous.kind === 'quantity-clarification' ? previous.family : 'lifx-color-set')) return 'refused: invalid-request';
     }
     const resolved = lightingValue(row, scope, input.setting, this.context.clock.now(), previous);
     if (resolved.kind === 'refused') return `refused: ${resolved.code}`;
@@ -2605,7 +2605,7 @@ export class AssistantEngine {
       return resolved.atBoundary ? `No command was sent. The observed setting is already at the requested boundary (${value}).`
         : `No command was sent. After rounding, the requested change would leave the observed setting at ${value}.`;
     }
-    if (resolved.kind === 'missing-saturation' || resolved.kind === 'unsupported-unit') {
+    if (resolved.kind === 'missing-saturation' || resolved.kind === 'quantity-clarification') {
       const correctSaturationUnit = resolved.kind === 'missing-saturation' && resolved.unsupportedUnit === true &&
         previous?.kind === 'missing-saturation' && previous.unitClarified !== true;
       if (this.#controlClarification(current)?.answer != null && !correctSaturationUnit) return 'refused: invalid-request';
@@ -2614,7 +2614,7 @@ export class AssistantEngine {
         text: resolved.unsupportedUnit === true ? 'Which saturation value in percent do you want?' : 'What saturation percentage do you want?',
         binding: {...binding, kind: resolved.kind, hue: resolved.hue, ...(resolved.unsupportedUnit === true ? {unitClarified: true} : {})}};
       const text = resolved.unit === 'degrees' ? 'Which hue in degrees and saturation in percent do you want?'
-        : `Which value in ${resolved.unit} do you want?`;
+        : `Which ${resolved.reason === 'sign' ? 'signed ' : ''}value in ${resolved.unit} do you want?`;
       return {kind: 'setting-clarification', text, binding: {...binding, kind: resolved.kind, family: input.setting.family, unit: resolved.unit, operation: resolved.operation}};
     }
     if (previous?.kind === 'missing-saturation' && (resolved.setting.family !== 'lifx-color-set' ||

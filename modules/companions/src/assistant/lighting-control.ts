@@ -151,10 +151,9 @@ const QUANTITY_UNITS: Record<string, QuantityUnit | undefined> = {
   'percentage point': 'percentage points', 'percentage points': 'percentage points', pp: 'percentage points',
 };
 const UNIT_SPELLING = String.raw`%|percentage points?\b|pp\b|percent\b|kelvin\b|k\b|°(?!\p{L})|degrees?\b`;
-const SIGN_SPELLING = String.raw`(?:(?:minus|negative|plus|positive)\b\s*|[+−﹣－–—-]+\s*)+`;
-const SIGN_BOUNDARY = String.raw`(?<![\p{L}\p{N}_+−﹣－–—-])`;
-const QUANTITY_TOKEN = new RegExp(String.raw`${SIGN_BOUNDARY}((?:${SIGN_SPELLING})?(?:\p{N}[\p{N}.,]*(?:\p{Zs}+\p{N}[\p{N}.,]*)*|\.\p{N}+)(?:(?:\s*[/⁄∕／]\s*|[eE][+\-−]?)\p{N}[\p{N}.,]*)?)(?:\s*(${UNIT_SPELLING}))?`, 'giu');
-const WHOLE_NUMBER = /^[+-]?(?:\d+|\d{1,3}(?:(?:,\d{3})+|(?:\p{Zs}\d{3})+))(?:\.\d+)?$/u;
+const QUANTITY_TOKEN = new RegExp(String.raw`(?<![\p{L}\p{N}_])((?:\p{N}[\p{N}.,]*(?:\p{Zs}+\p{N}[\p{N}.,]*)*|\.\p{N}+)(?:(?:\s*[/⁄∕／]\s*|[eE][+\-−]?)\p{N}[\p{N}.,]*)?)(?:\s*(${UNIT_SPELLING}))?`, 'giu');
+const WHOLE_NUMBER = /^(?:\d+|\d{1,3}(?:(?:,\d{3})+|(?:\p{Zs}\d{3})+))(?:\.\d+)?$/u;
+const SIGN_TOKEN = /(\b(?:minus|negative|plus|positive)\b|[+−﹣－–—-])\s*/giu;
 const ATTACHED_QUANTITY = /^(?:[\p{N}\p{Cf}_]|[+−﹣－–—-][+−﹣－–—\p{N}-]|\s*[/⁄∕／])/u;
 const BARE_QUANTITY_END = /^(?:\s*$|\s*[.,;!?)\]](?:\s|$)|\s+(?:to|on|for|at|from|and|or|then|brighter|dimmer|warmer|cooler|brightness|saturation|please|now)\b|\s+in\s+(?:the|my|our|your|this|that)\b|\s+of\s+(?:(?:the|its|current)\s+)*(?:brightness|temperature|level|setting|maximum|minimum)\b)/iu;
 const NUMBER_WORDS: Readonly<Record<string, number | undefined>> = {
@@ -164,23 +163,39 @@ const NUMBER_WORDS: Readonly<Record<string, number | undefined>> = {
   hundred: 100, thousand: 1000, million: 1_000_000, billion: 1_000_000_000, dozen: 12,
 };
 const NUMBER_WORD = Object.keys(NUMBER_WORDS).join('|');
-const WRITTEN_NUMBER = new RegExp(String.raw`${SIGN_BOUNDARY}(?:(${SIGN_SPELLING}))?((?:${NUMBER_WORD})(?:(?:[ -]| and )(?:${NUMBER_WORD}))*)\b`, 'giu');
+const WRITTEN_NUMBER = new RegExp(String.raw`\b(?:${NUMBER_WORD})(?:(?:[ -]| and )(?:${NUMBER_WORD}))*\b`, 'giu');
 const STATED_UNIT = new RegExp(String.raw`^\s*(${UNIT_SPELLING})`, 'iu');
 const UNIT_INTRODUCER = /^\s+in\s+/iu;
 const LOCATION = /^(?:the|my|our|your|this|that)\b/iu;
 const PROPERTY_UNIT = /\b(?:brightness|temperature|hue|saturation)\s+in\s+([^.!?;]+?)(?=\s+(?:to|by|at)\b|[.!?;]|$)/giu;
 const QUALITATIVE_AMOUNT = /\b(?:half|(?:(?:a|one|two|three|four) )?quarters?|a (?:few|couple))\b/giu;
 
-type QuantityToken = {literal: string; value: number; unit?: QuantityUnit | 'unsupported' | undefined};
+type QuantityToken = {literal: string; value: number; unit?: QuantityUnit | 'unsupported' | undefined; conflictingSign?: true};
+type Sign = {start: number; factor: -1 | 1 | 'conflict'};
 
-function normalizeSigns(value: string): string {
-  return value.replace(/^(?:minus|negative)\s*/iu, '-').replace(/^(?:plus|positive)\s*/iu, '+')
-    .replace(/[−﹣－–—]/gu, '-').replace(/^([+-])\s+/u, '$1');
+function signSpans(text: string): ReadonlyMap<number, Sign> {
+  const spans = new Map<number, Sign>();
+  let end = -1;
+  for (const match of text.matchAll(SIGN_TOKEN)) {
+    const prior = match.index === end ? spans.get(end) : undefined;
+    const sign = match[1] ?? '';
+    const factor = /^(?:minus|negative|[−﹣－–—-])$/iu.test(sign) ? -1 : 1;
+    end = match.index + match[0].length;
+    // A run is scanned independently of the amount that may follow it.
+    spans.set(end, prior === undefined ? {start: match.index, factor} : {start: prior.start, factor: 'conflict'});
+  }
+  return spans;
 }
 
-function writtenValue(words: string, sign: string | undefined): number {
-  const signed = sign === undefined ? '' : normalizeSigns(sign.trim());
-  if (signed !== '' && signed !== '-' && signed !== '+') return Number.NaN;
+function signedQuantity(text: string, start: number, literal: string, value: number, signs: ReadonlyMap<number, Sign>): Pick<QuantityToken, 'literal' | 'value' | 'conflictingSign'> {
+  const sign = signs.get(start);
+  if (sign === undefined) return {literal, value};
+  const complete = text.slice(sign.start, start) + literal;
+  return sign.factor === 'conflict' ? {literal: complete, value: Number.NaN, conflictingSign: true}
+    : {literal: complete, value: sign.factor * value};
+}
+
+function writtenValue(words: string): number {
   let total = 0, group = 0, tail = 0, largestRemainingScale = Number.POSITIVE_INFINITY;
   for (const word of words.toLowerCase().split(/ and |[ -]/u)) {
     const value = NUMBER_WORDS[word];
@@ -200,7 +215,7 @@ function writtenValue(words: string, sign: string | undefined): number {
       tail += value;
     }
   }
-  return (signed === '-' ? -1 : 1) * (total + group + tail);
+  return total + group + tail;
 }
 
 function followingUnit(suffix: string): {literal: string; unit: QuantityToken['unit']} {
@@ -216,17 +231,16 @@ function followingUnit(suffix: string): {literal: string; unit: QuantityToken['u
   return {literal, unit: known?.[1] === undefined ? undefined : QUANTITY_UNITS[known[1].toLowerCase()]};
 }
 
-function writtenQuantities(text: string): QuantityToken[] {
+function writtenQuantities(text: string, signs: ReadonlyMap<number, Sign>): QuantityToken[] {
   return [...text.matchAll(WRITTEN_NUMBER)].flatMap(match => {
-    const [, signed, words] = match;
-    if (words === undefined) return [];
-    const suffix = text.slice(match.index + match[0].length);
+    const [words] = match;
+    const suffix = text.slice(match.index + words.length);
     if (/^\s+quarters?\b/iu.test(suffix)) return [];
     // In these references “one” identifies the light. It does not supply its setting.
-    if (words.toLowerCase() === 'one' && signed === undefined &&
-        /\b(?:the|this|that|which|another)\s+$/iu.test(text.slice(0, match.index)) && !STATED_UNIT.test(suffix) && !UNIT_INTRODUCER.test(suffix)) return [];
+    if (words.toLowerCase() === 'one' && !signs.has(match.index) &&
+        /\b(?:the|this|that|which|another)\s+$/iu.test(text.slice(0, match.index)) && !STATED_UNIT.test(suffix)) return [];
     const {literal, unit} = followingUnit(suffix);
-    return [{literal: match[0] + literal, unit, value: writtenValue(words, signed?.toLowerCase())}];
+    return [{...signedQuantity(text, match.index, words + literal, writtenValue(words), signs), unit}];
   });
 }
 
@@ -249,6 +263,7 @@ function withoutLightingName(device: DeviceRecord, text: string): string {
 function quantityTokens(text: string): QuantityToken[] {
   // Exact device selectors can contain numbers. The model selects quantities from the rest of the owner message.
   const clean = text.replace(/\bid:[^\s]+/giu, ' ');
+  const signs = signSpans(clean);
   let end = 0;
   const tokens = [...clean.matchAll(QUANTITY_TOKEN)].flatMap(match => {
     const [, number, suffix] = match;
@@ -256,18 +271,18 @@ function quantityTokens(text: string): QuantityToken[] {
     const skippedNumber = /\p{N}/u.test(clean.slice(end, match.index));
     end = match.index + match[0].length;
     const raw = suffix === undefined ? number.trim().replace(/[.,]$/u, '') : number.trim();
-    const signed = normalizeSigns(raw);
     const remainder = clean.slice(end);
-    const malformed = skippedNumber || !WHOLE_NUMBER.test(signed) || ATTACHED_QUANTITY.test(remainder) ||
+    const malformed = skippedNumber || !WHOLE_NUMBER.test(raw) || ATTACHED_QUANTITY.test(remainder) ||
       suffix !== undefined && /^[\p{L}\p{S}%‰‱_]/u.test(remainder);
     const rest = suffix === undefined && /[.,]$/u.test(number) && !/^\S/u.test(remainder)
       ? {literal: '', unit: undefined} : followingUnit(remainder);
     const unit = suffix === undefined ? rest.unit : rest.unit === undefined ? QUANTITY_UNITS[suffix.toLowerCase()] : 'unsupported';
-    return [{literal: suffix === undefined ? raw + rest.literal : match[0].trim(), unit,
-      value: malformed ? Number.NaN : Number(signed.replace(/[,\p{Zs}]/gu, ''))}];
+    const literal = suffix === undefined ? raw + rest.literal : match[0].trim();
+    const value = malformed ? Number.NaN : Number(raw.replace(/[,\p{Zs}]/gu, ''));
+    return [{...signedQuantity(clean, match.index, literal, value, signs), unit}];
   });
   if (/\p{N}/u.test(clean.slice(end))) tokens.push({literal: '', unit: undefined, value: Number.NaN});
-  return [...tokens, ...writtenQuantities(clean)];
+  return [...tokens, ...writtenQuantities(clean, signs)];
 }
 
 function numericOperation(value: unknown): value is NumericOperation {
@@ -315,7 +330,7 @@ type LightingValue = {kind: 'ready'; setting: Settings; observationBasis?: Obser
   | {kind: 'refused'; code: ErrorCode}
   | {kind: 'unchanged'; value: number; unit: QuantityUnit; atBoundary: boolean}
   | {kind: 'missing-saturation'; hue: number; unsupportedUnit?: true}
-  | {kind: 'unsupported-unit'; unit: QuantityUnit; operation: Quantity['kind'] | 'color'};
+  | {kind: 'quantity-clarification'; unit: QuantityUnit; operation: Quantity['kind'] | 'color'; reason: 'unit' | 'sign'};
 
 export function lightingValue(row: LightingDevice, scope: ModelControlScope, intent: SettingIntent, now: number,
   previous?: LightingClarification): LightingValue {
@@ -326,25 +341,27 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   const answer = scope.answer === undefined ? undefined : withoutLightingName(row.device, scope.answer.text);
   if (family === 'lifx-color-set') {
     const {hue, saturation} = intent;
-    const color = previous?.kind === 'unsupported-unit' ? answer : request;
+    const color = previous?.kind === 'quantity-clarification' ? answer : request;
     if (color === undefined) return invalid;
     let hueTokens = quantityTokens(color);
+    if (hueTokens.some(token => token.conflictingSign)) return {kind: 'quantity-clarification', unit: 'degrees', operation: 'color', reason: 'sign'};
     if (!integerIn(hue.amount, 0, 360)) return invalid;
     if (hasUnsupportedUnit(color, hueTokens, 'degrees', 'percent')) {
       const degrees = hueTokens.filter(token => token.unit === 'degrees');
       if (degrees.length !== 1 || !supportsQuantity(degrees, 'degrees', hue)) {
-        return {kind: 'unsupported-unit', unit: 'degrees', operation: 'color'};
+        return {kind: 'quantity-clarification', unit: 'degrees', operation: 'color', reason: 'unit'};
       }
       if (previous?.kind !== 'missing-saturation') return {kind: 'missing-saturation', hue: hue.amount, unsupportedUnit: true};
       hueTokens = degrees;
     }
     if (!supportsQuantity(hueTokens, 'degrees', hue,
-      previous?.kind === 'unsupported-unit', {unit: 'percent', amount: saturation?.amount})) return invalid;
+      previous?.kind === 'quantity-clarification', {unit: 'percent', amount: saturation?.amount})) return invalid;
     if (saturation === undefined) return {kind: 'missing-saturation', hue: hue.amount};
     const source = previous?.kind === 'missing-saturation' ? answer : color;
     if (source === undefined || !integerIn(saturation.amount, 0, 100)) return invalid;
     const saturationTokens = source === color ? hueTokens : quantityTokens(source);
-    if (previous?.kind === 'missing-saturation' && hasUnsupportedUnit(source, saturationTokens, 'percent')) {
+    if (previous?.kind === 'missing-saturation' &&
+        (saturationTokens.some(token => token.conflictingSign) || hasUnsupportedUnit(source, saturationTokens, 'percent'))) {
       return {kind: 'missing-saturation', hue: previous.hue, unsupportedUnit: true};
     }
     if (!supportsQuantity(saturationTokens, 'percent', saturation, previous !== undefined,
@@ -360,20 +377,23 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   if (!range.supported) return {kind: 'refused', code: 'unsupported-capability'};
   const {minimum, maximum} = range;
   const supplied = answer === undefined ? [] : quantityTokens(answer);
-  const useAnswer = answer !== undefined && (supplied.length > 0 || previous?.kind === 'unsupported-unit');
+  const useAnswer = answer !== undefined && (supplied.length > 0 || previous?.kind === 'quantity-clarification');
   const source = useAnswer ? answer : request;
   const tokens = useAnswer ? supplied : quantityTokens(request);
   const relative = 'amount' in requested && requested.kind !== 'absolute';
   const proportional = 'amount' in requested && (requested.kind === 'increase-percent' || requested.kind === 'decrease-percent');
   if (proportional && !brightness) return invalid;
   const requestedUnit = brightness && relative && !proportional ? 'percentage points' : unit;
-  if (previous?.kind === 'unsupported-unit' &&
+  if (previous?.kind === 'quantity-clarification' &&
       (answer === undefined || previous.unit !== requestedUnit || previous.operation !== requested.kind)) return invalid;
+  if (tokens.some(token => token.conflictingSign)) {
+    return {kind: 'quantity-clarification', unit: requestedUnit, operation: requested.kind, reason: 'sign'};
+  }
   if (hasUnsupportedUnit(source, tokens, unit, brightness ? 'percentage points' : undefined)) {
-    return {kind: 'unsupported-unit', unit: requestedUnit, operation: requested.kind};
+    return {kind: 'quantity-clarification', unit: requestedUnit, operation: requested.kind, reason: 'unit'};
   }
   if (propertyUnits(source).some(stated => stated !== requestedUnit) ||
-      !supportsQuantity(tokens, requestedUnit, requested, previous?.kind === 'unsupported-unit')) return invalid;
+      !supportsQuantity(tokens, requestedUnit, requested, previous?.kind === 'quantity-clarification')) return invalid;
   let value: number;
   let observationBasis: ObservationBasis | undefined;
   if (!('amount' in requested)) {
@@ -399,7 +419,7 @@ export type LightingQuestion = {
   requestId: string; owner: string; target: string;
   reference: string; modeRevision: number | null;
 } & ({kind: 'missing-saturation'; hue: number; unitClarified?: true}
-  | {kind: 'unsupported-unit'; family: Family; unit: QuantityUnit; operation: Quantity['kind'] | 'color'});
+  | {kind: 'quantity-clarification'; family: Family; unit: QuantityUnit; operation: Quantity['kind'] | 'color'});
 
 export type LightingClarification = LightingQuestion & {questionId: string};
 
