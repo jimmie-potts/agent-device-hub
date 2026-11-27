@@ -41,9 +41,9 @@ const failRun = (message: string): void => {process.stderr.write(`${message}\n`)
  * with no deadline of its own, in a journey or in the world's start or stop, otherwise holds the run silently until
  * the job's own limit cancels it (#1919: a hosted smoke run waited 37 minutes).
  */
-export function worldDeadline(journey: string, {limitMs = WORLD_LIMIT_MS, timer = realTimer, fail = failRun}: {limitMs?: number; timer?: DeadlineTimer; fail?: (message: string) => void} = {}):
+export function worldDeadline(journey: string | (() => string), {limitMs = WORLD_LIMIT_MS, timer = realTimer, fail = failRun}: {limitMs?: number; timer?: DeadlineTimer; fail?: (message: string) => void} = {}):
   {phase: (phase: WorldPhase) => void; clear: () => void} {
   let phase: WorldPhase = 'starting';
-  const handle = timer.after(() => {fail(`The world for ${journey} was not closed within ${String(limitMs / 60_000)} minutes; it was ${phase}.`);}, limitMs);
+  const handle = timer.after(() => {fail(`The world for ${typeof journey === 'string' ? journey : journey()} was not closed within ${String(limitMs / 60_000)} minutes; it was ${phase}.`);}, limitMs);
   return {phase: next => {phase = next;}, clear: () => {timer.cancel(handle);}};
 }

@@ -31,7 +31,7 @@ export async function runJourney(
   const problems: unknown[] = [];
   let label = 'start the simulated world', sequence = 0;
   const openWorld = async (settings: WorldOptions): Promise<World> => {
-    const world = await startWorld(settings);
+    const world = await startWorld(settings, () => `${name} at "${label}" (local traces in ${directory})`);
     worlds.add(world);
     return world;
   };
@@ -55,7 +55,7 @@ export async function runJourney(
     const world = await openWorld(options);
     label = 'launch Chromium';
     // Keep 3D rendering on SwiftShader and page compositing off its GPU queue (#1893).
-    const launched = await chromium.launch({headless: true, args: renderer === 'software-webgl'
+    const launched = await chromium.launch({headless: true, tracesDir: directory, args: renderer === 'software-webgl'
       ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu-compositing'] : []});
     browser = launched;
     const run: Journey = {
@@ -63,8 +63,10 @@ export async function runJourney(
       async newContext(settings = {}) {
         const context = await launched.newContext({reducedMotion: 'reduce', ...settings});
         try {
-          await context.tracing.start({snapshots: true});
-          contexts.set(context, join(directory, `context-${String(++sequence)}.zip`));
+          const prefix = `context-${String(++sequence)}`;
+          // Keep an unarchived trace during the run so the world's hard deadline can terminate a hung process.
+          await context.tracing.start({snapshots: true, live: true, name: prefix});
+          contexts.set(context, join(directory, `${prefix}.zip`));
           // Stays below transient page routes for the context's lifetime, including pages opened later (#1691).
           await context.route('**/*', route => route.fallback());
           return context;

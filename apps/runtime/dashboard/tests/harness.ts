@@ -244,10 +244,10 @@ async function writePrivate(file: string, text: string): Promise<void> {
 }
 
 /** The runtime, the core, its gateway and the hook, in a private directory. */
-export async function startWorld(options: WorldOptions = {}): Promise<World> {
+export async function startWorld(options: WorldOptions = {}, currentStep?: () => string): Promise<World> {
   assert.equal(options.nanoleaf === true && options.modeDevices === true, false, 'one Nanoleaf writer per world');
-  // The journey is the file that asked for this world, as its stack names it.
-  const deadline = worldDeadline(/([^/\\\s(]+\.ts):(\d+)/.exec(new Error().stack?.split('\n')[2] ?? '')?.slice(1, 3).join(':') ?? 'a journey');
+  // The runner knows its current step. Other callers are identified by their file and line.
+  const deadline = worldDeadline(currentStep ?? /([^/\\\s(]+\.ts):(\d+)/.exec(new Error().stack?.split('\n')[2] ?? '')?.slice(1, 3).join(':') ?? 'a journey');
   const withDevices = options.devices === true || options.lighting === true;
   const now = (): number => options.clock?.clock.now() ?? Date.now();
   const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-dash-')));

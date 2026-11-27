@@ -1157,8 +1157,10 @@ use `dashboard/tests/journey-runner.ts`. Start each simulated world with
 for every browser context. Its pass-through route remains active when a page
 removes one of its handlers. Use `run.closeContext` to retire a context early.
 A failure reports the step and a private temporary directory containing one
-Playwright trace per context. Read one locally with `npx playwright show-trace
-/path/to/context-1.zip`. A successful journey removes its traces.
+Playwright trace per context. Open a completed trace locally with
+`npx playwright show-trace /path/to/context-1.zip`. The world’s hard deadline
+reports the same directory and step. An interrupted context leaves its live
+trace there. A successful journey removes its traces.
 
 ```bash
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
