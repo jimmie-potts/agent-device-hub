@@ -41,6 +41,7 @@ export function conformsToSchema(schema: ToolInputSchema, input: ToolCall['input
       case 'string': return typeof value === 'string' && (property.enum === undefined || property.enum.includes(value));
       case 'integer': return typeof value === 'number' && Number.isSafeInteger(value);
       case 'boolean': return typeof value === 'boolean';
+      case 'object': return object(value) && conformsToSchema(property, value);
       case 'array': {
         const {items} = property;
         return Array.isArray(value) && value.every(item => items.type === 'string'

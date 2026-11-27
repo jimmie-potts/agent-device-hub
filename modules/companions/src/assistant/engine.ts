@@ -23,7 +23,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, literalDeviceId, missingBrightness, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
+import {answersHubMode, authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, literalDeviceId, missingBrightness, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl, type SceneReceipt} from './control-intent.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, resolveModelControl, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
@@ -34,7 +34,7 @@ import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {chooseBrightnessSubject, ConversationActions, deviceClarification, type CatalogAdmission, type CatalogIdentityRead, type RetainedArtworkRead} from './catalog-actions.js';
 import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import {catalogExactTargets, catalogExcluded, catalogHistoryNames, catalogQuoteNames, catalogReferenceConflict, catalogSelections, catalogSelectionText, catalogSelectorSelected, isCatalogSelectorKind, readCatalogReferences} from './catalog-grounding.js';
+import {catalogExactTargets, catalogExcluded, catalogHistoryNames, catalogQuoteNames, catalogReferenceConflict, catalogSelections, catalogSelectionText, catalogSelectorSelected, citesHubModeIntent, isCatalogSelectorKind, readCatalogReferences} from './catalog-grounding.js';
 import {catalogCommand, catalogTool, catalogToolReferenceRoles, catalogToolWithReferences, draftMutation, isCatalogTool, modelCatalogCommand, modelCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
 import {DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
 import {SyntheticProvider} from './synthetic.js';
@@ -2470,7 +2470,8 @@ export class AssistantEngine {
     const scope = call.name === SET_MODE ? this.#currentModelControl(this.#task(taskId), modelCallId) : undefined;
     if ((mode !== undefined || call.input.mode === 'clarify') && scope !== undefined && scope.answer === undefined &&
         scope.modeRevision !== null && this.store.call(modelCallId)?.modelControlProof?.modeRevision === scope.modeRevision &&
-        scope.exactTargets.every(target => target === 'hub') && missingMode(scope.request.text)) {
+        scope.exactTargets.every(target => target === 'hub') && (Object.hasOwn(call.input, 'intent')
+          ? call.input.mode === 'clarify' && citesHubModeIntent(scope.request.text, call.input.intent) : missingMode(scope.request.text))) {
       return {id, text: 'Which mode should I switch the Hub to: work, free, or quiet?', answer: null, kind: 'clarification', call: call.id, proposal: null,
         modeClarification: {requestId: scope.request.id, requestRevision: scope.request.revision, modeRevision: scope.modeRevision}};
     }
@@ -2827,11 +2828,13 @@ export class AssistantEngine {
     if (!this.#catalogFieldsPermitted(task, proposal)) return {code: 'forbidden'};
     if (proposal.family === 'mode-set') {
       const ownerText = scope.answer?.text ?? scope.request.text;
-      if (!authorizesHubMode(ownerText, '', proposal.data.mode)) {
+      if (Object.hasOwn(call.input, 'intent')) {
+        if (!citesHubModeIntent(ownerText, call.input.intent, proposal.data.mode)) return {code: 'invalid-state'};
+      } else if (!authorizesHubMode(ownerText, proposal.data.mode)) {
         const question = this.#controlClarification(task);
         const binding = question?.modeClarification;
         if (scope.answer === undefined || binding?.requestId !== scope.request.id || binding.requestRevision !== scope.request.revision ||
-            !authorizesHubMode(scope.request.text, scope.answer.text, proposal.data.mode)) return {code: 'invalid-state'};
+            !answersHubMode(scope.answer.text, proposal.data.mode)) return {code: 'invalid-state'};
         if (binding.modeRevision !== proposal.expectedRevision) return {code: 'revision-conflict'};
       }
     }

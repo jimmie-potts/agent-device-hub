@@ -35,12 +35,17 @@ export function missingMode(text: string): boolean {
   return words !== undefined && /^(?:set|change|switch) (?:the )?(?:hub )?mode(?: to)?$/u.test(words);
 }
 
-export function authorizesHubMode(instruction: string, answer: string, mode: string): boolean {
-  const words = explicitWords(instruction), choice = answer === '' ? '' : explicitWords(answer);
-  if (words === undefined || choice === undefined) return false;
+export function authorizesHubMode(instruction: string, mode: string): boolean {
+  const words = explicitWords(instruction);
+  if (words === undefined) return false;
   const requested = /^(?:set|change|switch|enter|put) (?:(?:the )?hub )?(?:mode )?(?:to |in |into )?(work|free|quiet)(?: mode)?(?: now| please)?$/u
-    .exec(`${words} ${choice}`.trim());
+    .exec(words);
   return requested?.[1] === mode;
+}
+
+export function answersHubMode(answer: string, mode: string): boolean {
+  const choice = answer.trim();
+  return /^[a-z]+[.!]?$/iu.test(choice) && normalizedControlText(choice) === mode;
 }
 
 function requestedPower(input: string): {on: boolean; subject: string} | undefined {

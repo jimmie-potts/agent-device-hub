@@ -1389,6 +1389,12 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 - **AND** a short answer to a generic or informational question sends no mode command
 - **AND** a complete current owner instruction naming the requested mode can dispatch directly
 
+#### Scenario: A supervisor cites a current request to switch Hub mode
+
+- **WHEN** the supervisor interprets the current owner input as an affirmative Hub mode switch and cites the action and its selected mode verbatim
+- **THEN** the Hub checks the current owner quote and validates the selected mode against the quoted action before dispatch
+- **AND** absent or inconsistent cited evidence authorizes no write
+
 #### Scenario: A hosted catalog proposal cites the current target words
 
 - **WHEN** the hosted supervisor proposes a catalog effect against an existing target

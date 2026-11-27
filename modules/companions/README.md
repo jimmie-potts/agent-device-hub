@@ -1493,12 +1493,15 @@ can report transmission with the physical effect still unconfirmed.
 | Live action against a current record | `mode-override-set`, `notice-clear`, `session-label-set`, `inbox-handle`, `home-layout-set`, `lighting-layout-set`, `playback-layout-set`, `playback-control`, `volcano-session-gap`, `music-lighting-control` |
 | Live action against a fixed owner | `nanoleaf-reactive-preset-save`, `art-catalog-edit`, `art-show`, `nanoleaf-show-save` |
 | Private draft authoring | `create_light_show_draft`, `edit_light_show_cue` |
-| Global Hub mode | `set_mode` accepts the existing `{mode}` settings and adds `{mode: "clarify"}` for a missing choice. Conversation renders the switch question and binds its answer to the current owner request. |
+| Global Hub mode | `set_mode` accepts the existing `{mode}` settings and adds typed `intent` for a current switch request. Use `{mode: "clarify"}` for a missing choice. Conversation renders the switch question and binds its answer to the current owner request. |
 | Dedicated plug and lighting controls | `set_wemo_power`, `set_lifx_power`, `set_lifx_brightness`, and the catalog families `power-set`, `brightness-set`, `lifx-color-set`, `lifx-temperature-set` |
 | Specialized approval | Paid `art-request`, presentation of newly generated art on the selected destinations, and coding handoffs |
 
-The hosted supervisors use the same enabled catalog. Tool availability gives
-no access to private catalog fields. Companions resolves names and revision
+The hosted supervisors use the same enabled catalog. The model determines whether the owner
+is asking to switch or discussing the mode. For typed switch intent, the Hub
+checks that the action quote comes from the current owner input and contains
+the selected mode. A bare mode answer requires the Hub's saved switch question.
+Tool availability gives no access to private catalog fields. Companions resolves names and revision
 guards locally when the owner publishes that index. This covers session labels,
 Volcano labels, saved light shows, Pixoo playlists and compatible renditions.
 The playback control can use the unique presented playback record.

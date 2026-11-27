@@ -5615,35 +5615,43 @@ for (const host of ['anthropic', 'openai'] as const) {
     assert.equal(await ask('Switch the Hub to quiet for a while.', 'set_mode', {mode: 'quiet'}), 'refused: forbidden');
     assert.equal(delivered.length, prior + 1);
     modeDenied = false;
+    const switchIntent = (actionQuote: string, modeQuote?: string) => ({kind: 'switch', actionQuote, ...(modeQuote === undefined ? {} : {modeQuote})});
     assert.match(await ask('Is the Hub in work mode?', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
     assert.match(await ask('Can you explain quiet mode?', 'set_mode', {mode: 'quiet'}) ?? '', /^refused: this control needs a clear current owner request/u);
     assert.match(await ask('Set the Hub to free mode.', 'set_mode', {mode: 'work'}) ?? '', /^refused: this control needs a clear current owner request/u);
+    assert.match(await ask('Can you explain quiet mode?', 'set_mode',
+      {mode: 'quiet', intent: switchIntent('switch to quiet', 'quiet')}) ?? '', /^refused: this control needs a clear current owner request/u);
+    const polite = host === 'anthropic' ? 'I would like you to switch the Hub to quiet mode.' : 'Please switch the mode to quiet.';
+    assert.match(await ask(polite, 'set_mode', {mode: 'free', intent: switchIntent(polite, 'quiet')}) ?? '',
+      /^refused: this control needs a clear current owner request/u);
     assert.equal(delivered.length, prior + 1, 'a status read or a different requested mode authorizes no write');
     await ask('Can you switch to quiet?', 'set_mode', {mode: 'quiet'});
     assert.equal(delivered.length, prior + 2);
     assert.ok(delivered[prior + 1]?.valid === true);
     assert.partialDeepStrictEqual(delivered[prior + 1]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 7}});
+    await ask(polite, 'set_mode', {mode: 'quiet', intent: switchIntent(polite, 'quiet')});
+    assert.equal(delivered.length, prior + 3);
 
-    const incompleteMode = 'Set the Hub mode.';
+    const incompleteMode = host === 'anthropic' ? 'Switch the mode' : 'Change the mode to';
     const modeAnswer = 'Free.';
     await ask(incompleteMode, 'ask_owner', {text: 'Which mode should I explain?'}, undefined, 'waiting');
     await w.restart();
     await until(() => status(w) === 'waiting');
-    proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free'}};
+    proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free', intent: switchIntent(modeAnswer, 'Free')}};
     assert.equal((await input(w.core, w.module(), modeAnswer, true)).status, 'accepted');
     await until(() => status(w) === 'succeeded');
-    assert.equal(delivered.length, prior + 2, 'an informational answer cannot fill in a mode after restart');
+    assert.equal(delivered.length, prior + 3, 'an informational answer cannot fill in a mode after restart');
 
-    await ask(incompleteMode, 'set_mode', {mode: 'clarify'}, undefined, 'waiting');
+    await ask(incompleteMode, 'set_mode', {mode: 'clarify', intent: switchIntent(incompleteMode)}, undefined, 'waiting');
     assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which mode should I switch the Hub to/u);
-    assert.equal(delivered.length, prior + 2, 'the model cannot fill in a missing mode');
+    assert.equal(delivered.length, prior + 3, 'the model cannot fill in a missing mode');
     await w.restart();
     await until(() => status(w) === 'waiting');
     proposal = {ownerText: modeAnswer, name: 'set_mode', input: {mode: 'free'}};
     assert.equal((await input(w.core, w.module(), modeAnswer, true)).status, 'accepted');
     await until(() => status(w) === 'succeeded');
-    assert.equal(delivered.length, prior + 3);
-    assert.partialDeepStrictEqual(delivered[prior + 2]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'free', expectedRevision: 7}});
+    assert.equal(delivered.length, prior + 4);
+    assert.partialDeepStrictEqual(delivered[prior + 3]?.data, {family: 'mode-set', target: 'hub', data: {mode: 'free', expectedRevision: 7}});
 
     const ambiguous = 'Put Shared Wall in free mode.';
     const modeTool = catalogTool('device-mode-set');
@@ -5652,16 +5660,16 @@ for (const host of ['anthropic', 'openai'] as const) {
     assert.equal((await input(w.core, w.module(), ambiguous)).status, 'accepted');
     await until(() => status(w) === 'waiting');
     assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which device/);
-    assert.equal(delivered.length, prior + 3, 'an ambiguous device sends no command');
+    assert.equal(delivered.length, prior + 4, 'an ambiguous device sends no command');
 
     const answer = 'Use id:wall-right.';
     proposal = {ownerText: answer, name: modeTool, input: {...argumentsFor('bunny/modules/nanoleaf', 'id:wall-right', {mode: 'free'}),
       references: [ownerReference('primary', 'id:wall-right', 'named', 'answer')]}};
     assert.equal((await input(w.core, w.module(), answer, true)).status, 'accepted');
     await until(() => status(w) === 'succeeded');
-    assert.equal(delivered.length, prior + 4);
-    assert.ok(delivered[prior + 3]?.valid === true);
-    assert.partialDeepStrictEqual(delivered[prior + 3]?.data, {family: 'catalog-action', command: 'device-mode-set', target: 'wall-right',
+    assert.equal(delivered.length, prior + 5);
+    assert.ok(delivered[prior + 4]?.valid === true);
+    assert.partialDeepStrictEqual(delivered[prior + 4]?.data, {family: 'catalog-action', command: 'device-mode-set', target: 'wall-right',
       binding: {kind: 'device', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}}, data: {mode: 'free'}});
     const beforeUnknown = delivered.length;
     await ask('Use the last scene I activated on Studio Wall.', sceneTool,
