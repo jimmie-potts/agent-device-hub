@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {literalToolDeviceId, literalDeviceId, normalizedControlText, type SceneReceipt} from './control-intent.js';
+import {containsControlValue, literalToolDeviceId, literalDeviceId, normalizedControlText, type SceneReceipt} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
 import {catalogCueReferences, catalogQuoteNames, catalogSelectorId, type CatalogReferenceRole} from './catalog-grounding.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
@@ -67,6 +67,15 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
 }
 type Refusal = {code: ErrorCode};
 type Match = OwnedDevice;
+export type NamedDeviceLookup = {owner: string; target: string; request: string};
+type ScopedDeviceFacts = {
+  subject: string | undefined;
+  named: NamedDeviceLookup | undefined;
+  granted: (id: string) => boolean;
+  recordNamed: (owner: string, id: string) => void;
+  brightnessControl: boolean;
+  resolve: (id: string) => void;
+};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
 
 /** Only registered identity-bearing fields can account for a nested explicit ID. */
@@ -164,6 +173,18 @@ export class ConversationActions {
     const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
     const id = literalDeviceId(subject);
     return rows.filter(({device}) => id === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === id);
+  }
+
+  async namedDeviceMatch({owner, target, request}: NamedDeviceLookup, granted: (id: string) => boolean, parent: TraceContext): Promise<Match | undefined> {
+    const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
+    const {rows} = await this.#deviceRecords(owners, parent);
+    const visible = rows.filter(({device}) => granted(device.id));
+    const literal = literalToolDeviceId(target);
+    // A longer permitted name in the request cannot authorize a shorter alias.
+    if (literal === undefined && visible.some(({device}) => [device.id, deviceLabel(device)].some(value =>
+      normalizedControlText(value) !== normalizedControlText(target) && containsControlValue(value, target) && containsControlValue(request, value)))) return undefined;
+    const matches = matchingDevices(visible, target, owner, literal);
+    return matches.length === 1 ? matches[0] : undefined;
   }
 
   async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {
@@ -717,7 +738,7 @@ export class ConversationActions {
     return {...drafts.edit({...call.input, draftId: draft.value.showId, cue: selected.id}), draftId: draft.value.showId};
   }
 
-  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined; brightnessControl: boolean; resolve: (id: string) => void}): Promise<string | undefined> {
+  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: ScopedDeviceFacts): Promise<string | undefined> {
     const input = call.input;
     switch (call.name) {
       case PREVIEW_SHOW: {
@@ -806,15 +827,16 @@ export class ConversationActions {
     return textResult(records?.filter(record => typeof record.id === 'string' && access('status', 'index', record.id) && access('status', 'details', record.id)).map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
   }
 
-  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: {subject: string | undefined; brightnessControl: boolean; resolve: (id: string) => void}): Promise<string> {
+  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: ScopedDeviceFacts): Promise<string> {
     const {target, owner} = input;
     if (typeof target !== 'string' || typeof owner !== 'string') return 'refused: invalid-request';
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     if (owners.length === 0) return 'refused: unsupported-capability';
     if (scopedFacts !== undefined) {
-      if (scopedFacts.subject === undefined) return textResult({devices: []});
-      const matches = await this.deviceSubjectMatches(scopedFacts.subject, parent);
-      const selected = matches.length === 1 ? matches[0] : undefined;
+      const matches = scopedFacts.named !== undefined || scopedFacts.subject === undefined ? []
+        : await this.deviceSubjectMatches(scopedFacts.subject, parent);
+      const selected = scopedFacts.named !== undefined ? await this.namedDeviceMatch(scopedFacts.named, scopedFacts.granted, parent)
+        : matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
           target !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
       const {owner: source, device} = selected;
@@ -822,6 +844,7 @@ export class ConversationActions {
       if (!access('devices', 'index', device.id) || !access('devices', 'label', device.id) || !access('devices', 'status', device.id)) {
         return textResult({devices: []});
       }
+      if (scopedFacts.named !== undefined) scopedFacts.recordNamed(source, device.id);
       if (scopedFacts.brightnessControl) {
         const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');
         const controls = this.enabled.filter(name => name === SET_LIFX_BRIGHTNESS && source === LIFX && device.capabilities.brightness.supported ||
