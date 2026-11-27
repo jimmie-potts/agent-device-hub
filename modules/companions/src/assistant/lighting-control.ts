@@ -3,7 +3,7 @@ import {assistantRoutes, type CatalogProposal, type ObservationBasis} from '@jim
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {catalogCommand} from './catalog-tools.js';
-import {containsControlValue, missingBrightnessSubject, normalizedControlText} from './control-intent.js';
+import {containsControlValue, matchesControlSubject, missingBrightnessSubject, normalizedControlText} from './control-intent.js';
 import {currentObservationBasis, deviceLabel, type LifxDeviceFacts, type OwnedDevice} from '@jimmie-potts/sdk';
 import {controlReferenceIds, exactControlIds, resolveModelControl, type ControlReference, type ControlResolution, type ModelControlScope} from './model-control.js';
 import {SET_LIFX_BRIGHTNESS, SET_LIFX_POWER} from './tool-scope.js';
@@ -383,8 +383,13 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   if (range === undefined) return {kind: 'refused', code: 'unavailable'};
   if (!range.supported) return {kind: 'refused', code: 'unsupported-capability'};
   const {minimum, maximum} = range;
-  if (brightness && previous === undefined && missingBrightnessSubject(scope.request.text) !== undefined) {
-    return {kind: 'quantity-clarification', unit, operation: 'absolute', reason: 'missing'};
+  if (brightness && previous === undefined) {
+    const subject = missingBrightnessSubject(scope.request.text);
+    // "To" may introduce a value before the word brightness, or belong to the
+    // canonical device name already established for this request.
+    if (subject !== undefined && (!subject.includes(' to ') || matchesControlSubject(subject, row.device.id, deviceLabel(row.device)))) {
+      return {kind: 'quantity-clarification', unit, operation: 'absolute', reason: 'missing'};
+    }
   }
   const supplied = answer === undefined ? [] : quantityTokens(answer);
   const useAnswer = answer !== undefined && (supplied.length > 0 || previous?.kind === 'quantity-clarification');

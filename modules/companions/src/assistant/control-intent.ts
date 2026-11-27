@@ -76,6 +76,12 @@ export function literalToolDeviceId(target: unknown): string | undefined {
 
 export const literalDeviceId = (value: string): string | undefined => /^id:([a-z0-9-]{1,128})$/u.exec(value.trim())?.[1];
 
+export function matchesControlSubject(subject: string | undefined, id: string, label: string): boolean {
+  if (subject === undefined) return false;
+  const explicit = literalDeviceId(subject);
+  return explicit === undefined ? [id, label].some(name => normalizedControlText(name) === subject) : id === explicit;
+}
+
 /** Keep an explicit ID only when it accounts for the entire subject of the recognized instruction or read. */
 export function literalDeviceSubject(text: string, subject: string): string {
   const tokens = text.matchAll(/(?:^|\s)(id:[a-z0-9-]{1,128})(?=\s|[?!.;,]?$)/gu);
@@ -94,8 +100,7 @@ export function brightnessSubject(text: string): string | undefined {
 export function missingBrightnessSubject(text: string): string | undefined {
   const words = explicitWords(text);
   const subject = words === undefined ? undefined : /^(?:set|change) (.+) brightness(?: to| at)?$/u.exec(words)?.[1];
-  // A setting before the trailing word "brightness" occupies its own slot.
-  return subject === undefined || subject.includes(' to ') ? undefined : literalDeviceSubject(text, optionalArticle(subject));
+  return subject === undefined ? undefined : literalDeviceSubject(text, optionalArticle(subject));
 }
 const optionalArticle = (value: string) => value.replace(/^(?:the|my) /u, '');
 const matchNumber = (expression: RegExp, input: string, requested: unknown): {subject: string} | undefined => {

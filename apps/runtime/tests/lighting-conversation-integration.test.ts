@@ -14,12 +14,20 @@ for (const provider of ['anthropic', 'openai'] as const) {
     {kind: 'power', label: 'admits a matching explicit power action', text: 'Turn Studio 2 off.'},
     {kind: 'power', label: 'admits a polite power action', text: 'Could you switch Studio 2 off, please?'},
     {kind: 'power', label: 'refuses a power write on a recognized status question', text: 'Is Studio 2 off?', refusal: 'read-only'},
+    {kind: 'power', label: 'refuses a power write during a pure device check', text: 'Check Studio 2.', refusal: 'read-only'},
+    {kind: 'power', label: 'admits a command following a device check', text: 'Check Studio 2, then turn it off.'},
     {kind: 'power', label: 'refuses the opposite of an explicit power action', text: 'Turn Studio 2 on.', refusal: 'opposite'},
+    {kind: 'power', label: 'refuses writing to a device named with a conjunction during status', text: 'Is Desk and Shelf Lamp off?',
+      deviceLabel: 'Desk and Shelf Lamp', refusal: 'read-only'},
+    {kind: 'power', label: 'refuses the opposite for a device named with a conjunction', text: 'Turn Desk and Shelf Lamp on.',
+      deviceLabel: 'Desk and Shelf Lamp', refusal: 'opposite'},
     {kind: 'power', label: 'refuses a power write on a contextual status question', text: 'Is it off?', refusal: 'read-only', previous: 'Turn Studio 2 off.'},
     {kind: 'power', label: 'refuses the opposite of a contextual power action', text: 'Turn it on.', refusal: 'opposite', previous: 'Turn Studio 2 off.'},
     {kind: 'power', label: 'admits a matching contextual power action', text: 'Switch that one off.', previous: 'Turn Studio 2 off.'},
     {kind: 'brightness', label: 'admits a qualitative brightness setting', text: 'Set Studio 2 to half brightness.', percent: 50},
     {kind: 'brightness', label: 'asks when the owner omitted a brightness setting', text: 'Set Studio 2 brightness.', refusal: 'missing'},
+    {kind: 'brightness', label: 'asks when a device name includes a brightness-setting separator', text: 'Set Wall to Wall brightness.',
+      deviceLabel: 'Wall to Wall', refusal: 'missing'},
     {kind: 'brightness', label: 'asks when the owner omitted a contextual brightness setting', text: 'Set its brightness.', refusal: 'missing',
       previous: 'Set Studio 2 brightness to 50%.'},
     {kind: 'brightness', label: 'admits a contextual qualitative brightness setting', text: 'Set it to half brightness.', percent: 50,
@@ -38,7 +46,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const clock = manualClock(1_700_000_000_000);
       const id = 'fixture-light', owner = 'bunny/modules/lifx';
       let light = deviceRecord(id, 1, 'lifx', 'available');
-      light.label = 'Studio 2';
+      light.label = 'deviceLabel' in scenario ? scenario.deviceLabel : 'Studio 2';
       light.capabilities.power = {supported: true};
       light.capabilities.brightness = {supported: true, minimum: 0, maximum: 100};
       light.observed = {status: 'known', observedAtMs: clock.now() - (refusal === 'stale' ? 31_000 : 0), power: {status: 'known', value: true},
@@ -148,7 +156,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
       if ('previous' in scenario) {
         await submit({action: 'start', text: scenario.previous});
         await waitFor(() => writes.length === 1);
-        await clock.advance(1200);
+        clock.advance(1200);
         await waitFor(() => companions.inspectAssistant()?.tasks[0]?.status === 'succeeded');
         assert.equal(submissions.length, 1);
         writes.length = 0;

@@ -23,7 +23,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, explicitPowerRequest, hubModeChoice, literalDeviceId, missingBrightnessSubject, missingMode, namedControlTargets, normalizedControlText, type BoundControl, type SceneReceipt} from './control-intent.js';
+import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, explicitPowerRequest, hubModeChoice, literalDeviceId, matchesControlSubject, missingBrightnessSubject, missingMode, namedControlTargets, normalizedControlText, type BoundControl, type SceneReceipt} from './control-intent.js';
 import {lightingControl, lightingFamily, lightingReference, lightingRefusal, lightingValue, planLightingControl, qualifiedLightingOwner, resolveLightingTarget, updateLightingGrounding, type LightingControlScope, type LightingDevice, type LightingClarification, type LightingQuestion} from './lighting-control.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, resolveModelControl, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
@@ -220,7 +220,7 @@ const jobReceipt = (job: CodingJob): string => `accepted: Coding job ${job.jobId
 
 const deviceRequestClauses = (text: string) => text.trim().split(/(?<=[.!?;,])(?:\s+|$)|[\r\n]+/u).filter(Boolean);
 
-function deviceRequestSubject(text: string, onlyRead = false): string | undefined {
+function deviceRequestSubject(text: string, kind: 'any' | 'read' | 'status' = 'any'): string | undefined {
   const [opening = '', remainder] = deviceRequestClauses(text);
   const affirmative = normalizedControlText(opening).replace(/ only$/u, '');
   const timerSubject = /^(?:is|was) (?:the )?timer for (?:the )?(.+?) (?:on|off|active|armed)$/u.exec(affirmative)?.[1]
@@ -230,17 +230,15 @@ function deviceRequestSubject(text: string, onlyRead = false): string | undefine
     ?? /^(?:please )?(?:show|check|read) (?:me )?(?:the )?(?:currently )?(?:reported )?(?:status|state|brightness|power) (?:of|for) (?:the )?(.+)$/u.exec(affirmative)?.[1]
     ?? /^(?:please )?(?:show|check|read) (?:me )?(?:the )?(.+?) (?:status|state|brightness|power)$/u.exec(affirmative)?.[1]
     ?? /^(?:please )?(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available)$/u.exec(affirmative)?.[1];
-  const subject = readSubject ?? (onlyRead ? undefined
-    : /^(?:please )?(?:list|show|check|read) (?:the )?(.+)$/u.exec(affirmative)?.[1] ?? explicitPowerRequest(text)?.subject);
-  if (subject === undefined || remainder !== undefined && (onlyRead || deviceGroup(subject) !== undefined)) return undefined;
+  const generalRead = kind === 'status' ? undefined : /^(?:please )?(?:list|show|check|read) (?:the )?(.+)$/u.exec(affirmative)?.[1];
+  const subject = readSubject ?? generalRead ?? (kind === 'any' ? explicitPowerRequest(text)?.subject : undefined);
+  if (subject === undefined || remainder !== undefined && (kind !== 'any' || deviceGroup(subject) !== undefined)) return undefined;
   const id = exactControlIds(opening).find(id => literalDeviceId(`id:${id}`) === id && normalizedControlText(`id:${id}`) === subject);
   return id === undefined ? subject : `id:${id}`;
 }
 
 function matchesDeviceRequestSubject(subject: string | undefined, device: DeviceRecord): boolean {
-  if (subject === undefined) return false;
-  const literal = literalDeviceId(subject);
-  return literal === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === literal;
+  return matchesControlSubject(subject, device.id, deviceLabel(device));
 }
 
 const exclusionsInDeviceRequest = /\b(?:except|rather than|instead of|not|don t|without|leave)\b/u;
@@ -2740,13 +2738,16 @@ export class AssistantEngine {
     const instruction = scope.request.text;
     // The resolved device is the subject of these recognized constraints, including when
     // the current request references a device from shared Conversation context.
-    const readSubject = deviceRequestSubject(instruction, true);
-    if (readSubject !== undefined && !/\band\b/u.test(readSubject)) {
+    const complete = (subject: string): boolean =>
+      !/\band\b/u.test(subject) || matchesDeviceRequestSubject(subject, row.device);
+    const status = deviceRequestSubject(instruction, 'status');
+    const generalRead = deviceRequestSubject(instruction, 'read');
+    if (status !== undefined && complete(status) || matchesDeviceRequestSubject(generalRead, row.device)) {
       return 'refused: the owner asked for device status. Read the current setting without sending a command.';
     }
     if (input.setting.family === 'power-set') {
       const explicit = explicitPowerRequest(instruction);
-      if (explicit !== undefined && !/\band\b/u.test(explicit.subject) &&
+      if (explicit !== undefined && complete(explicit.subject) &&
           explicit.on !== input.setting.on) return 'refused: the proposed power setting conflicts with the owner request.';
     }
     const native = call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS;
@@ -2801,15 +2802,18 @@ export class AssistantEngine {
     const scope = this.#modelControlScope(this.#task(task.id), saved.history, undefined, rows);
     if (!this.#sameControlSources(saved, scope)) return 'forbidden';
     if (saved.modeRevision !== scope.modeRevision) return 'revision-conflict';
-    const target = control.proposal.target;
-    const resolved = resolveLightingTarget(scope, `id:${target}`);
-    if (resolved.kind === 'refused' && resolved.code === 'forbidden') return 'forbidden';
-    if (resolved.kind !== 'ready' || resolved.targets[0] !== target) return 'revision-conflict';
-    const original = saved.references.find(reference => reference.id === target);
-    const current = scope.references.find(reference => reference.id === target);
-    if (current === undefined || original?.snapshot !== controlReferenceSnapshot(current)) return 'revision-conflict';
-    const row = rows.find(candidate => candidate.device.id === target);
-    if (row?.device.availability !== 'available' || row.device.held !== undefined) return 'unavailable';
+    const {proposal} = control;
+    const owner = proposal.family === 'catalog-action' && proposal.binding.kind === 'device'
+      ? proposal.binding.owner : ASSISTANT_LIGHT_OWNER;
+    const matching = rows.filter(({device}) => device.id === proposal.target);
+    const [row] = matching;
+    if (matching.length !== 1 || row?.owner !== owner) return 'revision-conflict';
+    const current = scope.references.find(reference => reference.id === proposal.target);
+    if (current?.allowed !== true) return 'forbidden';
+    // A new alias, revoked context or changed device binding invalidates the
+    // saved candidate evidence. The model selector is resolved only at admission.
+    if (!current.eligible || !isDeepStrictEqual(saved.references, modelControlProof(scope).references)) return 'revision-conflict';
+    if (row.device.availability !== 'available' || row.device.held !== undefined) return 'unavailable';
     const basis = control.observationBasis;
     if (basis !== undefined && !isDeepStrictEqual(currentObservationBasis(row, basis.kind, this.context.clock.now(), row.light), basis)) return 'revision-conflict';
     if (this.store.queue.steers(task.id).length > 0) return 'cancelled';
