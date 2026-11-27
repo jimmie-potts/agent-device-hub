@@ -45,6 +45,9 @@ type CatalogTargetSource = 'artwork' | 'devices' | 'operations' | 'playback' | '
 export type CatalogAdmission = {
   readonly selector: (kind: CatalogReferenceRole, selector: string, contextIds?: readonly string[]) => boolean;
   readonly target: (id: string, source: CatalogTargetSource, alternatives: readonly CatalogTarget[], implicit?: boolean, nested?: readonly string[]) => ErrorCode | undefined;
+  readonly excludedNames: (role: CatalogReferenceRole) => readonly string[];
+  readonly excluded: (role: CatalogReferenceRole, id: string, label?: string) => boolean;
+  readonly lastActivatedScene: (deviceId: string, parent: TraceContext) => Promise<string | null | undefined>;
   readonly visible: (source: CatalogTargetSource, id: string) => boolean;
   readonly attachedArtwork?: (sourceRequestId: string, artworkIds: readonly string[], displays: readonly string[]) => boolean;
   readonly current: () => boolean;
@@ -232,6 +235,40 @@ export class ConversationActions {
     return operations?.find(row => row.requestId === requestId && row.requestedBy === this.context.sdk.source);
   }
 
+  async lastActivatedScene(deviceId: string,
+    candidates: readonly {requestId: string; sceneId: string; permitted: boolean}[], parent: TraceContext): Promise<string | undefined> {
+    if (candidates.length === 0) return undefined;
+    const operations = await this.#snapshot<OperationRecord>(CORE, 'operation', parent);
+    if (operations === undefined) return undefined;
+    const relevant = operations.filter(row => row.target === deviceId && row.family === 'scene-activate');
+    const ruledOut = (row: OperationRecord): boolean => row.status === 'expired' || row.status === 'rejected' ||
+      row.status === 'completed' && row.result === Outcome.failed;
+    const ordered = relevant.filter(row => !ruledOut(row)).sort((a, b) => b.sentAtMs - a.sentAtMs);
+    const [latest, next] = ordered;
+    if (latest?.status !== 'completed' || latest.result !== Outcome.succeeded || latest.sentAtMs === next?.sentAtMs ||
+      latest.requestedBy !== this.context.sdk.source) return undefined;
+    const index = candidates.findIndex(candidate => candidate.requestId === latest.requestId);
+    if (index < 0 || candidates.slice(0, index).some(candidate => !relevant.some(row => row.requestId === candidate.requestId))) return undefined;
+    const candidate = candidates[index];
+    if (candidate?.permitted === true) return candidate.sceneId;
+    return undefined;
+  }
+
+  async #canonicalExclusion(kind: 'scene' | 'asset', id: string, deviceId: string, guard: () => ErrorCode | undefined,
+    admission?: CatalogAdmission): Promise<ErrorCode | undefined> {
+    if (admission?.excluded(kind, id) === true) return 'not-found';
+    const names = admission?.excludedNames(kind).filter(name => catalogSelectorId(kind, name) === undefined) ?? [];
+    if (names.length === 0) return undefined;
+    const read = this.readIdentity;
+    if (read === undefined) return 'unavailable';
+    const matches = await Promise.all(names.map(name => read(kind === 'scene' ? {kind, deviceId, name} : {kind, name}, 1200)));
+    const changed = guard();
+    if (changed !== undefined) return changed;
+    if (matches.some(match => 'id' in match && match.id === id)) return 'not-found';
+    const refusal = matches.find(match => 'error' in match && match.error.code !== 'not-found');
+    return refusal !== undefined && 'error' in refusal ? refusal.error.code : undefined;
+  }
+
   #authoring(): ShowDrafts {return this.#drafts ??= new ShowDrafts(this.context.database());}
 
   async #saveData(call: ToolCall, parent: TraceContext, admission?: CatalogAdmission): Promise<{draftRevision: number; data: Record<string, unknown>} | Refusal> {
@@ -351,9 +388,19 @@ export class ConversationActions {
         ({data} = resolved);
       }
       const {modes, scenes, moments, media} = device.capabilities;
-      if (family === 'scene-activate' && typeof data.sceneId === 'string') {
-        if (admission !== undefined && !admission.selector('scene', data.sceneId, [device.id])) return {code: 'invalid-request'};
-        data = {...data, sceneId: literalDeviceId(data.sceneId) ?? data.sceneId};
+      const sceneSelector = data.sceneId;
+      if (family === 'scene-activate' && typeof sceneSelector === 'string') {
+        const previous = await admission?.lastActivatedScene(device.id, parent);
+        if (previous !== undefined) {
+          if (previous === null || sceneSelector !== 'last-activated' || !scenes.supported || !scenes.sceneIds.includes(previous)) {
+            return {question: 'Which saved scene would you like to activate on this light?'};
+          }
+          if (guard() !== undefined) return {code: 'forbidden'};
+          data = {...data, sceneId: previous};
+        } else {
+          if (admission !== undefined && !admission.selector('scene', sceneSelector, [device.id])) return {code: 'invalid-request'};
+          data = {...data, sceneId: literalDeviceId(sceneSelector) ?? sceneSelector};
+        }
       }
       if (family === 'scene-activate' && scenes.supported && typeof data.sceneId === 'string' &&
         !scenes.sceneIds.includes(data.sceneId) && !/^scene-[a-f0-9]{64}$/u.test(data.sceneId) && this.readIdentity !== undefined) {
@@ -364,6 +411,11 @@ export class ConversationActions {
           ? {question: 'More than one saved scene has that name on this light. Which scene ID should I use?'}
           : {code: match.error.code};
         data = {...data, sceneId: match.id};
+      }
+      if (family === 'scene-activate' && typeof data.sceneId === 'string') {
+        const exclusion = await this.#canonicalExclusion('scene', data.sceneId, device.id, guard, admission);
+        if (exclusion !== undefined) return exclusion === 'invalid-state'
+          ? {question: 'Which saved scene would you like to activate on this light?'} : {code: exclusion};
       }
 
       if (family === 'device-mode-set' && (!modes.supported || !modes.values.some(value => value === data.mode)) ||
@@ -426,6 +478,8 @@ export class ConversationActions {
           if (named.length > 1) return {question: 'Which saved reactive preset should change?'};
           data = {...data, presetId: named[0]?.presetId ?? `preset-${randomUUID()}`};
         }
+        const preset = library.presets.find(candidate => candidate.presetId === data.presetId);
+        if (preset !== undefined && admission?.excluded('preset', preset.presetId, preset.name) === true) return {code: 'not-found'};
         data = {...data, expectedRevision: library.revision};
       }
     }
@@ -444,7 +498,7 @@ export class ConversationActions {
       const artworkId = data.artworkId;
       if (admission !== undefined && contextDisplays.every(name => normalize(name) === 'browser') &&
         !admission.covers([binding.target, artworkId, 'browser'])) return {code: 'not-found'};
-      if (admission?.visible('artwork', artworkId) === false) return {code: 'not-found'};
+      if (admission?.visible('artwork', artworkId) === false || admission?.excluded('artwork', artworkId) === true) return {code: 'not-found'};
       const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
       if (admission?.visible('artwork', artworkId) === false) return {code: 'not-found'};
       if (art === undefined) return {code: 'unavailable'};
@@ -502,11 +556,13 @@ export class ConversationActions {
       if (family === 'pixoo-playlist-change' && (!object(change) || change.operation === 'create')) return {data};
       const selector = family === 'media-start' ? data.playlistId : object(change) ? change.playlistId : undefined;
       if (admission !== undefined && (typeof selector !== 'string' || !admission.selector('playlist', selector, [device.id]))) return {code: 'invalid-request'};
-      if (family === 'media-start' && media.supported && media.playlistIds.some(id => id === selector)) return {data};
+      if (family === 'media-start' && media.supported && media.playlistIds.some(id => id === selector) &&
+        (admission?.excludedNames('playlist').length ?? 0) === 0) return {data};
       const playlists = await this.#snapshot<{id: string; name: string; playlistRevision: number}>('bunny/modules/pixoo', 'pixoo-playlist', parent);
       if (guard() !== undefined) return {code: 'forbidden'};
       const selected = namedRecord(playlists, selector, playlist => playlist.name);
       if ('code' in selected) return selected;
+      if (admission?.excluded('playlist', selected.id, selected.name) === true) return {code: 'not-found'};
       if (family === 'media-start') return {data: {...data, playlistId: selected.id}};
       if (!object(change)) return {code: 'invalid-request'};
       if (change.revision !== undefined && change.revision !== selected.playlistRevision) return {code: 'revision-conflict'};
@@ -514,11 +570,13 @@ export class ConversationActions {
     }
     if (family === 'pixoo-media-show' && admission !== undefined &&
       (typeof data.renditionId !== 'string' || !admission.selector('rendition', data.renditionId, [device.id]))) return {code: 'invalid-request'};
-    if (family === 'pixoo-media-show' && media.supported && !media.renditionIds.some(id => id === data.renditionId)) {
+    if (family === 'pixoo-media-show' && media.supported &&
+      (!media.renditionIds.some(id => id === data.renditionId) || (admission?.excludedNames('rendition').length ?? 0) > 0)) {
       const renditions = await this.#snapshot<{id: string; name: string; compatible: boolean}>('bunny/modules/pixoo', 'pixoo-rendition', parent);
       if (guard() !== undefined) return {code: 'forbidden'};
       const selected = namedRecord(renditions?.filter(item => item.compatible), data.renditionId, item => item.name);
-      return 'code' in selected ? selected : {data: {...data, renditionId: selected.id}};
+      if ('code' in selected) return selected;
+      return admission?.excluded('rendition', selected.id, selected.name) === true ? {code: 'not-found'} : {data: {...data, renditionId: selected.id}};
     }
     if (family === 'pixoo-asset-change' && object(data.change) && data.change.operation !== 'import') {
       const {assetId} = data.change;
@@ -535,6 +593,9 @@ export class ConversationActions {
       if ('error' in match) return match.error.code === 'invalid-state'
         ? {question: 'More than one saved asset has that name. Which asset ID should I use?'}
         : {code: match.error.code};
+      const exclusion = await this.#canonicalExclusion('asset', match.id, device.id, guard, admission);
+      if (exclusion !== undefined) return exclusion === 'invalid-state'
+        ? {question: 'Which saved asset would you like to use?'} : {code: exclusion};
       return {data: {...data, change: {...data.change, assetId: match.id}}};
     }
     return {data};
@@ -596,6 +657,7 @@ export class ConversationActions {
       if (library === undefined) return {code: 'unavailable'};
       const show = namedRecord(library.shows.filter(record => admission?.visible('shows', record.id) ?? true), showId, record => record.name);
       if ('code' in show) return show;
+      if (admission?.excluded('draft', show.id, show.name) === true) return {code: 'not-found'};
       const selected = version === -1 ? show.version : version;
       if (typeof selected !== 'number' || !show.versions.some(item => item.version === selected)) return {code: 'not-found'};
       data = {action, showId: show.id, version: selected, positionMs: data.positionMs ?? 0, startDelayMs: data.startDelayMs ?? 0};
@@ -642,7 +704,11 @@ export class ConversationActions {
     const {cue} = call.input, {cues} = draft.value.timeline;
     const index = typeof cue === 'string' ? showCueIndex(cues, cue) : -1;
     const selected = cues[index];
-    if (selected === undefined || !catalogCueReferences(selected.id, index).some(value => admission.selector('cue', value))) return {code: 'not-found'};
+    if (selected === undefined) return {code: 'not-found'};
+    const cueReferences = catalogCueReferences(selected.id, index);
+    if (cueReferences.some(value => admission.excluded('cue', value)) || !cueReferences.some(value => admission.selector('cue', value))) {
+      return {code: 'not-found'};
+    }
     if (admission.target(draft.value.showId, 'shows', drafts.references(allowed), false, [selected.id]) !== undefined) return {code: 'not-found'};
     return {...drafts.edit({...call.input, draftId: draft.value.showId, cue: selected.id}), draftId: draft.value.showId};
   }

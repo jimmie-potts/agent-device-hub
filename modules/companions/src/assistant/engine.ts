@@ -34,7 +34,7 @@ import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {chooseBrightnessSubject, ConversationActions, deviceClarification, type CatalogAdmission, type CatalogIdentityRead, type RetainedArtworkRead} from './catalog-actions.js';
 import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import {catalogQuoteNames, catalogReferenceConflict, catalogReferencesFor, catalogSelectorSelected, isCatalogSelectorKind, readCatalogReferences} from './catalog-grounding.js';
+import {catalogExactTargets, catalogExcluded, catalogHistoryNames, catalogQuoteNames, catalogReferenceConflict, catalogSelections, catalogSelectionText, catalogSelectorSelected, isCatalogSelectorKind, readCatalogReferences} from './catalog-grounding.js';
 import {catalogCommand, catalogTool, catalogToolReferenceRoles, catalogToolWithReferences, draftMutation, isCatalogTool, modelCatalogCommand, modelCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
 import {DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
 import {SyntheticProvider} from './synthetic.js';
@@ -2592,6 +2592,17 @@ export class AssistantEngine {
     return [scope.request.text, scope.answer?.text ?? '', ...prior];
   }
 
+  #catalogPriorCalls(task: Task, modelCallId: string): readonly Call[] {
+    const history = this.#hostedHistory(task);
+    const sources = new Set((this.store.call(modelCallId)?.historySources ?? []).map(({id}) => id));
+    const ownerMessages = [...history.values()].filter(message => message.role === 'owner' && sources.has(message.id));
+    const taskIds = [...new Set(ownerMessages.map(message => message.taskId))].reverse();
+    const savedOwnerIds = new Set(ownerMessages.map(message => message.id));
+    return taskIds.flatMap(id => this.store.calls(id).slice().reverse().filter(call =>
+      call.kind === 'tool' && call.result?.startsWith('refused: ') !== true &&
+      call.action?.control !== undefined && call.action.control.ownerMessageIds.every(ownerId => savedOwnerIds.has(ownerId))));
+  }
+
   #catalogAdmission(taskId: string, modelCallId: string, call: ToolCall): CatalogAdmission {
     const current = () => {
       const task = this.#task(taskId);
@@ -2601,7 +2612,8 @@ export class AssistantEngine {
       const refs = readCatalogReferences(call.input.references, scope);
       if (refs === undefined && definition.input.required.includes('references')) return undefined;
       const roles = catalogToolReferenceRoles(call.name);
-      return refs?.some(ref => !roles.includes(ref.role)) === true ? undefined : {task, scope, refs};
+      if (refs?.some(ref => !roles.includes(ref.role)) === true) return undefined;
+      return {task, scope: refs === undefined ? scope : {...scope, exactTargets: catalogExactTargets(scope, refs)}, refs};
     };
     const visible: CatalogAdmission['visible'] = (source, id) => {
       const active = current();
@@ -2620,26 +2632,34 @@ export class AssistantEngine {
       ownerText: () => {
         const active = current();
         if (active === undefined) return {text: '', explicitIds: []};
-        const {scope} = active;
-        return {text: [scope.request.text, scope.answer?.text ?? ''].join(' '), explicitIds: scope.exactTargets};
+        const {scope, refs} = active;
+        return {text: refs === undefined ? `${scope.request.text} ${scope.answer?.text ?? ''}`
+          : `${catalogSelectionText(scope, refs, 'request')} ${catalogSelectionText(scope, refs, 'answer')}`, explicitIds: scope.exactTargets};
       },
       selector: (kind, selector, contextIds) => {
         const active = current();
         if (active === undefined) return false;
         if (active.refs !== undefined) {
-          const selected = catalogReferencesFor(active.refs, kind);
-          if (selected.some(ref => ref.kind === 'named')) return selected.some(ref =>
-            ref.kind === 'named' && catalogQuoteNames(ref.quote, literalDeviceId(selector) ?? selector));
+          const id = literalDeviceId(selector) ?? selector;
+          if (catalogExcluded(active.refs, kind, id)) return false;
+          const selected = catalogSelections(active.refs, kind);
+          if (selected.length > 0 && selected.every(ref => ref.kind === 'named')) {
+            const plural = call.name === catalogTool('pixoo-playlist-change') && (kind === 'playlist-item' || kind === 'rendition');
+            return (plural || selected.length === 1) && selected.some(ref => catalogQuoteNames(ref.quote, id));
+          }
           const ref = selected[0];
           if (selected.length !== 1 || ref?.kind !== 'prior') return false;
           const prior = this.#catalogReferenceTexts(active.task, active.scope, modelCallId, true).slice(2);
           if (!isCatalogSelectorKind(kind)) return prior.some(text => containsControlValue(text, selector));
-          const {request, history, modeRevision, references} = active.scope;
-          return catalogSelectorSelected(kind, selector, {request: {...request, text: ref.quote}, history,
-            modeRevision, references, exactTargets: []}, prior, contextIds);
+          return catalogHistoryNames(kind, selector, prior);
         }
         return !isCatalogSelectorKind(kind) || catalogSelectorSelected(kind, selector, active.scope,
           this.#catalogReferenceTexts(active.task, active.scope, modelCallId, true).slice(2), contextIds);
+      },
+      excludedNames: role => current()?.refs?.filter(ref => ref.role === role && ref.disposition === 'exclude').map(ref => ref.quote) ?? [],
+      excluded: (role, id, label) => {
+        const refs = current()?.refs;
+        return refs !== undefined && catalogExcluded(refs, role, id, label);
       },
       visible,
       attachedArtwork: (requestId, artworkIds, displays) => {
@@ -2647,7 +2667,7 @@ export class AssistantEngine {
         if (active === undefined) return false;
         const {task, scope, refs} = active, through = task.contextThrough;
         if (through === undefined || refs !== undefined &&
-          !catalogReferencesFor(refs, 'artwork').some(ref => ref.kind === 'prior')) return false;
+          !catalogSelections(refs, 'artwork').some(ref => ref.kind === 'prior')) return false;
         const displayIds = displays.filter(id => !artworkIds.includes(id));
         if (scope.exactTargets.some(id => !displayIds.includes(id)) ||
           artworkIds.some(id => catalogSelectorSelected('artwork', id, scope, [], displayIds))) return false;
@@ -2662,17 +2682,39 @@ export class AssistantEngine {
           read('conversation', 'text', message.id) && model('conversation', 'text', message.id))
           .messages.some(message => message.attachment?.requestId === requestId);
       },
+      lastActivatedScene: async (deviceId, parent) => {
+        const active = current();
+        if (active?.refs === undefined) return undefined;
+        const {task, refs} = active;
+        const [selection, ...others] = catalogSelections(refs, 'scene');
+        if (selection?.kind !== 'last-activated' || others.length > 0) return undefined;
+        const read = this.#fields(task.profile, 'read', 'private-conversation');
+        const requestIds = this.#catalogPriorCalls(task, modelCallId).flatMap(prior => {
+          const control = prior.action?.control;
+          const proposal = control?.proposal;
+          if (proposal?.family !== 'catalog-action' || proposal.command !== 'scene-activate' || proposal.target !== deviceId ||
+            typeof proposal.data.sceneId !== 'string' || !this.#catalogFieldsPermitted(task, proposal)) return [];
+          return [{requestId: prior.id, sceneId: proposal.data.sceneId, permitted: read('operations', 'details', prior.id)}];
+        });
+        const scene = await this.#catalog().lastActivatedScene(deviceId, requestIds, parent);
+        return scene !== undefined && current() !== undefined && !catalogExcluded(refs, 'scene', scene) ? scene : null;
+      },
       target: (id, source, alternatives, implicit = false, nested = []) => {
         const active = current();
         if (active === undefined || !visible(source, id)) return 'forbidden';
         const {task, scope, refs} = active;
         const texts = this.#catalogReferenceTexts(task, scope, modelCallId, true);
         const references = alternatives.map(target => ({...target, binding: '', allowed: visible(source, target.id), eligible: false}));
-        const addressed = new Set([scope.request.text, scope.answer?.text ?? ''].flatMap(text => controlReferenceIds(references, text)));
+        const excluded = (candidate: (typeof references)[number]) =>
+          refs !== undefined && catalogExcluded(refs, source === 'shows' ? 'draft' : 'primary', candidate.id, candidate.label);
+        if (references.some(candidate => candidate.id === id && excluded(candidate))) return 'not-found';
+        const addressed = new Set((refs === undefined ? [scope.request.text, scope.answer?.text ?? '']
+          : [catalogSelectionText(scope, refs, 'request'), catalogSelectionText(scope, refs, 'answer')])
+          .flatMap(text => controlReferenceIds(references, text)));
         const exact = scope.exactTargets.filter(value => !nested.includes(value) || references.some(reference => reference.id === value));
         if (exact.some(value => !references.some(reference => reference.id === value))) return 'not-found';
-        if (refs !== undefined && source !== 'shows') {
-          const primary = catalogReferencesFor(refs, 'primary');
+        if (refs !== undefined) {
+          const primary = catalogSelections(refs, source === 'shows' ? 'draft' : 'primary');
           if (primary.length === 0) return implicit && alternatives.length === 1 && exact.length === 0 && source === 'status'
             ? undefined : 'not-found';
           if (primary.length !== 1 || primary[0] === undefined) return 'invalid-state';
@@ -2683,13 +2725,17 @@ export class AssistantEngine {
             if (matches[0]?.id !== id && !(implicit && source === 'playback' && alternatives.length === 1 &&
               ['music', 'playback'].some(label => catalogQuoteNames(ref.quote, label)))) return 'not-found';
             if (exact.some(value => value !== id)) return 'not-found';
-            const body = ref.source === 'answer' ? scope.answer?.text ?? '' : scope.request.text;
-            return references.some(candidate => candidate.id !== id && candidate.allowed &&
+            const body = catalogSelectionText(scope, refs, ref.source);
+            return references.some(candidate => candidate.id !== id && candidate.allowed && !excluded(candidate) &&
               catalogReferenceConflict(body, ref.quote, candidate.id, candidate.label)) ? 'not-found' : undefined;
           }
           if (addressed.size > 0 || exact.length > 0) return 'not-found';
-          const prior = new Set(texts.slice(2).flatMap(text => controlReferenceIds(references, text)));
-          return prior.size === 1 && prior.has(id) ? undefined : 'not-found';
+          const [latest] = texts.slice(2).reverse().map(text => controlReferenceIds(references, text)).filter(ids => ids.length > 0);
+          if (latest !== undefined) return latest.length === 1 && latest[0] === id ? undefined : 'not-found';
+          const prior = this.#catalogPriorCalls(task, modelCallId).find(call => call.action?.control?.proposal.family === 'catalog-action' &&
+            call.action.control.proposal.command === 'playback-control' && call.status === 'succeeded' &&
+            call.result?.startsWith('accepted: ') === true);
+          return source === 'playback' && prior?.action?.control?.proposal.target === id ? undefined : 'not-found';
         }
         if (implicit && alternatives.length === 1 && exact.length === 0 && addressed.size === 0) return undefined;
         const eligible = new Set(texts.flatMap(text => controlReferenceIds(references, text)));
@@ -2768,20 +2814,23 @@ export class AssistantEngine {
       const physical = artTargets.filter(target => target !== 'browser');
       if (artTargets.length > 0 && this.#taskProvider(task).name !== 'synthetic') {
         const refs = readCatalogReferences(call.input.references, scope);
-        const primary = refs === undefined ? [] : catalogReferencesFor(refs, 'primary');
+        const primary = refs === undefined ? [] : catalogSelections(refs, 'primary');
         const destinations = [...(knownTargets ?? []), ['browser', 'dashboard']];
         const selected = new Set<string>();
         for (const ref of primary) {
           if (ref.kind !== 'named') return {code: 'not-found'};
-          const matches = destinations.filter(([id, label]) => id !== undefined && catalogQuoteNames(ref.quote, id, label));
+          const matches = destinations.filter(([id, label]) => id !== undefined &&
+            !catalogExcluded(refs ?? [], 'primary', id, label) && catalogQuoteNames(ref.quote, id, label));
           if (matches.length !== 1 || matches[0]?.[0] === undefined) return {code: 'not-found'};
           selected.add(matches[0][0]);
         }
-        if (selected.size !== artTargets.length || artTargets.some(target => !selected.has(target))) return {code: 'not-found'};
+        const exact = refs === undefined ? scope.exactTargets : catalogExactTargets(scope, refs);
+        if (selected.size !== artTargets.length || artTargets.some(target => !selected.has(target)) ||
+          exact.some(target => target !== proposal.data.artworkId && !selected.has(target))) return {code: 'not-found'};
       }
       if (artTargets.includes('browser') && !['browser', 'dashboard'].some(label =>
         [scope.request.text, scope.answer?.text ?? ''].some(text => containsControlValue(text, label)))) return {code: 'invalid-request'};
-      if (physical.length > 0) {
+      if (physical.length > 0 && this.#taskProvider(task).name === 'synthetic') {
         const targets = scope.exactTargets.filter(id => id !== proposal.data.artworkId);
         const selected = this.#catalogDeviceSelection(task, {...scope, exactTargets: targets}, physical, knownTargets ?? [], modelCallId);
         if (selected.kind === 'refused') return {code: selected.code};

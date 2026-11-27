@@ -1459,15 +1459,22 @@ permissions keep their original names. The existing owner command checks
 device revisions, generation and capability. The tracked operation shows
 acceptance and available effect evidence.
 
-For B.U.N.N.Y., Reachy and MicroDuck, the model selects the tool and
-supplies the target and settings from the owner's request. For each existing
-target, hosted supervisors cite the verbatim selector from the current request
-or its clarification and identify its role. Companions verifies the current
-words and resolves named targets against permitted owner records. A current
-reference can use eligible conversation history. Companions checks the tool's permission
-and binds the request to the current state. The receiving owner validates
-the settings and any revision guards before applying them. When a required
-setting or the intended target is ambiguous, Conversation asks for it.
+For B.U.N.N.Y., Reachy and MicroDuck, the selected hosted model interprets the
+action, settings and target roles. For each existing target, it quotes the
+complete selection or exclusion from the current request or its clarification.
+Companions checks those words against the saved owner message and resolves names
+against permitted owner records. A missing selection requires clarification
+even if an excluded record exists. The model interprets ordinary language once.
+The Hub validates the resulting references and checks the tool's permission and
+the current state. The receiving owner validates settings and revision guards.
+
+A current reference can use eligible history in the same conversation. For
+“use the last scene I activated” on a selected light, Companions checks tracked
+activation order across callers. It uses the latest successful receipt when it
+can verify the scene against an eligible owner-backed request. A later activation
+with an unresolved outcome or a receipt without an eligible scene requires the
+owner to name a scene. A successful receipt
+can report transmission with the physical effect still unconfirmed.
 
 | Conversation flow | Command families and tools |
 | --- | --- |

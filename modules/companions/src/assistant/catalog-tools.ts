@@ -98,14 +98,15 @@ export const catalogTools = [
 export const isCatalogTool = (name: string): boolean => catalogTools.some(tool => tool.name === name);
 
 const references = {
-  type: 'array', description: 'Cite the exact current words selecting each target. Include both the primary and nested selections. ' +
+  type: 'array', description: 'Interpret each current target mention and quote its exact words. Include primary and nested selections and exclusions. ' +
     'Use [] only for a fixed route without a selected record. If an owner target cannot be resolved, ask before calling a control.',
   items: {type: 'object', properties: {
     role: {type: 'string', enum: catalogReferenceRoles, description: 'primary is the device or record. Use the specific role for an existing nested target.'},
-    kind: {type: 'string', enum: ['named', 'prior'], description: 'Use named for a current name or ID and prior for a current phrase referring back.'},
+    kind: {type: 'string', enum: ['named', 'prior', 'last-activated'], description: 'Use named for a current name or ID, prior for a reference to an earlier owner selection, or last-activated for a scene activation history request. For last-activated supply sceneId as last-activated.'},
+    disposition: {type: 'string', enum: ['select', 'exclude'], description: 'Select the requested target. Exclude any target the owner rules out. A missing selected name stays selected and must never be replaced with an excluded or older target.'},
     source: {type: 'string', enum: ['request', 'answer'], description: 'Current owner request or its current clarification answer.'},
-    quote: text('The exact phrase selecting this role, copied verbatim from that owner message. Do not quote a different instruction.'),
-  }, required: ['role', 'kind', 'source', 'quote'], additionalProperties: false},
+    quote: text('The complete name or reference for this role, copied verbatim from that owner message. Do not quote a different instruction.'),
+  }, required: ['role', 'kind', 'disposition', 'source', 'quote'], additionalProperties: false},
 } as const satisfies ToolInputSchema['properties'][string];
 export function catalogToolWithReferences(tool: ToolDefinition): ToolDefinition {
   if (!modelCatalogTool(tool.name) || tool.name === CREATE_SHOW) return tool;

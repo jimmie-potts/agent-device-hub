@@ -4744,7 +4744,7 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     assert.deepEqual(drafts.edit(stale), {code: 'revision-conflict'});
 
     await control(w.core, w.module(), 'enable');
-    const ask = async (text: string, next: NonNullable<typeof proposal>, claimed?: ReturnType<typeof ownerReference>) => {
+    const ask = async (text: string, next: NonNullable<typeof proposal>, claimed?: ReturnType<typeof ownerReference> | readonly ReturnType<typeof ownerReference>[]) => {
       const previous = task(w)?.taskId;
       const draftReference = ['Desk show', 'Red Dawn', `id:${summary.id}`].find(value => text.includes(value));
       const subject = ['hall-speaker', 'missing-speaker', 'desk speaker', 'music', 'a different speaker'].find(value => text.includes(value));
@@ -4752,7 +4752,7 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
       const references = next.name === edit ? [ownerReference('draft', draftReference ?? 'unavailable'), ownerReference('cue', 'first cue')]
         : next.name !== playback ? [] : subject !== undefined || exact !== undefined ? [ownerReference('primary', exact ?? subject ?? '')]
           : [ownerReference('primary', 'it', 'prior')];
-      proposal = next.name === edit || next.name === playback ? {...next, input: {...next.input, references: claimed === undefined ? references : [claimed]}} : next;
+      proposal = next.name === edit || next.name === playback ? {...next, input: {...next.input, references: claimed === undefined ? references : 'role' in claimed ? [claimed] : claimed}} : next;
       assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
       await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
       assert.equal(proposal, undefined, 'the fake transport received the owner turn');
@@ -4800,14 +4800,14 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
     const pause = (target: string) => ({name: playback,
       input: {owner: 'bunny/modules/playback', target, arguments: '{"action":"pause"}'}});
     const misleading = [
-      ['Pause that Missing Speaker.', 'desk-speaker', ownerReference('primary', 'that Missing Speaker', 'prior')],
+      ['Pause that Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Missing Speaker')],
       ['Pause North Hall Speaker.', 'hall-speaker', ownerReference('primary', 'Hall Speaker')],
-      ['Instead of Desk Speaker, pause Hall Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker')],
-      ['Pause the other speaker like that one.', 'desk-speaker', ownerReference('primary', 'that one', 'prior')],
-      ['Instead of Desk Speaker, pause Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker')],
-      ['Pause Missing Speaker instead of Desk Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker')],
-      ['Pause Desk Speaker versus Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker')],
-      ['Pause Missing Speaker, rather than the music.', 'desk-speaker', ownerReference('primary', 'music')],
+      ['Instead of Desk Speaker, pause Hall Speaker.', 'desk-speaker', ownerReference('primary', 'Hall Speaker')],
+      ['Pause the other speaker like that one.', 'desk-speaker', ownerReference('primary', 'the other speaker')],
+      ['Instead of Desk Speaker, pause Missing Speaker.', 'desk-speaker', ownerReference('primary', 'Missing Speaker')],
+      ['Pause Missing Speaker instead of Desk Speaker.', 'desk-speaker', ownerReference('primary', 'Desk Speaker', 'named', 'request', 'exclude')],
+      ['Pause Desk Speaker versus Missing Speaker.', 'desk-speaker', [ownerReference('primary', 'Desk Speaker'), ownerReference('primary', 'Missing Speaker')]],
+      ['Pause Missing Speaker, rather than the music.', 'desk-speaker', ownerReference('primary', 'music', 'named', 'request', 'exclude')],
     ] as const;
     const substitutions: string[] = [];
     for (const [utterance, target, reference] of misleading) {
@@ -4816,6 +4816,14 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
       if (calls.length !== before) substitutions.push(utterance);
     }
     assert.deepEqual(substitutions, [], 'misclassified names, partial names and unrelated references never select the prior speaker');
+    const excludeDesk = ownerReference('primary', 'Desk Speaker', 'named', 'request', 'exclude');
+    await ask('Pause Missing Speaker, not Desk Speaker.', pause('desk-speaker'),
+      [ownerReference('primary', 'Missing Speaker'), excludeDesk]);
+    assert.equal(calls.length, 2, 'a missing selection cannot dispatch to the excluded speaker');
+    await ask('Instead of Desk Speaker, pause Hall Speaker.', pause('hall-speaker'),
+      [ownerReference('primary', 'Hall Speaker'), excludeDesk]);
+    assert.equal(calls.at(-1)?.target, 'hall-speaker');
+    assert.equal(calls.length, 3, 'a valid contrast dispatches to the selected speaker once');
     deniedSpeaker = true;
     for (const speaker of ['hall-speaker', 'missing-speaker']) {
       await ask(`Pause ${speaker}.`, {name: playback,
@@ -4823,26 +4831,31 @@ for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], 
       const latest = (await page(w, profile, 'recent')).messages.filter(message => message.role === 'tool').at(-1);
       assert.equal(latest?.text, 'refused: not-found');
     }
-    assert.equal(calls.length, 2, 'denied and absent selections never redirect to the visible speaker');
+    assert.equal(calls.length, 3, 'denied and absent selections never redirect to the visible speaker');
 
     await ask('Make the first cue in the Desk show draft half as bright.', {name: edit,
       input: {...stale, draftId: 'Desk show', revision: summary.revision, cue: '1'}});
     assert.equal(drafts.read(summary.id)?.revision, summary.revision + 1);
     assert.equal(drafts.read(summary.id)?.value.timeline.cues[0]?.intensity, 0.25);
-    assert.equal(calls.length, 2, 'private cue edit never sends a device command');
+    await ask(`Edit cue id:${cue} in Desk show, excluding the first cue.`, {name: edit,
+      input: {...stale, draftId: 'Desk show', revision: summary.revision + 1, cue}},
+    [ownerReference('draft', 'Desk show'), ownerReference('cue', `id:${cue}`),
+      ownerReference('cue', 'first cue', 'named', 'request', 'exclude')]);
+    assert.equal(drafts.read(summary.id)?.revision, summary.revision + 1, 'a cue excluded by ordinal cannot change by ID');
+    assert.equal(calls.length, 3, 'private cue edit never sends a device command');
     assert.doesNotMatch(bodies.join(' '), /PRIVATE_PLAYBACK_TITLE|Draft Desk show \(/u);
     assert.ok((await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
     deniedDraft = true;
     assert.ok(!(await page(w, profile, 'recent')).messages.some(message => message.text.startsWith('Draft Desk show (')));
     deniedSpeaker = false;
     await ask('Pause North Hall Speaker.', pause('north-hall-speaker'), ownerReference('primary', 'North Hall Speaker'));
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
     assert.equal(calls.at(-1)?.target, 'north-hall-speaker', 'the complete longer name still selects its own record');
   });
 }
 
-function ownerReference(role: string, quote: string, kind = 'named', source = 'request') {
-  return {role, quote, kind, source};
+function ownerReference(role: string, quote: string, kind = 'named', source = 'request', disposition = 'select') {
+  return {role, quote, kind, source, disposition};
 }
 
 type CatalogPhrase = {
@@ -4928,10 +4941,12 @@ function catalogPhrases(): CatalogPhrase[] {
   ];
 }
 
-async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof world>>) {
+async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof world>>, operations: OperationRecord[] = []) {
   await w.coreSync.close();
   const register = (owner: Participant, families: Record<string, ReturnType<typeof state>[]>) => owner.serveSync(Object.keys(families),
-    request => ({revision: 7, states: request.data.families.flatMap(family => families[family] ?? [])}));
+    request => ({revision: 7, states: request.data.families.flatMap(family => family === 'operation'
+      ? operations.map(row => state('operation', row.id, row))
+      : families[family] ?? [])}));
   function state(family: string, subject: string, data: {id: string; revision: number} & Record<string, unknown>, type = `org.bunny.${family}.updated`) {
     return {type, subject, dataschema: `https://bunny.invalid/events/${family}/2.0`, data};
   }
@@ -4951,7 +4966,7 @@ async function catalogFixture(context: TestContext, w: Awaited<ReturnType<typeof
       held: {requestId: 'held-operation', heldAtMs: 1000}})]}),
     register(connect('nanoleaf'), {
       device: [device({...wall, kind: 'nanoleaf', capabilities: {...wall.capabilities, modes: {supported: true, values: ['free']},
-        scenes: {supported: true, sceneIds: ['scene-' + hash]},
+        scenes: {supported: true, sceneIds: ['scene-' + hash, 'scene-' + 'd'.repeat(64)]},
         moments: {supported: true, moods: ['celebrate'], maxDurationMs: 10000, coversStatus: false}}}),
       ...['wall-left', 'wall-right'].map(id => {
         const shared = light(id, 'Shared Wall');
@@ -4990,6 +5005,8 @@ for (const host of ['anthropic', 'openai'] as const) {
   void test(`${host} natural catalog phrases validate through the Hub command boundary`, async context => {
     const phrases = catalogPhrases();
     const delivered: {data: AssistantDispatch; valid: boolean}[] = [];
+    const operationReceipts: OperationRecord[] = [];
+    let sceneReceiptStatus: OperationRecord['status'] = 'completed';
     const policy = sharing();
     let modeDenied = false;
     let proposal: {name: string; input: Record<string, unknown>; ownerText: string} | undefined;
@@ -5017,7 +5034,9 @@ for (const host of ['anthropic', 'openai'] as const) {
       readCatalogIdentity: query => Promise.resolve(
         query.kind === 'scene' && query.deviceId === 'studio-wall' && query.name === 'Northern Lights'
           ? {id: 'scene-' + 'a'.repeat(64)}
-          : query.kind === 'asset' && (query.name === 'Blue Kite' || query.id === '22222222-2222-4222-8222-222222222222')
+          : query.kind === 'scene' && query.deviceId === 'studio-wall' && query.name === 'Dusk'
+            ? {id: 'scene-' + 'd'.repeat(64)}
+            : query.kind === 'asset' && (query.name === 'Blue Kite' || query.id === '22222222-2222-4222-8222-222222222222')
             ? {id: '22222222-2222-4222-8222-222222222222'} : errorBody('not-found')),
       share: query => policy(query) && !(modeDenied && query.destination === 'private-conversation' && query.source === 'devices' && query.record === 'hub'), retainedArtwork: id => Promise.resolve(id !== 'retained-kite' ? undefined : {
       artworkId: id, sourceRequestId: 'kite-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
@@ -5025,11 +5044,19 @@ for (const host of ['anthropic', 'openai'] as const) {
           frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
       favorite: false, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false},
     })});
-    await catalogFixture(context, w);
+    await catalogFixture(context, w, operationReceipts);
     const validator = coreValidator();
     await w.core.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', message => {
       const validation = validator.validate(message);
       delivered.push({data: message.data, valid: validation.ok && message.source === 'bunny/modules/companions'});
+      if (validation.ok && message.data.family === 'catalog-action' && message.data.command === 'scene-activate') {
+        const {requestId, target} = message.data;
+        const now = 10 + Math.max(1000, ...operationReceipts.map(row => row.sentAtMs));
+        operationReceipts.push({id: operationEntityId(requestId), revision: 1, requestId, target, kind: 'device',
+          family: 'scene-activate', command: 'org.bunny.scene.activate.requested', requestedBy: message.source,
+          status: sceneReceiptStatus, ...(sceneReceiptStatus === 'completed' ? {result: 'succeeded', evidence: 'transmitted'} : {}),
+          sentAtMs: now, updatedAtMs: now, deadlineAtMs: now + 1000});
+      }
       return validation.ok ? {status: 'accepted'} : {error: validation.error};
     });
     await w.core.respond<{action: 'dismiss'; expectedRevision: number}>('bunny.cmd.inbox-handle.fixture-inbox', message => {
@@ -5042,7 +5069,8 @@ for (const host of ['anthropic', 'openai'] as const) {
       return validation.ok ? {status: 'accepted'} : {error: validation.error};
     });
     await control(w.core, w.module(), 'enable');
-    const ask = async (ownerText: string, name: string, args: Record<string, unknown>, selection?: ReturnType<typeof ownerReference>[]) => {
+    const ask = async (ownerText: string, name: string, args: Record<string, unknown>, selection?: ReturnType<typeof ownerReference>[],
+      expectedStatus = 'succeeded') => {
       const prior = task(w)?.taskId, writes = delivered.length;
       const nested = typeof args.arguments === 'string' ? JSON.parse(args.arguments) as Record<string, unknown> : {};
       const change = nested.change as {assetId?: string; playlistId?: string} | undefined;
@@ -5073,7 +5101,7 @@ for (const host of ['anthropic', 'openai'] as const) {
       await until(() => task(w)?.taskId !== prior && (delivered.length > writes || status(w) === 'succeeded' || status(w) === 'failed' || status(w) === 'waiting'));
       if (delivered.length > writes) w.advance(1100);
       await until(() => status(w) === 'succeeded' || status(w) === 'failed' || status(w) === 'waiting');
-      assert.equal(status(w), 'succeeded', `${name}: ${ownerText}`);
+      assert.equal(status(w), expectedStatus, `${name}: ${ownerText}`);
       assert.equal(proposal, undefined, ownerText);
       return (await page(w, 'bunny', 'recent')).messages.filter(message => message.role === 'tool').at(-1)?.text;
     };
@@ -5103,6 +5131,43 @@ for (const host of ['anthropic', 'openai'] as const) {
         assert.equal(typeof effect.data.startAtMs, 'number');
         assert.match(String(effect.data.momentId), /^[\da-f-]{36}$/u);
       } else assert.deepEqual(effect.data, {...(row.expected ?? row.settings), ...namedGuards});
+      if (row.family === 'nanoleaf-reactive-preset-save') {
+        await ask('Change id:preset-evening-glow, excluding Evening Glow.', tool,
+          argumentsFor(row.owner, row.selector, {...row.settings, presetId: 'preset-evening-glow'}),
+          [ownerReference('preset', 'id:preset-evening-glow'), ownerReference('preset', 'Evening Glow', 'named', 'request', 'exclude')]);
+        assert.equal(delivered.length, previous + 1, 'a preset excluded by label cannot change by ID');
+      }
+      if (row.family === 'scene-activate') {
+        const oldScene = 'scene-' + 'a'.repeat(64), dusk = 'scene-' + 'd'.repeat(64);
+        await ask('Set Studio Wall to Dusk instead of Northern Lights.', tool, argumentsFor(row.owner, row.selector, {sceneId: 'Dusk'}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Dusk'),
+            ownerReference('scene', 'Northern Lights', 'named', 'request', 'exclude')]);
+        assert.equal(delivered.length, previous + 2);
+        assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: dusk});
+        assert.equal(await ask(`Set Studio Wall to id:${dusk}, exclude Dusk.`, tool,
+          argumentsFor(row.owner, row.selector, {sceneId: dusk}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${dusk}`),
+            ownerReference('scene', 'Dusk', 'named', 'request', 'exclude')]), 'refused: not-found');
+        assert.equal(delivered.length, previous + 2, 'excluded names cannot dispatch through aliases of the same scene');
+        const useLatest = argumentsFor(row.owner, row.selector, {sceneId: 'last-activated'});
+        const latest = [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')];
+        await ask('Use the last scene I activated on Studio Wall.', tool, useLatest, latest);
+        assert.equal(delivered.length, previous + 3);
+        assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: dusk}, 'the latest successful activation wins on this target');
+
+        const earlier = operationReceipts[0] ?? assert.fail('earlier scene receipt');
+        const later = operationReceipts.at(-1) ?? assert.fail('later scene receipt');
+        earlier.sentAtMs = later.sentAtMs + 1;
+        await ask('Use the last scene I activated on Studio Wall.', tool, useLatest, latest);
+        assert.equal(delivered.length, previous + 4);
+        assert.deepEqual(delivered.at(-1)?.data.data, {sceneId: oldScene}, 'Core receipt order supersedes Conversation task order');
+
+        sceneReceiptStatus = 'uncertain';
+        await ask(`Activate id:${oldScene} on Studio Wall.`, tool, argumentsFor(row.owner, row.selector, {sceneId: oldScene}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${oldScene}`)]);
+        assert.equal(delivered.length, previous + 5);
+        sceneReceiptStatus = 'completed';
+      }
     }
 
     const assetId = '22222222-2222-4222-8222-222222222222';
@@ -5118,12 +5183,12 @@ for (const host of ['anthropic', 'openai'] as const) {
       assert.equal(refusal, 'refused: invalid-request', name);
     }
     const redirected = await ask('Delete asset Missing Sunrise on id:new-pixoo, then show it.', assetTool, deleteAsset(assetId),
-      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'it', 'prior')]);
-    assert.equal(redirected, 'refused: invalid-state');
+      [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'Missing Sunrise')]);
+    assert.equal(redirected, 'refused: invalid-request');
     for (const modifier of ['named Missing Sunrise', 'called “Missing Sunrise”', '“Missing Sunrise”', 'Missing Sunrise', ', Missing Sunrise,']) {
       const result = await ask(`Delete that asset${modifier.startsWith(',') ? '' : ' '}${modifier} on id:new-pixoo.`, assetTool, deleteAsset(assetId),
-        [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'that asset', 'prior')]);
-      assert.equal(result, 'refused: invalid-state', modifier);
+        [ownerReference('primary', 'id:new-pixoo'), ownerReference('asset', 'Missing Sunrise')]);
+      assert.equal(result, 'refused: invalid-request', modifier);
     }
     assert.equal(delivered.length, priorWrites, 'neither a replacement name nor an unrelated trailing pronoun selects the previous original');
     const playlistTool = catalogTool('pixoo-playlist-change');
@@ -5194,5 +5259,31 @@ for (const host of ['anthropic', 'openai'] as const) {
     assert.ok(delivered[prior + 2]?.valid === true);
     assert.partialDeepStrictEqual(delivered[prior + 2]?.data, {family: 'catalog-action', command: 'device-mode-set', target: 'wall-right',
       binding: {kind: 'device', configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}}, data: {mode: 'free'}});
+    const beforeUnknown = delivered.length;
+    await ask('Use the last scene I activated on Studio Wall.', sceneTool,
+      argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: 'last-activated'}),
+      [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')], 'waiting');
+    assert.equal(delivered.length, beforeUnknown, 'an uncertain newer activation does not fall back to an older receipt');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which saved scene/u);
+
+    const scene = 'scene-' + 'd'.repeat(64);
+    const explicit = `Use id:${scene}.`;
+    proposal = {ownerText: explicit, name: sceneTool, input: {
+      ...argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: scene}),
+      references: [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${scene}`, 'named', 'answer')],
+    }};
+    assert.equal((await input(w.core, w.module(), explicit, true)).status, 'accepted');
+    await until(() => delivered.length === beforeUnknown + 1);
+    w.advance(1100);
+    await until(() => status(w) === 'succeeded');
+    const tracked = operationReceipts.at(-1) ?? assert.fail('clarified scene receipt');
+    const requestId = 'other-client-activation';
+    operationReceipts.push({...tracked, id: operationEntityId(requestId), requestId, requestedBy: 'bunny/mcp/other-client',
+      sentAtMs: tracked.sentAtMs + 1, updatedAtMs: tracked.updatedAtMs + 1});
+    await ask('Use the last scene I activated on Studio Wall.', sceneTool,
+      argumentsFor('bunny/modules/nanoleaf', 'Studio Wall', {sceneId: 'last-activated'}),
+      [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')], 'waiting');
+    assert.equal(delivered.length, beforeUnknown + 1, 'a newer activation from another client prevents a stale substitution');
+    assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which saved scene/u);
   });
 }

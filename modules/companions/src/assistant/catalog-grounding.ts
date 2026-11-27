@@ -20,6 +20,12 @@ export function catalogSelectorId(kind: CatalogSelectorKind, value: unknown): st
 
 const tokens = (text: string): string[] => text.split(/[^A-Za-z0-9_.-]+/u).map(word => word.replace(/[.]$/u, ''));
 
+export function catalogHistoryNames(kind: CatalogSelectorKind, selector: string, history: readonly string[]): boolean {
+  const id = literalDeviceId(selector) ?? selector;
+  return ids[kind].test(id) ? history.some(text => tokens(text).includes(id))
+    : history.some(text => containsControlValue(text, selector));
+}
+
 /** The model supplies a selector. Explicit current IDs take precedence over names and over earlier facts. */
 export function catalogSelectorSelected(kind: CatalogSelectorKind, selector: string, scope: ModelControlScope,
   earlier: readonly string[], contextIds: readonly string[] = []): boolean {
@@ -46,10 +52,13 @@ export function catalogSelectorSelected(kind: CatalogSelectorKind, selector: str
 
 export type CatalogReferenceRole = 'primary' | CatalogSelectorKind | 'notice' | 'preset' | 'operation' | 'session' |
   'favorite' | 'playlist-item' | 'cue';
-export type CatalogReference = {role: CatalogReferenceRole; kind: 'named' | 'prior'; source: 'request' | 'answer'; quote: string};
+type CurrentCitation = {role: CatalogReferenceRole; source: 'request' | 'answer'; quote: string};
+export type CatalogReference = CurrentCitation & ({kind: 'named'; disposition: 'select' | 'exclude'} |
+  {kind: 'prior' | 'last-activated'; disposition: 'select'});
 export const catalogReferenceRoles = ['primary', 'artwork', 'asset', 'draft', 'playlist', 'rendition', 'scene',
   'notice', 'preset', 'operation', 'session', 'favorite', 'playlist-item', 'cue'] as const satisfies readonly CatalogReferenceRole[];
-const referenceRoles = new Set<string>(catalogReferenceRoles);
+const isCatalogReferenceRole = (value: unknown): value is CatalogReferenceRole =>
+  catalogReferenceRoles.some(role => role === value);
 export const isCatalogSelectorKind = (role: CatalogReferenceRole): role is CatalogSelectorKind => Object.hasOwn(ids, role);
 
 export function readCatalogReferences(value: unknown, scope: ModelControlScope): readonly CatalogReference[] | undefined {
@@ -57,45 +66,35 @@ export function readCatalogReferences(value: unknown, scope: ModelControlScope):
   const refs: CatalogReference[] = [];
   const input: readonly unknown[] = value;
   for (const item of input) {
-    if (typeof item !== 'object' || item === null || Array.isArray(item) || Object.keys(item).length !== 4) return undefined;
-    const {role, kind, source, quote} = item as Record<string, unknown>;
-    if (typeof role !== 'string' || !referenceRoles.has(role) || kind !== 'named' && kind !== 'prior' ||
-      source !== 'request' && source !== 'answer' || typeof quote !== 'string' || quote !== quote.trim() ||
-      quote.length === 0 || quote.length > 131) return undefined;
+    if (typeof item !== 'object' || item === null || Array.isArray(item) || Object.keys(item).length !== 5 ||
+      !('role' in item) || !('kind' in item) || !('disposition' in item) || !('source' in item) || !('quote' in item)) return undefined;
+    const {role, kind, disposition, source, quote} = item;
+    if (!isCatalogReferenceRole(role) || source !== 'request' && source !== 'answer' ||
+      typeof quote !== 'string' || quote !== quote.trim() || quote.length === 0 || quote.length > 131) return undefined;
     const body = source === 'request' ? scope.request.text : scope.answer?.text;
-    if (body === undefined || !containsControlQuote(body, quote, kind === 'prior')) return undefined;
-    const ref = {role: role as CatalogReferenceRole, kind, source, quote} satisfies CatalogReference;
-    if (refs.some(prior => prior.quote === quote && prior.source === source)) return undefined;
-    refs.push(ref);
+    if (body === undefined || !containsControlQuote(body, quote)) return undefined;
+    const citation = {role, source, quote} satisfies CurrentCitation;
+    if (refs.some(prior => prior.role === role && prior.quote === quote && prior.source === source)) return undefined;
+    if (kind === 'named' && (disposition === 'select' || disposition === 'exclude')) refs.push({...citation, kind, disposition});
+    else if (disposition === 'select' && (kind === 'prior' || kind === 'last-activated' && role === 'scene')) {
+      refs.push({...citation, kind, disposition});
+    } else return undefined;
   }
   return refs;
 }
 
-function containsControlQuote(body: string, quote: string, prior: boolean): boolean {
+function containsControlQuote(body: string, quote: string): boolean {
   const index = body.indexOf(quote);
-  if (index === -1 || body.indexOf(quote, index + 1) !== -1 ||
-    /[\p{L}\p{N}_-]/u.test(body[index - 1] ?? '') ||
-    /[\p{L}\p{N}_-]/u.test(body[index + quote.length] ?? '')) return false;
-  const before = body.slice(0, index).trim();
-  const after = body.slice(index + quote.length).trimStart();
-  const comparison = /\b(?:instead of|rather than|as opposed to|compared (?:to|with)|versus|vs|other than|except(?: for)?)\b/iu;
-  // Neither operand of an explicit comparison can authorize a write by itself.
-  if (comparison.test(before) || comparison.test(after) || /\blike$/iu.test(before) || /^like\b/iu.test(after)) return false;
-  if (!prior) return true;
-  const words = normalizedControlText(quote);
-  const reference = /^(?:it|them|(?:this|that|the same|the previous|the first|the second|the last)(?: (?:one|asset|original|image|artwork|animation|draft|cue|scene|playlist|rendition|speaker|screen|panel|display|light|device|record|item|notice|preset|session))?)$/iu;
-  if (!reference.test(words) || /[.!?;]|\b(?:and|then|but|or)\b|\bas$/iu.test(before)) return false;
-  // A quoted name or restrictive modifier belongs to the referring phrase.
-  if (/^(?:[:"'“‘`(]|(?:named|called|titled|labeled|labelled|whose|which|that|with the name)\b)/iu.test(after)) return false;
-  if (/^,/u.test(after) && !/^(?:in|on|at|with|from|for|to)$/iu.test(before)) return false;
-  if (words === 'it' || words === 'them') return true;
-  return after === '' || /^[.!?,;]|^(?:on|in|at|to|from|for|by|again|please|now)\b/iu.test(after);
+  return index !== -1 && body.indexOf(quote, index + 1) === -1 &&
+    !/[\p{L}\p{N}_-]/u.test(body[index - 1] ?? '') &&
+    !/[\p{L}\p{N}_-]/u.test(body[index + quote.length] ?? '');
 }
 
 export function catalogQuoteNames(quote: string, id: string, label = id): boolean {
   if (quote.startsWith('id:')) return quote.slice(3) === id;
-  const name = normalizedControlText(quote).replace(/^(?:the|my) /u, '');
-  return name !== '' && (name === normalizedControlText(label) || name === normalizedControlText(id));
+  const name = normalizedControlText(quote);
+  const bare = name.replace(/^(?:the|my) /u, '');
+  return name !== '' && [normalizedControlText(label), normalizedControlText(id)].some(value => value === name || value === bare);
 }
 
 /** A shorter label inside the cited name is harmless. A separate or enclosing label needs clarification. */
@@ -107,9 +106,23 @@ export function catalogReferenceConflict(body: string, quote: string, id: string
     containsControlValue(body, value) && !containsControlValue(quote, value));
 }
 
-export function catalogReferencesFor(refs: readonly CatalogReference[], role: CatalogReferenceRole): readonly CatalogReference[] {
-  const matching = refs.filter(ref => ref.role === role);
-  return matching.some(ref => ref.source === 'answer') ? matching.filter(ref => ref.source === 'answer') : matching;
+export function catalogSelections(refs: readonly CatalogReference[], role: CatalogReferenceRole): readonly CatalogReference[] {
+  const selected = refs.filter(ref => ref.role === role && ref.disposition === 'select');
+  return selected.some(ref => ref.source === 'answer') ? selected.filter(ref => ref.source === 'answer') : selected;
+}
+
+export function catalogExcluded(refs: readonly CatalogReference[], role: CatalogReferenceRole, id: string, label = id): boolean {
+  return refs.some(ref => ref.role === role && ref.disposition === 'exclude' && catalogQuoteNames(ref.quote, id, label));
+}
+
+export function catalogSelectionText(scope: ModelControlScope, refs: readonly CatalogReference[], source: CurrentCitation['source']): string {
+  const body = source === 'request' ? scope.request.text : scope.answer?.text ?? '';
+  const excluded = refs.filter(ref => ref.source === source && ref.disposition === 'exclude');
+  return excluded.reduce((text, ref) => text.replace(ref.quote, ' '.repeat(ref.quote.length)), body);
+}
+
+export function catalogExactTargets(scope: ModelControlScope, refs: readonly CatalogReference[]): readonly string[] {
+  return exactControlIds(`${catalogSelectionText(scope, refs, 'request')} ${catalogSelectionText(scope, refs, 'answer')}`);
 }
 
 const ordinals = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'] as const;

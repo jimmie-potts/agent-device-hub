@@ -13,15 +13,30 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 #### Scenario: A hosted catalog proposal cites the current target words
 
 - **WHEN** the hosted supervisor proposes a catalog effect against an existing target
-- **THEN** it cites the verbatim words selecting each target in the current authenticated owner request or its clarification, with the corresponding primary or nested role
+- **THEN** the selected supervisor cites verbatim target selections and exclusions in the current authenticated owner request or clarification, with their primary or nested roles
 - **AND** the Hub checks each cited source and resolves current named targets in their owner-local permitted records before dispatch
 - **AND** absent, inaccessible, ambiguous or conflicting named targets send no command and require clarification
+
+#### Scenario: The owner selects one target and excludes another
+
+- **WHEN** the current request selects one named target and rules out another
+- **THEN** the Hub resolves the selected target and rejects an excluded canonical target
+- **AND** a missing selection sends no command, even when the excluded target exists
+- **AND** a unique authorized selection with valid settings can dispatch directly
 
 #### Scenario: Earlier context identifies a genuine reference
 
 - **WHEN** a current target phrase refers back to an eligible record in the same conversation
 - **THEN** eligible prior context may identify that record for the cited role
 - **AND** a pronoun in another instruction cannot replace an absent or conflicting name in the current selection
+
+#### Scenario: The owner asks for the last scene they activated on a light
+
+- **WHEN** the current request names an eligible light and refers to its last scene activation
+- **THEN** the Hub checks tracked activation order across callers for that light and selects the latest successful activation only when its scene has eligible owner-backed evidence
+- **AND** it asks which saved scene to use if a newer activation has an unresolved outcome or eligible evidence is missing or conflicts
+- **AND** the normal sharing, capability and revision checks still apply
+- **AND** a receipt of transmission establishes no physical effect
 
 #### Scenario: A stale draft edit or invalid target is proposed
 

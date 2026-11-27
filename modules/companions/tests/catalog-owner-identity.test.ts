@@ -15,11 +15,11 @@ import {exactControlIds, type ModelControlScope} from '../src/assistant/model-co
 void test('catalog references must match a complete phrase in the cited current source', () => {
   const scope: ModelControlScope = {request: {id: 'request', revision: 1, text: 'Show Dawn on the wall.'},
     answer: {id: 'answer', revision: 1, text: 'Use id:wall-right.'}, exactTargets: [], history: [], references: [], modeRevision: null};
-  const request = {role: 'artwork', source: 'request', kind: 'named', quote: 'Dawn'};
-  const answer = {role: 'primary', source: 'answer', kind: 'named', quote: 'id:wall-right'};
+  const request = {role: 'artwork', source: 'request', kind: 'named', disposition: 'select', quote: 'Dawn'};
+  const answer = {role: 'primary', source: 'answer', kind: 'named', disposition: 'select', quote: 'id:wall-right'};
   assert.deepEqual(readCatalogReferences([request, answer], scope), [request, answer]);
   for (const reference of [{...answer, source: 'request'}, {...answer, quote: 'wall'}, {...request, quote: 'Northern Dawn'},
-    {...request, role: 'anything'}]) assert.equal(readCatalogReferences([reference], scope), undefined);
+    {...request, role: 'anything'}, {...request, disposition: 'maybe'}, {...request, kind: 'prior', disposition: 'exclude'}]) assert.equal(readCatalogReferences([reference], scope), undefined);
   assert.equal(readCatalogReferences([request, request], scope), undefined);
 });
 
@@ -74,6 +74,7 @@ void test('catalog proposals bind only names from owner context to their existin
   const catalog = actions ?? assert.fail('started Catalog owner fixture');
   const trace = {traceparent: '00-11111111111111111111111111111111-2222222222222222-01'};
   const admit = (name: string): CatalogAdmission => ({selector: (_kind, value) => value === name,
+    excluded: () => false, excludedNames: () => [], lastActivatedScene: () => Promise.resolve(undefined),
     target: () => granted ? undefined : 'forbidden', current: () => true, visible: () => granted,
     covers: () => true, ownerText: () => ({text: '', explicitIds: []})});
   const show = (name: string, ownerName: string) => catalog.propose('scene-activate', {id: 'scene', name: 'control_scene_activate',
