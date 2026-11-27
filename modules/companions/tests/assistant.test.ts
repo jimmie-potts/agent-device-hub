@@ -5289,14 +5289,19 @@ for (const host of ['anthropic', 'openai'] as const) {
     let sharedLamp: 'visible' | 'hidden' | 'absent' = 'visible';
     const policy = sharing();
     let modeDenied = false;
+    type InputSchema = TurnInput['tools'][number]['input'];
+    type OfferedTool = {name: string; description: string; input_schema?: InputSchema; parameters?: InputSchema};
+    let offeredScene: OfferedTool | undefined;
     let proposal: {name: string; input: Record<string, unknown>; ownerText: string} | undefined;
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
-      const body = JSON.parse(init.body) as {tools?: {name: string}[]; input?: unknown[]; messages?: unknown[]};
+      const body = JSON.parse(init.body) as {tools?: OfferedTool[]; input?: unknown[]; messages?: unknown[]};
       const candidate = proposal;
       proposal = undefined;
       if (candidate !== undefined) {
         assert.match(JSON.stringify(body.messages ?? body.input), new RegExp(candidate.ownerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
-        assert.ok(body.tools?.some(tool => tool.name === candidate.name) === true, candidate.name);
+        const offered = body.tools?.find(tool => tool.name === candidate.name);
+        assert.ok(offered, candidate.name);
+        if (candidate.name === catalogTool('scene-activate')) offeredScene = offered;
       }
       const usage = {input_tokens: 20, output_tokens: 10, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
       return Promise.resolve(Response.json(host === 'anthropic'
@@ -5453,6 +5458,14 @@ for (const host of ['anthropic', 'openai'] as const) {
         assert.equal(delivered.length, previous + 1, 'a preset excluded by label cannot change by ID');
       }
       if (row.family === 'scene-activate') {
+        assert.ok(offeredScene);
+        const schema = host === 'anthropic' ? offeredScene.input_schema : offeredScene.parameters;
+        assert.ok(schema);
+        assert.deepEqual([...schema.required].sort(), ['arguments', 'owner', 'references', 'target']);
+        assert.equal(schema.properties.arguments?.type, 'string');
+        assert.match(schema.properties.arguments?.description ?? '', /exact scene name, exact scene ID, or "last-activated"/u);
+        assert.match(offeredScene.description, /resolves.*selected light.*current grants/u);
+        assert.match(offeredScene.description, /missing or ambiguous.*clarification.*sends nothing/iu);
         const oldScene = 'scene-' + 'a'.repeat(64), dusk = 'scene-' + 'd'.repeat(64);
         await ask('Set Studio Wall to Dusk instead of Northern Lights.', tool, argumentsFor(row.owner, row.selector, {sceneId: 'Dusk'}),
           [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Dusk'),
@@ -5464,6 +5477,10 @@ for (const host of ['anthropic', 'openai'] as const) {
           [ownerReference('primary', 'Studio Wall'), ownerReference('scene', `id:${dusk}`),
             ownerReference('scene', 'Dusk', 'named', 'request', 'exclude')]), 'refused: not-found');
         assert.equal(delivered.length, previous + 2, 'excluded names cannot dispatch through aliases of the same scene');
+        assert.equal(await ask('Set Studio Wall to Missing Scene, not Dusk.', tool, argumentsFor(row.owner, row.selector, {sceneId: 'Missing Scene'}),
+          [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'Missing Scene'),
+            ownerReference('scene', 'Dusk', 'named', 'request', 'exclude')]), 'refused: not-found');
+        assert.equal(delivered.length, previous + 2, 'a missing named scene sends no command and the excluded scene is not substituted');
         const useLatest = argumentsFor(row.owner, row.selector, {sceneId: 'last-activated'});
         const latest = [ownerReference('primary', 'Studio Wall'), ownerReference('scene', 'the last scene I activated', 'last-activated')];
         await ask('Use the last scene I activated on Studio Wall.', tool, useLatest, latest);

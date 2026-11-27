@@ -1507,7 +1507,9 @@ guards locally when the owner publishes that index. This covers session labels,
 Volcano labels, saved light shows, Pixoo playlists and compatible renditions.
 The playback control can use the unique presented playback record.
 
-Companions asks the selected Nanoleaf owner to resolve a scene name to its ID.
+The hosted scene tool accepts the name the owner gave, an exact scene ID, or
+an explicit request for the last activation on the selected light. Companions
+asks the selected Nanoleaf owner to resolve a name to its ID.
 The Pixoo owner resolves original names even when the original has no
 rendition. Both reads return only a unique ID. Ambiguous names need a more
 specific selector. The Art catalog identifies saved artwork by ID or a known
