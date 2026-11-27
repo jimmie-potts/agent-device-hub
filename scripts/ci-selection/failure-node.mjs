@@ -18,7 +18,7 @@ export default async function* failures(events) {
     if (type === 'test:fail' && !data.todo && !data.skip && data.details?.error?.failureType !== 'subtestsFailed') {
       if (cases.length + pending.length >= 10) omitted = true;
       else pending.push({file: data.file, line: data.line, column: data.column, caseId: data.testId, ordinal,
-        duration: Math.round(data.details?.duration_ms)});
+        duration: typeof data.details?.duration_ms === 'number' ? Math.round(data.details.duration_ms) : undefined});
     }
     if (type !== 'test:summary') continue;
     if (data.file) fileNumber++;

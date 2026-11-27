@@ -214,7 +214,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - shell: bash scripts/ci-selection/failure-summary.sh node runtime {0}
+      - shell: bash scripts/ci-selection/failure-summary.sh node test:runtime:built {0}
         run: npm run test:runtime:built
   runtime-scenarios:
     name: Runtime scenario tests on ubuntu-latest
@@ -230,7 +230,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - shell: bash scripts/ci-selection/failure-summary.sh node runtime {0}
+      - shell: bash scripts/ci-selection/failure-summary.sh node test:runtime:scenarios:built {0}
         run: npm run test:runtime:scenarios:built
   firmware:
     name: Firmware host tests and ARM build on ubuntu-latest
@@ -354,7 +354,7 @@ jobs:
         run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
       - run: npm run build
       # Capture shard 1/2 of the active catalog, with the capture file's tests outside the capture loop.
-      - shell: bash scripts/ci-selection/failure-summary.sh node runtime {0}
+      - shell: bash scripts/ci-selection/failure-summary.sh node test:runtime:verify:captures:built {0}
         run: npm run test:runtime:verify:captures:built
   runtime-verify:
     name: Runtime verification on ubuntu-latest
@@ -378,7 +378,7 @@ jobs:
         run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
       - run: npm run build
       # Every other verification file, then capture shard 2/2 of the active catalog, including shared keyboard and phone checks.
-      - shell: bash scripts/ci-selection/failure-summary.sh node runtime {0}
+      - shell: bash scripts/ci-selection/failure-summary.sh node test:runtime:verify:rest:built {0}
         run: npm run test:runtime:verify:rest:built
   gate:
     name: Selected checks gate

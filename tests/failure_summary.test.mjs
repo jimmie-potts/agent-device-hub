@@ -113,3 +113,38 @@ test('Core attributes a native test case outside the runtime catalog using its f
   assert.match(text, /\| test:sdk:built \| file 1 \| 1 \| 1 \| 1, \d+ \| \d+ \|/);
   assert.ok(!text.includes('PRIVATE')); assert.ok(!text.includes('sample'));
 });
+
+test('a native runner with an inherited reporter keeps its own output, destinations and success', t => {
+  const root = mkdtempSync(join(tmpdir(), 'summary-own-reporter-'));
+  t.after(() => rmSync(root, {recursive: true, force: true}));
+  const summary = join(root, 'summary'), step = join(root, 'step');
+  writeFileSync(join(root, 'healthy.mjs'), "import test from 'node:test';test('healthy',()=>{});");
+  writeFileSync(step, 'node --test "$SUMMARY_FIXTURE/healthy.mjs"\n');
+  for (const options of ['--test-reporter=tap', '--test-reporter=tap --test-reporter-destination=stdout']) {
+    writeFileSync(summary, '');
+    const env = {...process.env, GITHUB_STEP_SUMMARY: summary, SUMMARY_FIXTURE: root, NODE_OPTIONS: options};
+    delete env.NODE_TEST_CONTEXT;
+    const child = spawnSync('bash',[shell,'node','test:runtime:built',step],{env, encoding:'utf8'});
+    assert.equal(child.status, 0); assert.equal(child.stderr,''); assert.match(child.stdout, /^TAP version 13/);
+    assert.equal(child.stdout.match(/TAP version 13/g).length,1); assert.equal(readFileSync(summary,'utf8'),'');
+  }
+});
+
+test('the mixed Pixoo command identifies its native failure and keeps an earlier non-Node failure at suite level', t => {
+  const root = mkdtempSync(join(tmpdir(), 'summary-mixed-'));
+  t.after(() => rmSync(root, {recursive: true, force: true})); mkdirSync(join(root, 'scripts'));
+  cpSync(resolve('scripts/ci-selection'), join(root, 'scripts/ci-selection'), {recursive:true});
+  writeFileSync(join(root,'sample.test.mjs'), "import test from 'node:test';test('private-case',()=>{throw Error();});");
+  writeFileSync(join(root,'step'), 'npm run test:pixoo:built\n');
+  const summary = join(root,'summary'), env = {...process.env,GITHUB_STEP_SUMMARY:summary};
+  delete env.NODE_TEST_CONTEXT;
+  for (const [command, expected, status] of [
+    ['exit 31', /Test suite failure[\s\S]*test:pixoo:built/, 31],
+    ['true && node --test sample.test.mjs', /Node test failure[\s\S]*test:pixoo:built \| file 1 \| 1 \| 1/, 1],
+  ]) {
+    writeFileSync(summary,'');
+    writeFileSync(join(root,'package.json'),JSON.stringify({scripts:{'test:pixoo:built':command}}));
+    const child=spawnSync('bash',[shell,'core','default','step'],{cwd:root,env,encoding:'utf8'});
+    assert.equal(child.status,status);assert.match(readFileSync(summary,'utf8'),expected);
+  }
+});

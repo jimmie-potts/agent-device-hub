@@ -29,7 +29,7 @@ export function renderFailure(kind, fallback, record) {
   }
   const lines = ['### Node test failure', ''];
   const cases = Array.isArray(record.cases) ? record.cases.slice(0, 10) : [];
-  if (!cases.length) lines.push('Case and duration not observed.');
+  if (!cases.length) lines.push(`Suite: ${suiteId(fallback)}. Case and duration not observed.`);
   else {
     lines.push('| Suite | Module | Case ID | Result number | Declaration (line, column) | Duration (ms) |', '| --- | --- | --- | --- | --- | --- |');
     for (const item of cases) {
@@ -46,9 +46,10 @@ export function renderFailure(kind, fallback, record) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.env.GITHUB_STEP_SUMMARY) {
   const [kind, fallback, directory] = process.argv.slice(2);
-  if (kind === 'browser' || kind === 'node' || kind === 'suite') {
-    const record = readRecord(join(directory, kind));
+  if (['browser', 'node', 'mixed', 'suite'].includes(kind)) {
+    const record = readRecord(join(directory, kind === 'mixed' ? 'node' : kind));
+    const outputKind = kind === 'mixed' ? (Array.isArray(record.cases) ? 'node' : 'suite') : kind;
     const outer = kind === 'browser' ? readRecord(join(directory, 'entry')).journey : undefined;
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, renderFailure(kind, outer ?? fallback, record));
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, renderFailure(outputKind, outer ?? fallback, record));
   }
 }

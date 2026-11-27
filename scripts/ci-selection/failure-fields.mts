@@ -1,5 +1,6 @@
 // Only members of these reviewed vocabularies can appear in a browser failure summary.
 const entries = [
+  'companionCardsCheck',
   'artBackdropJourney', 'artNoticeJourney', 'artScheduleJourney', 'artSelectionJourney', 'artShowJourney',
   'codingDelegationJourney', 'codingJobsJourney', 'codingSlotsJourney', 'companionSessionJourney',
   'conversationArtJourney', 'conversationContextJourney', 'conversationHistoryJourney',
@@ -139,6 +140,8 @@ export function nodeFields(input: {suite?: unknown; module?: unknown; line?: unk
 }
 
 const suites = [
+  'test:runtime:built', 'test:runtime:scenarios:built', 'test:runtime:verify:captures:built',
+  'test:runtime:verify:rest:built', 'test:observability:browser',
   'container-host', 'release-tests', 'standalone-owners', 'test:agent-state:built',
   'test:agent-state:package:built', 'test:agent-state:python', 'test:app-verify:built',
   'test:app-verify:package:built', 'test:art:built', 'test:codex-desktop:built', 'test:companions:built',

@@ -52,7 +52,7 @@ try {
   await namedBrowserEntry(conversationUploadJourney, browser);
   await namedBrowserEntry(conversationStateJourney, browser);
   await namedBrowserEntry(failedTurnJourney, browser);
-  await companionCardsCheck(browser);
+  await namedBrowserEntry(companionCardsCheck, browser);
   await namedBrowserEntry(speechJourney, browser);
   await namedBrowserEntry(spokenRepliesJourney, browser);
   await namedBrowserEntry(codingDelegationJourney, browser);

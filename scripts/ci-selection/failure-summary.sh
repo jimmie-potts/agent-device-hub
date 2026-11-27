@@ -22,6 +22,7 @@ if [[ $summary_kind == core || $summary_kind == app-verify ]]; then
     *) exec bash -e "$step_script" ;;
   esac
   case "$summary_entry" in
+    test:pixoo:built) summary_kind=mixed ;;
     container-host|release-tests|test:agent-state:built|test:app-verify:built|test:art:built|\
       test:codex-desktop:built|test:companions:built|test:contracts:built|test:dashboard|\
       test:events:built|test:lifecycle:built|test:lifx-module:built|test:mcp:built|\
@@ -42,7 +43,7 @@ if [[ -z "${GITHUB_STEP_SUMMARY:-}" ]] || ! summary_dir=$(mktemp -d "${RUNNER_TE
 fi
 case "$summary_kind" in
   browser) export BUNNY_CI_BROWSER_RECORD="$summary_dir/browser" ;;
-  node)
+  node|mixed)
     export BUNNY_CI_NODE_RECORD="$summary_dir/node"
     # Keep NODE_OPTIONS and the ordinary runner environment intact, including in nested test invocations.
     export BUNNY_CI_ORIGINAL_NODE BUNNY_CI_NODE_REPORTER BUNNY_CI_NODE_BIN
