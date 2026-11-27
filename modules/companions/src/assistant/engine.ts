@@ -2674,6 +2674,7 @@ export class AssistantEngine {
         return !isCatalogSelectorKind(kind) || catalogSelectorSelected(kind, selector, active.scope,
           this.#catalogReferenceTexts(active.task, active.scope, modelCallId, true).slice(2), contextIds);
       },
+      hasSelection: role => catalogSelections(current()?.refs ?? [], role).length > 0,
       excludedNames: role => current()?.refs?.filter(ref => ref.role === role && ref.disposition === 'exclude').map(ref => ref.quote) ?? [],
       excluded: (role, id, label) => {
         const refs = current()?.refs;

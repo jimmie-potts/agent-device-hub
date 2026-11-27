@@ -5154,6 +5154,13 @@ for (const host of ['anthropic', 'openai'] as const) {
           argumentsFor(row.owner, row.selector, {}),
           [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'held-operation', 'named', 'request', 'exclude')]);
         assert.equal(delivered.length, previous + 1, 'an excluded held operation is never filled in from device state');
+        assert.equal(await ask('Release the hold from old-operation on Bench Plug.', tool, argumentsFor(row.owner, row.selector, {}),
+          [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'old-operation')]), 'refused: not-found');
+        assert.equal(delivered.length, previous + 1, 'an omitted operation argument cannot substitute the current hold for an earlier cited operation');
+        await ask('Release the hold for id:held-operation on Bench Plug.', tool, argumentsFor(row.owner, row.selector, {}),
+          [ownerReference('primary', 'Bench Plug'), ownerReference('operation', 'id:held-operation')]);
+        assert.equal(delivered.length, previous + 2, 'a cited exact current operation can supply the omitted argument');
+        assert.deepEqual(delivered.at(-1)?.data.data, {heldRequestId: 'held-operation'});
       }
       if (row.family === 'pixoo-playlist-change') {
         const itemIds = Array.from({length: 26}, (_, i) => `33333333-3333-4333-8333-${String(i + 1).padStart(12, '0')}`);

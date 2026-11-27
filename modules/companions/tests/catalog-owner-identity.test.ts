@@ -74,7 +74,7 @@ void test('catalog proposals bind only names from owner context to their existin
   const catalog = actions ?? assert.fail('started Catalog owner fixture');
   const trace = {traceparent: '00-11111111111111111111111111111111-2222222222222222-01'};
   const admit = (name: string): CatalogAdmission => ({selector: (_kind, value) => value === name,
-    excluded: () => false, excludedNames: () => [], lastActivatedScene: () => Promise.resolve(undefined),
+    hasSelection: () => false, excluded: () => false, excludedNames: () => [], lastActivatedScene: () => Promise.resolve(undefined),
     target: () => granted ? undefined : 'forbidden', current: () => true, visible: () => granted,
     covers: () => true, ownerText: () => ({text: '', explicitIds: []})});
   const show = (name: string, ownerName: string) => catalog.propose('scene-activate', {id: 'scene', name: 'control_scene_activate',

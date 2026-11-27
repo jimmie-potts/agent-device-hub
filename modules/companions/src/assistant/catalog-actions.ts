@@ -44,6 +44,7 @@ type CatalogTarget = {id: string; label: string; owner?: string};
 type CatalogTargetSource = 'artwork' | 'devices' | 'operations' | 'playback' | 'sessions' | 'shows' | 'status';
 export type CatalogAdmission = {
   readonly selector: (kind: CatalogReferenceRole, selector: string, contextIds?: readonly string[]) => boolean;
+  readonly hasSelection: (role: CatalogReferenceRole) => boolean;
   readonly target: (id: string, source: CatalogTargetSource, alternatives: readonly CatalogTarget[], implicit?: boolean, nested?: readonly string[]) => ErrorCode | undefined;
   readonly excludedNames: (role: CatalogReferenceRole) => readonly string[];
   readonly excluded: (role: CatalogReferenceRole, id: string, label?: string) => boolean;
@@ -366,6 +367,8 @@ export class ConversationActions {
       const found = matchingDevices(eligible, name, owner, literalId);
       const selected = found[0];
       const nested = nestedSelectors(family, data);
+      const heldId = family === 'wemo-hold-release' ? selected?.device.held?.requestId : undefined;
+      if (heldId !== undefined && admission?.selector('operation', heldId) === true) nested.push(heldId);
       const alternatives = (admission === undefined ? eligible : visible.filter(row => row === selected || permitsDevice(route, row.device)))
         .map(({owner, device}) => ({owner, id: device.id, label: deviceLabel(device)}));
       if (found.length > 1 && selected !== undefined) {
@@ -444,7 +447,8 @@ export class ConversationActions {
       }
       if (family === 'wemo-hold-release') {
         if (device.held === undefined || data.heldRequestId !== undefined && data.heldRequestId !== device.held.requestId) return {code: 'revision-conflict'};
-        if (admission?.excluded('operation', device.held.requestId) === true) return {code: 'not-found'};
+        if (admission?.excluded('operation', device.held.requestId) === true ||
+          admission?.hasSelection('operation') === true && !admission.selector('operation', device.held.requestId)) return {code: 'not-found'};
         data = {...data, heldRequestId: device.held.requestId};
       } else if (device.availability !== 'available' || device.held !== undefined) return {code: 'unavailable'};
       binding = {kind: 'device', target: device.id, owner: selected.owner, configurationRevision: device.configurationRevision, generation: device.generation};

@@ -1390,6 +1390,13 @@ Either registered supervisor SHALL receive the configured tools for the supporte
 - **AND** the normal sharing, capability and revision checks still apply
 - **AND** a receipt of transmission establishes no physical effect
 
+#### Scenario: A hold release cites an operation
+
+- **WHEN** the current request cites an operation for a held device
+- **THEN** a selected operation must match the current hold, even if the supervisor omits the operation ID from its command arguments
+- **AND** an explicitly excluded operation cannot be released
+- **AND** an authorized request to release the current hold may leave the operation unspecified
+
 #### Scenario: A stale draft edit or invalid target is proposed
 
 - **WHEN** the supervisor proposes a stale draft revision, an invalid target, or a target whose permission has changed
