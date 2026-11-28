@@ -142,8 +142,9 @@ The companions module SHALL run every task through one provider behind a tool-ca
 - **THEN** B.U.N.N.Y., Reachy and MicroDuck each run the synthetic script, nothing is sent and nothing is counted in the spend ledger
 
 #### Scenario: Full tool catalog on the hosted provider
-- **WHEN** the permitted tool catalog exceeds the Messages API's strict-tool limit
-- **THEN** the request includes every permitted tool, uses strict mode within the provider's limit, and checks the remaining tool calls against their closed input schemas before they can reach approval or act
+- **WHEN** a Conversation turn offers tools to Claude
+- **THEN** one Messages request includes every permitted tool and its closed input schema without requesting strict grammar compilation
+- **AND** the Hub refuses unoffered tools and validates offered tool arguments against their closed schemas before approval or execution
 
 #### Scenario: Persona and active preferences enter the prompt
 - **WHEN** the owner has active and inactive explicit preferences and an active knowledge note and starts a `bunny` task, then edits a preference and stops using another before the next model call

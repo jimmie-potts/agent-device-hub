@@ -57,7 +57,7 @@ void test('a later word for a call already answered is a user text block, so no 
   assert.deepEqual([...seen.values()], [1]);
 });
 
-void test('a turn sends one versioned, keyed request with strict tools, medium effort and the transcript as API turns', async () => {
+void test('a turn sends one versioned, keyed request with closed tool schemas, medium effort and the transcript as API turns', async () => {
   const {transport, sent} = fake(() => json({content: [{type: 'text', text: 'All quiet.'}], stop_reason: 'end_turn', usage}));
   const provider = new AnthropicProvider({key: 'sk-PRIVATE-KEY', transport});
   const reply = await provider.turn(input, signal());
@@ -79,8 +79,8 @@ void test('a turn sends one versioned, keyed request with strict tools, medium e
   // The mode line names the state now, after any applied command, so a reply cannot read it as the mode before the command.
   assert.ok(system.endsWith('The Hub mode is work now. This is the state after any command already applied earlier in this task, not the mode before it.'));
   assert.deepEqual(body.tool_choice, {type: 'auto', disable_parallel_tool_use: true});
-  assert.deepEqual((body.tools as {name: string; strict: boolean; input_schema: {additionalProperties: boolean}}[]).map(tool => [tool.name, tool.strict, tool.input_schema.additionalProperties]),
-    [['ask_owner', true, false], ['read_sessions', true, false], ['set_mode', true, false]]);
+  assert.deepEqual((body.tools as {name: string; strict?: boolean; input_schema: {additionalProperties: boolean}}[]).map(tool => [tool.name, tool.strict, tool.input_schema.additionalProperties]),
+    [['ask_owner', undefined, false], ['read_sessions', undefined, false], ['set_mode', undefined, false]]);
   assert.match(systemText(body.system), /Hub mode is work/);
   assert.deepEqual(body.messages, toMessages(input.transcript));
   assert.deepEqual(toMessages(input.transcript), [
@@ -148,32 +148,37 @@ void test('a second call of a task sends the same cached prefix and reports its 
   }
 });
 
-void test('the full Conversation catalog reaches Claude within its strict tool limit', async () => {
-  const allTools = permittedTools(TOOLS.map(tool => tool.name), false);
+void test('Claude receives the full Conversation catalog in one first request', async () => {
+  const tools = permittedTools(TOOLS.map(tool => tool.name), false);
+  assert.ok(tools.length >= 50);
   const call = {id: 'toolu_show', name: 'control_music_lighting_control',
     input: {owner: 'bunny/core', target: 'light', arguments: '{"action":"stop"}'}};
   const {transport, sent} = fake(({init}) => {
-    const {tools} = JSON.parse(init.body) as {tools: {name: string; strict?: boolean; input_schema: unknown}[]};
-    assert.deepEqual(tools.map(tool => [tool.name, tool.input_schema]), allTools.map(tool => [tool.name, tool.input]));
-    if (tools.filter(tool => tool.strict === true).length > 20) return json({type: 'error'}, 400);
-    assert.equal(tools.find(tool => tool.name === call.name)?.strict, undefined);
+    const body = JSON.parse(init.body) as {tools: {name: string; strict?: boolean; input_schema: unknown}[]};
+    assert.deepEqual(body.tools.map(tool => [tool.name, tool.input_schema]), tools.map(tool => [tool.name, tool.input]));
+    // Reproduce the observed failure of the combined grammar, even within the advertised strict-tool count.
+    if (body.tools.some(tool => tool.strict === true)) {
+      return json({type: 'error', error: {type: 'invalid_request_error', message: 'Schema is too complex for compilation.'}}, 400);
+    }
     return json({content: [{type: 'tool_use', ...call}], stop_reason: 'tool_use', usage});
   });
-  const provider = new AnthropicProvider({key: 'k', transport});
-  assert.deepEqual((await provider.turn({...input, tools: allTools}, signal())).calls, [call]);
+  const provider = new AnthropicProvider({key: 'fixture', transport});
+  assert.deepEqual((await provider.turn({...input, transcript: [{role: 'owner', text: 'Stop the light show.'}], tools}, signal())).calls, [call]);
   assert.equal(sent.length, 1);
 });
 
-void test('malformed expanded catalog calls are refused at the provider boundary', async () => {
-  const allTools = permittedTools(TOOLS.map(tool => tool.name), false);
+void test('Claude validates malformed calls locally at both ends of the catalog', async () => {
+  const tools = permittedTools(TOOLS.map(tool => tool.name), false);
+  const name = 'control_music_lighting_control';
   const fields = {owner: 'bunny/core', target: 'light', arguments: '{"action":"stop"}'};
-  for (const invalid of [{...fields, extra: true}, {...fields, arguments: {}}, {target: 'light', arguments: '{}'}]) {
+  const cases = [{name: 'set_mode', input: {mode: 'party'}}, {name: 'set_mode', input: {mode: 'work', extra: true}},
+    {name, input: {...fields, extra: true}}, {name, input: {...fields, arguments: {}}}, {name, input: {target: 'light', arguments: '{}'}}];
+  for (const call of cases) {
     const {transport, sent} = fake(() => json({
-      content: [{type: 'tool_use', id: 'toolu_show', name: 'control_music_lighting_control', input: invalid}],
-      stop_reason: 'tool_use', usage,
+      content: [{type: 'tool_use', id: 'toolu_show', ...call}], stop_reason: 'tool_use', usage,
     }));
-    const provider = new AnthropicProvider({key: 'k', transport});
-    await assert.rejects(provider.turn({...input, tools: allTools}, signal()),
+    const provider = new AnthropicProvider({key: 'fixture', transport});
+    await assert.rejects(provider.turn({...input, tools}, signal()),
       (error: unknown) => error instanceof ProviderFault && error.code === 'invalid-message');
     assert.equal(sent.length, 1);
   }

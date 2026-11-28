@@ -682,15 +682,19 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   procedure after changing the section.
 - Requests go to `https://api.anthropic.com/v1/messages` through the module's
   own fetch with API version `2026-10-21`, carrying the fixed instructions, the
-  current Hub mode, the task's transcript, the tool definitions marked strict,
+  current Hub mode, the task's transcript, the permitted tool definitions,
   `output_config.effort`, one tool call per turn and the model's default
-  thinking. There is no retry and no fallback model: a refusal ends the task
+  thinking. The Hub validates arguments against their closed schemas before
+  execution. This keeps the full catalog available when Claude's strict tool
+  grammar would exceed its combined complexity limit. A refusal ends the task
   `forbidden`, an error status maps once to `unauthenticated`, `forbidden`,
   `not-found`, `capacity` (a rate limit), `invalid-request`, `too-large` or
   `unavailable`, an unreadable answer to `invalid-message`, and output cut at the
   provider's limit to `capacity`. A lost answer or a transport error leaves the
-  call uncertain. Usage is the sum of the tokens the provider reports (input,
-  output and cache tokens); unreported usage stays unknown. A report without
+  call uncertain. The Hub never automatically resends a request or switches
+  models. Usage is the sum of the tokens the provider reports (input, output and
+  cache tokens), including reports on refused tool proposals. Unreported usage
+  stays unknown. A report without
   input or output counts, or with a count that is not a whole number, is
   unreported. The module paces each day, and Anthropic enforces the monthly
   limit ([Spend limits](#spend-limits)). A spend-limit refusal maps to

@@ -1,6 +1,6 @@
 // The Anthropic Messages API behind the turn contract (Hub #46), through the module's own fetch with a transport seam,
 // as the Tidbyt module reaches its cloud. Request shape per the Claude API reference of 2026-10-21: versioned header,
-// bounded `strict` tools, `output_config.effort`, thinking left to the model's default, one tool call per turn. The model's own
+// closed tool schemas, `output_config.effort`, thinking left to the model's default, one tool call per turn. The model's own
 // content blocks, thinking blocks included, are kept with the assistant turn and replayed exactly as received, which the
 // API requires for the turn whose tool call awaits its result. The key is held in memory, sent only as the request header
 // and never logged, stored or published. ADR 0012 forbids automatic resends. Provider selection is fixed for the task.
@@ -21,7 +21,6 @@ export type Effort = typeof EFFORTS[number];
 export const MAX_TOKENS = 16_000;
 /** The largest response body kept, in bytes; a larger `content-length` is refused before the body is read. */
 const MAX_RESPONSE_BYTES = 262_144;
-const STRICT_TOOL_LIMIT = 20;
 export type Transport = (url: string, init: {method: 'POST'; headers: Record<string, string>; body: string; signal: AbortSignal; redirect: 'error'}) => Promise<Response>;
 export type AnthropicOptions = {readonly key: string; readonly model?: string; readonly effort?: Effort; readonly transport?: Transport; readonly url?: string};
 type Block = Record<string, unknown>;
@@ -142,8 +141,8 @@ export class AnthropicProvider implements ModelProvider {
     this.#transport = options.transport ?? ((url, init) => fetch(url, init)); this.#url = options.url ?? ANTHROPIC_URL;
   }
   #body(input: TurnInput): string {
-    const tools = input.tools.map((tool, index) => ({name: tool.name, description: tool.description, input_schema: tool.input,
-      ...(index < STRICT_TOOL_LIMIT ? {strict: true} : {})}));
+    // The permitted catalog can exceed Claude's combined strict grammar budget even within its tool count limit.
+    const tools = input.tools.map(tool => ({name: tool.name, description: tool.description, input_schema: tool.input}));
     return JSON.stringify({model: this.model, max_tokens: outputTokenCap(input, MAX_TOKENS), system: this.#system(input),
       ...(tools.length === 0 ? {} : {tools, tool_choice: {type: 'auto', disable_parallel_tool_use: true}}),
       messages: toMessages(input.transcript), output_config: {effort: this.#effort},
@@ -177,7 +176,7 @@ export class AnthropicProvider implements ModelProvider {
     if (textBytes(text) > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large', false, 'response');
     let parsed: unknown;
     try {parsed = JSON.parse(text);} catch {throw new ProviderFault('invalid-message');}
-    return this.#reply(parsed, input.tools.slice(STRICT_TOOL_LIMIT));
+    return this.#reply(parsed, input.tools);
   }
   /**
    * The system prompt as two text blocks (Hub #2029). The first holds the instructions, the personality, the fixed rules,
@@ -200,25 +199,28 @@ export class AnthropicProvider implements ModelProvider {
       ...sectionTexts(input.context, ['knowledge', 'preferences', 'memory'])].join('\n\n');
     return [{type: 'text', text: stable, cache_control: {type: 'ephemeral'}}, {type: 'text', text: [...sectionTexts(input.context, ['recent']), mode].join('\n\n')}];
   }
-  #reply(value: unknown, locallyValidatedTools: readonly ToolDefinition[]): TurnReply {
-    if (!object(value) || !Array.isArray(value.content) || !object(value.usage)) throw new ProviderFault('invalid-message');
+  #reply(value: unknown, tools: readonly ToolDefinition[]): TurnReply {
+    if (!object(value) || !object(value.usage)) throw new ProviderFault('invalid-message');
+    const usage = usageOf(value.usage);
+    const malformed = () => new ProviderFault('invalid-message', false, undefined, undefined, usage);
+    if (!Array.isArray(value.content)) throw malformed();
     const texts: string[] = [], calls: ToolCall[] = [], blocks: Block[] = [];
     for (const block of value.content) {
-      if (!object(block)) throw new ProviderFault('invalid-message');
+      if (!object(block)) throw malformed();
       if (block.type === 'text' && typeof block.text === 'string') {texts.push(block.text); blocks.push(block);}
       else if (block.type === 'tool_use') {
-        if (typeof block.id !== 'string' || !TOOL_ID.test(block.id) || typeof block.name !== 'string' || !object(block.input)) throw new ProviderFault('invalid-message');
+        if (typeof block.id !== 'string' || !TOOL_ID.test(block.id) || typeof block.name !== 'string' || !object(block.input)) throw malformed();
         // The engine acts on one call per model response; a further call is dropped here so no replayed tool_use lacks its result.
         if (calls.length === 0) {calls.push({id: block.id, name: block.name, input: block.input}); blocks.push(block);}
       } else blocks.push(block);
       // Thinking and any other block the model returned are kept as received for replay; the engine acts on none of them.
     }
-    const usage = usageOf(value.usage), units = usage === null ? null : usage.input + usage.output + usage.cacheWrite + usage.cacheRead;
+    const units = usage === null ? null : usage.input + usage.output + usage.cacheWrite + usage.cacheRead;
     const stop = stopOf(value.stop_reason, calls.length);
     const call = calls[0];
     if (stop === 'tool' && call !== undefined) {
-      const definition = locallyValidatedTools.find(tool => tool.name === call.name);
-      if (definition !== undefined && !conformsToSchema(definition.input, call.input)) throw new ProviderFault('invalid-message');
+      const definition = tools.find(tool => tool.name === call.name);
+      if (definition !== undefined && !conformsToSchema(definition.input, call.input)) throw malformed();
     }
     const text = texts.join('\n').trim();
     return {text: text === '' ? null : text, calls: stop === 'tool' ? calls : [], stop, units, usage, blocks};

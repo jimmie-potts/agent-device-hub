@@ -1,7 +1,7 @@
 // The tool definition types (Hub #46), apart from the provider contract so the page's tool scope (Hub #2026) can reach
 // the catalog's names without the provider's runtime code.
 
-/** A closed JSON schema for a tool's input, as the Messages API's `input_schema` with `strict` takes it. */
+/** A closed JSON schema for a tool's input, also sent as the Messages API's `input_schema`. */
 type ToolProperty = {type: 'string'; description: string; enum?: readonly string[]}
   | {type: 'boolean' | 'integer'; description: string}
   | {type: 'array'; items: {type: 'string'} | ToolInputSchema; description: string}

@@ -78,7 +78,8 @@ export class ProviderFault extends Error {
    * `sizeLimit` names a request or response size refusal; `closingReason` is fixed text for the owner that ends the turn's
    * closing reply, such as Anthropic's reached monthly spend limit (Hub #2047).
    */
-  constructor(readonly code: ErrorCode, readonly uncertain = false, readonly sizeLimit?: 'request' | 'response', readonly closingReason?: string) {super(`provider ${code}`);}
+  constructor(readonly code: ErrorCode, readonly uncertain = false, readonly sizeLimit?: 'request' | 'response',
+    readonly closingReason?: string, readonly usage?: TokenUsage | null) {super(`provider ${code}`);}
 }
 export const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
 export const textBytes = (value: string): number => Buffer.byteLength(value, 'utf8');
