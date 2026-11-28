@@ -75,7 +75,7 @@ type ScopedDeviceFacts = {
   named: NamedDeviceLookup | undefined;
   granted: (id: string) => boolean;
   recordNamed: (owner: string, id: string) => void;
-  recordContextual?: (match: Match) => void;
+  admitContextual?: (match: Match) => boolean;
   brightnessControl: boolean;
   resolve: (id: string) => void;
 };
@@ -865,13 +865,13 @@ export class ConversationActions {
         : matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
           target.trim() !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
+      if (scopedFacts.admitContextual?.(selected) === false) return textResult({devices: []});
       const {owner: source, device} = selected;
       scopedFacts.resolve(device.id);
       if (!access('devices', 'index', device.id) || !access('devices', 'label', device.id) || !access('devices', 'status', device.id)) {
         return textResult({devices: []});
       }
       if (scopedFacts.named !== undefined) scopedFacts.recordNamed(source, device.id);
-      else scopedFacts.recordContextual?.(selected);
       if (scopedFacts.brightnessControl) {
         const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');
         const controls = this.enabled.filter(name => name === SET_LIFX_BRIGHTNESS && source === LIFX && device.capabilities.brightness.supported ||

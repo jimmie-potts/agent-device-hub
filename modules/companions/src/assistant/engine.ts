@@ -2342,8 +2342,11 @@ export class AssistantEngine {
         const stillBound = [...bindings.values()].every(({target, modelCallId}) => {
           const model = this.store.call(modelCallId);
           const saved = model?.lightingControlProof;
-          return model?.taskId === task.id && saved !== undefined &&
-            this.#contextualReadStillBound(saved, this.#modelControlScope(current, saved.history, eligible, rows), target);
+          if (model?.taskId !== task.id || model.kind !== 'model' || model.status !== 'succeeded' || saved === undefined ||
+              !scope?.effects.has(modelCallId)) return false;
+          const binding = this.#modelControlScope(current, saved.history, eligible, rows);
+          return this.#contextualReadStillBound(saved, binding, target) &&
+            this.#ownerSelectedReadTarget(scope.catalogSubject, binding, eligible, rows) === target;
         });
         if (!isDeepStrictEqual(scope.contextualReads, bindings) || !stillBound) {
           throw new ProviderFault('forbidden', false, undefined, undefined, UNSENT_MODEL_USAGE);
@@ -2788,6 +2791,26 @@ export class AssistantEngine {
       selected.allowed && selected.eligible && current.ambiguousHistory?.has(target) !== true &&
       (current.qualifiedTargets === undefined || current.qualifiedTargets.has(target)) &&
       original[0]?.snapshot === controlReferenceSnapshot(selected);
+  }
+  #ownerSelectedReadTarget(subject: string | undefined, scope: LightingControlScope,
+    history: ReadonlyMap<string, HostedHistoryMessage>, rows: readonly LightingDevice[]): string | undefined {
+    const named = rows.filter(({device}) => matchesDeviceRequestSubject(subject, device));
+    if (named.length > 0) return named.length === 1 ? named[0]?.device.id : undefined;
+    // Rendered tool results can contain strings that look like names or IDs.
+    // Only an authorized owner's excerpt can supply the prior reference.
+    for (const source of [...scope.history].reverse()) {
+      const message = history.get(source.id);
+      if (message?.role !== 'owner' || message.revision !== source.revision) continue;
+      const qualified = qualifiedLightingOwner(rows, message.text);
+      const candidates = qualified === undefined ? scope.references
+        : scope.references.filter(reference => rows.some(row => row.owner === qualified && row.device.id === reference.id));
+      const exact = exactControlIds(message.text);
+      const matches = new Set([...exact, ...controlReferenceIds(candidates, message.text)]);
+      if (matches.size === 0) continue;
+      if (ownerCancelled.test(message.text) || exclusionsInDeviceRequest.test(normalizedControlText(message.text))) return undefined;
+      return matches.size === 1 ? [...matches][0] : undefined;
+    }
+    return undefined;
   }
   #lightingDevices(parent: TraceContext): Promise<LightingDevice[]> {
     return this.#catalog().lightingDevices(parent, this.options.devices?.(ASSISTANT_LIGHT_OWNER) ?? [],
@@ -3408,7 +3431,8 @@ export class AssistantEngine {
       const lookup = scope?.deviceLookupAdmission(call);
       const proposedTarget = owner === ASSISTANT_LIGHT_OWNER ? call.input.device : call.input.target;
       const modelCallId = last !== undefined && 'effect' in last && typeof last.effect === 'string' ? last.effect : undefined;
-      const proof = modelCallId === undefined ? undefined : this.store.call(modelCallId)?.lightingControlProof;
+      const modelReceipt = modelCallId === undefined ? undefined : this.store.call(modelCallId);
+      const proof = modelReceipt?.lightingControlProof;
       let lightingReadTarget: string | undefined;
       let contextualMatch: LightingDevice | undefined;
       if (scope !== undefined && proof !== undefined &&
@@ -3416,14 +3440,22 @@ export class AssistantEngine {
           typeof proposedTarget === 'string' && proposedTarget !== '' && (scope.catalogSubject === undefined || scope.brightnessTarget === undefined)) {
         const rows = await this.#lightingDevices(parent);
         this.#fence(active);
-        const current = this.#modelControlScope(this.#task(task.id), proof.history, undefined, rows);
+        const currentTask = this.#task(task.id);
+        const history = this.#hostedHistory(currentTask);
+        const current = this.#modelControlScope(currentTask, proof.history, history, rows);
         const target = resolveLightingTarget(current, proposedTarget);
-        if (this.#sameControlSources(proof, current) && target.kind === 'ready') {
-          lightingReadTarget = target.targets[0];
-          if (call.name === READ_DEVICES && lightingReadTarget !== undefined && modelCallId !== undefined &&
-            this.#contextualReadStillBound(proof, current, lightingReadTarget)) {
-            contextualMatch = rows.find(({device}) => device.id === lightingReadTarget);
+        if (call.name === READ_DEVICES) {
+          const selected = this.#ownerSelectedReadTarget(scope.catalogSubject, current, history, rows);
+          if (modelReceipt?.taskId !== task.id || modelReceipt.kind !== 'model' || modelReceipt.status !== 'succeeded' ||
+              modelCallId === undefined || !scope.effects.has(modelCallId) || target.kind !== 'ready' ||
+              selected === undefined || target.targets[0] !== selected || !this.#contextualReadStillBound(proof, current, selected)) {
+            return {text: JSON.stringify({devices: []}), units: 0, disclosures: []};
           }
+          lightingReadTarget = selected;
+          contextualMatch = rows.find(({device}) => device.id === selected);
+          if (contextualMatch === undefined) return {text: JSON.stringify({devices: []}), units: 0, disclosures: []};
+        } else if (this.#sameControlSources(proof, current) && target.kind === 'ready') {
+          lightingReadTarget = target.targets[0];
         }
       }
       if (call.name === READ_HUB_GUIDE) {
@@ -3505,10 +3537,13 @@ export class AssistantEngine {
           id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id), scope === undefined ? undefined : {
             subject, named: lookup?.kind === 'named' ? lookup.lookup : undefined, granted: scope.lookupGranted,
             recordNamed: (owner, id) => {namedDeviceRead = {owner, id};},
-            ...(contextualMatch === undefined ? {} : {recordContextual: ({owner, device}) => {
-              if (owner === contextualMatch?.owner && device.id === contextualMatch.device.id &&
-                device.configurationRevision === contextualMatch.device.configurationRevision &&
-                isDeepStrictEqual(device.generation, contextualMatch.device.generation)) lightingReadModelCallId = modelCallId;
+            ...(contextualMatch === undefined ? {} : {admitContextual: ({owner, device}) => {
+              const match = contextualMatch;
+              if (match === undefined || owner !== match.owner || device.id !== match.device.id ||
+                device.configurationRevision !== match.device.configurationRevision ||
+                !isDeepStrictEqual(device.generation, match.device.generation)) return false;
+              lightingReadModelCallId = modelCallId;
+              return true;
             }}),
             brightnessControl: scope.brightnessTarget !== undefined, resolve: scope.resolvedCatalogDevice,
           }) ?? fail('invalid-state');

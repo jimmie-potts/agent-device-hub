@@ -5141,9 +5141,10 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     let change: 'none' | 'grant' | 'generation' | 'duplicate' | 'observation' = 'none';
     let observedAtMs = Date.now();
     let readSnapshots = 0;
+    let proposedRead = false;
     let propose = id;
     const policy = sharing();
-    const share = (query: ShareQuery) => policy(query) && !(change === 'grant' && readSnapshots >= 2 &&
+    const share = (query: ShareQuery) => policy(query) && !(change === 'grant' && proposedRead && readSnapshots > 2 &&
       query.destination === 'external-model' && query.source === 'devices' && query.field === 'status' && query.record === id);
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
       const body = JSON.parse(init.body) as {
@@ -5161,7 +5162,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       if (turn === 'read') {
         priorRequestShared ||= init.body.includes(instruction);
         if (result !== undefined) reads.push(result);
-        else readSnapshots = 0;
+        else {readSnapshots = 0; proposedRead = true;}
       }
       const usage = {input_tokens: 50, output_tokens: 20, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
       return Promise.resolve(Response.json(adapter === 'anthropic'
@@ -5194,7 +5195,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     await pixoo.serveSync(['device'], () => {
       // The first two reads after a model proposal bind the target and produce the tool result.
       // A subsequent read sees the changed device or grant before the result replays.
-      const afterTool = turn === 'read' && readSnapshots++ >= 2;
+      const afterTool = turn === 'read' && proposedRead && readSnapshots++ >= 2;
       return {revision: 1, states: [state({...selected,
         generation: afterTool && change === 'generation' ? {epoch: 'replacement', sequence: 0} : selected.generation,
         observed: {status: 'known', observedAtMs: afterTool && change === 'observation' ? observedAtMs + 1 : observedAtMs,
@@ -5203,7 +5204,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     });
     const otherOwner = w.bus.connect('bunny/modules/nanoleaf');
     context.after(() => otherOwner.close());
-    await otherOwner.serveSync(['device'], () => ({revision: 1, states: change === 'duplicate' && readSnapshots > 2
+    await otherOwner.serveSync(['device'], () => ({revision: 1, states: change === 'duplicate' && proposedRead && readSnapshots > 2
       ? [state({...selected, kind: 'nanoleaf'})] : []}));
     await control(w.core, w.module(), 'enable');
 
@@ -5240,6 +5241,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     assert.doesNotMatch(reads[0] ?? '', /fixture-other-display/u);
 
     const ask = async (prompt: string) => {
+      proposedRead = false;
       const prior = task(w)?.taskId;
       assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
       await until(() => task(w)?.taskId !== prior && (status(w) === 'succeeded' || status(w) === 'failed'));
@@ -5250,24 +5252,24 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       return (JSON.parse(Buffer.from(content.bytes).toString()) as {day: {unreported: number}}).day.unreported;
     };
 
-    for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound'] as const) {
+    for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound', 'lookalike', 'multiple'] as const) {
       change = 'none';
       propose = id;
-      await ask(`Check the brightness of id:${id}.`);
+      await ask(variation === 'multiple' ? `Compare ${selected.label} and id:${unrelated.id}.` : `Check the brightness of id:${id}.`);
       assert.equal(status(w), 'succeeded');
-      change = variation === 'unbound' ? 'none' : variation;
-      propose = variation === 'unbound' ? unrelated.id : id;
+      change = variation === 'unbound' || variation === 'lookalike' || variation === 'multiple' ? 'none' : variation;
+      propose = variation === 'unbound' ? unrelated.id : variation === 'lookalike' ? alias.id : id;
       const callsBefore: number = reads.length;
       const spendBefore = await unreported();
       await ask(question);
       assert.equal(await unreported(), spendBefore, 'a request stopped locally leaves no unreported provider charge');
-      if (variation === 'observation' || variation === 'unbound') {
+      if (variation === 'observation' || variation === 'unbound' || variation === 'lookalike' || variation === 'multiple') {
         assert.equal(status(w), 'succeeded');
         assert.equal(reads.length, callsBefore + 1);
-        if (variation === 'unbound') assert.equal(reads.at(-1), '{"devices":[]}');
+        if (variation !== 'observation') assert.equal(reads.at(-1), '{"devices":[]}');
         else assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
       } else {
-        assert.equal(status(w), 'failed', variation);
+        assert.equal(status(w), 'failed', JSON.stringify({variation, readSnapshots, facts: reads.at(-1)}));
         assert.equal(task(w)?.code, 'forbidden');
         assert.equal(reads.length, callsBefore, 'stale proof cannot reach the provider');
       }
