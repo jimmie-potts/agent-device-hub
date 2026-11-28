@@ -64,6 +64,10 @@ for (const provider of ['anthropic', 'openai'] as const) {
       percent: 50, refusal: 'cancelled'},
     {kind: 'brightness', label: 'uses half brightness despite a conflicting scalar', operation: 'fraction-of-scale', valueQuote: 'half brightness', text: 'Set Studio 2 to half brightness.',
       percent: 23, expected: 50},
+    {kind: 'brightness', label: 'refuses a bare fraction presented as a fraction of current brightness',
+      text: 'Set Studio 2 to half brightness.', operation: 'fraction-of-current', valueQuote: 'half brightness', refusal: 'unsupported-fraction'},
+    {kind: 'brightness', label: 'refuses a bare fraction presented as a fraction of maximum brightness',
+      text: 'Set Studio 2 to half brightness.', operation: 'fraction-of-maximum', valueQuote: 'half brightness', refusal: 'unsupported-fraction'},
     {kind: 'brightness', label: 'converts a written fraction of brightness to a percent', operation: 'fraction-of-scale', valueQuote: '3/4 brightness', text: 'Set Studio 2 to 3/4 brightness.',
       percent: 2, expected: 75},
     {kind: 'brightness', label: 'accepts a spoken word fraction of brightness', operation: 'fraction-of-scale', valueQuote: 'three quarters brightness', text: 'Set Studio 2 to three quarters brightness.',
@@ -193,7 +197,9 @@ for (const provider of ['anthropic', 'openai'] as const) {
         const lastResult = provider === 'anthropic'
           ? body.messages?.flatMap(message => message.content).filter(block => block.type === 'tool_result').at(-1)?.content
           : body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output;
-        const answered = refusal === 'missing' && lastResult === ownerAnswer;
+        const answerResult = JSON.stringify({kind: 'authenticated-owner-answer', slot: 'percent',
+          execution: 'condition' in scenario ? 'conditional-or-future' : 'immediate', answer: ownerAnswer});
+        const answered = refusal === 'missing' && lastResult === ('genericQuestion' in scenario ? ownerAnswer : answerResult);
         const command = (lastResult === undefined || answered) && body.tools !== undefined && body.tools.length > 0;
         const ask = answered && 'repeatQuestion' in scenario || !answered && 'genericQuestion' in scenario;
         const followUpName = ask ? 'ask_owner' : name;

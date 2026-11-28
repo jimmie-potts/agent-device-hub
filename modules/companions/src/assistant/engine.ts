@@ -211,7 +211,7 @@ function controlInstructions(tools: TurnInput['tools']): string {
   const lighting = tools.some(tool => lightingFamily(tool.name) !== undefined);
   if (!lighting && !tools.some(tool => tool.name === SET_WEMO_POWER || tool.name === SET_MODE || modelCatalogTool(tool.name))) return INSTRUCTIONS;
   const instruction = `${INSTRUCTIONS} ${CONTROL_INSTRUCTIONS}`;
-  return lighting ? `${instruction} For one light, put its exact ID or unambiguous label in the lighting tool’s target field. For a light status question, use a read tool with that same reference.` : instruction;
+  return lighting ? `${instruction} For one light, put its exact ID or unambiguous label in the lighting tool’s target field. For a light status question, use a read tool with that same reference. A tool result with kind authenticated-owner-answer contains the owner’s answer for the saved lighting slot. Interpret its answer as the owner’s wording and call the lighting tool with that setting, missing set to none, and the original execution and condition.` : instruction;
 }
 /** The start of the tool result for a hand-off that waits for its companion's busy slot (Hub #2028). */
 export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this hand-off waits for';
@@ -1944,6 +1944,9 @@ export class AssistantEngine {
   }
   #hostedBase(task: Task, transcript: TurnInput['transcript'], context: PromptContext, tools: TurnInput['tools'],
     access: FieldAccess, deviceMode: CoreCopy['mode']): TurnInput {
+    const clarification = task.lightingClarification;
+    const decision = task.lightingDecision;
+    const question = this.#controlClarification(task);
     const visible = transcript.map(item => {
       if (item.role === 'owner' && 'submittedAtMs' in item) {
         const {submittedAtMs: _, ...message} = item;
@@ -1951,8 +1954,19 @@ export class AssistantEngine {
       }
       if (item.role !== 'tool') return item;
       const record = conversationMessageId(task.id, item);
-      return record !== undefined && record.endsWith('-answer') && !access('conversation', 'excerpt', record)
-        ? {...item, result: 'The owner’s answer is private.'} : item;
+      if (record === undefined || !record.endsWith('-answer')) return item;
+      if (!access('conversation', 'excerpt', record)) return {...item, result: 'The owner’s answer is private.'};
+      if (clarification === undefined || question === undefined || clarification.questionId !== question.id ||
+          record !== `${question.id}-answer` || question.answer !== item.result ||
+          decision?.intent !== 'set' || decision.requestId !== clarification.requestId ||
+          decision.owner !== clarification.owner || decision.target !== clarification.target ||
+          !access('conversation', 'request', decision.requestId)) return item;
+      const slot = clarification.kind === 'setting-slot' ? clarification.slot
+        : clarification.kind === 'missing-saturation' ? 'saturation'
+          : clarification.family === 'brightness-set' ? 'percent'
+            : clarification.family === 'lifx-temperature-set' ? 'kelvin' : 'hue-and-saturation';
+      return {...item, result: JSON.stringify({kind: 'authenticated-owner-answer', slot,
+        execution: decision.execution, answer: item.result})};
     });
     const mode = deviceMode !== undefined && access('devices', 'status', 'hub')
       ? {mode: deviceMode.mode, revision: deviceMode.revision} : null;

@@ -498,14 +498,16 @@ function fractionBrightness(row: LightingDevice, kind: FractionQuantity['kind'],
   minimum: number, maximum: number, now: number): LightingValue {
   const invalid = {kind: 'refused', code: 'invalid-request'} as const;
   // Completeness applies to the cited value, not the sentence that contains it.
-  const value = /^halve$/iu.test(literal) ? 'half' : literal;
+  const halve = /^halve$/iu.test(literal);
+  const value = halve ? 'half' : literal;
   const match = /^(?:(?:(a|one|two|three|four|five|six|seven)[ -])?(half|thirds?|quarters?|fourths?|fifths?|eighths?)|([¼-¾⅐-⅞]|\d+\s*[/⁄∕／]\s*\d+))(?:\s*(%|percent\b))?(?:\s+of (?:the |its )?((?:maximum|current)(?: brightness)?|brightness))?(?:\s+brightness)?$/iu.exec(value);
   if (match === null) return invalid;
   const [, amountWord, fractionWord, fraction, percent, basis] = match;
   const reference = basis?.toLowerCase() ?? '';
-  if (percent !== undefined && (basis !== undefined || kind !== 'fraction-of-scale') ||
-      reference.includes('current') && !kind.endsWith('fraction-of-current') ||
-      reference.includes('maximum') && kind !== 'fraction-of-maximum') return invalid;
+  const supportedKind = halve ? kind === 'fraction-of-current'
+    : reference.includes('current') ? kind.endsWith('fraction-of-current')
+      : reference.includes('maximum') ? kind === 'fraction-of-maximum' : kind === 'fraction-of-scale';
+  if (!supportedKind || percent !== undefined && basis !== undefined) return invalid;
   const [numerator, denominator] = fraction === undefined
     ? [amountWord === undefined || amountWord.toLowerCase() === 'a' ? 1 : NUMBER_WORDS[amountWord.toLowerCase()],
       fractionWords[fractionWord?.toLowerCase().replace(/s$/u, '') ?? '']]

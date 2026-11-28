@@ -5329,11 +5329,12 @@ function lightingFixtureSupervisor(select: (results: readonly string[], tools: r
   }});
 }
 
-for (const adapter of ['anthropic', 'openai'] as const) {
-  void test(`${adapter} keeps the original conditional lighting scope through a restarted value question`, async context => {
+for (const adapter of ['anthropic', 'openai'] as const) for (const privateAnswer of [false, true]) {
+  void test(`${adapter} keeps the original conditional lighting scope through a restarted value question (${privateAnswer ? 'private' : 'shared'})`, async context => {
     const device = light('studio', 'Studio Lamp');
     const original = 'When I get home, set Studio Lamp to something cozy.';
     const usage = {input_tokens: 30, output_tokens: 20};
+    let deliveredAnswer: string | undefined;
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
       const body = JSON.parse(init.body) as {
         input?: {type?: string; output?: string}[];
@@ -5341,7 +5342,15 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       };
       const value = body.input?.find(item => item.type === 'function_call_output')?.output ??
         body.messages?.flatMap(message => message.content).find(item => item.type === 'tool_result')?.content;
-      const answered = value === '37%';
+      if (value !== undefined) deliveredAnswer = value;
+      if (value === 'The owner’s answer is private.') {
+        return Promise.resolve(Response.json(adapter === 'anthropic'
+          ? {content: [{type: 'text', text: 'The setting remains unanswered.'}], stop_reason: 'end_turn', usage}
+          : {status: 'completed', output: [{type: 'message', role: 'assistant',
+            content: [{type: 'output_text', text: 'The setting remains unanswered.'}]}], usage}));
+      }
+      const answered = value === JSON.stringify({kind: 'authenticated-owner-answer', slot: 'percent',
+        execution: 'conditional-or-future', answer: '37%'});
       const args = {device: 'id:studio', operation: 'absolute', percent: answered ? 37 : 0,
         literal: answered ? '37%' : '', startingLiteral: '', intent: 'set',
         execution: answered ? 'immediate' : 'conditional-or-future', condition: answered ? '' : 'When I get home',
@@ -5356,7 +5365,10 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     const provider = adapter === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
       : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
     const commands: AssistantDispatch[] = [];
-    const w = await world(context, {provider, tools: ['set_lifx_brightness'], devices: () => [device], dispatch: command => {
+    const baseline = sharing();
+    const w = await world(context, {provider, share: query => baseline(query) &&
+      !(privateAnswer && query.destination === 'external-model' && query.source === 'conversation' &&
+        query.field === 'excerpt' && query.record?.endsWith('-answer') === true), tools: ['set_lifx_brightness'], devices: () => [device], dispatch: command => {
       commands.push(command);
       return Promise.resolve(accepted(command.requestId));
     }});
@@ -5375,7 +5387,10 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     await until(() => status(w) === 'succeeded');
     const completed = w.store().task(taskId)?.lightingDecision;
     assert.equal(completed?.execution, 'conditional-or-future');
-    assert.deepEqual(completed?.completed, {family: 'brightness-set', data: {percent: 37}});
+    assert.deepEqual(completed?.completed, privateAnswer ? undefined : {family: 'brightness-set', data: {percent: 37}});
+    assert.equal(deliveredAnswer, privateAnswer ? 'The owner’s answer is private.' :
+      JSON.stringify({kind: 'authenticated-owner-answer', slot: 'percent', execution: 'conditional-or-future', answer: '37%'}));
+    assert.equal(w.store().task(taskId)?.question?.answer, '37%');
     assert.equal(w.store().task(taskId)?.questions, 1);
     assert.deepEqual(commands, []);
   });
