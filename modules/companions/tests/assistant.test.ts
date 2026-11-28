@@ -5453,7 +5453,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     await control(w.core, w.module(), 'enable');
 
     for (const [quantity, ending] of [['100%', 'once'], ['100 percent', 'without changing anything else'],
-      ['one hundred percent', 'exactly as shown'], ['100 in percent', 'directly']] as const) {
+      ['one hundred percent', 'exactly as shown'], ['100 in percent', 'directly'],
+      ['100%', '((as previously shown))'], ['100 percent', '[in the office]']] as const) {
       literal = quantity;
       const prior = task(w)?.taskId, before = writes.length;
       const prompt = `Reapply the current brightness of ${target} at ${quantity} ${ending}.`;
@@ -5485,8 +5486,9 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         {text: 'Set brightness to 20% nits.', quantity: {kind: 'absolute', amount: 20, literal: '20%'}, correction: '22%.', correctedQuantity: 22, expected: 22},
         {text: 'Set brightness to 20% in lumens.', quantity: 20, correction: '23%.', correctedQuantity: 23, expected: 23},
         {text: 'Set brightness to twenty percent per second.', quantity: 20, correction: '24%.', correctedQuantity: 24, expected: 24},
-        ...['a second', 'each minute', 'foot-lamberts'].map(ending => ({text: `Set brightness to 18% ${ending}.`,
-          quantity: {kind: 'absolute', amount: 18, literal: '18%'}, correction: '25%.', correctedQuantity: 25, expected: 25})),
+        ...['a second', 'each minute', 'foot-lamberts', '(nits)', '([per second])', '(in foot-lamberts)', '[Fahrenheit]', '— nits', '“nits”']
+          .map(ending => ({text: `Set brightness to 18% ${ending}.`, quantity: {kind: 'absolute', amount: 18, literal: '18%'},
+            correction: '25%.', correctedQuantity: 25, expected: 25})),
         {text: 'Set temperature to 3200 K Fahrenheit.', quantity: {kind: 'absolute', amount: 3200, literal: '3200 K'},
           correction: '3200 Kelvin.', correctedQuantity: 3200, expected: 3200, temperature: true},
         {text: 'Set brightness to 20% directly.', quantity: {kind: 'absolute', amount: 20, unit: 'foot-lamberts'}, unitCase: true},

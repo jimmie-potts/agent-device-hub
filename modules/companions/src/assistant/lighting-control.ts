@@ -185,6 +185,7 @@ const UNIT_INTRODUCER = /^\s+in\s+/iu;
 const LOCATION = /^(?:the|my|our|your|this|that)\b/iu;
 const UNIT_CONTINUATION = /^\s*(?:[/⁄∕／‰‱°]|(?:nits?|lumens?|lux|lx|(?:milli)?watts?|mireds?|foot[- ]lamberts?|celsius|fahrenheit)\b)/iu;
 const RATE_DENOMINATOR = /^\s*(?:per\b|(?:an?|each|every)\s+(?:milliseconds?|seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?)\b)/iu;
+const UNIT_WRAPPER = /^(?:\s*[([{"'“”‘’]|\s+[-–—](?=\s))+/u;
 const PROPERTY_UNIT = /\b(?:brightness|temperature|hue|saturation)\s+in\s+([^.!?;]+?)(?=\s+(?:to|by|at)\b|[.!?;]|$)/giu;
 const QUALITATIVE_AMOUNT = /\b(?:half|(?:(?:a|one|two|three|four) )?quarters?|a (?:bit|few|couple))\b/giu;
 
@@ -241,9 +242,10 @@ function writtenValue(words: string): number {
 }
 
 function explicitQuantityUnit(unit: string, remainder: string): QuantityToken['unit'] {
-  const introducer = UNIT_INTRODUCER.exec(remainder)?.[0];
-  if (STATED_UNIT.test(remainder) || UNIT_CONTINUATION.test(remainder) || RATE_DENOMINATOR.test(remainder) ||
-      introducer !== undefined && !LOCATION.test(remainder.slice(introducer.length))) return 'unsupported';
+  const continuation = remainder.replace(UNIT_WRAPPER, ' ');
+  const introducer = UNIT_INTRODUCER.exec(continuation)?.[0];
+  if (STATED_UNIT.test(continuation) || UNIT_CONTINUATION.test(continuation) || RATE_DENOMINATOR.test(continuation) ||
+      introducer !== undefined && !LOCATION.test(continuation.slice(introducer.length))) return 'unsupported';
   return QUANTITY_UNITS[unit.toLowerCase()];
 }
 
