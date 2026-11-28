@@ -5136,14 +5136,14 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     const reads: string[] = [];
     let observed = 9;
     let powered = true;
-    let turn: 'write' | 'power' | 'read' = 'write';
+    let turn: 'write' | 'power' | 'read' | 'chatter' = 'write';
     let priorRequestShared = false;
-    let change: 'none' | 'grant' | 'generation' | 'duplicate' | 'observation' = 'none';
+    let change: 'none' | 'grant' | 'generation' | 'prior-generation' | 'duplicate' | 'observation' = 'none';
     let observedAtMs = Date.now();
     let readSnapshots = 0;
     let proposedRead = false;
     let withheldOwnerMessage: string | undefined;
-    let propose = id;
+    let propose = `id:${id}`;
     const policy = sharing();
     const share = (query: ShareQuery) => policy(query) && !(change === 'grant' && proposedRead && readSnapshots > 2 &&
       query.destination === 'external-model' && query.source === 'devices' && query.field === 'status' && query.record === id) &&
@@ -5156,23 +5156,26 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       };
       const effect = 'fixture-' + turn;
       const result = adapter === 'anthropic'
-        ? body.messages?.flatMap(message => message.content).find(block => block.type === 'tool_result' && block.tool_use_id === effect)?.content
-        : body.input?.find(item => item.type === 'function_call_output' && item.call_id === effect)?.output;
+        ? body.messages?.flatMap(message => message.content).filter(block => block.type === 'tool_result' && block.tool_use_id?.startsWith(effect)).at(-1)?.content
+        : body.input?.filter(item => item.type === 'function_call_output' && item.call_id?.startsWith(effect)).at(-1)?.output;
+      const answer = turn === 'read' && result?.startsWith('id:') === true;
+      const proposeTool = turn !== 'chatter' && (result === undefined || answer);
+      const modelToolId = answer ? `${effect}-answer` : effect;
       const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set' : 'read_devices';
       const effectArguments = turn === 'write' ? {percent: setting} : {on: false};
-      const args = {owner, target: `id:${turn === 'read' ? propose : id}`, ...(turn === 'read' ? {} : {
+      const args = {owner, target: turn === 'read' ? answer ? result : propose : `id:${id}`, ...(turn === 'read' ? {} : {
         ...immediateLight, ...(turn === 'power' ? {powerLiteral: 'off'} : {}), arguments: JSON.stringify(effectArguments)})};
       if (turn === 'read') {
         priorRequestShared ||= init.body.includes(instruction);
-        if (result !== undefined) reads.push(result);
-        else {readSnapshots = 0; proposedRead = true;}
+        if (result?.startsWith('{') === true) reads.push(result);
+        if (proposeTool) {readSnapshots = 0; proposedRead = true;}
       }
       const usage = {input_tokens: 50, output_tokens: 20, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
       return Promise.resolve(Response.json(adapter === 'anthropic'
-        ? {content: result === undefined ? [{type: 'tool_use', id: effect, name, input: args}]
-          : [{type: 'text', text: 'The fixture lookup is complete.'}], stop_reason: result === undefined ? 'tool_use' : 'end_turn', usage}
-        : {status: 'completed', output: result === undefined
-          ? [{type: 'function_call', id: `fc_${effect}`, call_id: effect, name, arguments: JSON.stringify(args)}]
+        ? {content: proposeTool ? [{type: 'tool_use', id: modelToolId, name, input: args}]
+          : [{type: 'text', text: 'The fixture lookup is complete.'}], stop_reason: proposeTool ? 'tool_use' : 'end_turn', usage}
+        : {status: 'completed', output: proposeTool
+          ? [{type: 'function_call', id: `fc_${modelToolId}`, call_id: modelToolId, name, arguments: JSON.stringify(args)}]
           : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'The fixture lookup is complete.', annotations: []}]}], usage}));
     };
     const provider = adapter === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
@@ -5200,7 +5203,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       // A subsequent read sees the changed device or grant before the result replays.
       const afterTool = turn === 'read' && proposedRead && readSnapshots++ >= 2;
       return {revision: 1, states: [state({...selected,
-        generation: afterTool && change === 'generation' ? {epoch: 'replacement', sequence: 0} : selected.generation,
+        generation: change === 'prior-generation' || afterTool && change === 'generation' ? {epoch: 'replacement', sequence: 0} : selected.generation,
         observed: {status: 'known', observedAtMs: afterTool && change === 'observation' ? observedAtMs + 1 : observedAtMs,
           power: {status: 'known', value: powered}, brightness: {status: 'known', value: observed}},
       }), state(alias), state(unrelated)]};
@@ -5247,7 +5250,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       proposedRead = false;
       const prior = task(w)?.taskId;
       assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
-      await until(() => task(w)?.taskId !== prior && (status(w) === 'succeeded' || status(w) === 'failed'));
+      await until(() => task(w)?.taskId !== prior && ['succeeded', 'failed', 'waiting'].includes(status(w) ?? ''));
     };
     const unreported = async () => {
       const content = await w.module().manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
@@ -5255,35 +5258,51 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       return (JSON.parse(Buffer.from(content.bytes).toString()) as {day: {unreported: number}}).day.unreported;
     };
 
-    for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound', 'lookalike', 'multiple', 'unknown', 'correction', 'filler', 'hidden-newer'] as const) {
+    for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound', 'lookalike',
+      'unknown-name', 'multiple', 'correction', 'hidden-newer', 'prior-generation', 'saved-blank'] as const) {
       change = 'none';
       withheldOwnerMessage = undefined;
-      propose = id;
-      await ask(variation === 'multiple' ? `Compare ${selected.label} and id:${unrelated.id}.` : `Check the brightness of id:${id}.`);
+      propose = selected.label ?? id;
+      await ask(`What brightness does ${selected.label} report?`);
       assert.equal(status(w), 'succeeded');
-      if (variation === 'unknown' || variation === 'hidden-newer') {
-        await ask('Now let’s talk about id:missing-panel instead.');
+      if (variation === 'unknown-name' || variation === 'hidden-newer') {
+        propose = 'Porch Display';
+        await ask('What brightness does Porch Display report?');
+        assert.equal(reads.at(-1), '{"devices":[]}');
         if (variation === 'hidden-newer') {
           const latest = task(w);
           assert.ok(latest);
           withheldOwnerMessage = latest.taskId + '-prompt';
         }
       }
-      if (variation === 'correction') await ask(`Stop referring to ${selected.label}. I mean the other display.`);
-      if (variation === 'filler') await ask('Thanks for checking.');
-      change = variation === 'grant' || variation === 'generation' || variation === 'duplicate' || variation === 'observation' ? variation : 'none';
-      propose = variation === 'unbound' ? unrelated.id : variation === 'lookalike' ? alias.id : id;
+      if (variation === 'correction' || variation === 'multiple') {
+        turn = 'chatter';
+        await ask(variation === 'multiple' ? `Compare ${selected.label} and id:${unrelated.id}.`
+          : `Stop referring to ${selected.label}. I mean the other display.`);
+        turn = 'read';
+      }
+      change = variation === 'grant' || variation === 'generation' || variation === 'prior-generation' || variation === 'duplicate' || variation === 'observation' ? variation : 'none';
+      propose = variation === 'saved-blank' ? '' : `id:${variation === 'unbound' ? unrelated.id : variation === 'lookalike' ? alias.id : id}`;
       const callsBefore: number = reads.length;
       const spendBefore = await unreported();
       await ask(question);
-      assert.equal(await unreported(), spendBefore, 'a request stopped locally leaves no unreported provider charge');
-      if (variation !== 'grant' && variation !== 'generation' && variation !== 'duplicate') {
+      assert.equal(await unreported(), spendBefore, 'local refusal leaves no unreported provider charge');
+      if (variation === 'unknown-name' || variation === 'multiple' || variation === 'correction' || variation === 'hidden-newer' || variation === 'prior-generation') {
+        assert.equal(status(w), 'waiting', variation);
+        assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up?');
+        assert.equal(reads.length, callsBefore, 'the focused question sends no stale device facts');
+        const waiting = task(w)?.taskId;
+        assert.equal((await input(w.core, w.module(), `id:${id}`, true)).status, 'accepted');
+        await until(() => status(w) === 'succeeded');
+        assert.equal(task(w)?.taskId, waiting);
+        assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
+      } else if (variation === 'observation' || variation === 'unbound' || variation === 'lookalike' || variation === 'saved-blank') {
         assert.equal(status(w), 'succeeded');
         assert.equal(reads.length, callsBefore + 1);
-        if (variation !== 'observation' && variation !== 'filler') assert.equal(reads.at(-1), '{"devices":[]}');
+        if (variation === 'unbound' || variation === 'lookalike') assert.equal(reads.at(-1), '{"devices":[]}');
         else assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
       } else {
-        assert.equal(status(w), 'failed', JSON.stringify({variation, readSnapshots, facts: reads.at(-1)}));
+        assert.equal(status(w), 'failed', variation);
         assert.equal(task(w)?.code, 'forbidden');
         assert.equal(reads.length, callsBefore, 'stale proof cannot reach the provider');
       }

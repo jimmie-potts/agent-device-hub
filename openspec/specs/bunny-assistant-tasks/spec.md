@@ -1426,9 +1426,11 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 
 #### Scenario: A hosted supervisor reports a contextual device reading
 
-- **WHEN** a current status request refers back to one permitted device and a read resolves that binding
-- **THEN** before returning the facts to the supervisor, the Hub SHALL recheck the exact device, original owner sources and current grants using the saved binding.
-- **AND** a changed identity, ambiguity or revocation SHALL withhold the facts. An unavailable newer owner message SHALL NOT revive an older contextual binding. A later observation of the same device SHALL NOT invalidate the permitted earlier sample.
+- **WHEN** a current hosted status request refers to a device in the preceding owner exchange
+- **THEN** the Hub SHALL use a saved single-match lookup for that exchange, or a verified control binding for the same owner source, to identify the device for a fresh read.
+- **AND** a missing or ambiguous lookup SHALL clear the prior reference. The Hub SHALL ask which device the owner means and use the authenticated answer to resolve the lookup without forwarding stale facts.
+- **AND** the Hub SHALL recheck exact device identity, owner sources and current grants both when reading facts and before forwarding the result. An unavailable newer owner message SHALL NOT revive an older binding. A later observation of the same device SHALL NOT invalidate the permitted sample.
+- **AND** an exact owner selection with an authenticated setting-slot answer can ground a fresh read after a refused write without treating the write as applied.
 - **AND** the status request SHALL send no device write. A local refusal before provider transmission SHALL NOT retain a charge for that unsent call.
 
 #### Scenario: A hosted device read omits its selector
