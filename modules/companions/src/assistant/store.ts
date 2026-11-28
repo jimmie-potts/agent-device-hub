@@ -1,3 +1,4 @@
+import type {LightingDecision} from './lighting-execution.js';
 import type {LightingClarification} from './lighting-control.js';
 import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
@@ -50,6 +51,7 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   codingPreference?: CodingPreference;
   clarificationDevices?: readonly string[];
   lightingClarification?: LightingClarification;
+  lightingDecision?: LightingDecision;
   historyScope?: DeviceHistoryBinding;
   ownerInputStart?: string;
   /** Legacy Messages task's bound history query. */

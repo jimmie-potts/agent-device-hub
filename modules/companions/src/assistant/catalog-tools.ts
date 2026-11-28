@@ -52,7 +52,7 @@ const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family
 const QUANTITY = 'For a number, use {"kind":"absolute","amount":30,"literal":"30%","unit":"percent"}. Copy the complete signed quantity including its adjoining unit into literal. If the owner supplies a unit separately, copy it into unit. Never replace an unsupported owner unit with a supported one. Use startingLiteral for a separate starting value. For a qualitative setting, copy the current owner’s setting phrase into literal. An explicit named amount or extreme can omit literal. Ask when the value or unit is unclear.';
 const BRIGHTNESS = 'JSON with a percent field. For a number, copy the complete signed quantity and unit into literal. ' +
   'Use startingLiteral for a separate starting value. Use increase or decrease for percentage points and increase-percent or decrease-percent for a percentage of current brightness. ' +
-  'Use {"kind":"minimum"} or {"kind":"maximum"} for a declared limit. The Hub checks clear fractions. Use {"kind":"missing"} to ask for a value on this exact device.';
+  'For a limit or fraction use kind minimum, maximum, fraction-of-scale, fraction-of-maximum, fraction-of-current, increase-by-fraction-of-current or decrease-by-fraction-of-current, with the exact literal. Use the missing slot for a missing value.';
 const TEMPERATURE = `JSON with a kelvin field. ${QUANTITY} Use increase for cooler and decrease for warmer, with the amount of change in Kelvin. Use minimum or maximum for the registered Kelvin extremes.`;
 const COLOR = `JSON with hue in degrees and saturation in percent. Each field uses a whole number or an absolute quantity. ${QUANTITY}`;
 export const catalogTools = [

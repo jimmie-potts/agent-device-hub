@@ -1372,15 +1372,24 @@ Conversation SHALL use the shared device lookup for supported device facts, and 
 
 ### Requirement: Contextual lighting settings
 
-Conversation SHALL use the selected supervisor's interpretation of the current authenticated owner request to resolve supported lighting power, brightness, color and temperature. The Hub SHALL validate the result against registered device identity, capability, settings, grants and current command guards. The current request supplies action authority. Authorized conversation context supplies references.
+Conversation SHALL use the selected supervisor's interpretation of the current authenticated owner request to resolve supported lighting power, brightness, color and temperature. The Hub SHALL validate the result against registered device identity, capability, settings, grants and current command guards. The current request supplies action authority. Authorized conversation context supplies references. The supervisor SHALL declare read or set intent, timing, and any missing setting independently. A setting answer SHALL retain the original timing and exact device.
 
 #### Scenario: Follow-up setting and read
 
 - **WHEN** the owner sets a configured light's brightness, refers back to the light to change a supported setting, and asks how the light is set
 - **THEN** each valid setting change reaches the exact light once through its registered writer
 - **AND** the status question reads the known setting under the current grants and sends no write.
-- **WHEN** a recognized status question produces a setting command, or a proposed power value conflicts with an explicit owner power setting
+- **WHEN** a lighting proposal declares a read, a conditional or future scope, or unresolved timing
+- **THEN** the Hub sends no immediate lighting command.
+- **WHEN** a proposed boolean conflicts with an explicit on or off value in its quoted owner evidence
 - **THEN** the Hub refuses the proposed command before dispatch.
+
+#### Scenario: A conditional lighting request needs a setting
+
+- **WHEN** the supervisor declares a conditional or later lighting change and identifies a missing setting
+- **THEN** Conversation asks once for that setting and saves the current request, condition, device and setting slot.
+- **AND** answering the question after a restart retains the original scope and sends zero immediate commands.
+- **AND** a generic clarification without a saved lighting scope cannot supply execution authority.
 
 #### Scenario: Ineligible or ambiguous proposal
 

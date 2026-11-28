@@ -53,6 +53,7 @@ function counted(script?: (input: TurnInput, turn: number, signal: AbortSignal) 
 }
 const reply = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const call = (name: string, input: Record<string, unknown> = {}, id = `call-${name}`): TurnReply => ({text: null, calls: [{id, name, input}], stop: 'tool', units: 10});
+const immediateLight = {intent: 'set', execution: 'immediate', condition: '', missing: 'none'} as const;
 const wemoPowerArgs = (targets: readonly string[], on: boolean, contextTargets: readonly string[] = []) =>
   ({selection: targets.length === 0 ? 'group' : 'references', targets, contextTargets, on});
 const wemoPower = (targets: readonly string[], on: boolean, contextTargets?: readonly string[]) =>
@@ -3285,7 +3286,7 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     if (body.input.some(item => item.content === 'New synthetic topic')) output = [message('A fresh topic.')];
     else if (body.input.some(item => item.type === 'function_call_output')) output = [message('I checked the tool result.')];
     else if (ownerRequest === 'What is the status of catalog-plug?') output = [functionCall('read_devices', {target: 'catalog-plug', owner: 'bunny/modules/pixoo'})];
-    else if (ownerRequest === 'Turn off Catalog Plug') output = [functionCall('control_power_set', {target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
+    else if (ownerRequest === 'Turn off Catalog Plug') output = [functionCall('control_power_set', {...immediateLight, powerLiteral: 'off', target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
     else if (ownerRequest === 'What color is it?') output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
     else if (ownerRequest === 'Turn off Studio Plug') output = [reasoning, functionCall('set_wemo_power',
       wemoPowerArgs(['studio-plug'], false))];
@@ -4768,7 +4769,7 @@ void test('Responses resolves an exact brightness instruction before sending one
     if (results.some(result => /^The brightness|^accepted:/u.test(result))) replayedReceipts += 1;
     const tool = (name: string, args: Record<string, unknown>, id: string) =>
       [{type: 'function_call', id: 'fc_'+id, call_id: id, name, arguments: JSON.stringify(args)}];
-    const control = (id: string) => tool('control_brightness_set', {owner: writeOwner, target: writeTarget ?? active.id,
+    const control = (id: string) => tool('control_brightness_set', {...immediateLight, owner: writeOwner, target: writeTarget ?? active.id,
       arguments: JSON.stringify({percent: active.wrongAmount ? 82 : 37})}, id);
     const done = [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic answer.', annotations: []}]}];
     if (results.length === 1) lookup.push(results[0] ?? '');
@@ -5000,7 +5001,7 @@ void test('a scoped brightness lookup supports the typed LIFX tool and refuses a
     if (write) evidence.push(results[0]?.output ?? '');
     const output = results.length <= 1 ? [{type: 'function_call', id: write ? 'fc_set' : 'fc_read', call_id: write ? 'set' : 'read',
       name: write ? 'set_lifx_brightness' : 'read_devices',
-      arguments: JSON.stringify(write ? {device: `id:${exact.id}`, percent: 37, operation: 'absolute', literal: '37%', startingLiteral: ''} : {target: `id:${exact.id}`, owner: 'auto'})}]
+      arguments: JSON.stringify(write ? {...immediateLight, device: `id:${exact.id}`, percent: 37, operation: 'absolute', literal: '37%', startingLiteral: ''} : {target: `id:${exact.id}`, owner: 'auto'})}]
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic result.', annotations: []}]}];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
   }});
@@ -5124,7 +5125,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         : body.input?.find(item => item.type === 'function_call_output' && item.call_id === effect)?.output;
       const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set' : 'read_devices';
       const effectArguments = turn === 'write' ? {percent: setting} : {on: false};
-      const args = {owner, target: `id:${id}`, ...(turn === 'read' ? {} : {arguments: JSON.stringify(effectArguments)})};
+      const args = {owner, target: `id:${id}`, ...(turn === 'read' ? {} : {
+        ...immediateLight, ...(turn === 'power' ? {powerLiteral: 'off'} : {}), arguments: JSON.stringify(effectArguments)})};
       if (turn === 'read') {
         priorRequestShared ||= init.body.includes(instruction);
         if (result !== undefined) reads.push(result);
@@ -5240,7 +5242,8 @@ void test('lighting proposals use each registered command route and refuse inval
     const output = complete
       ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Fixture response.', annotations: []}]}]
       : [{type: 'function_call', id: 'fc_fixture', call_id: 'fixture', name: fault === 'missing' ? 'ask_owner' : name,
-        arguments: JSON.stringify(arguments_)}];
+        arguments: JSON.stringify(fault === 'missing' ? arguments_ :
+          {...immediateLight, ...('on' in settings ? {powerLiteral: settings.on ? 'on' : 'off'} : {}), ...arguments_})}];
     return Promise.resolve(Response.json({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 20}}));
   }});
   const w = await world(context, {provider, share: sharing(), tools: [...new Set(operations.map(item => item[1]))],
@@ -5265,6 +5268,7 @@ void test('lighting proposals use each registered command route and refuse inval
     const prompt = ownerRequest ?? (fault === 'missing' ? `Choose the hue for id:${device.id}.`
       : 'percent' in setting ? `Set id:${device.id} brightness to ${String(setting.percent)}%.`
       : 'kelvin' in setting && typeof setting.kelvin === 'number' ? `Set id:${device.id} temperature to ${String(setting.kelvin)} K.`
+      : 'on' in setting ? `Turn id:${device.id} ${setting.on ? 'on' : 'off'}.`
       : `Apply the requested fixture setting to id:${device.id}.`);
     assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
     await until(() => task(w)?.taskId !== prior && (requests.length > before || status(w) === 'succeeded' || status(w) === 'waiting'));
@@ -5318,9 +5322,63 @@ function lightingFixtureSupervisor(select: (results: readonly string[], tools: r
     const id = `fixture-${String(results.length)}`;
     const output = selected === undefined
       ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Fixture reply.', annotations: []}]}]
-      : [{type: 'function_call', id: `fc_${id}`, call_id: id, name: selected.name, arguments: JSON.stringify(selected.args)}];
+      : [{type: 'function_call', id: `fc_${id}`, call_id: id, name: selected.name, arguments: JSON.stringify(
+        /^(?:set_lifx_(?:power|brightness)|control_(?:power_set|brightness_set|lifx_color_set|lifx_temperature_set))$/u.test(selected.name)
+          ? {...immediateLight, ...selected.args} : selected.args)}];
     return Promise.resolve(Response.json({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 20}}));
   }});
+}
+
+for (const adapter of ['anthropic', 'openai'] as const) {
+  void test(`${adapter} keeps the original conditional lighting scope through a restarted value question`, async context => {
+    const device = light('studio', 'Studio Lamp');
+    const original = 'When I get home, set Studio Lamp to something cozy.';
+    const usage = {input_tokens: 30, output_tokens: 20};
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {
+        input?: {type?: string; output?: string}[];
+        messages?: {content: {type: string; content?: string}[]}[];
+      };
+      const value = body.input?.find(item => item.type === 'function_call_output')?.output ??
+        body.messages?.flatMap(message => message.content).find(item => item.type === 'tool_result')?.content;
+      const answered = value === '37%';
+      const args = {device: 'id:studio', operation: 'absolute', percent: answered ? 37 : 0,
+        literal: answered ? '37%' : '', startingLiteral: '', intent: 'set',
+        execution: answered ? 'immediate' : 'conditional-or-future', condition: answered ? '' : 'When I get home',
+        missing: answered ? 'none' : 'percent'};
+      const id = answered ? 'value' : 'initial';
+      const name = 'set_lifx_brightness';
+      return Promise.resolve(Response.json(adapter === 'anthropic'
+        ? {content: [{type: 'tool_use', id, name, input: args}], stop_reason: 'tool_use', usage}
+        : {status: 'completed', output: [{type: 'function_call', id: `fc_${id}`, call_id: id, name,
+          arguments: JSON.stringify(args)}], usage}));
+    };
+    const provider = adapter === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const commands: AssistantDispatch[] = [];
+    const w = await world(context, {provider, tools: ['set_lifx_brightness'], devices: () => [device], dispatch: command => {
+      commands.push(command);
+      return Promise.resolve(accepted(command.requestId));
+    }});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), original)).status, 'accepted');
+    await until(() => status(w) === 'waiting');
+    const taskId = task(w)?.taskId ?? assert.fail('Missing pending task.');
+    const decision = w.store().task(taskId)?.lightingDecision;
+    assert.equal(decision?.execution, 'conditional-or-future');
+    assert.equal(decision?.condition, 'When I get home');
+    assert.equal(decision?.target, device.id);
+    assert.deepEqual(commands, []);
+    await w.restart();
+    assert.deepEqual(w.store().task(taskId)?.lightingDecision, decision);
+    assert.equal((await input(w.core, w.module(), '37%', true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    const completed = w.store().task(taskId)?.lightingDecision;
+    assert.equal(completed?.execution, 'conditional-or-future');
+    assert.deepEqual(completed?.completed, {family: 'brightness-set', data: {percent: 37}});
+    assert.equal(w.store().task(taskId)?.questions, 1);
+    assert.deepEqual(commands, []);
+  });
 }
 
 for (const adapter of ['anthropic', 'openai'] as const) {
@@ -5393,14 +5451,14 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         {text: 'Set brightness to +37%.', quantity: {kind: 'absolute', amount: 37, literal: '+37%'}, expected: 37},
         {text: 'Change brightness from 80% to 30%.', quantity: {kind: 'absolute', amount: 30, literal: '30%', startingLiteral: '80%'}, expected: 30},
         {text: 'Set brightness to 80% or 30%.', quantity: {kind: 'absolute', amount: 30, literal: '30%'}},
-        {text: 'Set Studio 2 to half brightness.', quantity: 50, expected: 50, byName: true},
-        {text: 'Set Studio 2 to maximum brightness.', quantity: {kind: 'maximum'}, expected: 100, byName: true},
+        {text: 'Set Studio 2 to half brightness.', quantity: {kind: 'fraction-of-scale', literal: 'half brightness'}, expected: 50, byName: true},
+        {text: 'Set Studio 2 to maximum brightness.', quantity: {kind: 'maximum', literal: 'maximum brightness'}, expected: 100, byName: true},
         {text: 'Set Studio 2 brightness to 2%.', quantity: 2, expected: 2, byName: true},
         {text: 'Set Studio 2 milliwatts.', quantity: 2, byName: true, correction: '3%.', correctedQuantity: 3, expected: 3},
         {text: 'Set Studio 2 brightness to −2%.', quantity: 2, byName: true},
-        {text: 'Set it to half brightness.', quantity: 50, expected: 50},
-        {text: 'Make it as bright as possible.', quantity: {kind: 'maximum'}, expected: 100},
-        {text: 'Use minimum brightness.', quantity: {kind: 'minimum'}, expected: 0},
+        {text: 'Set it to half brightness.', quantity: {kind: 'fraction-of-scale', literal: 'half brightness'}, expected: 50},
+        {text: 'Make it as bright as possible.', quantity: {kind: 'maximum', literal: 'as bright as possible'}, expected: 100},
+        {text: 'Use minimum brightness.', quantity: {kind: 'minimum', literal: 'minimum brightness'}, expected: 0},
         {text: 'Raise brightness by 20 percentage points.', quantity: {kind: 'increase', amount: 20, literal: '20 percentage points'}, current: 50, expected: 70},
         {text: 'Make it 20% brighter.', quantity: {kind: 'increase-percent', amount: 20, literal: '20%'}, current: 50, expected: 60},
         {text: 'Make it 20% brighter.', quantity: {kind: 'increase', amount: 20, literal: '20%'}, current: 50},
@@ -5408,8 +5466,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         {text: 'Raise brightness by 20 percentage points.', quantity: {kind: 'increase', amount: 20}, current: 100, boundary: true},
         {text: 'Raise brightness by 20 percentage points.', quantity: {kind: 'increase', amount: 20}, current: 50, dispatchChange: 'value'},
         {text: 'Raise brightness by 20 percentage points.', quantity: {kind: 'increase', amount: 20}, current: 50, dispatchChange: 'time'},
-        {text: 'Make the light a bit warmer.', quantity: {kind: 'decrease', amount: 250}, current: 1600, temperature: true, expected: 1500},
-        {text: 'Make the light a bit cooler.', quantity: {kind: 'increase', amount: 250}, current: 8900, temperature: true, expected: 9000},
+        {text: 'Make the light a bit warmer.', quantity: {kind: 'decrease', amount: 250, literal: 'a bit'}, current: 1600, temperature: true, expected: 1500},
+        {text: 'Make the light a bit cooler.', quantity: {kind: 'increase', amount: 250, literal: 'a bit'}, current: 8900, temperature: true, expected: 9000},
         {text: 'Lower brightness by 10 percentage points.', quantity: 10, current: 55, native: true, expected: 45},
         {text: 'Set it to +3\u202f200 K.', quantity: {kind: 'absolute', amount: 3200, literal: '+3\u202f200 K'}, temperature: true, expected: 3200},
         {text: 'Set it to −3\u202f200 K.', quantity: 3200, temperature: true},
@@ -5442,7 +5500,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
           const selected = select(results);
           return Promise.resolve(Response.json({content: selected === undefined
             ? [{type: 'text', text: 'Fixture reply.'}]
-            : [{type: 'tool_use', id: corrected ? 'fixture-correction' : 'fixture', name: selected.name, input: selected.args}],
+            : [{type: 'tool_use', id: corrected ? 'fixture-correction' : 'fixture', name: selected.name, input: {...immediateLight, ...selected.args}}],
           stop_reason: selected === undefined ? 'end_turn' : 'tool_use', usage: {input_tokens: 40, output_tokens: 20}}));
         }});
       const w = await world(context, {provider, share: sharing(), tools: ['control_brightness_set', 'control_lifx_temperature_set', 'set_lifx_brightness'],
@@ -5518,7 +5576,7 @@ void test('a contextual light does not inherit an ambiguous prior alias, but an 
   let probedAtDispatch = false;
   let operation: 'none' | 'power' = 'none';
   const provider = lightingFixtureSupervisor(results => operation === 'power' && results.length === 0
-    ? {name: 'set_lifx_power', args: {device: 'id:studio', on: false}} : undefined);
+    ? {name: 'set_lifx_power', args: {device: 'id:studio', on: false, powerLiteral: 'off'}} : undefined);
   const w = await world(context, {provider, tools: ['set_lifx_power'], share: sharing(),
     devices: owner => owner === lifx ? [bulb] : [],
     dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});

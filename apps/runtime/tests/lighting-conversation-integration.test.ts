@@ -13,6 +13,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
   for (const scenario of [
     {kind: 'power', label: 'admits a matching explicit power action', text: 'Turn Studio 2 off.'},
     {kind: 'power', label: 'admits a polite power action', text: 'Could you switch Studio 2 off, please?'},
+    {kind: 'power', label: 'admits idiomatic power with exact evidence', text: 'Cut power to Studio 2.', powerQuote: 'Cut power'},
     {kind: 'power', label: 'refuses a power write on a recognized status question', text: 'Is Studio 2 off?', refusal: 'read-only'},
     {kind: 'power', label: 'refuses a power write during a pure device check', text: 'Check Studio 2.', refusal: 'read-only'},
     {kind: 'power', label: 'refuses a contextual device check expressed as a command', text: 'Check it.', refusal: 'read-only',
@@ -32,11 +33,13 @@ for (const provider of ['anthropic', 'openai'] as const) {
     {kind: 'power', label: 'refuses a power write on a contextual status question', text: 'Is it off?', refusal: 'read-only', previous: 'Turn Studio 2 off.'},
     {kind: 'power', label: 'refuses the opposite of a contextual power action', text: 'Turn it on.', refusal: 'opposite', previous: 'Turn Studio 2 off.'},
     {kind: 'power', label: 'admits a matching contextual power action', text: 'Switch that one off.', previous: 'Turn Studio 2 off.'},
-    {kind: 'brightness', label: 'admits a qualitative brightness setting', text: 'Set Studio 2 to half brightness.', percent: 50},
+    {kind: 'brightness', label: 'admits a qualitative brightness setting', operation: 'fraction-of-scale', valueQuote: 'half brightness', text: 'Set Studio 2 to half brightness.', percent: 50},
+    {kind: 'brightness', label: 'accepts an explicit value with a redundant brightness word', text: 'Set Studio 2 to 37% brightness.',
+      percent: 37, literal: '37%'},
     {kind: 'brightness', label: 'asks for a value when the owner gives a subjective brightness setting', text: 'Set Studio 2 to a gentle glow.',
       literal: 'a gentle glow', refusal: 'missing'},
     {kind: 'brightness', label: 'asks for a value when the owner supplies only a time', text: 'Set Studio 2 brightness at sunset.',
-      literal: 'sunset', refusal: 'missing'},
+      literal: 'sunset', refusal: 'missing', condition: 'at sunset'},
     {kind: 'brightness', label: 'asks rather than choosing an excluded maximum', text: 'Set Studio 2 brightness to something cozy, not maximum.',
       refusal: 'missing'},
     {kind: 'brightness', label: 'asks rather than treating an upper bound as the chosen value', text: 'Set Studio 2 brightness to anything below maximum.',
@@ -46,7 +49,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
     {kind: 'brightness', label: 'asks rather than treating a comparative percent as the chosen value',
       text: 'Set Studio 2 brightness to anything below 50%.', refusal: 'missing'},
     {kind: 'brightness', label: 'asks rather than treating a bare time as brightness', text: 'Set Studio 2 brightness at 8.',
-      refusal: 'missing'},
+      refusal: 'missing', condition: 'at 8'},
     {kind: 'brightness', label: 'refuses a comparative clarification without asking again', text: 'Set Studio 2 brightness.',
       refusal: 'missing', typedMissing: true, answer: 'Below 35%.', unresolvedCorrection: true},
     {kind: 'brightness', label: 'asks rather than setting a quoted limit', text: "Set Studio 2 brightness to 'maximum'.",
@@ -59,39 +62,57 @@ for (const provider of ['anthropic', 'openai'] as const) {
       percent: 42, literal: '42%'},
     {kind: 'brightness', label: 'refuses a withdrawn limit request', text: 'Set Studio 2 brightness to maximum, never mind.',
       percent: 50, refusal: 'cancelled'},
-    {kind: 'brightness', label: 'uses half brightness despite a conflicting scalar', text: 'Set Studio 2 to half brightness.',
+    {kind: 'brightness', label: 'uses half brightness despite a conflicting scalar', operation: 'fraction-of-scale', valueQuote: 'half brightness', text: 'Set Studio 2 to half brightness.',
       percent: 23, expected: 50},
-    {kind: 'brightness', label: 'converts a written fraction of brightness to a percent', text: 'Set Studio 2 to 3/4 brightness.',
+    {kind: 'brightness', label: 'converts a written fraction of brightness to a percent', operation: 'fraction-of-scale', valueQuote: '3/4 brightness', text: 'Set Studio 2 to 3/4 brightness.',
       percent: 2, expected: 75},
-    {kind: 'brightness', label: 'accepts a spoken word fraction of brightness', text: 'Set Studio 2 to three quarters brightness.',
+    {kind: 'brightness', label: 'accepts a spoken word fraction of brightness', operation: 'fraction-of-scale', valueQuote: 'three quarters brightness', text: 'Set Studio 2 to three quarters brightness.',
       percent: 1, expected: 75},
-    {kind: 'brightness', label: 'halves current brightness using the existing observation', text: 'Halve the current brightness of Studio 2.',
+    {kind: 'brightness', label: 'halves current brightness using the existing observation', operation: 'fraction-of-current', valueQuote: 'Halve', text: 'Halve the current brightness of Studio 2.',
       percent: 99, expected: 18, currentFraction: true},
-    {kind: 'brightness', label: 'does not halve a stale brightness observation', text: 'Halve the current brightness of Studio 2.',
+    {kind: 'brightness', label: 'does not halve a stale brightness observation', operation: 'fraction-of-current', valueQuote: 'Halve', text: 'Halve the current brightness of Studio 2.',
       percent: 99, refusal: 'stale'},
-    {kind: 'brightness', label: 'uses the requested fraction of current brightness', text: 'Set Studio 2 to three quarters of current brightness.',
+    {kind: 'brightness', label: 'uses the requested fraction of current brightness', operation: 'fraction-of-current', valueQuote: 'three quarters of current brightness', text: 'Set Studio 2 to three quarters of current brightness.',
       percent: 99, expected: 26, currentFraction: true},
-    {kind: 'brightness', label: 'adds the stated fraction when the owner asks to raise brightness', text: 'Raise Studio 2 brightness by half of current brightness.',
+    {kind: 'brightness', label: 'adds the stated fraction when the owner asks to raise brightness', operation: 'increase-by-fraction-of-current', valueQuote: 'half of current brightness', text: 'Raise Studio 2 brightness by half of current brightness.',
       percent: 99, expected: 53, currentFraction: true},
     {kind: 'brightness', label: 'does not adopt a range endpoint', text: 'Set Studio 2 brightness to any value from 1/4 to 1/2 brightness.',
       refusal: 'unsupported-fraction'},
     {kind: 'brightness', label: 'refuses a relative proposal with the opposite direction', text: 'Lower Studio 2 brightness by 10 percentage points.',
       refusal: 'opposite'},
-    {kind: 'brightness', label: 'converts a fraction of the actual maximum', text: 'Set Studio 2 to ½ of maximum brightness.',
+    {kind: 'brightness', label: 'converts a fraction of the actual maximum', operation: 'fraction-of-maximum', valueQuote: '½ of maximum brightness', text: 'Set Studio 2 to ½ of maximum brightness.',
       percent: 99, expected: 50},
-    {kind: 'brightness', label: 'accepts a clear possessive fraction of the maximum', text: 'Set Studio 2 to half of its maximum.',
+    {kind: 'brightness', label: 'accepts a clear possessive fraction of the maximum', operation: 'fraction-of-maximum', valueQuote: 'half of its maximum', text: 'Set Studio 2 to half of its maximum.',
       percent: 99, expected: 50},
-    {kind: 'brightness', label: 'refuses a fractional percent below the supported step', text: 'Set Studio 2 brightness to ½%.',
+    {kind: 'brightness', label: 'refuses a fractional percent below the supported step', operation: 'fraction-of-scale', valueQuote: '½%', text: 'Set Studio 2 brightness to ½%.',
       percent: 50, refusal: 'unsupported-fraction'},
-    {kind: 'brightness', label: 'uses the actual maximum despite a conflicting scalar', text: 'Set Studio 2 to maximum brightness.',
+    {kind: 'brightness', label: 'refuses a fraction citation that omits its percent unit',
+      text: 'Set Studio 2 to 1/2%.', operation: 'fraction-of-scale', valueQuote: '1/2', refusal: 'unsupported-fraction'},
+    {kind: 'brightness', label: 'refuses a fraction citation that omits its sign',
+      text: 'Set Studio 2 to −1/2 brightness.', operation: 'fraction-of-scale', valueQuote: '1/2 brightness', refusal: 'unsupported-fraction'},
+    {kind: 'brightness', label: 'refuses a fraction citation that omits its numerator',
+      text: 'Set Studio 2 to three quarters brightness.', operation: 'fraction-of-scale', valueQuote: 'quarters brightness', refusal: 'unsupported-fraction'},
+    {kind: 'brightness', label: 'refuses a fraction citation that omits its basis',
+      text: 'Set Studio 2 to half of its maximum.', operation: 'fraction-of-scale', valueQuote: 'half', refusal: 'unsupported-fraction'},
+    {kind: 'brightness', label: 'refuses a limit citation that omits the unsupported unit',
+      text: 'Set Studio 2 to maximum in nits.', operation: 'maximum', valueQuote: 'maximum', refusal: 'unsupported-fraction'},
+    {kind: 'brightness', label: 'uses the actual maximum despite a conflicting scalar', operation: 'maximum', valueQuote: 'maximum brightness', text: 'Set Studio 2 to maximum brightness.',
       percent: 50, expected: 100},
-    {kind: 'brightness', label: 'uses the actual minimum despite a conflicting scalar', text: 'Set Studio 2 to minimum brightness.',
+    {kind: 'brightness', label: 'uses the actual minimum despite a conflicting scalar', operation: 'minimum', valueQuote: 'minimum brightness', text: 'Set Studio 2 to minimum brightness.',
       percent: 50, expected: 0},
-    {kind: 'brightness', label: 'uses the capability maximum for an explicit extreme', text: 'Set Studio 2 to maximum brightness.',
+    {kind: 'brightness', label: 'uses the capability maximum for an explicit extreme', operation: 'maximum', valueQuote: 'maximum brightness', text: 'Set Studio 2 to maximum brightness.',
       percent: 100, extreme: 'maximum'},
     {kind: 'brightness', label: 'asks when the owner omitted a brightness setting', text: 'Set Studio 2 brightness.', refusal: 'missing'},
     {kind: 'brightness', label: 'binds a typed missing setting to the resolved device', text: 'Set Studio 2 brightness.',
       refusal: 'missing', typedMissing: true},
+    {kind: 'brightness', label: 'keeps a conditional brightness clarification from becoming an immediate command',
+      text: 'When I get home, set Studio 2 to something cozy.', refusal: 'missing', typedMissing: true, condition: 'When I get home'},
+    {kind: 'brightness', label: 'keeps a complete conditional brightness request from dispatch',
+      text: 'Set Studio 2 brightness to 42% on the weekend.', refusal: 'deferred', condition: 'on the weekend', percent: 42, literal: '42%'},
+    {kind: 'brightness', label: 'a generic question does not authorize a later lighting answer',
+      text: 'When I get home, set Studio 2 to something cozy.', refusal: 'missing', genericQuestion: true},
+    {kind: 'brightness', label: 'a malformed hosted scope never authorizes a numeric write',
+      text: 'Set Studio 2 brightness to 42%.', refusal: 'deferred', malformedScope: true, percent: 42, literal: '42%'},
     {kind: 'brightness', label: 'binds a fractional clarification to the resolved device', text: 'Set Studio 2 brightness.',
       refusal: 'missing', typedMissing: true, answer: 'half', answerPercent: 50},
     {kind: 'brightness', label: 'binds an extreme clarification to the resolved device', text: 'Set Studio 2 brightness.',
@@ -108,7 +129,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
       deviceLabel: 'Wall to Wall', refusal: 'missing'},
     {kind: 'brightness', label: 'asks when the owner omitted a contextual brightness setting', text: 'Set its brightness.', refusal: 'missing',
       previous: 'Set Studio 2 brightness to 50%.'},
-    {kind: 'brightness', label: 'admits a contextual qualitative brightness setting', text: 'Set it to half brightness.', percent: 50,
+    {kind: 'brightness', label: 'admits a contextual qualitative brightness setting', operation: 'fraction-of-scale', valueQuote: 'half brightness', text: 'Set it to half brightness.', percent: 50,
       previous: 'Set Studio 2 brightness to 50%.'},
     {kind: 'brightness', label: 'admits a relative brightness change from a fresh observation'},
     {kind: 'temperature', label: 'admits a relative temperature change from a fresh observation'},
@@ -121,7 +142,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const refusal = 'refusal' in scenario ? scenario.refusal : undefined;
       const absolute = refusal === 'offline' || refusal === 'held';
       const qualitative = 'percent' in scenario ? scenario.percent : undefined;
-      const extrema = 'extreme' in scenario ? scenario.extreme : undefined;
+      const exactOperation = 'operation' in scenario ? scenario.operation : undefined;
       const ownerLiteral = 'literal' in scenario ? scenario.literal : '';
       const ownerAnswer = 'repeatQuestion' in scenario ? 'Yes.' : 'answer' in scenario ? scenario.answer : '42%';
       const clock = manualClock(1_700_000_000_000);
@@ -154,12 +175,15 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const family = kind === 'power' ? 'power-set' : kind === 'brightness' ? 'brightness-set' : 'lifx-temperature-set';
       const name = kind === 'power' ? 'set_lifx_power' : kind === 'brightness' ? 'set_lifx_brightness' : 'control_lifx_temperature_set';
       const input = kind === 'brightness'
-        ? {device: `id:${id}`, percent: extrema !== undefined || 'typedMissing' in scenario ? 0 : qualitative ?? (refusal === 'missing' ? 50 : absolute ? 45 : 10),
-          operation: 'typedMissing' in scenario ? 'missing'
-            : extrema ?? (qualitative !== undefined || absolute || refusal === 'missing' ? 'absolute' : 'increase'),
-          literal: qualitative !== undefined || refusal === 'missing' ? ownerLiteral : absolute ? '45%' : '10 percentage points', startingLiteral: ''}
+        ? {device: `id:${id}`, percent: exactOperation !== undefined || 'typedMissing' in scenario ? 0 : qualitative ?? (refusal === 'missing' ? 50 : absolute ? 45 : 10),
+          operation: 'typedMissing' in scenario ? 'absolute'
+            : exactOperation ?? (qualitative !== undefined || absolute || refusal === 'missing' ? 'absolute' : 'increase'),
+          literal: 'valueQuote' in scenario ? scenario.valueQuote : qualitative !== undefined || refusal === 'missing' ? ownerLiteral
+            : refusal === 'opposite' ? '10 percentage points' : absolute ? '45%' : '10 percentage points',
+          startingLiteral: ''}
         : kind === 'power' ? {device: `id:${id}`, on: false}
         : {owner, target: `id:${id}`, arguments: JSON.stringify({kelvin: {kind: 'decrease', amount: 200, literal: '200 Kelvin'}})};
+      let seeding = false;
       const companions = createCompanionsModule({share: () => true, transport: (_url, init) => {
         const body = JSON.parse(init.body) as {
           tools?: unknown[];
@@ -171,17 +195,31 @@ for (const provider of ['anthropic', 'openai'] as const) {
           : body.input?.filter(item => item.type === 'function_call_output').at(-1)?.output;
         const answered = refusal === 'missing' && lastResult === ownerAnswer;
         const command = (lastResult === undefined || answered) && body.tools !== undefined && body.tools.length > 0;
-        const followUpName = answered && 'repeatQuestion' in scenario ? 'ask_owner' : name;
-        const args = answered ? 'repeatQuestion' in scenario ? {text: 'How bright should I set it?'}
-          : {...input, operation: 'absolute', percent: 'wrongCorrection' in scenario ? 50 : 'unresolvedCorrection' in scenario ? 35 : 42,
-            literal: 'unresolvedCorrection' in scenario ? '35%' : '42%'} : input;
+        const ask = answered && 'repeatQuestion' in scenario || !answered && 'genericQuestion' in scenario;
+        const followUpName = ask ? 'ask_owner' : name;
+        const valueOnAnswer = ownerAnswer === 'half' ? {operation: 'fraction-of-scale', percent: 0, literal: 'half'} :
+          ownerAnswer === 'maximum' ? {operation: 'maximum', percent: 0, literal: 'maximum'} :
+            {operation: 'absolute', percent: 'wrongCorrection' in scenario ? 50 : 'unresolvedCorrection' in scenario ? 35 : 42,
+              literal: 'unresolvedCorrection' in scenario ? '35%' : '42%'};
+        const args = answered ? {...input, ...valueOnAnswer} : seeding && kind === 'brightness'
+          ? {...input, operation: 'absolute', percent: 50, literal: '50%'} :
+            kind === 'brightness' && refusal === 'opposite' ? {...input, percent: 20} : input;
+        const condition = !seeding && !answered && 'condition' in scenario ? scenario.condition : '';
+        const scopedArgs = ask ? {text: 'How bright should I set it?'} : 'malformedScope' in scenario ? args : {
+          ...args, intent: !seeding && refusal === 'read-only' ? 'read' : 'set',
+          execution: condition !== '' ? 'conditional-or-future' : refusal === 'cancelled' || answered && 'unresolvedCorrection' in scenario
+            ? 'unresolved' : 'immediate',
+          condition, missing: !seeding && !answered && refusal === 'missing' ? 'percent' : 'none',
+          ...(kind === 'power' ? {powerLiteral: seeding ? 'off' : 'powerQuote' in scenario ? scenario.powerQuote :
+            refusal === 'opposite' ? 'on' : 'off'} : {}),
+        };
         const callId = answered ? 'answered' : 'fixture';
         const usage = {input_tokens: 50, output_tokens: 20};
         return Promise.resolve(Response.json(provider === 'anthropic' ? {usage,
           stop_reason: command ? 'tool_use' : 'end_turn',
-          content: command ? [{type: 'tool_use', id: callId, name: followUpName, input: args}] : [{type: 'text', text: 'Fixture response.'}],
+          content: command ? [{type: 'tool_use', id: callId, name: followUpName, input: scopedArgs}] : [{type: 'text', text: 'Fixture response.'}],
         } : {usage, status: 'completed', output: command
-          ? [{type: 'function_call', id: `fc_${callId}`, call_id: callId, name: followUpName, arguments: JSON.stringify(args)}]
+          ? [{type: 'function_call', id: `fc_${callId}`, call_id: callId, name: followUpName, arguments: JSON.stringify(scopedArgs)}]
           : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Fixture response.', annotations: []}]}]}));
       }});
       const submissions: {schema: string; basis: unknown}[] = [];
@@ -239,19 +277,21 @@ for (const provider of ['anthropic', 'openai'] as const) {
         assert.equal(reply.status, 'accepted', JSON.stringify(reply));
       }
       if ('previous' in scenario) {
+        seeding = true;
         await submit({action: 'start', text: scenario.previous});
         await waitFor(() => writes.length === 1);
         clock.advance(1200);
         await waitFor(() => companions.inspectAssistant()?.tasks[0]?.status === 'succeeded');
         assert.equal(submissions.length, 1);
+        seeding = false;
         writes.length = 0;
         submissions.length = 0;
       }
       const prior = companions.inspectAssistant()?.tasks[0]?.taskId;
       await submit({action: 'start', text});
       await waitFor(() => companions.inspectAssistant()?.tasks[0]?.taskId !== prior);
-      if (refusal === 'stale' || refusal === 'read-only' || refusal === 'opposite' || refusal === 'missing' || refusal === 'unsupported-fraction' || refusal === 'cancelled') {
-        await waitFor(() => ['waiting', 'succeeded'].includes(companions.inspectAssistant()?.tasks[0]?.status ?? ''));
+      if (refusal === 'stale' || refusal === 'read-only' || refusal === 'opposite' || refusal === 'missing' || refusal === 'unsupported-fraction' || refusal === 'cancelled' || refusal === 'deferred') {
+        await waitFor(() => ['waiting', 'succeeded', 'failed', 'uncertain'].includes(companions.inspectAssistant()?.tasks[0]?.status ?? ''));
         assert.equal(submissions.length, 0);
         assert.equal(writes.length, 0);
         if (refusal !== 'missing') return;
@@ -259,7 +299,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
         assert.equal(awaiting?.status, 'waiting');
         await submit({action: 'answer', taskId: awaiting?.taskId, questionId: awaiting?.questionId,
           text: ownerAnswer});
-        if ('repeatQuestion' in scenario || 'wrongCorrection' in scenario || 'unresolvedCorrection' in scenario) {
+        if ('repeatQuestion' in scenario || 'wrongCorrection' in scenario || 'unresolvedCorrection' in scenario || 'condition' in scenario || 'genericQuestion' in scenario) {
           await waitFor(() => companions.inspectAssistant()?.tasks[0]?.status === 'succeeded');
           assert.equal(submissions.length, 0);
           assert.equal(writes.length, 0);

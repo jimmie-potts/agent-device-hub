@@ -33,7 +33,7 @@ export function controlExclusion(clause: string): {affirmative: string; excluded
   return {affirmative: clause.slice(0, marker.index), excluded: clause.slice(marker.index + marker[0].length)};
 }
 
-export function explicitWords(text: string): string | undefined {
+function explicitWords(text: string): string | undefined {
   const addressed = normalizedControlText(text).replace(/^(?:hey )?(?:b u n n y|bunny|reachy|microduck) /u, '');
   const request = /^(?:(?:please|could you|would you|can you|will you) )+/u;
   if (text.trimEnd().endsWith('?') && !request.test(addressed)) return undefined;
