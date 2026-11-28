@@ -5128,15 +5128,23 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     const setting = 37;
     const instruction = `Set id:${id} brightness to ${String(setting)}%`;
     const followUp = 'Switch it off.';
-    const question = 'How bright is it now?';
+    const question = 'What is the currently reported brightness of that display?';
     const selected = {...light(id, 'Fixture Display'), kind: 'pixoo' as const};
     const alias = {...selected, id: 'fixture-other-display', label: `id:${id}`};
+    const unrelated = {...selected, id: 'unrelated-display', label: 'Unrelated Display'};
     const requests: AssistantDispatch[] = [];
     const reads: string[] = [];
     let observed = 9;
     let powered = true;
     let turn: 'write' | 'power' | 'read' = 'write';
     let priorRequestShared = false;
+    let change: 'none' | 'grant' | 'generation' | 'duplicate' | 'observation' = 'none';
+    let observedAtMs = Date.now();
+    let readSnapshots = 0;
+    let propose = id;
+    const policy = sharing();
+    const share = (query: ShareQuery) => policy(query) && !(change === 'grant' && readSnapshots >= 2 &&
+      query.destination === 'external-model' && query.source === 'devices' && query.field === 'status' && query.record === id);
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
       const body = JSON.parse(init.body) as {
         messages?: {content: {type: string; content?: string; tool_use_id?: string}[]}[];
@@ -5148,13 +5156,14 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         : body.input?.find(item => item.type === 'function_call_output' && item.call_id === effect)?.output;
       const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set' : 'read_devices';
       const effectArguments = turn === 'write' ? {percent: setting} : {on: false};
-      const args = {owner, target: `id:${id}`, ...(turn === 'read' ? {} : {
+      const args = {owner, target: `id:${turn === 'read' ? propose : id}`, ...(turn === 'read' ? {} : {
         ...immediateLight, ...(turn === 'power' ? {powerLiteral: 'off'} : {}), arguments: JSON.stringify(effectArguments)})};
       if (turn === 'read') {
         priorRequestShared ||= init.body.includes(instruction);
         if (result !== undefined) reads.push(result);
+        else readSnapshots = 0;
       }
-      const usage = {input_tokens: 50, output_tokens: 20};
+      const usage = {input_tokens: 50, output_tokens: 20, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
       return Promise.resolve(Response.json(adapter === 'anthropic'
         ? {content: result === undefined ? [{type: 'tool_use', id: effect, name, input: args}]
           : [{type: 'text', text: 'The fixture lookup is complete.'}], stop_reason: result === undefined ? 'tool_use' : 'end_turn', usage}
@@ -5165,7 +5174,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     const provider = adapter === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
       : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
     const now = Date.now();
-    const w = await world(context, {provider, share: sharing(), tools: ['control_brightness_set', 'control_power_set', 'read_devices'],
+    observedAtMs = now;
+    const w = await world(context, {provider, share, tools: ['control_brightness_set', 'control_power_set', 'read_devices'],
       dispatch: data => {
         requests.push(data);
         if (data.family === 'catalog-action' && data.target === id && data.command === 'brightness-set' && typeof data.data.percent === 'number') {
@@ -5178,12 +5188,23 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       }}, undefined, now);
     const pixoo = w.bus.connect(owner);
     context.after(() => pixoo.close());
-    await pixoo.serveSync(['device'], () => ({revision: 1, states: [selected, alias].map(device => {
-      const data: DeviceRecord = device.id !== id ? device : {...device, observed: {
-        status: 'known', observedAtMs: now, power: {status: 'known', value: powered}, brightness: {status: 'known', value: observed},
-      }};
-      return {type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data};
-    })}));
+    const state = (data: DeviceRecord) => ({
+      type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+    });
+    await pixoo.serveSync(['device'], () => {
+      // The first two reads after a model proposal bind the target and produce the tool result.
+      // A subsequent read sees the changed device or grant before the result replays.
+      const afterTool = turn === 'read' && readSnapshots++ >= 2;
+      return {revision: 1, states: [state({...selected,
+        generation: afterTool && change === 'generation' ? {epoch: 'replacement', sequence: 0} : selected.generation,
+        observed: {status: 'known', observedAtMs: afterTool && change === 'observation' ? observedAtMs + 1 : observedAtMs,
+          power: {status: 'known', value: powered}, brightness: {status: 'known', value: observed}},
+      }), state(alias), state(unrelated)]};
+    });
+    const otherOwner = w.bus.connect('bunny/modules/nanoleaf');
+    context.after(() => otherOwner.close());
+    await otherOwner.serveSync(['device'], () => ({revision: 1, states: change === 'duplicate' && readSnapshots > 2
+      ? [state({...selected, kind: 'nanoleaf'})] : []}));
     await control(w.core, w.module(), 'enable');
 
     assert.equal((await input(w.core, w.module(), instruction)).status, 'accepted');
@@ -5217,6 +5238,41 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     assert.match(reads[0] ?? '', /"brightness":\{"status":"known","value":37\}/u);
     assert.match(reads[0] ?? '', /"power":\{"status":"known","value":false\}/u);
     assert.doesNotMatch(reads[0] ?? '', /fixture-other-display/u);
+
+    const ask = async (prompt: string) => {
+      const prior = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+      await until(() => task(w)?.taskId !== prior && (status(w) === 'succeeded' || status(w) === 'failed'));
+    };
+    const unreported = async () => {
+      const content = await w.module().manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
+      assert.ok(content !== undefined && !('error' in content));
+      return (JSON.parse(Buffer.from(content.bytes).toString()) as {day: {unreported: number}}).day.unreported;
+    };
+
+    for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound'] as const) {
+      change = 'none';
+      propose = id;
+      await ask(`Check the brightness of id:${id}.`);
+      assert.equal(status(w), 'succeeded');
+      change = variation === 'unbound' ? 'none' : variation;
+      propose = variation === 'unbound' ? unrelated.id : id;
+      const callsBefore: number = reads.length;
+      const spendBefore = await unreported();
+      await ask(question);
+      assert.equal(await unreported(), spendBefore, 'a request stopped locally leaves no unreported provider charge');
+      if (variation === 'observation' || variation === 'unbound') {
+        assert.equal(status(w), 'succeeded');
+        assert.equal(reads.length, callsBefore + 1);
+        if (variation === 'unbound') assert.equal(reads.at(-1), '{"devices":[]}');
+        else assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
+      } else {
+        assert.equal(status(w), 'failed', variation);
+        assert.equal(task(w)?.code, 'forbidden');
+        assert.equal(reads.length, callsBefore, 'stale proof cannot reach the provider');
+      }
+      assert.equal(requests.length, 2, 'none of the status probes dispatch writes');
+    }
   });
 }
 

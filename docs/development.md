@@ -3242,7 +3242,11 @@ For contextual lighting, the Companions suite exercises Messages and Responses
 with fake providers and synthetic configured lights. It checks signed values,
 starting and desired settings, absolute bounds, relative units, fresh and
 changed observations, and zero writes at a boundary. It also checks the
-existing route bindings and receipt recovery.
+existing route bindings and receipt recovery. The contextual status cases in
+`assistant.test.js` verify that a second Messages or Responses request can
+summarize the permitted result, and that changed identity, ambiguous matches
+and revoked grants block it before transport. Only successful provider-shaped
+responses contribute a reported charge in these fake runs.
 
 The Conversation maximum-on read uses a disposable Companions engine with
 synthetic Wemo and core SDK records. After the root build, the

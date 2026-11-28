@@ -138,7 +138,7 @@ const stoppedBeforeBrightness = (text: string | null): boolean =>
   text === BRIGHTNESS_REQUEST_UNAVAILABLE || text === BRIGHTNESS_ANSWER_UNAVAILABLE;
 
 type Answer = {text: string; units: number | null; usage?: TokenUsage | null; historySources?: Call['historySources']; inputVersions?: Call['inputVersions']; evidence?: ActionEvidence[]; confirmations?: readonly Confirmation[];
-  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true; wemoFacts?: Call['wemoFacts']; lightingReadTarget?: string; privateDraftId?: string; namedDeviceRead?: Call['namedDeviceRead']};
+  disclosures?: readonly DisclosedField[]; incompleteDisclosures?: true; wemoFacts?: Call['wemoFacts']; lightingReadTarget?: string; lightingReadModelCallId?: string; privateDraftId?: string; namedDeviceRead?: Call['namedDeviceRead']};
 /** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
 type Budget = {units: number; unit: string; spend?: {model: string; inputUnits: number; outputUnits: number; pricing?: NonNullable<SupervisorIdentity['pricing']>}};
 function fail(code: ErrorCode): never {throw new Fault(code);}
@@ -246,6 +246,8 @@ const exclusionsInDeviceRequest = /\b(?:except|rather than|instead of|not|don t|
 const deviceLookupQuestion = 'Which exact device should I look up?';
 const deviceLookupNotResolved = JSON.stringify({devices: [], instruction: deviceLookupQuestion});
 const lookupRepair = JSON.stringify({devices: [], instruction: 'Retry read_devices once with an explicit device name or ID from the current owner request. If the target is still unclear, ask which exact device the owner means.'});
+type ContextualDeviceRead = {target: string; modelCallId: string};
+const UNSENT_MODEL_USAGE: TokenUsage = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0};
 type DeviceLookupStage = 'initial' | 'repair' | 'unresolved' | 'repaired' | 'answered';
 type DeviceLookupAdmission = {kind: 'named'; lookup: NamedDeviceLookup} | {kind: 'contextual'} | {kind: 'blocked'};
 
@@ -1798,12 +1800,21 @@ export class AssistantEngine {
       }
     }
     const deviceLookupAdmission = (call: ToolCall) => deviceLookupAdmissionFor(call, lookupStage);
-    const priorCatalogIds = new Set(this.store.calls(task.id).filter(call => effects.has(call.id) && call.kind === 'tool' && call.action === undefined && !namedReads.has(call.id))
+    const toolCalls = this.store.calls(task.id).filter(call => effects.has(call.id) && call.kind === 'tool');
+    const contextualReads = new Map<string, ContextualDeviceRead>();
+    for (const call of toolCalls) {
+      if (call.status !== 'succeeded' || call.lightingReadTarget === undefined) continue;
+      if (call.lightingReadModelCallId !== undefined) {
+        contextualReads.set(call.id, {target: call.lightingReadTarget, modelCallId: call.lightingReadModelCallId});
+      }
+    }
+    const priorCatalogIds = new Set(toolCalls.filter(call => call.action === undefined &&
+      !namedReads.has(call.id) && !contextualReads.has(call.id))
       .flatMap(call => call.disclosures?.flatMap(field => field.source === 'devices' && field.record !== undefined ? [field.record] : []) ?? [])
       .filter(id => !devices.has(id)));
     if (catalogSubject !== undefined) for (const id of priorCatalogIds) devices.add(id);
-    for (const call of this.store.calls(task.id)) {
-      if (effects.has(call.id) && call.status === 'succeeded' && call.lightingReadTarget !== undefined) devices.add(call.lightingReadTarget);
+    for (const call of toolCalls) {
+      if (call.status === 'succeeded' && call.lightingReadTarget !== undefined) devices.add(call.lightingReadTarget);
     }
     for (const {lookup, id} of namedReads.values()) if (lookup !== undefined && lookupGranted(id)) devices.add(id);
     const resolvedCatalogDevice = (id: string) => devices.add(id);
@@ -1822,7 +1833,7 @@ export class AssistantEngine {
       }
       return access(source, field, record);
     };
-    return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, deviceLookupAdmission, lookupStage, lookupGranted, namedReads, priorCatalogIds, resolvedCatalogDevice,
+    return {request, requestId, ownerInputs, recent, fields, transcript, effects, catalogSubject, deviceLookupAdmission, lookupStage, lookupGranted, namedReads, contextualReads, priorCatalogIds, resolvedCatalogDevice,
       brightnessTarget: brightnessTarget === undefined ? undefined : catalogSubject ?? brightnessTarget, selectedDevice, history};
   }
   #hostedHistory(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>): Map<string, HostedHistoryMessage> {
@@ -2305,7 +2316,9 @@ export class AssistantEngine {
         eligible = this.#hostedHistory(current);
         scope = this.#supervisorScope(current, 'supervisor', undefined, eligible);
         if (!isDeepStrictEqual(scope.namedReads, namedReads) || [...namedReads.values()].some(({id, owner}, index) =>
-          matches[index]?.device.id !== id || matches[index]?.owner !== owner || scope?.lookupGranted(id) !== true)) throw new ProviderFault('forbidden');
+          matches[index]?.device.id !== id || matches[index]?.owner !== owner || scope?.lookupGranted(id) !== true)) {
+          throw new ProviderFault('forbidden', false, undefined, undefined, UNSENT_MODEL_USAGE);
+        }
       }
       if (includesReplay && scope !== undefined && scope.catalogSubject !== undefined && scope.priorCatalogIds.size > 0) {
         const subject = scope.catalogSubject;
@@ -2315,7 +2328,26 @@ export class AssistantEngine {
         eligible = this.#hostedHistory(current);
         scope = this.#supervisorScope(current, 'supervisor', undefined, eligible);
         if (scope.catalogSubject !== subject || currentDevices.length !== 1 || currentDevices[0] === undefined ||
-          !scope.priorCatalogIds.has(currentDevices[0].device.id) || scope.priorCatalogIds.size !== 1) throw new ProviderFault('forbidden');
+          !scope.priorCatalogIds.has(currentDevices[0].device.id) || scope.priorCatalogIds.size !== 1) {
+          throw new ProviderFault('forbidden', false, undefined, undefined, UNSENT_MODEL_USAGE);
+        }
+      }
+      if (includesReplay && scope !== undefined && scope.contextualReads.size > 0) {
+        const bindings = scope.contextualReads;
+        const rows = await this.#lightingDevices(parent);
+        this.#fence(active);
+        current = this.#task(task.id);
+        eligible = this.#hostedHistory(current);
+        scope = this.#supervisorScope(current, 'supervisor', undefined, eligible);
+        const stillBound = [...bindings.values()].every(({target, modelCallId}) => {
+          const model = this.store.call(modelCallId);
+          const saved = model?.lightingControlProof;
+          return model?.taskId === task.id && saved !== undefined &&
+            this.#contextualReadStillBound(saved, this.#modelControlScope(current, saved.history, eligible, rows), target);
+        });
+        if (!isDeepStrictEqual(scope.contextualReads, bindings) || !stillBound) {
+          throw new ProviderFault('forbidden', false, undefined, undefined, UNSENT_MODEL_USAGE);
+        }
       }
       const auxiliary = this.#supervisorPromptFields(current.profile);
       const allow: FieldAccess = (source, field, record) => scope === undefined ? promptFields(source, field, record)
@@ -2327,7 +2359,7 @@ export class AssistantEngine {
         modelLedger.fields.some(field => !modelFields(field.source, field.field, field.record)) ||
         includesReplay && !this.#replayable(task.id, scope === undefined ? modelFields : allow, scope?.effects) ||
         (ledger.incompleteDisclosures === true || modelLedger.incompleteDisclosures === true) && canRevokeFields(this.options.share)) {
-        throw new ProviderFault('forbidden', false, undefined, 'Sharing changed before the configured model could receive this turn.');
+        throw new ProviderFault('forbidden', false, undefined, 'Sharing changed before the configured model could receive this turn.', UNSENT_MODEL_USAGE);
       }
       const outbound = request ?? fail('internal');
       if (paid && outbound.mode !== null) {
@@ -2747,6 +2779,15 @@ export class AssistantEngine {
     return {request, modeRevision, ...(answer === undefined ? {} : {answer}), history: usedHistory, exactTargets,
       ...(qualifiedTargets === undefined ? {} : {qualifiedTargets}), ...(lighting === undefined ? {} : {ambiguousHistory}),
       references: references.map(reference => ({...reference, eligible: related.has(reference.id)}))};
+  }
+  #contextualReadStillBound(saved: ModelControlProof, current: LightingControlScope, target: string): boolean {
+    const reference = current.references.filter(row => row.id === target);
+    const original = saved.references.filter(row => row.id === target);
+    const [selected] = reference;
+    return this.#sameControlSources(saved, current) && original.length === 1 && reference.length === 1 && selected !== undefined &&
+      selected.allowed && selected.eligible && current.ambiguousHistory?.has(target) !== true &&
+      (current.qualifiedTargets === undefined || current.qualifiedTargets.has(target)) &&
+      original[0]?.snapshot === controlReferenceSnapshot(selected);
   }
   #lightingDevices(parent: TraceContext): Promise<LightingDevice[]> {
     return this.#catalog().lightingDevices(parent, this.options.devices?.(ASSISTANT_LIGHT_OWNER) ?? [],
@@ -3366,8 +3407,10 @@ export class AssistantEngine {
       let wemoFactsFrom: readonly DeviceRecord[] | undefined;
       const lookup = scope?.deviceLookupAdmission(call);
       const proposedTarget = owner === ASSISTANT_LIGHT_OWNER ? call.input.device : call.input.target;
-      const proof = last !== undefined && 'effect' in last && typeof last.effect === 'string' ? this.store.call(last.effect)?.lightingControlProof : undefined;
+      const modelCallId = last !== undefined && 'effect' in last && typeof last.effect === 'string' ? last.effect : undefined;
+      const proof = modelCallId === undefined ? undefined : this.store.call(modelCallId)?.lightingControlProof;
       let lightingReadTarget: string | undefined;
+      let contextualMatch: LightingDevice | undefined;
       if (scope !== undefined && proof !== undefined &&
           (call.name === READ_DEVICES && lookup?.kind === 'contextual' || owner === ASSISTANT_LIGHT_OWNER) &&
           typeof proposedTarget === 'string' && proposedTarget !== '' && (scope.catalogSubject === undefined || scope.brightnessTarget === undefined)) {
@@ -3375,7 +3418,13 @@ export class AssistantEngine {
         this.#fence(active);
         const current = this.#modelControlScope(this.#task(task.id), proof.history, undefined, rows);
         const target = resolveLightingTarget(current, proposedTarget);
-        if (this.#sameControlSources(proof, current) && target.kind === 'ready') lightingReadTarget = target.targets[0];
+        if (this.#sameControlSources(proof, current) && target.kind === 'ready') {
+          lightingReadTarget = target.targets[0];
+          if (call.name === READ_DEVICES && lightingReadTarget !== undefined && modelCallId !== undefined &&
+            this.#contextualReadStillBound(proof, current, lightingReadTarget)) {
+            contextualMatch = rows.find(({device}) => device.id === lightingReadTarget);
+          }
+        }
       }
       if (call.name === READ_HUB_GUIDE) {
         text = deviceHistoryGuide(new Set(tools.map(tool => tool.name)));
@@ -3451,10 +3500,16 @@ export class AssistantEngine {
         const subject = lookup?.kind === 'blocked' ? undefined
           : lightingReadTarget === undefined ? scope?.catalogSubject : `id:${lightingReadTarget}`;
         let namedDeviceRead: Call['namedDeviceRead'];
+        let lightingReadModelCallId: string | undefined;
         text = await this.#catalog().read(call, parent, item => evidence.push(item), access,
           id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id), scope === undefined ? undefined : {
             subject, named: lookup?.kind === 'named' ? lookup.lookup : undefined, granted: scope.lookupGranted,
             recordNamed: (owner, id) => {namedDeviceRead = {owner, id};},
+            ...(contextualMatch === undefined ? {} : {recordContextual: ({owner, device}) => {
+              if (owner === contextualMatch?.owner && device.id === contextualMatch.device.id &&
+                device.configurationRevision === contextualMatch.device.configurationRevision &&
+                isDeepStrictEqual(device.generation, contextualMatch.device.generation)) lightingReadModelCallId = modelCallId;
+            }}),
             brightnessControl: scope.brightnessTarget !== undefined, resolve: scope.resolvedCatalogDevice,
           }) ?? fail('invalid-state');
         if (scope !== undefined && namedDeviceRead === undefined && call.name === READ_DEVICES) {
@@ -3464,6 +3519,7 @@ export class AssistantEngine {
         }
         return {text, units: 0, evidence, disclosures: ledger.fields,
           ...(namedDeviceRead === undefined ? {} : {namedDeviceRead}),
+          ...(lightingReadModelCallId === undefined ? {} : {lightingReadModelCallId}),
           ...(lightingReadTarget === undefined ? {} : {lightingReadTarget}),
           ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})};
       } else {
@@ -3934,6 +3990,7 @@ export class AssistantEngine {
         if (reply.historySources !== undefined) call.historySources = reply.historySources;
         if (reply.inputVersions !== undefined) call.inputVersions = reply.inputVersions;
         if (reply.lightingReadTarget !== undefined) call.lightingReadTarget = reply.lightingReadTarget;
+        if (reply.lightingReadModelCallId !== undefined) call.lightingReadModelCallId = reply.lightingReadModelCallId;
         if (reply.wemoFacts !== undefined) call.wemoFacts = reply.wemoFacts;
         if (reply.privateDraftId !== undefined) call.privateDraftId = reply.privateDraftId;
         if (reply.namedDeviceRead !== undefined) call.namedDeviceRead = reply.namedDeviceRead;
@@ -3990,6 +4047,8 @@ export class AssistantEngine {
               if (reply.historySources !== undefined) saved.historySources = reply.historySources;
               if (reply.inputVersions !== undefined) saved.inputVersions = reply.inputVersions;
               if (reply.namedDeviceRead !== undefined) saved.namedDeviceRead = reply.namedDeviceRead;
+              if (reply.lightingReadTarget !== undefined) saved.lightingReadTarget = reply.lightingReadTarget;
+              if (reply.lightingReadModelCallId !== undefined) saved.lightingReadModelCallId = reply.lightingReadModelCallId;
               if (reply.incompleteDisclosures === true) saved.incompleteDisclosures = true;
               this.store.saveCall(saved);
             }

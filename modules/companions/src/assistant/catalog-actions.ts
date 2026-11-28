@@ -75,6 +75,7 @@ type ScopedDeviceFacts = {
   named: NamedDeviceLookup | undefined;
   granted: (id: string) => boolean;
   recordNamed: (owner: string, id: string) => void;
+  recordContextual?: (match: Match) => void;
   brightnessControl: boolean;
   resolve: (id: string) => void;
 };
@@ -870,6 +871,7 @@ export class ConversationActions {
         return textResult({devices: []});
       }
       if (scopedFacts.named !== undefined) scopedFacts.recordNamed(source, device.id);
+      else scopedFacts.recordContextual?.(selected);
       if (scopedFacts.brightnessControl) {
         const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');
         const controls = this.enabled.filter(name => name === SET_LIFX_BRIGHTNESS && source === LIFX && device.capabilities.brightness.supported ||

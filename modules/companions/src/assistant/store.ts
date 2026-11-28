@@ -79,6 +79,7 @@ export type Call = {version: 1; id: string; taskId: string; runId: string; ordin
   modelControlProof?: ModelControlProof;
   lightingControlProof?: ModelControlProof;
   lightingReadTarget?: string;
+  lightingReadModelCallId?: string;
   privateDraftId?: string;
   wemoFacts?: readonly {id: string; revision: string}[];
   namedDeviceRead?: {owner: string; id: string};

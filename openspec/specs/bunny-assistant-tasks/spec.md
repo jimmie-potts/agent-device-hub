@@ -1424,6 +1424,13 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 - **WHEN** the owner asks a contextual LIFX status question with the LIFX read tool enabled
 - **THEN** Conversation reads the eligible light under the current grants without requiring or adding a lighting write tool.
 
+#### Scenario: A hosted supervisor reports a contextual device reading
+
+- **WHEN** a current status request refers back to one permitted device and a read resolves that binding
+- **THEN** before returning the facts to the supervisor, the Hub SHALL recheck the exact device, original owner sources and current grants using the saved binding.
+- **AND** a changed identity, ambiguity or revocation SHALL withhold the facts. A later observation of the same device SHALL NOT invalidate the permitted earlier sample.
+- **AND** the status request SHALL send no device write. A local refusal before provider transmission SHALL NOT retain a charge for that unsent call.
+
 #### Scenario: A hosted device read omits its selector
 
 - **WHEN** the selected supervisor leaves the device selector empty and the complete current owner request binds to one permitted device
