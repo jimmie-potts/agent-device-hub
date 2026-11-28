@@ -68,8 +68,8 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   contextThrough?: number};
 export type ContextSourceVersion = {id: string; revision: number};
 export type SavedDeviceLookup = {source: ContextSourceVersion; match?: {
-  owner: string; id: string; configurationRevision: number; generation: DeviceRecord['generation'];
-}};
+  owner: string; id: string; configurationRevision: number; generation: DeviceRecord['generation']; ownerQualified?: true;
+}; ambiguous?: true};
 export type SavedDisclosureProof = {
   fields: readonly DisclosedField[]; sources: readonly string[]; legacy: boolean; complete: boolean; model: boolean;
 };
@@ -87,7 +87,7 @@ export type Call = {version: 1; id: string; taskId: string; runId: string; ordin
   deviceLookup?: SavedDeviceLookup;
   privateDraftId?: string;
   wemoFacts?: readonly {id: string; revision: string}[];
-  namedDeviceRead?: {owner: string; id: string};
+  namedDeviceRead?: {owner: string; id: string; configurationRevision?: number; generation?: DeviceRecord['generation']};
   historySources?: readonly ContextSourceVersion[];
   inputVersions?: readonly {field: DisclosedField; version: string}[];
   codingApproval?: {destination: 'coding-worker'; repository: string; briefDigest: string};

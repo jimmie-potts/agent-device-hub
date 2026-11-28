@@ -4445,7 +4445,15 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     assert.deepEqual(await ask(comparison, 'Studio Wall'), statusFacts);
     aliasesPresent = false;
     duplicateVisible = true;
-    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), {devices: []});
+    const beforeDuplicate = task(w)?.taskId, beforeDuplicateFacts = resultByProvider[provider].length;
+    lookups = [{target: 'Studio Wall', owner: 'auto'}, {target: 'id:studio-wall', owner: 'auto'}];
+    assert.equal((await input(w.core, w.module(), 'Apply Night Sky on Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
+    await until(() => task(w)?.taskId !== beforeDuplicate && status(w) === 'waiting');
+    assert.match((await page(w)).currentTask?.question?.text ?? '', /Which exact device/u);
+    assert.equal(resultByProvider[provider].length, beforeDuplicateFacts, 'ambiguous lookups send no fact before the owner answers');
+    assert.equal((await input(w.core, w.module(), 'id:studio-wall', true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.deepEqual(JSON.parse(resultByProvider[provider].at(-1) ?? ''), statusFacts);
     duplicateVisible = false;
     assert.deepEqual(await ask('Apply Night Sky on id:studio-wall.', 'id:studio-wall'), statusFacts);
     assert.deepEqual(await ask('Apply Night Sky on id:studio-wall id:studio-wall-xl.', 'id:studio-wall'), {devices: []});
@@ -5145,6 +5153,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     let afterRead = () => false;
     let withheldOwnerMessage: string | undefined;
     let hideOtherField: 'status' | 'local-label' | 'external-label' | undefined;
+    let readOnlyOverlap = false;
+    let readOwner = 'auto';
     let propose = `id:${id}`;
     const policy = sharing();
     const share = (query: ShareQuery) => policy(query) && !(change === 'grant' &&
@@ -5164,13 +5174,14 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       const result = adapter === 'anthropic'
         ? body.messages?.flatMap(message => message.content).filter(block => block.type === 'tool_result' && block.tool_use_id?.startsWith(effect) === true).at(-1)?.content
         : body.input?.filter(item => item.type === 'function_call_output' && item.call_id?.startsWith(effect) === true).at(-1)?.output;
-      const answer = turn === 'read' && result?.startsWith('id:') === true;
-      const proposeTool = turn !== 'chatter' && (result === undefined || answer);
-      const modelToolId = answer ? `${effect}-answer` : effect;
+      const answer = turn === 'read' ? result === selected.label ? `id:${id}`
+        : /^(?:Pixoo )?(id:[a-z0-9-]+)$/u.exec(result ?? '')?.[1] : undefined;
+      const proposeTool = turn !== 'chatter' && (result === undefined || answer !== undefined);
+      const modelToolId = answer === undefined ? effect : `${effect}-answer`;
       const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set'
         : turn === 'guide' ? 'read_hub_guide' : 'read_devices';
       const effectArguments = turn === 'write' ? {percent: setting} : {on: false};
-      const args = turn === 'guide' ? {} : {owner: turn === 'read' ? 'auto' : owner, target: turn === 'read' ? answer ? result : propose : `id:${id}`, ...(turn === 'read' ? {} : {
+      const args = turn === 'guide' ? {} : {owner: turn === 'read' ? readOwner : owner, target: turn === 'read' ? answer ?? propose : `id:${id}`, ...(turn === 'read' ? {} : {
         ...immediateLight, ...(turn === 'power' ? {powerLiteral: 'off'} : {}), arguments: JSON.stringify(effectArguments)})};
       if (turn === 'read') {
         priorRequestShared ||= init.body.includes(instruction);
@@ -5225,6 +5236,10 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       state({...plug, observed: {status: 'known', observedAtMs, power: {status: 'known', value: true}, brightness: unknown}}),
       ...(change === 'duplicate' && afterRead() ? [state({...selected, kind: 'wemo'})] : []),
     ]}));
+    const volcano = w.bus.connect('bunny/modules/volcano');
+    context.after(() => volcano.close());
+    await volcano.serveSync(['device'], () => ({revision: 1, states: readOnlyOverlap
+      ? [state({...selected, kind: 'volcano', label: 'Fixture Read-only Display'})] : []}));
     await control(w.core, w.module(), 'enable');
 
     assert.equal((await input(w.core, w.module(), instruction)).status, 'accepted');
@@ -5383,6 +5398,41 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     assert.match(reads.at(-1) ?? '', /"owner":"bunny\/modules\/wemo"/u);
     assert.match(reads.at(-1) ?? '', /"power":\{"status":"known","value":true\}/u);
     assert.equal(requests.length, 2, 'the common Wemo status path sends zero writes');
+
+    for (const choice of ['after-disappearance', 'qualified', 'named-answer', 'missing-integration'] as const) {
+      readOnlyOverlap = true;
+      readOwner = owner;
+      propose = `id:${id}`;
+      const beforeCollision: number = reads.length;
+      await ask(`What brightness does id:${id} report?`);
+      assert.equal(status(w), 'waiting', choice);
+      const waiting = task(w)?.taskId;
+      const questionId = task(w)?.questionId;
+      assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up? Include its integration if the ID is shared.');
+      assert.equal(reads.length, beforeCollision, 'a guessed owner shares no facts on the original request');
+      if (choice === 'after-disappearance') {
+        readOnlyOverlap = false;
+        proposedRead = false;
+        await w.restart();
+        probeStore = w.store();
+        assert.equal(task(w)?.questionId, questionId);
+      }
+      const selection = choice === 'named-answer' ? selected.label ?? id : `${choice === 'qualified' ? 'Pixoo ' : ''}id:${id}`;
+      assert.equal((await input(w.core, w.module(), selection, true)).status, 'accepted');
+      await until(() => status(w) === 'succeeded');
+      assert.equal(task(w)?.taskId, waiting);
+      if (choice === 'missing-integration') {
+        assert.equal(reads.at(-1), '{"devices":[]}');
+      } else {
+        assert.match(reads.at(-1) ?? '', /"owner":"bunny\/modules\/pixoo"/u);
+        for (const _retry of [1, 2]) {
+          await ask(question);
+          assert.equal(status(w), 'succeeded');
+          assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
+        }
+      }
+      assert.equal(requests.length, 2, 'the disambiguated reads never submit a device command');
+    }
   });
 }
 

@@ -244,11 +244,13 @@ function matchesDeviceRequestSubject(subject: string | undefined, device: Device
 const exclusionsInDeviceRequest = /\b(?:except|rather than|instead of|not|don t|without|leave)\b/u;
 
 const deviceLookupQuestion = 'Which exact device should I look up?';
+const ambiguousDeviceQuestion = 'Which exact device should I look up? Include its integration if the ID is shared.';
 const deviceLookupNotResolved = JSON.stringify({devices: [], instruction: deviceLookupQuestion});
 const lookupRepair = JSON.stringify({devices: [], instruction: 'Retry read_devices once with an explicit device name or ID from the current owner request. If the target is still unclear, ask which exact device the owner means.'});
 type DeviceLookupMatch = NonNullable<SavedDeviceLookup['match']>;
 type DeviceReadReference = DeviceLookupMatch & {allowRestart?: true};
 type ContextualDeviceRead = {match: DeviceLookupMatch; modelCallId: string};
+type DeviceReadSelection = LightingDevice & {ownerQualified?: true};
 const UNSENT_MODEL_USAGE: TokenUsage = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0};
 type DeviceLookupStage = 'initial' | 'repair' | 'unresolved' | 'repaired' | 'answered';
 type DeviceLookupAdmission = {kind: 'named'; lookup: NamedDeviceLookup} | {kind: 'contextual'} | {kind: 'blocked'};
@@ -264,12 +266,13 @@ function namedDeviceLookup(request: string, call: ToolCall, answer: boolean): De
   if (typeof call.input.target !== 'string' || typeof call.input.owner !== 'string') return {kind: 'blocked'};
   const target = call.input.target.trim();
   const words = normalizedControlText(request);
+  const authentication = answer ? {authenticatedAnswer: true as const} : {};
   if (ownerCancelled.test(request)) return {kind: 'blocked'};
   if (target === '') {
     const subject = answer ? literalDeviceId(request) === undefined ? words : request
       : brightnessSubject(request) ?? deviceRequestSubject(request);
     return subject === undefined || ownerRequestClauses(request).length !== 1 || exclusionsInDeviceRequest.test(words)
-      ? {kind: 'blocked'} : {kind: 'named', lookup: {owner: call.input.owner, target: subject, request, currentSubject: true}};
+      ? {kind: 'blocked'} : {kind: 'named', lookup: {owner: call.input.owner, target: subject, request, currentSubject: true, ...authentication}};
   }
   // Exclusions apply within their clause. Scene wording and the position of a
   // contrast do not decide whether the owner cited the device for a read.
@@ -288,11 +291,12 @@ function namedDeviceLookup(request: string, call: ToolCall, answer: boolean): De
           const selectors = exactControlIds(clause);
           return selectors.length === 1 && selectors[0] === id;
         }) || exactControlIds(excludedText).includes(id) || containsControlValue(excludedText, id)) return {kind: 'blocked'};
-    return {kind: 'named', lookup: {owner: call.input.owner, target: `id:${id}`, request: selectedText}};
+    return {kind: 'named', lookup: {owner: call.input.owner, target: `id:${id}`, request: selectedText, ...authentication}};
   }
   if (containsControlValue(excludedText, target)) return {kind: 'blocked'};
-  if (!target.startsWith('id:') && containsControlValue(selectedText, target)) {
-    return {kind: 'named', lookup: {owner: call.input.owner, target, request: selectedText}};
+  if (!target.startsWith('id:') && containsControlValue(selectedText, target) ||
+      answer && excluded.length === 0 && literalDeviceId(target) !== undefined) {
+    return {kind: 'named', lookup: {owner: call.input.owner, target, request: selectedText, ...authentication}};
   }
   return excluded.length > 0 ? {kind: 'blocked'} : {kind: 'contextual'};
 }
@@ -407,7 +411,8 @@ export class AssistantEngine {
       .addEdge('__start__', 'turn')
       // A steer that reached the task while its model was about to finish takes the model node once more (Hub #2031).
       .addConditionalEdges('turn', state => state.next, {ask: 'ask', tool: 'tool', approve: 'approve', act: 'act', turn: 'turn', end: END})
-      .addEdge('ask', 'answered').addEdge('answered', 'turn').addEdge('tool', 'turn').addEdge('approve', 'act')
+      .addEdge('ask', 'answered').addEdge('answered', 'turn').addEdge('approve', 'act')
+      .addConditionalEdges('tool', state => state.next === 'ask' ? 'ask' : 'turn', {ask: 'ask', turn: 'turn'})
       // An approved delegation waits for the worker's word before the next turn; every other act goes straight back to the model.
       .addConditionalEdges('act', state => state.next === 'await' || state.next === 'end' ? state.next : 'turn', {await: 'await', turn: 'turn', end: END})
       .addEdge('await', 'delivered').addConditionalEdges('delivered', state => state.next, {turn: 'turn', end: END})
@@ -1790,7 +1795,7 @@ export class AssistantEngine {
     };
     const lookupGranted = (id: string) => discover('devices', 'index', id) && (['index', 'label', 'status'] as const).every(field =>
       local('devices', field, id) && recordedSupervisorField(this.options.share, task.profile, 'supervisor', 'devices', field, id));
-    const namedReads = new Map<string, {lookup: NamedDeviceLookup | undefined; owner: string; id: string}>();
+    const namedReads = new Map<string, NonNullable<Call['namedDeviceRead']> & {lookup: NamedDeviceLookup | undefined}>();
     let preceding: ToolCall | undefined;
     let lookupStage: DeviceLookupStage = 'initial';
     for (const item of transcript) {
@@ -2321,13 +2326,17 @@ export class AssistantEngine {
       if (includesReplay && scope !== undefined && scope.namedReads.size > 0) {
         const {namedReads, lookupGranted} = scope;
         const matches = await Promise.all([...namedReads.values()].map(async ({lookup}) => lookup === undefined ? undefined
-          : this.#catalog().namedDeviceMatch(lookup, lookupGranted, parent)));
+          : this.#catalog().namedDeviceMatch(lookup, lookupGranted, parent).then(match => match.kind === 'match' ? match.row : undefined)));
         this.#fence(active);
         current = this.#task(task.id);
         eligible = this.#hostedHistory(current);
         scope = this.#supervisorScope(current, 'supervisor', undefined, eligible);
-        if (!isDeepStrictEqual(scope.namedReads, namedReads) || [...namedReads.values()].some(({id, owner}, index) =>
-          matches[index]?.device.id !== id || matches[index]?.owner !== owner || scope?.lookupGranted(id) !== true)) {
+        if (!isDeepStrictEqual(scope.namedReads, namedReads) || [...namedReads.values()].some(({id, owner, configurationRevision, generation}, index) => {
+          const match = matches[index];
+          return match?.device.id !== id || match.owner !== owner || scope?.lookupGranted(id) !== true ||
+            configurationRevision !== undefined && configurationRevision !== match.device.configurationRevision ||
+            generation !== undefined && !isDeepStrictEqual(generation, match.device.generation);
+        })) {
           throw new ProviderFault('forbidden', false, undefined, undefined, UNSENT_MODEL_USAGE);
         }
       }
@@ -2359,7 +2368,7 @@ export class AssistantEngine {
           const selected = this.#deviceReadSubject(current, binding.request.text, scope.refers, eligible, rows);
           return this.#sameControlSources(saved, binding) && selected !== undefined && scope.lookupGranted(match.id) &&
             match.id === selected.device.id && match.owner === selected.owner &&
-            match.configurationRevision === selected.device.configurationRevision &&
+            match.configurationRevision === selected.device.configurationRevision && match.ownerQualified === selected.ownerQualified &&
             isDeepStrictEqual(match.generation, selected.device.generation);
         });
         if (!isDeepStrictEqual(scope.contextualReads, bindings) || !stillBound) {
@@ -2871,7 +2880,7 @@ export class AssistantEngine {
       ? {owner: decision.owner, id: decision.target, ...version, allowRestart: true} : undefined;
   }
   #deviceReadSubject(task: Task, request: string, refers: boolean, history: ReadonlyMap<string, HostedHistoryMessage>,
-    rows: readonly LightingDevice[]): LightingDevice | undefined {
+    rows: readonly LightingDevice[]): DeviceReadSelection | undefined {
     const subject = brightnessSubject(request) ?? deviceRequestSubject(request, 'read');
     const named = rows.filter(({device}) => matchesDeviceRequestSubject(subject, device));
     if (named.length > 0) return named.length === 1 ? named[0] : undefined;
@@ -2879,13 +2888,15 @@ export class AssistantEngine {
         controlReferenceIds(rows.map(({device}) => ({id: device.id, label: deviceLabel(device)})), request).length > 0) return undefined;
     const reference = this.#previousDeviceLookup(task, history, rows);
     if (reference === undefined) return undefined;
-    const matches = rows.filter(({device}) => device.id === reference.id);
+    const matches = rows.filter(({owner, device}) => device.id === reference.id &&
+      (reference.ownerQualified !== true || owner === reference.owner));
     const [selected] = matches;
     if (matches.length !== 1 || selected?.owner !== reference.owner ||
         reference.configurationRevision !== selected.device.configurationRevision) return undefined;
     const generation = selected.device.generation;
-    return isDeepStrictEqual(reference.generation, generation) || reference.allowRestart === true &&
-      reference.generation.epoch !== generation.epoch && reference.generation.sequence === generation.sequence ? selected : undefined;
+    if (!isDeepStrictEqual(reference.generation, generation) && !(reference.allowRestart === true &&
+        reference.generation.epoch !== generation.epoch && reference.generation.sequence === generation.sequence)) return undefined;
+    return reference.ownerQualified === true ? {...selected, ownerQualified: true} : selected;
   }
   #lightingDevices(parent: TraceContext): Promise<LightingDevice[]> {
     return this.#catalog().lightingDevices(parent, this.options.devices?.(ASSISTANT_LIGHT_OWNER) ?? [],
@@ -3510,7 +3521,7 @@ export class AssistantEngine {
       const modelReceipt = modelCallId === undefined ? undefined : this.store.call(modelCallId);
       const proof = modelReceipt?.lightingControlProof;
       let lightingReadTarget: string | undefined;
-      let contextualMatch: LightingDevice | undefined;
+      let contextualMatch: DeviceReadSelection | undefined;
       if (scope !== undefined && proof !== undefined &&
           (call.name === READ_DEVICES && lookup?.kind === 'contextual' || owner === ASSISTANT_LIGHT_OWNER) &&
           typeof proposedTarget === 'string' && (call.name === READ_DEVICES || proposedTarget !== '') &&
@@ -3613,18 +3624,24 @@ export class AssistantEngine {
         const source = message?.speakerId === 'owner' ? {id: message.messageId, revision: message.revision} : undefined;
         let deviceLookup: SavedDeviceLookup | undefined = source !== undefined &&
           (lookup?.kind === 'named' || contextualMatch !== undefined) ? {source} : undefined;
-        const remember = ({owner, device}: LightingDevice): void => {
+        const remember = ({owner, device}: LightingDevice, ownerQualified?: true): void => {
           if (source !== undefined) deviceLookup = {source, match: {owner, id: device.id,
-            configurationRevision: device.configurationRevision, generation: device.generation}};
+            configurationRevision: device.configurationRevision, generation: device.generation,
+            ...(ownerQualified === undefined ? {} : {ownerQualified})}};
         };
         text = await this.#catalog().read(call, parent, item => evidence.push(item), access,
           id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id), scope === undefined ? undefined : {
             subject, named: lookup?.kind === 'named' ? lookup.lookup : undefined, granted: scope.lookupGranted,
-            recordNamed: (row, unambiguousContext) => {
-              namedDeviceRead = {owner: row.owner, id: row.device.id};
-              if (unambiguousContext) remember(row);
+            recordNamed: (row, unambiguousContext, ownerQualified) => {
+              namedDeviceRead = {owner: row.owner, id: row.device.id, configurationRevision: row.device.configurationRevision,
+                generation: row.device.generation};
+              if (unambiguousContext) remember(row, ownerQualified);
+            },
+            recordAmbiguity: () => {
+              if (source !== undefined) deviceLookup = {source, ambiguous: true};
             },
             ...(contextualMatch === undefined ? {} : {
+              ...(contextualMatch.ownerQualified === true ? {contextualOwner: contextualMatch.owner} : {}),
               admitContextual: ({owner, device}) => {
                 const match = contextualMatch;
                 return match !== undefined && owner === match.owner && device.id === match.device.id &&
@@ -3633,7 +3650,7 @@ export class AssistantEngine {
               },
               recordContextual: row => {
                 lightingReadModelCallId = modelCallId;
-                remember(row);
+                remember(row, contextualMatch?.ownerQualified);
               },
             }),
             brightnessControl: scope.brightnessTarget !== undefined, resolve: scope.resolvedCatalogDevice,
@@ -3661,8 +3678,34 @@ export class AssistantEngine {
       if (ledger.incompleteDisclosures === true) answer.incompleteDisclosures = true;
       return answer;
     });
+    const lookup = this.store.call(id)?.deviceLookup;
+    if (lookup?.ambiguous === true && !lookup.source.id.endsWith('-answer') &&
+        this.store.queue.steers(task.id).length === 0) {
+      let asked: Question | undefined;
+      let newlyAsked = false;
+      await this.#change(task.id, current => {
+        this.#fence(active);
+        if (this.store.queue.steers(current.id).length > 0) return;
+        if (current.question?.deviceReadClarification?.requestId === lookup.source.id) {
+          if (current.question.call === call.id && current.question.answer === null) asked = current.question;
+          return;
+        }
+        if (current.questions >= LIMITS.questions) throw new Fault('capacity', `This turn reached its limit of ${String(LIMITS.questions)} questions.`);
+        const question: Question = {id: `${current.id}-q${String(current.questions + 1)}`, kind: 'clarification', text: ambiguousDeviceQuestion,
+          answer: null, call: call.id, proposal: null, deviceReadClarification: {requestId: lookup.source.id}};
+        current.questions += 1;
+        current.question = question;
+        this.store.message(current, question.id, 'assistant', question.text, this.context.clock.now());
+        asked = question;
+        newlyAsked = true;
+      }, active.span.context);
+      if (asked !== undefined) {
+        if (newlyAsked) this.#speak(task.id, asked.id, asked.text, active.span.context);
+        return {step: state.step + 1, next: 'ask'};
+      }
+    }
     await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result, ok: true, effect: id}, active.span.context);
-    return {step: state.step + 1};
+    return {step: state.step + 1, next: 'turn'};
   }
   async #act(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);

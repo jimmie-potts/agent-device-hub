@@ -16,7 +16,7 @@ import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {deviceFacts, deviceLabel, matchingDevices, MAX_OBSERVATION_AGE_MS, Outcome, readDeviceRecords, readLifxDeviceFacts, usableArtComposition,
   type LifxDeviceFacts, type ModuleContext, type OwnedDevice, type TraceContext} from '@jimmie-potts/sdk';
 import type {DeviceReadDisplay} from './devices.js';
-import {LIGHTING_OWNERS, type LightingDevice} from './lighting-control.js';
+import {LIGHTING_OWNERS, qualifiedLightingOwner, type LightingDevice} from './lighting-control.js';
 import {ShowDrafts, showCueIndex} from './show-drafts.js';
 import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
@@ -69,12 +69,16 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
 }
 type Refusal = {code: ErrorCode};
 type Match = OwnedDevice;
-export type NamedDeviceLookup = {owner: string; target: string; request: string; currentSubject?: true};
+export type NamedDeviceLookup = {owner: string; target: string; request: string; currentSubject?: true; authenticatedAnswer?: true};
+type NamedDeviceSelection = {kind: 'missing' | 'ambiguous'} |
+  {kind: 'match'; row: Match; ownerQualified?: true; unambiguousContext: boolean};
 type ScopedDeviceFacts = {
   subject: string | undefined;
   named: NamedDeviceLookup | undefined;
   granted: (id: string) => boolean;
-  recordNamed: (match: Match, unambiguousContext: boolean) => void;
+  recordNamed: (match: Match, unambiguousContext: boolean, ownerQualified?: true) => void;
+  recordAmbiguity: () => void;
+  contextualOwner?: string;
   admitContextual?: (match: Match) => boolean;
   recordContextual?: (match: Match) => void;
   brightnessControl: boolean;
@@ -198,42 +202,65 @@ export class ConversationActions {
     return rows.filter(({device}) => id === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === id);
   }
 
-  async namedDeviceMatch({owner, target, request, currentSubject}: NamedDeviceLookup, granted: (id: string) => boolean, parent: TraceContext,
-    checkContext?: (unambiguous: boolean) => void): Promise<Match | undefined> {
-    const owners = owner === 'auto' || currentSubject === true ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
-    const {rows} = await this.#deviceRecords(checkContext === undefined ? owners : assistantDeviceOwners, parent);
-    // Only granted rows can supply facts. Other identities can make a later contextual reference ambiguous.
-    const visible = rows.filter(row => granted(row.device.id) && owners.some(source => source === row.owner));
+  async namedDeviceMatch({owner, target, request, currentSubject, authenticatedAnswer}: NamedDeviceLookup,
+    granted: (id: string) => boolean, parent: TraceContext): Promise<NamedDeviceSelection> {
+    const rows = await this.deviceReadRecords(parent);
     const literal = literalToolDeviceId(target);
+    const exact = exactControlIds(request);
+    const namedTarget = normalizedControlText(target);
+    const namesFor = ({owner: source, device}: Match): string[] => {
+      const labels = [device.id, deviceLabel(device)];
+      const name = source.split('/').at(-1);
+      return name === undefined ? labels : [...labels, ...labels.map(label => `${name} ${label}`)];
+    };
+    const subjectMatches = (row: Match): boolean => literal === undefined
+      ? namesFor(row).some(value => normalizedControlText(value) === namedTarget) : row.device.id === literal;
+    const qualifiedOwners = new Set(rows.filter(subjectMatches).flatMap(row => {
+      const name = row.owner.split('/').at(-1);
+      return qualifiedLightingOwner([row], request) === row.owner ||
+        name !== undefined && literal !== undefined && exact.includes(literal) && containsControlValue(request, `${name} id:${literal}`)
+        ? [row.owner] : [];
+    }));
+    if (qualifiedOwners.size > 1) return {kind: 'ambiguous'};
+    const [explicitOwner] = qualifiedOwners;
+    const answerLabel = normalizedControlText(request);
+    const answeredRows = authenticatedAnswer === true && exact.length === 0
+      ? rows.filter(({device}) => normalizedControlText(deviceLabel(device)) === answerLabel) : [];
+    const [answeredRow] = answeredRows;
+    if (answeredRows.length > 1) return {kind: 'ambiguous'};
+    if (authenticatedAnswer === true && exact.length === 0 && answeredRow === undefined && explicitOwner === undefined ||
+        answeredRow !== undefined && !subjectMatches(answeredRow)) return {kind: 'missing'};
+    const qualified = answeredRow?.owner ?? explicitOwner;
+    const candidates = rows.filter(row => qualified === undefined || row.owner === qualified);
+    const visible = candidates.filter(row => granted(row.device.id));
+    let matches: readonly Match[];
     if (currentSubject === true) {
-      const selectors = exactControlIds(request);
-      if (selectors.length > 1 || selectors.some(id => id !== literal)) return undefined;
-      const matches = visible.filter(({device}) => literal === undefined
-        ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === target) : device.id === literal);
-      const [selected] = matches;
-      if (matches.length !== 1 || selected === undefined || owner !== 'auto' && selected.owner !== owner) return undefined;
-      if (checkContext !== undefined) {
-        const identities = rows.filter(({device}) => literal === undefined
-          ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === target) : device.id === literal);
-        checkContext(identities.length === 1);
+      if (exact.length > 1 || exact.some(id => id !== literal)) return {kind: 'missing'};
+      matches = visible.filter(row => qualified === undefined && literal === undefined
+        ? [row.device.id, deviceLabel(row.device)].some(value => normalizedControlText(value) === namedTarget) : subjectMatches(row));
+    } else {
+      // A longer permitted name in the request cannot authorize a shorter alias.
+      if (literal === undefined && visible.some(({device}) => [device.id, deviceLabel(device)].some(value =>
+        normalizedControlText(value) !== normalizedControlText(target) && containsControlValue(value, target) && containsControlValue(request, value)))) {
+        return {kind: 'missing'};
       }
-      return selected;
+      matches = qualified === undefined ? matchingDevices(visible, target, 'auto', literal) : visible.filter(subjectMatches);
     }
-    // A longer permitted name in the request cannot authorize a shorter alias.
-    if (literal === undefined && visible.some(({device}) => [device.id, deviceLabel(device)].some(value =>
-      normalizedControlText(value) !== normalizedControlText(target) && containsControlValue(value, target) && containsControlValue(request, value)))) return undefined;
-    const matches = matchingDevices(visible, target, owner, literal);
-    const [selected] = matches;
-    if (matches.length !== 1 || selected === undefined) return undefined;
-    if (checkContext !== undefined) {
-      const exact = exactControlIds(request);
-      const label = normalizedControlText(deviceLabel(selected.device));
-      const candidates = rows.filter(({device}) => exact.length !== 1 || exact[0] !== selected.device.id ||
-        normalizedControlText(deviceLabel(device)) !== label);
-      const otherIds = controlReferenceIds(candidates.map(({device}) => ({id: device.id, label: deviceLabel(device)})), request);
-      checkContext([...exact, ...otherIds].every(id => id === selected.device.id));
+    const [row] = matches;
+    if (matches.length > 1 || row !== undefined && candidates.filter(({device}) => device.id === row.device.id).length > 1) {
+      return {kind: 'ambiguous'};
     }
-    return selected;
+    if (row === undefined || owner !== 'auto' && owner !== row.owner) return {kind: 'missing'};
+    let unambiguousContext: boolean;
+    if (currentSubject === true) unambiguousContext = candidates.filter(subjectMatches).length === 1;
+    else {
+      const label = normalizedControlText(deviceLabel(row.device));
+      const references = rows.filter(({device}) => exact.length !== 1 || exact[0] !== row.device.id ||
+        normalizedControlText(deviceLabel(device)) !== label).map(({device}) => ({id: device.id, label: deviceLabel(device)}));
+      const otherIds = controlReferenceIds(references, request);
+      unambiguousContext = [...exact, ...otherIds].every(id => id === row.device.id);
+    }
+    return {kind: 'match', row, unambiguousContext, ...(qualified === undefined ? {} : {ownerQualified: true})};
   }
 
   async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {
@@ -883,19 +910,20 @@ export class ConversationActions {
     if (owners.length === 0) return 'refused: unsupported-capability';
     if (scopedFacts !== undefined) {
       const matches = scopedFacts.named !== undefined || scopedFacts.subject === undefined ? []
-        : await this.deviceSubjectMatches(scopedFacts.subject, parent);
-      let unambiguousContext = false;
-      const selected = scopedFacts.named !== undefined ? await this.namedDeviceMatch(scopedFacts.named, scopedFacts.granted, parent,
-        unambiguous => {unambiguousContext = unambiguous;}) : matches.length === 1 ? matches[0] : undefined;
+        : (await this.deviceSubjectMatches(scopedFacts.subject, parent)).filter(row =>
+          scopedFacts.contextualOwner === undefined || row.owner === scopedFacts.contextualOwner);
+      const named = scopedFacts.named === undefined ? undefined : await this.namedDeviceMatch(scopedFacts.named, scopedFacts.granted, parent);
+      if (named?.kind === 'ambiguous') scopedFacts.recordAmbiguity();
+      const selected = named?.kind === 'match' ? named.row : matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
-          target.trim() !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
+          named?.kind !== 'match' && target.trim() !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
       if (scopedFacts.admitContextual?.(selected) === false) return textResult({devices: []});
       const {owner: source, device} = selected;
       scopedFacts.resolve(device.id);
       if (!access('devices', 'index', device.id) || !access('devices', 'label', device.id) || !access('devices', 'status', device.id)) {
         return textResult({devices: []});
       }
-      if (scopedFacts.named !== undefined) scopedFacts.recordNamed(selected, unambiguousContext);
+      if (named?.kind === 'match') scopedFacts.recordNamed(selected, named.unambiguousContext, named.ownerQualified);
       else scopedFacts.recordContextual?.(selected);
       if (scopedFacts.brightnessControl) {
         const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');
