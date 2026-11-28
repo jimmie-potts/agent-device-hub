@@ -5137,19 +5137,24 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     const reads: string[] = [];
     let observed = 9;
     let powered = true;
-    let turn: 'write' | 'power' | 'read' | 'chatter' = 'write';
+    let turn: 'write' | 'power' | 'read' | 'chatter' | 'guide' = 'write';
     let priorRequestShared = false;
     let change: 'none' | 'grant' | 'generation' | 'prior-generation' | 'duplicate' | 'observation' = 'none';
     let observedAtMs = Date.now();
     let proposedRead = false;
     let afterRead = () => false;
     let withheldOwnerMessage: string | undefined;
+    let hideOtherField: 'status' | 'local-label' | 'external-label' | undefined;
     let propose = `id:${id}`;
     const policy = sharing();
     const share = (query: ShareQuery) => policy(query) && !(change === 'grant' &&
       query.destination === 'external-model' && query.source === 'devices' && query.field === 'status' && query.record === id && afterRead()) &&
       !(withheldOwnerMessage !== undefined && query.destination === 'external-model' && query.source === 'conversation' &&
-        query.field === 'excerpt' && query.record === withheldOwnerMessage);
+        query.field === 'excerpt' && query.record === withheldOwnerMessage) &&
+      !(query.source === 'devices' && query.record === unrelated.id && (
+        hideOtherField === 'status' && query.destination === 'external-model' && (query.field === 'status' || query.field === 'details') ||
+        hideOtherField === 'local-label' && query.destination === 'private-conversation' && query.field === 'label' ||
+        hideOtherField === 'external-label' && query.destination === 'external-model' && query.field === 'label'));
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
       const body = JSON.parse(init.body) as {
         messages?: {content: {type: string; content?: string; tool_use_id?: string}[]}[];
@@ -5162,9 +5167,10 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       const answer = turn === 'read' && result?.startsWith('id:') === true;
       const proposeTool = turn !== 'chatter' && (result === undefined || answer);
       const modelToolId = answer ? `${effect}-answer` : effect;
-      const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set' : 'read_devices';
+      const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set'
+        : turn === 'guide' ? 'read_hub_guide' : 'read_devices';
       const effectArguments = turn === 'write' ? {percent: setting} : {on: false};
-      const args = {owner: turn === 'read' ? 'auto' : owner, target: turn === 'read' ? answer ? result : propose : `id:${id}`, ...(turn === 'read' ? {} : {
+      const args = turn === 'guide' ? {} : {owner: turn === 'read' ? 'auto' : owner, target: turn === 'read' ? answer ? result : propose : `id:${id}`, ...(turn === 'read' ? {} : {
         ...immediateLight, ...(turn === 'power' ? {powerLiteral: 'off'} : {}), arguments: JSON.stringify(effectArguments)})};
       if (turn === 'read') {
         priorRequestShared ||= init.body.includes(instruction);
@@ -5183,7 +5189,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
     const now = Date.now();
     observedAtMs = now;
-    const w = await world(context, {provider, share, tools: ['control_brightness_set', 'control_power_set', 'read_devices'],
+    const w = await world(context, {provider, share, tools: ['control_brightness_set', 'control_power_set', 'read_devices', 'read_hub_guide'],
       dispatch: data => {
         requests.push(data);
         if (data.family === 'catalog-action' && data.target === id && data.command === 'brightness-set' && typeof data.data.percent === 'number') {
@@ -5267,9 +5273,11 @@ for (const adapter of ['anthropic', 'openai'] as const) {
 
     for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound', 'lookalike',
       'unknown-name', 'unknown-id', 'late-old-result', 'multiple', 'two-lookups', 'correction', 'hidden-newer',
-      'prior-generation', 'saved-blank', 'neutral'] as const) {
+      'prior-generation', 'saved-blank', 'neutral', 'unrelated-guide', 'withheld-status', 'withheld-local-label',
+      'withheld-external-label', 'mixed-withheld-status'] as const) {
       change = 'none';
       withheldOwnerMessage = undefined;
+      hideOtherField = undefined;
       propose = selected.label ?? id;
       await ask(`What brightness does ${selected.label} report?`);
       assert.equal(status(w), 'succeeded');
@@ -5299,10 +5307,27 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         await ask(`Compare the brightness of ${selected.label} and id:${unrelated.id}.`);
         assert.match(reads.at(-1) ?? '', new RegExp(unrelated.id));
       }
-      if (variation === 'neutral' || variation === 'unknown-id') {
+      if (variation === 'neutral' || variation === 'unknown-id' || variation === 'withheld-status' ||
+          variation === 'withheld-local-label' || variation === 'withheld-external-label') {
         turn = 'chatter';
-        await ask(variation === 'neutral' ? 'Thanks for checking.' : 'Now let’s talk about display id:missing-panel instead.');
+        hideOtherField = variation === 'withheld-status' ? 'status' : variation === 'withheld-local-label' ? 'local-label'
+          : variation === 'withheld-external-label' ? 'external-label' : undefined;
+        const message = variation === 'neutral' ? 'Thanks for checking.' : variation === 'unknown-id'
+          ? 'Now let’s talk about display id:missing-panel instead.' : 'I meant Unrelated Display for the next question.';
+        await ask(message);
         turn = 'read';
+      }
+      if (variation === 'unrelated-guide') {
+        turn = 'guide';
+        await ask('What capabilities are described in the Hub guide?');
+        assert.equal(status(w), 'succeeded');
+        turn = 'read';
+      }
+      if (variation === 'mixed-withheld-status') {
+        hideOtherField = 'status';
+        await ask(`Compare the brightness of ${selected.label} and ${unrelated.label}.`);
+        assert.match(reads.at(-1) ?? '', /"id":"fixture-context-display"/u);
+        assert.doesNotMatch(reads.at(-1) ?? '', /unrelated-display/u);
       }
       if (variation === 'correction' || variation === 'multiple') {
         turn = 'chatter';
@@ -5317,7 +5342,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       await ask(question);
       assert.equal(await unreported(), spendBefore, 'local refusal leaves no unreported provider charge');
       if (variation === 'unknown-name' || variation === 'unknown-id' || variation === 'late-old-result' || variation === 'multiple' || variation === 'two-lookups' ||
-          variation === 'correction' || variation === 'hidden-newer' || variation === 'prior-generation') {
+          variation === 'correction' || variation === 'hidden-newer' || variation === 'prior-generation' ||
+          variation.startsWith('withheld-') || variation === 'mixed-withheld-status') {
         assert.equal(status(w), 'waiting', variation);
         assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up?');
         assert.equal(reads.length, callsBefore, 'the focused question sends no stale device facts');
@@ -5332,7 +5358,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         await until(() => status(w) === 'succeeded');
         assert.equal(task(w)?.taskId, waiting);
         assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
-      } else if (variation === 'observation' || variation === 'unbound' || variation === 'lookalike' || variation === 'saved-blank' || variation === 'neutral') {
+      } else if (variation === 'observation' || variation === 'unbound' || variation === 'lookalike' || variation === 'saved-blank' ||
+          variation === 'neutral' || variation === 'unrelated-guide') {
         assert.equal(status(w), 'succeeded');
         assert.equal(reads.length, callsBefore + 1);
         if (variation === 'unbound' || variation === 'lookalike') assert.equal(reads.at(-1), '{"devices":[]}');

@@ -253,6 +253,12 @@ const UNSENT_MODEL_USAGE: TokenUsage = {input: 0, output: 0, cacheRead: 0, cache
 type DeviceLookupStage = 'initial' | 'repair' | 'unresolved' | 'repaired' | 'answered';
 type DeviceLookupAdmission = {kind: 'named'; lookup: NamedDeviceLookup} | {kind: 'contextual'} | {kind: 'blocked'};
 
+function hasDeviceReference(tool: string): boolean {
+  const family = catalogCommand(tool);
+  return tool === READ_DEVICES || tool === READ_DEVICE_HISTORY || tool === WEMO_TARGETS ||
+    deviceToolOwner(tool) !== undefined || family !== undefined && catalogRoute(family).binding === 'device';
+}
+
 function namedDeviceLookup(request: string, call: ToolCall, answer: boolean): DeviceLookupAdmission {
   if (call.name !== READ_DEVICES) return {kind: 'contextual'};
   if (typeof call.input.target !== 'string' || typeof call.input.owner !== 'string') return {kind: 'blocked'};
@@ -2350,7 +2356,7 @@ export class AssistantEngine {
           if (model?.taskId !== task.id || model.kind !== 'model' || model.status !== 'succeeded' || saved === undefined ||
               scope?.effects.has(modelCallId) !== true) return false;
           const binding = this.#modelControlScope(current, saved.history, eligible, rows);
-          const selected = this.#deviceReadSubject(current, binding.request.text, scope.refers, eligible, rows, scope.lookupGranted);
+          const selected = this.#deviceReadSubject(current, binding.request.text, scope.refers, eligible, rows);
           return this.#sameControlSources(saved, binding) && selected !== undefined && scope.lookupGranted(match.id) &&
             match.id === selected.device.id && match.owner === selected.owner &&
             match.configurationRevision === selected.device.configurationRevision &&
@@ -2513,7 +2519,7 @@ export class AssistantEngine {
       const eligible = this.#hostedHistory(latest);
       const scope = this.#supervisorScope(latest, 'supervisor', undefined, eligible);
       unresolvedContextualRead = scope.requestId === deviceScope.requestId &&
-        this.#deviceReadSubject(latest, scope.request, scope.refers, eligible, rows, scope.lookupGranted) === undefined;
+        this.#deviceReadSubject(latest, scope.request, scope.refers, eligible, rows) === undefined;
     }
     if (savedControl !== undefined) {
       direct = savedControl;
@@ -2807,10 +2813,11 @@ export class AssistantEngine {
       ...(qualifiedTargets === undefined ? {} : {qualifiedTargets}), ...(lighting === undefined ? {} : {ambiguousHistory}),
       references: references.map(reference => ({...reference, eligible: related.has(reference.id)}))};
   }
-  #previousDeviceLookup(task: Task, history: ReadonlyMap<string, HostedHistoryMessage>, rows: readonly LightingDevice[],
-    granted: (id: string) => boolean): DeviceReadReference | undefined {
+  #previousDeviceLookup(task: Task, history: ReadonlyMap<string, HostedHistoryMessage>,
+    rows: readonly LightingDevice[]): DeviceReadReference | undefined {
     if (task.contextThrough === undefined || task.transcript.filter(item => item.role === 'owner').length > 1) return undefined;
-    const visible = rows.filter(row => granted(row.device.id)).map(row => lightingReference(row, true));
+    // Registry names only veto a stale reference. The read and replay still require disclosure grants.
+    const references = rows.map(({device}) => ({id: device.id, label: deviceLabel(device)}));
     for (const exchange of this.store.ownerExchangesNewestFirst(task.conversationId, task.contextThrough)) {
       const message = history.get(exchange.id);
       const prior = this.store.task(exchange.taskId);
@@ -2830,7 +2837,8 @@ export class AssistantEngine {
       }
       if (prior.lightingDecision !== undefined) return this.#controlReadReference(prior, message.id, effects, history);
       if (prior.status !== 'succeeded' || ownerCancelled.test(message.text) ||
-          prior.transcript.some(item => item.role === 'assistant' && item.calls.length > 0) || exactControlIds(message.text).length > 0 || controlReferenceIds(visible, message.text).length > 0) return undefined;
+          prior.transcript.some(item => item.role === 'assistant' && item.calls.some(call => hasDeviceReference(call.name))) ||
+          exactControlIds(message.text).length > 0 || controlReferenceIds(references, message.text).length > 0) return undefined;
     }
     return undefined;
   }
@@ -2863,13 +2871,13 @@ export class AssistantEngine {
       ? {owner: decision.owner, id: decision.target, ...version, allowRestart: true} : undefined;
   }
   #deviceReadSubject(task: Task, request: string, refers: boolean, history: ReadonlyMap<string, HostedHistoryMessage>,
-    rows: readonly LightingDevice[], granted: (id: string) => boolean): LightingDevice | undefined {
+    rows: readonly LightingDevice[]): LightingDevice | undefined {
     const subject = brightnessSubject(request) ?? deviceRequestSubject(request, 'read');
     const named = rows.filter(({device}) => matchesDeviceRequestSubject(subject, device));
     if (named.length > 0) return named.length === 1 ? named[0] : undefined;
     if (!refers || exactControlIds(request).length > 0 ||
-        controlReferenceIds(rows.filter(row => granted(row.device.id)).map(row => lightingReference(row, true)), request).length > 0) return undefined;
-    const reference = this.#previousDeviceLookup(task, history, rows, granted);
+        controlReferenceIds(rows.map(({device}) => ({id: device.id, label: deviceLabel(device)})), request).length > 0) return undefined;
+    const reference = this.#previousDeviceLookup(task, history, rows);
     if (reference === undefined) return undefined;
     const matches = rows.filter(({device}) => device.id === reference.id);
     const [selected] = matches;
@@ -3513,7 +3521,7 @@ export class AssistantEngine {
         const history = this.#hostedHistory(currentTask);
         const current = this.#modelControlScope(currentTask, proof.history, history, rows);
         if (call.name === READ_DEVICES) {
-          const selected = this.#deviceReadSubject(currentTask, current.request.text, scope.refers, history, rows, scope.lookupGranted);
+          const selected = this.#deviceReadSubject(currentTask, current.request.text, scope.refers, history, rows);
           if (modelReceipt?.taskId === task.id && modelReceipt.kind === 'model' && modelReceipt.status === 'succeeded' &&
               modelCallId !== undefined && scope.effects.has(modelCallId) && this.#sameControlSources(proof, current) &&
               selected !== undefined && scope.lookupGranted(selected.device.id)) {

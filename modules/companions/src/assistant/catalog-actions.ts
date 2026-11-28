@@ -16,7 +16,7 @@ import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {deviceFacts, deviceLabel, matchingDevices, MAX_OBSERVATION_AGE_MS, Outcome, readDeviceRecords, readLifxDeviceFacts, usableArtComposition,
   type LifxDeviceFacts, type ModuleContext, type OwnedDevice, type TraceContext} from '@jimmie-potts/sdk';
 import type {DeviceReadDisplay} from './devices.js';
-import {LIGHTING_OWNERS, lightingReference, type LightingDevice} from './lighting-control.js';
+import {LIGHTING_OWNERS, type LightingDevice} from './lighting-control.js';
 import {ShowDrafts, showCueIndex} from './show-drafts.js';
 import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
@@ -202,8 +202,8 @@ export class ConversationActions {
     checkContext?: (unambiguous: boolean) => void): Promise<Match | undefined> {
     const owners = owner === 'auto' || currentSubject === true ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     const {rows} = await this.#deviceRecords(checkContext === undefined ? owners : assistantDeviceOwners, parent);
-    const grantedRows = rows.filter(({device}) => granted(device.id));
-    const visible = grantedRows.filter(row => owners.some(source => source === row.owner));
+    // Only granted rows can supply facts. Other identities can make a later contextual reference ambiguous.
+    const visible = rows.filter(row => granted(row.device.id) && owners.some(source => source === row.owner));
     const literal = literalToolDeviceId(target);
     if (currentSubject === true) {
       const selectors = exactControlIds(request);
@@ -212,7 +212,11 @@ export class ConversationActions {
         ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === target) : device.id === literal);
       const [selected] = matches;
       if (matches.length !== 1 || selected === undefined || owner !== 'auto' && selected.owner !== owner) return undefined;
-      checkContext?.(true);
+      if (checkContext !== undefined) {
+        const identities = rows.filter(({device}) => literal === undefined
+          ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === target) : device.id === literal);
+        checkContext(identities.length === 1);
+      }
       return selected;
     }
     // A longer permitted name in the request cannot authorize a shorter alias.
@@ -224,9 +228,9 @@ export class ConversationActions {
     if (checkContext !== undefined) {
       const exact = exactControlIds(request);
       const label = normalizedControlText(deviceLabel(selected.device));
-      const candidates = grantedRows.filter(row => exact.length !== 1 || exact[0] !== selected.device.id ||
-        normalizedControlText(deviceLabel(row.device)) !== label);
-      const otherIds = controlReferenceIds(candidates.map(row => lightingReference(row, true)), request);
+      const candidates = rows.filter(({device}) => exact.length !== 1 || exact[0] !== selected.device.id ||
+        normalizedControlText(deviceLabel(device)) !== label);
+      const otherIds = controlReferenceIds(candidates.map(({device}) => ({id: device.id, label: deviceLabel(device)})), request);
       checkContext([...exact, ...otherIds].every(id => id === selected.device.id));
     }
     return selected;
