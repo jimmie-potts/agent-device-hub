@@ -3637,8 +3637,10 @@ export class AssistantEngine {
                 generation: row.device.generation};
               if (unambiguousContext) remember(row, ownerQualified);
             },
-            recordAmbiguity: () => {
-              if (source !== undefined) deviceLookup = {source, ambiguous: true};
+            recordAmbiguity: sharedId => {
+              if (source !== undefined && (sharedId || deviceRequestSubject(scope.request, 'read') !== undefined)) {
+                deviceLookup = {source, ambiguous: true};
+              }
             },
             ...(contextualMatch === undefined ? {} : {
               ...(contextualMatch.ownerQualified === true ? {contextualOwner: contextualMatch.owner} : {}),

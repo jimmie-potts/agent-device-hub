@@ -4144,11 +4144,11 @@ for (const kind of ['timer', 'brightness'] as const) {
     await w.core.serveSync(['power-limit'], () => ({revision: 1, states: [powerLimitDraft(powerLimit('armed'))]}));
     await w.restart();
     await control(w.core, w.module(), 'enable');
-    const ask = async (text: string, profile = 'bunny'): Promise<string> => {
+    const ask = async (text: string, profile = 'bunny', expectQuestion = false): Promise<string> => {
       const current = () => w.module().inspectAssistant()?.tasks.find(task => task.profile === profile);
       const previous = current()?.taskId;
       assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
-      await until(() => current()?.taskId !== previous && current()?.status === 'succeeded');
+      await until(() => current()?.taskId !== previous && current()?.status === (expectQuestion ? 'waiting' : 'succeeded'));
       const message = (await page(w, profile, 'recent')).messages.at(-1);
       assert.equal(message?.role, 'assistant');
       return message?.text ?? assert.fail('Expected a Conversation answer');
@@ -4167,12 +4167,15 @@ for (const kind of ['timer', 'brightness'] as const) {
     target = kind === 'timer' ? otherPlug.label ?? '' : unknownDisplay.id;
     assert.match(await ask(prompt), missing, 'The model cannot widen the owner-requested target.');
     target = kind === 'timer' ? 'Shared Plug' : 'Shared Display';
-    assert.match(await ask(kind === 'timer' ? 'Is the timer for the Shared Plug active?'
-      : 'What is the currently reported brightness of Shared Display?'), missing);
     if (kind === 'brightness') {
+      assert.match(await ask('What is the currently reported brightness of Shared Display?', 'bunny', true), /Which exact device/u);
+      const current = () => w.module().inspectAssistant()?.tasks.find(task => task.profile === 'bunny');
+      assert.equal((await control(w.core, w.module(), 'cancel', current()?.taskId)).status, 'accepted');
+      await until(() => current()?.status === 'cancelled');
       target = unknownDisplay.id;
       assert.match(await ask('What is the currently reported brightness of unknown-display?'), /"observation":\{"status":"unknown"\}/u);
     } else {
+      assert.match(await ask('Is the timer for the Shared Plug active?'), missing);
       target = 'Other Plug';
       assert.match(await ask('Is the timer active for the Other Plug?'), /No maximum-on limit has been set/);
     }
@@ -4445,15 +4448,7 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     assert.deepEqual(await ask(comparison, 'Studio Wall'), statusFacts);
     aliasesPresent = false;
     duplicateVisible = true;
-    const beforeDuplicate = task(w)?.taskId, beforeDuplicateFacts = resultByProvider[provider].length;
-    lookups = [{target: 'Studio Wall', owner: 'auto'}, {target: 'id:studio-wall', owner: 'auto'}];
-    assert.equal((await input(w.core, w.module(), 'Apply Night Sky on Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
-    await until(() => task(w)?.taskId !== beforeDuplicate && status(w) === 'waiting');
-    assert.match((await page(w)).currentTask?.question?.text ?? '', /Which exact device/u);
-    assert.equal(resultByProvider[provider].length, beforeDuplicateFacts, 'ambiguous lookups send no fact before the owner answers');
-    assert.equal((await input(w.core, w.module(), 'id:studio-wall', true)).status, 'accepted');
-    await until(() => status(w) === 'succeeded');
-    assert.deepEqual(JSON.parse(resultByProvider[provider].at(-1) ?? ''), statusFacts);
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', 'Studio Wall'), {devices: []});
     duplicateVisible = false;
     assert.deepEqual(await ask('Apply Night Sky on id:studio-wall.', 'id:studio-wall'), statusFacts);
     assert.deepEqual(await ask('Apply Night Sky on id:studio-wall id:studio-wall-xl.', 'id:studio-wall'), {devices: []});

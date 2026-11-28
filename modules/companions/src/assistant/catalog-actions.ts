@@ -70,14 +70,14 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
 type Refusal = {code: ErrorCode};
 type Match = OwnedDevice;
 export type NamedDeviceLookup = {owner: string; target: string; request: string; currentSubject?: true; authenticatedAnswer?: true};
-type NamedDeviceSelection = {kind: 'missing' | 'ambiguous'} |
+type NamedDeviceSelection = {kind: 'missing'} | {kind: 'ambiguous'; sharedId: boolean} |
   {kind: 'match'; row: Match; ownerQualified?: true; unambiguousContext: boolean};
 type ScopedDeviceFacts = {
   subject: string | undefined;
   named: NamedDeviceLookup | undefined;
   granted: (id: string) => boolean;
   recordNamed: (match: Match, unambiguousContext: boolean, ownerQualified?: true) => void;
-  recordAmbiguity: () => void;
+  recordAmbiguity: (sharedId: boolean) => void;
   contextualOwner?: string;
   admitContextual?: (match: Match) => boolean;
   recordContextual?: (match: Match) => void;
@@ -221,13 +221,13 @@ export class ConversationActions {
         name !== undefined && literal !== undefined && exact.includes(literal) && containsControlValue(request, `${name} id:${literal}`)
         ? [row.owner] : [];
     }));
-    if (qualifiedOwners.size > 1) return {kind: 'ambiguous'};
+    if (qualifiedOwners.size > 1) return {kind: 'ambiguous', sharedId: literal !== undefined};
     const [explicitOwner] = qualifiedOwners;
     const answerLabel = normalizedControlText(request);
     const answeredRows = authenticatedAnswer === true && exact.length === 0
       ? rows.filter(({device}) => normalizedControlText(deviceLabel(device)) === answerLabel) : [];
     const [answeredRow] = answeredRows;
-    if (answeredRows.length > 1) return {kind: 'ambiguous'};
+    if (answeredRows.length > 1) return {kind: 'ambiguous', sharedId: new Set(answeredRows.map(row => row.device.id)).size < answeredRows.length};
     if (authenticatedAnswer === true && exact.length === 0 && answeredRow === undefined && explicitOwner === undefined ||
         answeredRow !== undefined && !subjectMatches(answeredRow)) return {kind: 'missing'};
     const qualified = answeredRow?.owner ?? explicitOwner;
@@ -247,9 +247,9 @@ export class ConversationActions {
       matches = qualified === undefined ? matchingDevices(visible, target, 'auto', literal) : visible.filter(subjectMatches);
     }
     const [row] = matches;
-    if (matches.length > 1 || row !== undefined && candidates.filter(({device}) => device.id === row.device.id).length > 1) {
-      return {kind: 'ambiguous'};
-    }
+    const ids = new Set(matches.map(match => match.device.id));
+    const sharedId = [...ids].some(id => candidates.filter(({device}) => device.id === id).length > 1);
+    if (matches.length > 1 || sharedId) return {kind: 'ambiguous', sharedId};
     if (row === undefined || owner !== 'auto' && owner !== row.owner) return {kind: 'missing'};
     let unambiguousContext: boolean;
     if (currentSubject === true) unambiguousContext = candidates.filter(subjectMatches).length === 1;
@@ -913,7 +913,7 @@ export class ConversationActions {
         : (await this.deviceSubjectMatches(scopedFacts.subject, parent)).filter(row =>
           scopedFacts.contextualOwner === undefined || row.owner === scopedFacts.contextualOwner);
       const named = scopedFacts.named === undefined ? undefined : await this.namedDeviceMatch(scopedFacts.named, scopedFacts.granted, parent);
-      if (named?.kind === 'ambiguous') scopedFacts.recordAmbiguity();
+      if (named?.kind === 'ambiguous') scopedFacts.recordAmbiguity(named.sharedId);
       const selected = named?.kind === 'match' ? named.row : matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
           named?.kind !== 'match' && target.trim() !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
