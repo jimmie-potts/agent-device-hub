@@ -1424,6 +1424,17 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 - **WHEN** the owner asks a contextual LIFX status question with the LIFX read tool enabled
 - **THEN** Conversation reads the eligible light under the current grants without requiring or adding a lighting write tool.
 
+#### Scenario: A hosted supervisor reports a contextual device reading
+
+- **WHEN** a current hosted status request refers to a device in the preceding owner exchange
+- **THEN** the Hub SHALL use a saved single-match lookup for that exchange, or a verified control binding for the same owner source, to identify the device for a fresh read.
+- **AND** a missing or ambiguous lookup SHALL clear the prior reference. The Hub SHALL ask which device the owner means and use the authenticated answer to resolve the lookup without forwarding stale facts.
+- **AND** if different integrations report the same canonical device ID, the original lookup SHALL ask once before sharing device facts unless the owner authenticates a unique integration and device selection. A proposed integration from the supervisor SHALL NOT resolve that ambiguity. A later disappearance SHALL NOT establish a previously ambiguous match.
+- **AND** the Hub SHALL recheck exact device identity, owner sources and current grants both when reading facts and before forwarding the result. An unavailable newer owner message SHALL NOT revive an older binding. A newer device reference SHALL invalidate the earlier binding even when the new device's facts cannot be shared. A later observation of the same device SHALL NOT invalidate the permitted sample.
+- **AND** an intervening completed exchange that does not select or look up a device SHALL leave the saved reference available.
+- **AND** an exact owner selection with an authenticated setting-slot answer can ground a fresh read after a refused write when the saved device version still matches, including after a restart that only changed the generation epoch. A legacy setting question without version proof requires the owner to identify the device again. A read SHALL NOT treat the refused write as applied.
+- **AND** the status request SHALL send no device write. A local refusal before provider transmission SHALL NOT retain a charge for that unsent call.
+
 #### Scenario: A hosted device read omits its selector
 
 - **WHEN** the selected supervisor leaves the device selector empty and the complete current owner request binds to one permitted device

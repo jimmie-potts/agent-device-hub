@@ -1,3 +1,4 @@
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {LightingDecision} from './lighting-execution.js';
 import type {LightingClarification} from './lighting-control.js';
 import type {SupervisorIdentity} from './provider.js';
@@ -66,6 +67,9 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
    */
   contextThrough?: number};
 export type ContextSourceVersion = {id: string; revision: number};
+export type SavedDeviceLookup = {source: ContextSourceVersion; match?: {
+  owner: string; id: string; configurationRevision: number; generation: DeviceRecord['generation']; ownerQualified?: true;
+}; ambiguous?: true};
 export type SavedDisclosureProof = {
   fields: readonly DisclosedField[]; sources: readonly string[]; legacy: boolean; complete: boolean; model: boolean;
 };
@@ -79,9 +83,11 @@ export type Call = {version: 1; id: string; taskId: string; runId: string; ordin
   modelControlProof?: ModelControlProof;
   lightingControlProof?: ModelControlProof;
   lightingReadTarget?: string;
+  lightingReadModelCallId?: string;
+  deviceLookup?: SavedDeviceLookup;
   privateDraftId?: string;
   wemoFacts?: readonly {id: string; revision: string}[];
-  namedDeviceRead?: {owner: string; id: string};
+  namedDeviceRead?: {owner: string; id: string; configurationRevision?: number; generation?: DeviceRecord['generation']};
   historySources?: readonly ContextSourceVersion[];
   inputVersions?: readonly {field: DisclosedField; version: string}[];
   codingApproval?: {destination: 'coding-worker'; repository: string; briefDigest: string};
@@ -368,6 +374,13 @@ export class AssistantStore {
           OR json_type(record,'$.recipientIds')='null')))
       AND NOT EXISTS (SELECT 1 FROM companion_removals WHERE id=assistant_messages.id) ORDER BY seq`)
       .iterate(conversationId, through, profile, profile) as Iterable<HostedHistoryMessage>;
+  }
+  /** Use append order, not the completion order of earlier tasks. */
+  ownerExchangesNewestFirst(conversationId: string, through: number): Iterable<{id: string; taskId: string}> {
+    return this.database.prepare(`SELECT id,task_id AS taskId FROM assistant_messages
+      WHERE conversation_id=? AND seq<=? AND role='owner'
+      AND json_extract(record,'$.speakerId')='owner' AND json_extract(record,'$.provenance.imported')=0
+      ORDER BY seq DESC`).iterate(conversationId, through) as Iterable<{id: string; taskId: string}>;
   }
   historySourceRevision(id: string): number | undefined {
     const row = this.database.prepare(`SELECT COALESCE(json_extract(record,'$.revision'),0) AS revision

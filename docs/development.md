@@ -3242,7 +3242,15 @@ For contextual lighting, the Companions suite exercises Messages and Responses
 with fake providers and synthetic configured lights. It checks signed values,
 starting and desired settings, absolute bounds, relative units, fresh and
 changed observations, and zero writes at a boundary. It also checks the
-existing route bindings and receipt recovery.
+existing route bindings and receipt recovery. The contextual status cases in
+`assistant.test.js` verify that a second Messages or Responses request can
+summarize a permitted saved lookup result. They cover a fresh read after a
+refused command, invalidation after an unresolved or ambiguous newer lookup,
+the device-selection question and answer, and identity or grant changes between
+the lookup and the provider call. A read-only owner sharing a canonical ID with
+a writing integration must trigger the original question unless the owner has
+already identified one device. The disposable Runtime exercises both overlapping
+owners through both hosted adapter encodings. A locally blocked call has zero reported usage.
 
 The Conversation maximum-on read uses a disposable Companions engine with
 synthetic Wemo and core SDK records. After the root build, the

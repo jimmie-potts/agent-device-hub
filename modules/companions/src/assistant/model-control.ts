@@ -64,7 +64,7 @@ const EXPLICIT_ID = /\bid:[^\s,()[\]{}"'‘’“”`<>]*/gu;
 export function exactControlIds(text: string): string[] {
   return [...new Set([...text.matchAll(EXPLICIT_ID)].map(match => match[0].slice(3).replace(/[.?!;]$/u, '')))];
 }
-export function controlReferenceIds(records: ModelControlScope['references'], text: string): string[] {
+export function controlReferenceIds(records: readonly Pick<ControlReference, 'id' | 'label'>[], text: string): string[] {
   const labelText = text.replace(EXPLICIT_ID, ' ');
   return records.filter(record => mentionsId(text, record.id) || containsControlValue(labelText, record.label)).map(record => record.id);
 }

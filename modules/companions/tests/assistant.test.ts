@@ -4144,11 +4144,11 @@ for (const kind of ['timer', 'brightness'] as const) {
     await w.core.serveSync(['power-limit'], () => ({revision: 1, states: [powerLimitDraft(powerLimit('armed'))]}));
     await w.restart();
     await control(w.core, w.module(), 'enable');
-    const ask = async (text: string, profile = 'bunny'): Promise<string> => {
+    const ask = async (text: string, profile = 'bunny', expectQuestion = false): Promise<string> => {
       const current = () => w.module().inspectAssistant()?.tasks.find(task => task.profile === profile);
       const previous = current()?.taskId;
       assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
-      await until(() => current()?.taskId !== previous && current()?.status === 'succeeded');
+      await until(() => current()?.taskId !== previous && current()?.status === (expectQuestion ? 'waiting' : 'succeeded'));
       const message = (await page(w, profile, 'recent')).messages.at(-1);
       assert.equal(message?.role, 'assistant');
       return message?.text ?? assert.fail('Expected a Conversation answer');
@@ -4167,12 +4167,15 @@ for (const kind of ['timer', 'brightness'] as const) {
     target = kind === 'timer' ? otherPlug.label ?? '' : unknownDisplay.id;
     assert.match(await ask(prompt), missing, 'The model cannot widen the owner-requested target.');
     target = kind === 'timer' ? 'Shared Plug' : 'Shared Display';
-    assert.match(await ask(kind === 'timer' ? 'Is the timer for the Shared Plug active?'
-      : 'What is the currently reported brightness of Shared Display?'), missing);
     if (kind === 'brightness') {
+      assert.match(await ask('What is the currently reported brightness of Shared Display?', 'bunny', true), /Which exact device/u);
+      const current = () => w.module().inspectAssistant()?.tasks.find(task => task.profile === 'bunny');
+      assert.equal((await control(w.core, w.module(), 'cancel', current()?.taskId)).status, 'accepted');
+      await until(() => current()?.status === 'cancelled');
       target = unknownDisplay.id;
       assert.match(await ask('What is the currently reported brightness of unknown-display?'), /"observation":\{"status":"unknown"\}/u);
     } else {
+      assert.match(await ask('Is the timer for the Shared Plug active?'), missing);
       target = 'Other Plug';
       assert.match(await ask('Is the timer active for the Other Plug?'), /No maximum-on limit has been set/);
     }
@@ -5128,15 +5131,35 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     const setting = 37;
     const instruction = `Set id:${id} brightness to ${String(setting)}%`;
     const followUp = 'Switch it off.';
-    const question = 'How bright is it now?';
+    const question = 'What is the currently reported brightness of that display?';
     const selected = {...light(id, 'Fixture Display'), kind: 'pixoo' as const};
     const alias = {...selected, id: 'fixture-other-display', label: `id:${id}`};
+    const unrelated = {...selected, id: 'unrelated-display', label: 'Unrelated Display'};
+    const plug = {...light('fixture-context-plug', 'Fixture Plug'), kind: 'wemo' as const};
     const requests: AssistantDispatch[] = [];
     const reads: string[] = [];
     let observed = 9;
     let powered = true;
-    let turn: 'write' | 'power' | 'read' = 'write';
+    let turn: 'write' | 'power' | 'read' | 'chatter' | 'guide' = 'write';
     let priorRequestShared = false;
+    let change: 'none' | 'grant' | 'generation' | 'prior-generation' | 'duplicate' | 'observation' = 'none';
+    let observedAtMs = Date.now();
+    let proposedRead = false;
+    let afterRead = () => false;
+    let withheldOwnerMessage: string | undefined;
+    let hideOtherField: 'status' | 'local-label' | 'external-label' | undefined;
+    let readOnlyOverlap = false;
+    let readOwner = 'auto';
+    let propose = `id:${id}`;
+    const policy = sharing();
+    const share = (query: ShareQuery) => policy(query) && !(change === 'grant' &&
+      query.destination === 'external-model' && query.source === 'devices' && query.field === 'status' && query.record === id && afterRead()) &&
+      !(withheldOwnerMessage !== undefined && query.destination === 'external-model' && query.source === 'conversation' &&
+        query.field === 'excerpt' && query.record === withheldOwnerMessage) &&
+      !(query.source === 'devices' && query.record === unrelated.id && (
+        hideOtherField === 'status' && query.destination === 'external-model' && (query.field === 'status' || query.field === 'details') ||
+        hideOtherField === 'local-label' && query.destination === 'private-conversation' && query.field === 'label' ||
+        hideOtherField === 'external-label' && query.destination === 'external-model' && query.field === 'label'));
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
       const body = JSON.parse(init.body) as {
         messages?: {content: {type: string; content?: string; tool_use_id?: string}[]}[];
@@ -5144,28 +5167,35 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       };
       const effect = 'fixture-' + turn;
       const result = adapter === 'anthropic'
-        ? body.messages?.flatMap(message => message.content).find(block => block.type === 'tool_result' && block.tool_use_id === effect)?.content
-        : body.input?.find(item => item.type === 'function_call_output' && item.call_id === effect)?.output;
-      const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set' : 'read_devices';
+        ? body.messages?.flatMap(message => message.content).filter(block => block.type === 'tool_result' && block.tool_use_id?.startsWith(effect) === true).at(-1)?.content
+        : body.input?.filter(item => item.type === 'function_call_output' && item.call_id?.startsWith(effect) === true).at(-1)?.output;
+      const answer = turn === 'read' ? result === selected.label ? `id:${id}`
+        : /^(?:Pixoo )?(id:[a-z0-9-]+)$/u.exec(result ?? '')?.[1] : undefined;
+      const proposeTool = turn !== 'chatter' && (result === undefined || answer !== undefined);
+      const modelToolId = answer === undefined ? effect : `${effect}-answer`;
+      const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set'
+        : turn === 'guide' ? 'read_hub_guide' : 'read_devices';
       const effectArguments = turn === 'write' ? {percent: setting} : {on: false};
-      const args = {owner, target: `id:${id}`, ...(turn === 'read' ? {} : {
+      const args = turn === 'guide' ? {} : {owner: turn === 'read' ? readOwner : owner, target: turn === 'read' ? answer ?? propose : `id:${id}`, ...(turn === 'read' ? {} : {
         ...immediateLight, ...(turn === 'power' ? {powerLiteral: 'off'} : {}), arguments: JSON.stringify(effectArguments)})};
       if (turn === 'read') {
         priorRequestShared ||= init.body.includes(instruction);
-        if (result !== undefined) reads.push(result);
+        if (result?.startsWith('{') === true) reads.push(result);
+        if (proposeTool) proposedRead = true;
       }
-      const usage = {input_tokens: 50, output_tokens: 20};
+      const usage = {input_tokens: 50, output_tokens: 20, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
       return Promise.resolve(Response.json(adapter === 'anthropic'
-        ? {content: result === undefined ? [{type: 'tool_use', id: effect, name, input: args}]
-          : [{type: 'text', text: 'The fixture lookup is complete.'}], stop_reason: result === undefined ? 'tool_use' : 'end_turn', usage}
-        : {status: 'completed', output: result === undefined
-          ? [{type: 'function_call', id: `fc_${effect}`, call_id: effect, name, arguments: JSON.stringify(args)}]
+        ? {content: proposeTool ? [{type: 'tool_use', id: modelToolId, name, input: args}]
+          : [{type: 'text', text: 'The fixture lookup is complete.'}], stop_reason: proposeTool ? 'tool_use' : 'end_turn', usage}
+        : {status: 'completed', output: proposeTool
+          ? [{type: 'function_call', id: `fc_${modelToolId}`, call_id: modelToolId, name, arguments: JSON.stringify(args)}]
           : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'The fixture lookup is complete.', annotations: []}]}], usage}));
     };
     const provider = adapter === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
       : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
     const now = Date.now();
-    const w = await world(context, {provider, share: sharing(), tools: ['control_brightness_set', 'control_power_set', 'read_devices'],
+    observedAtMs = now;
+    const w = await world(context, {provider, share, tools: ['control_brightness_set', 'control_power_set', 'read_devices', 'read_hub_guide'],
       dispatch: data => {
         requests.push(data);
         if (data.family === 'catalog-action' && data.target === id && data.command === 'brightness-set' && typeof data.data.percent === 'number') {
@@ -5178,12 +5208,33 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       }}, undefined, now);
     const pixoo = w.bus.connect(owner);
     context.after(() => pixoo.close());
-    await pixoo.serveSync(['device'], () => ({revision: 1, states: [selected, alias].map(device => {
-      const data: DeviceRecord = device.id !== id ? device : {...device, observed: {
-        status: 'known', observedAtMs: now, power: {status: 'known', value: powered}, brightness: {status: 'known', value: observed},
-      }};
-      return {type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data};
-    })}));
+    const state = (data: DeviceRecord) => ({
+      type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+    });
+    let probeStore = w.store();
+    afterRead = () => {
+      if (turn !== 'read' || !proposedRead) return false;
+      const current = probeStore.latest().find(task => task.profile === 'bunny');
+      return current !== undefined && probeStore.calls(current.id).some(call => call.kind === 'tool' && call.deviceLookup?.match !== undefined);
+    };
+    await pixoo.serveSync(['device'], () => {
+      const afterTool = afterRead();
+      return {revision: 1, states: [state({...selected,
+        generation: change === 'prior-generation' || afterTool && change === 'generation' ? {epoch: 'replacement', sequence: 0} : selected.generation,
+        observed: {status: 'known', observedAtMs: afterTool && change === 'observation' ? observedAtMs + 1 : observedAtMs,
+          power: {status: 'known', value: powered}, brightness: {status: 'known', value: observed}},
+      }), state(alias), state(unrelated)]};
+    });
+    const otherOwner = w.bus.connect(WEMO_OWNER);
+    context.after(() => otherOwner.close());
+    await otherOwner.serveSync(['device'], () => ({revision: 1, states: [
+      state({...plug, observed: {status: 'known', observedAtMs, power: {status: 'known', value: true}, brightness: unknown}}),
+      ...(change === 'duplicate' && afterRead() ? [state({...selected, kind: 'wemo'})] : []),
+    ]}));
+    const volcano = w.bus.connect('bunny/modules/volcano');
+    context.after(() => volcano.close());
+    await volcano.serveSync(['device'], () => ({revision: 1, states: readOnlyOverlap
+      ? [state({...selected, kind: 'volcano', label: 'Fixture Read-only Display'})] : []}));
     await control(w.core, w.module(), 'enable');
 
     assert.equal((await input(w.core, w.module(), instruction)).status, 'accepted');
@@ -5217,6 +5268,166 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     assert.match(reads[0] ?? '', /"brightness":\{"status":"known","value":37\}/u);
     assert.match(reads[0] ?? '', /"power":\{"status":"known","value":false\}/u);
     assert.doesNotMatch(reads[0] ?? '', /fixture-other-display/u);
+
+    const ask = async (prompt: string) => {
+      proposedRead = false;
+      const prior = task(w)?.taskId;
+      assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+      await until(() => task(w)?.taskId !== prior && ['succeeded', 'failed', 'waiting'].includes(status(w) ?? ''));
+    };
+    const unreported = async () => {
+      const content = await w.module().manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
+      assert.ok(content !== undefined && !('error' in content));
+      return (JSON.parse(Buffer.from(content.bytes).toString()) as {day: {unreported: number}}).day.unreported;
+    };
+
+    for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound', 'lookalike',
+      'unknown-name', 'unknown-id', 'late-old-result', 'multiple', 'two-lookups', 'correction', 'hidden-newer',
+      'prior-generation', 'saved-blank', 'neutral', 'unrelated-guide', 'withheld-status', 'withheld-local-label',
+      'withheld-external-label', 'mixed-withheld-status'] as const) {
+      change = 'none';
+      withheldOwnerMessage = undefined;
+      hideOtherField = undefined;
+      propose = selected.label ?? id;
+      await ask(`What brightness does ${selected.label} report?`);
+      assert.equal(status(w), 'succeeded');
+      if (variation === 'unknown-name' || variation === 'hidden-newer' || variation === 'late-old-result') {
+        const earlier = task(w)?.taskId;
+        assert.ok(earlier !== undefined);
+        propose = 'Porch Display';
+        await ask('What brightness does Porch Display report?');
+        assert.equal(reads.at(-1), '{"devices":[]}');
+        if (variation === 'late-old-result') {
+          const store = w.store();
+          const earlierTask = store.task(earlier);
+          const earlierLookup = store.calls(earlier).find(call => call.deviceLookup?.match?.id === id);
+          assert.ok(earlierTask && earlierLookup?.result != null);
+          const late = { ...earlierLookup, id: `${earlierLookup.id}-late` };
+          store.saveCall(late);
+          store.message(earlierTask, late.id, 'tool', earlierLookup.result, now);
+        }
+        if (variation === 'hidden-newer') {
+          const latest = task(w);
+          assert.ok(latest);
+          withheldOwnerMessage = latest.taskId + '-prompt';
+        }
+      }
+      if (variation === 'two-lookups') {
+        propose = `id:${unrelated.id}`;
+        await ask(`Compare the brightness of ${selected.label} and id:${unrelated.id}.`);
+        assert.match(reads.at(-1) ?? '', new RegExp(unrelated.id));
+      }
+      if (variation === 'neutral' || variation === 'unknown-id' || variation === 'withheld-status' ||
+          variation === 'withheld-local-label' || variation === 'withheld-external-label') {
+        turn = 'chatter';
+        hideOtherField = variation === 'withheld-status' ? 'status' : variation === 'withheld-local-label' ? 'local-label'
+          : variation === 'withheld-external-label' ? 'external-label' : undefined;
+        const message = variation === 'neutral' ? 'Thanks for checking.' : variation === 'unknown-id'
+          ? 'Now let’s talk about display id:missing-panel instead.' : 'I meant Unrelated Display for the next question.';
+        await ask(message);
+        turn = 'read';
+      }
+      if (variation === 'unrelated-guide') {
+        turn = 'guide';
+        await ask('What capabilities are described in the Hub guide?');
+        assert.equal(status(w), 'succeeded');
+        turn = 'read';
+      }
+      if (variation === 'mixed-withheld-status') {
+        hideOtherField = 'status';
+        await ask(`Compare the brightness of ${selected.label} and ${unrelated.label}.`);
+        assert.match(reads.at(-1) ?? '', /"id":"fixture-context-display"/u);
+        assert.doesNotMatch(reads.at(-1) ?? '', /unrelated-display/u);
+      }
+      if (variation === 'correction' || variation === 'multiple') {
+        turn = 'chatter';
+        await ask(variation === 'multiple' ? `Compare ${selected.label} and id:${unrelated.id}.`
+          : `Stop referring to ${selected.label}. I mean the other display.`);
+        turn = 'read';
+      }
+      change = variation === 'grant' || variation === 'generation' || variation === 'prior-generation' || variation === 'duplicate' || variation === 'observation' ? variation : 'none';
+      propose = variation === 'saved-blank' ? '' : `id:${variation === 'unbound' ? unrelated.id : variation === 'lookalike' ? alias.id : id}`;
+      const callsBefore: number = reads.length;
+      const spendBefore = await unreported();
+      await ask(question);
+      assert.equal(await unreported(), spendBefore, 'local refusal leaves no unreported provider charge');
+      if (variation === 'unknown-name' || variation === 'unknown-id' || variation === 'late-old-result' || variation === 'multiple' || variation === 'two-lookups' ||
+          variation === 'correction' || variation === 'hidden-newer' || variation === 'prior-generation' ||
+          variation.startsWith('withheld-') || variation === 'mixed-withheld-status') {
+        assert.equal(status(w), 'waiting', variation);
+        assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up?');
+        assert.equal(reads.length, callsBefore, 'the focused question sends no stale device facts');
+        const waiting = task(w)?.taskId;
+        if (variation === 'unknown-name') {
+          proposedRead = false;
+          await w.restart();
+          probeStore = w.store();
+          assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up?');
+        }
+        assert.equal((await input(w.core, w.module(), `id:${id}`, true)).status, 'accepted');
+        await until(() => status(w) === 'succeeded');
+        assert.equal(task(w)?.taskId, waiting);
+        assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
+      } else if (variation === 'observation' || variation === 'unbound' || variation === 'lookalike' || variation === 'saved-blank' ||
+          variation === 'neutral' || variation === 'unrelated-guide') {
+        assert.equal(status(w), 'succeeded');
+        assert.equal(reads.length, callsBefore + 1);
+        if (variation === 'unbound' || variation === 'lookalike') assert.equal(reads.at(-1), '{"devices":[]}');
+        else assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
+      } else {
+        assert.equal(status(w), 'failed', variation);
+        assert.equal(task(w)?.code, 'forbidden', variation);
+        assert.equal(reads.length, callsBefore, 'stale proof cannot reach the provider');
+      }
+      assert.equal(requests.length, 2, 'none of the status probes dispatch writes');
+    }
+    change = 'none';
+    propose = 'Fixture Plug';
+    await ask('Is Fixture Plug on?');
+    assert.equal(status(w), 'succeeded');
+    const beforePlugFollowUp = reads.length;
+    propose = `id:${plug.id}`;
+    await ask('Is it on?');
+    assert.equal(status(w), 'succeeded');
+    assert.equal(reads.length, beforePlugFollowUp + 1);
+    assert.match(reads.at(-1) ?? '', /"owner":"bunny\/modules\/wemo"/u);
+    assert.match(reads.at(-1) ?? '', /"power":\{"status":"known","value":true\}/u);
+    assert.equal(requests.length, 2, 'the common Wemo status path sends zero writes');
+
+    for (const choice of ['after-disappearance', 'qualified', 'named-answer', 'missing-integration'] as const) {
+      readOnlyOverlap = true;
+      readOwner = owner;
+      propose = `id:${id}`;
+      const beforeCollision: number = reads.length;
+      await ask(`What brightness does id:${id} report?`);
+      assert.equal(status(w), 'waiting', choice);
+      const waiting = task(w)?.taskId;
+      const questionId = task(w)?.questionId;
+      assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up? Include its integration if the ID is shared.');
+      assert.equal(reads.length, beforeCollision, 'a guessed owner shares no facts on the original request');
+      if (choice === 'after-disappearance') {
+        readOnlyOverlap = false;
+        proposedRead = false;
+        await w.restart();
+        probeStore = w.store();
+        assert.equal(task(w)?.questionId, questionId);
+      }
+      const selection = choice === 'named-answer' ? selected.label ?? id : `${choice === 'qualified' ? 'Pixoo ' : ''}id:${id}`;
+      assert.equal((await input(w.core, w.module(), selection, true)).status, 'accepted');
+      await until(() => status(w) === 'succeeded');
+      assert.equal(task(w)?.taskId, waiting);
+      if (choice === 'missing-integration') {
+        assert.equal(reads.at(-1), '{"devices":[]}');
+      } else {
+        assert.match(reads.at(-1) ?? '', /"owner":"bunny\/modules\/pixoo"/u);
+        for (const _retry of [1, 2]) {
+          await ask(question);
+          assert.equal(status(w), 'succeeded');
+          assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
+        }
+      }
+      assert.equal(requests.length, 2, 'the disambiguated reads never submit a device command');
+    }
   });
 }
 
