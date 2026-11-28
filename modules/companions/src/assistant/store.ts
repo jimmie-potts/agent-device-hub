@@ -376,11 +376,11 @@ export class AssistantStore {
       .iterate(conversationId, through, profile, profile) as Iterable<HostedHistoryMessage>;
   }
   /** Use append order, not the completion order of earlier tasks. */
-  latestOwnerExchange(conversationId: string, through: number): {id: string; taskId: string} | undefined {
+  ownerExchangesNewestFirst(conversationId: string, through: number): Iterable<{id: string; taskId: string}> {
     return this.database.prepare(`SELECT id,task_id AS taskId FROM assistant_messages
       WHERE conversation_id=? AND seq<=? AND role='owner'
       AND json_extract(record,'$.speakerId')='owner' AND json_extract(record,'$.provenance.imported')=0
-      ORDER BY seq DESC LIMIT 1`).get(conversationId, through) as {id: string; taskId: string} | undefined;
+      ORDER BY seq DESC`).iterate(conversationId, through) as Iterable<{id: string; taskId: string}>;
   }
   historySourceRevision(id: string): number | undefined {
     const row = this.database.prepare(`SELECT COALESCE(json_extract(record,'$.revision'),0) AS revision

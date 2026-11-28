@@ -490,6 +490,7 @@ function relativeLightingValue(family: 'brightness-set' | 'lifx-temperature-set'
 export type LightingQuestion = {
   requestId: string; owner: string; target: string;
   reference: string; modeRevision: number | null;
+  deviceVersion?: Pick<DeviceRecord, 'configurationRevision' | 'generation'>;
 } & ({kind: 'missing-saturation'; hue: number; unitClarified?: true}
   | {kind: 'setting-slot'; family: Family; slot: LightingSlot; fixed?: number}
   | {kind: 'quantity-clarification'; family: Family; unit: QuantityUnit; operation: Quantity['kind'] | 'color'});

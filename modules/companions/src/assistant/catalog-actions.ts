@@ -188,8 +188,12 @@ export class ConversationActions {
     });
   }
 
+  async deviceReadRecords(parent: TraceContext): Promise<Match[]> {
+    return (await this.#deviceRecords(assistantDeviceOwners, parent)).rows;
+  }
+
   async deviceSubjectMatches(subject: string, parent: TraceContext): Promise<Match[]> {
-    const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
+    const rows = await this.deviceReadRecords(parent);
     const id = literalDeviceId(subject);
     return rows.filter(({device}) => id === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === id);
   }

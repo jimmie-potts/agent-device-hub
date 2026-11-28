@@ -1430,7 +1430,8 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 - **THEN** the Hub SHALL use a saved single-match lookup for that exchange, or a verified control binding for the same owner source, to identify the device for a fresh read.
 - **AND** a missing or ambiguous lookup SHALL clear the prior reference. The Hub SHALL ask which device the owner means and use the authenticated answer to resolve the lookup without forwarding stale facts.
 - **AND** the Hub SHALL recheck exact device identity, owner sources and current grants both when reading facts and before forwarding the result. An unavailable newer owner message SHALL NOT revive an older binding. A later observation of the same device SHALL NOT invalidate the permitted sample.
-- **AND** an exact owner selection with an authenticated setting-slot answer can ground a fresh read after a refused write without treating the write as applied.
+- **AND** an intervening completed exchange that does not select or look up a device SHALL leave the saved reference available.
+- **AND** an exact owner selection with an authenticated setting-slot answer can ground a fresh read after a refused write when the saved device version still matches, including after a restart that only changed the generation epoch. A legacy setting question without version proof requires the owner to identify the device again. A read SHALL NOT treat the refused write as applied.
 - **AND** the status request SHALL send no device write. A local refusal before provider transmission SHALL NOT retain a charge for that unsent call.
 
 #### Scenario: A hosted device read omits its selector

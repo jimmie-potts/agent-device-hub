@@ -246,7 +246,9 @@ const exclusionsInDeviceRequest = /\b(?:except|rather than|instead of|not|don t|
 const deviceLookupQuestion = 'Which exact device should I look up?';
 const deviceLookupNotResolved = JSON.stringify({devices: [], instruction: deviceLookupQuestion});
 const lookupRepair = JSON.stringify({devices: [], instruction: 'Retry read_devices once with an explicit device name or ID from the current owner request. If the target is still unclear, ask which exact device the owner means.'});
-type ContextualDeviceRead = {match: NonNullable<SavedDeviceLookup['match']>; modelCallId: string};
+type DeviceLookupMatch = NonNullable<SavedDeviceLookup['match']>;
+type DeviceReadReference = DeviceLookupMatch & {allowRestart?: true};
+type ContextualDeviceRead = {match: DeviceLookupMatch; modelCallId: string};
 const UNSENT_MODEL_USAGE: TokenUsage = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0};
 type DeviceLookupStage = 'initial' | 'repair' | 'unresolved' | 'repaired' | 'answered';
 type DeviceLookupAdmission = {kind: 'named'; lookup: NamedDeviceLookup} | {kind: 'contextual'} | {kind: 'blocked'};
@@ -2337,7 +2339,7 @@ export class AssistantEngine {
       }
       if (includesReplay && scope !== undefined && scope.contextualReads.size > 0) {
         const bindings = scope.contextualReads;
-        const rows = await this.#lightingDevices(parent);
+        const rows = await this.#catalog().deviceReadRecords(parent);
         this.#fence(active);
         current = this.#task(task.id);
         eligible = this.#hostedHistory(current);
@@ -2500,6 +2502,19 @@ export class AssistantEngine {
     const lighting = paid && call !== undefined && lightingFamily(call.name) !== undefined;
     const interpreted = command !== undefined && modelCatalogCommand(command);
     const savedControl = task.control?.requestId === `${task.id}-step-${String(state.step + 1)}` ? task.control : undefined;
+    let unresolvedContextualRead = false;
+    if (savedControl === undefined && call?.name === READ_DEVICES && deviceScope?.refers === true &&
+        typeof call.input.target === 'string' && call.input.target.trim() !== '' &&
+        deviceScope.deviceLookupAdmission(call).kind === 'contextual' && deviceScope.lookupStage === 'initial' &&
+        !ownerCancelled.test(deviceScope.request) && !exclusionsInDeviceRequest.test(normalizedControlText(deviceScope.request))) {
+      const rows = await this.#catalog().deviceReadRecords(active.span.context);
+      this.#fence(active);
+      const latest = this.#task(state.taskId);
+      const eligible = this.#hostedHistory(latest);
+      const scope = this.#supervisorScope(latest, 'supervisor', undefined, eligible);
+      unresolvedContextualRead = scope.requestId === deviceScope.requestId &&
+        this.#deviceReadSubject(latest, scope.request, scope.refers, eligible, rows, scope.lookupGranted) === undefined;
+    }
     if (savedControl !== undefined) {
       direct = savedControl;
       next = 'act';
@@ -2507,12 +2522,7 @@ export class AssistantEngine {
         this.#controlClarification(currentTask)?.id === currentTask.lightingClarification.questionId) {
       next = 'end';
       result = 'No lighting change was sent on this reply.';
-    } else if (call?.name === READ_DEVICES && deviceScope?.refers === true &&
-        typeof call.input.target === 'string' && call.input.target.trim() !== '' &&
-        deviceScope.deviceLookupAdmission(call).kind === 'contextual' && deviceScope.lookupStage === 'initial' &&
-        this.#deviceReadSubject(currentTask, deviceScope.request, deviceScope.refers, this.#hostedHistory(currentTask),
-          lightingRows ?? [], deviceScope.lookupGranted) === undefined &&
-        !ownerCancelled.test(deviceScope.request) && !exclusionsInDeviceRequest.test(normalizedControlText(deviceScope.request))) {
+    } else if (unresolvedContextualRead && call !== undefined && deviceScope !== undefined) {
       question = {id: `${state.taskId}-q${String(currentTask.questions + 1)}`, kind: 'clarification',
         text: deviceLookupQuestion, answer: null, call: call.id, proposal: null, deviceReadClarification: {requestId: deviceScope.requestId}};
     } else if (call !== undefined && deviceScope !== undefined &&
@@ -2797,39 +2807,46 @@ export class AssistantEngine {
       ...(qualifiedTargets === undefined ? {} : {qualifiedTargets}), ...(lighting === undefined ? {} : {ambiguousHistory}),
       references: references.map(reference => ({...reference, eligible: related.has(reference.id)}))};
   }
-  #previousDeviceLookup(task: Task, history: ReadonlyMap<string, HostedHistoryMessage>):
-    (Pick<NonNullable<SavedDeviceLookup['match']>, 'owner' | 'id'> & Partial<Pick<NonNullable<SavedDeviceLookup['match']>, 'configurationRevision' | 'generation'>>) | undefined {
-    if (task.contextThrough === undefined) return undefined;
-    const latest = this.store.latestOwnerExchange(task.conversationId, task.contextThrough);
-    if (latest === undefined) return undefined;
-    const ownerMessage = history.get(latest.id);
-    const prior = this.store.task(latest.taskId);
-    if (ownerMessage?.role !== 'owner' || prior?.conversationId !== task.conversationId || prior.profile !== task.profile ||
-        prior.status !== 'succeeded' && prior.status !== 'failed') return undefined;
-    const effects = this.store.calls(prior.id).filter(call => call.status === 'succeeded').sort((a, b) => b.ordinal - a.ordinal);
-    const lookups = effects.flatMap(call => call.deviceLookup?.source.id === latest.id ? [call.deviceLookup] : []);
-    const [lookup] = lookups;
-    if (lookup !== undefined) {
-      const match = lookup.match;
-      if (match === undefined || lookup.source.revision !== ownerMessage.revision) return undefined;
-      for (const earlier of lookups.slice(1)) {
-        if (earlier.match === undefined) break;
-        if (earlier.match.id !== match.id || earlier.match.owner !== match.owner) return undefined;
+  #previousDeviceLookup(task: Task, history: ReadonlyMap<string, HostedHistoryMessage>, rows: readonly LightingDevice[],
+    granted: (id: string) => boolean): DeviceReadReference | undefined {
+    if (task.contextThrough === undefined || task.transcript.filter(item => item.role === 'owner').length > 1) return undefined;
+    const visible = rows.filter(row => granted(row.device.id)).map(row => lightingReference(row, true));
+    for (const exchange of this.store.ownerExchangesNewestFirst(task.conversationId, task.contextThrough)) {
+      const message = history.get(exchange.id);
+      const prior = this.store.task(exchange.taskId);
+      if (message?.role !== 'owner' || prior?.conversationId !== task.conversationId || prior.profile !== task.profile ||
+          prior.status !== 'succeeded' && prior.status !== 'failed') return undefined;
+      const effects = this.store.calls(prior.id).filter(call => call.status === 'succeeded').sort((a, b) => b.ordinal - a.ordinal);
+      const lookups = effects.flatMap(call => call.deviceLookup?.source.id === exchange.id ? [call.deviceLookup] : []);
+      const [lookup] = lookups;
+      if (lookup !== undefined) {
+        const match = lookup.match;
+        if (match === undefined || lookup.source.revision !== message.revision) return undefined;
+        for (const earlier of lookups.slice(1)) {
+          if (earlier.match === undefined) break;
+          if (earlier.match.id !== match.id || earlier.match.owner !== match.owner) return undefined;
+        }
+        return match;
       }
-      return match;
+      if (prior.lightingDecision !== undefined) return this.#controlReadReference(prior, message.id, effects, history);
+      if (prior.status !== 'succeeded' || ownerCancelled.test(message.text) ||
+          prior.transcript.some(item => item.role === 'assistant' && item.calls.length > 0) || exactControlIds(message.text).length > 0 || controlReferenceIds(visible, message.text).length > 0) return undefined;
     }
-    // A saved lighting-slot answer can identify a device even when the action was refused.
+    return undefined;
+  }
+  #controlReadReference(prior: Task, messageId: string, effects: readonly Call[],
+    history: ReadonlyMap<string, HostedHistoryMessage>): DeviceReadReference | undefined {
     const decision = prior.lightingDecision, question = prior.question;
     if (decision?.intent !== 'set' || decision.execution !== 'immediate' || decision.owner === undefined || decision.target === undefined) return undefined;
     const original = history.get(decision.requestId);
     if (original?.role !== 'owner' || original.revision !== decision.requestRevision) return undefined;
-    const answeredSlot = question?.answer != null && latest.id === `${question.id}-answer` &&
+    const answeredSlot = question?.answer != null && messageId === `${question.id}-answer` &&
       prior.lightingClarification?.questionId === question.id && prior.lightingClarification.requestId === decision.requestId &&
       prior.lightingClarification.target === decision.target && prior.lightingClarification.owner === decision.owner;
-    if (latest.id !== decision.requestId && !answeredSlot) return undefined;
+    if (messageId !== decision.requestId && !answeredSlot) return undefined;
     const accepted = effects.find(call => call.result?.startsWith('accepted') === true &&
       call.action?.control?.ownerMessageIds[0] === decision.requestId &&
-      (!answeredSlot || call.action.control.ownerMessageIds.includes(latest.id)))?.action?.control?.proposal;
+      (!answeredSlot || call.action.control.ownerMessageIds.includes(messageId)))?.action?.control?.proposal;
     if (accepted?.family === 'catalog-action' && accepted.binding?.kind === 'device' &&
         accepted.binding.owner === decision.owner && accepted.binding.target === decision.target) {
       const {owner, target: id, configurationRevision, generation} = accepted.binding;
@@ -2841,8 +2858,9 @@ export class AssistantEngine {
         generation: accepted.data.expectedGeneration};
     }
     // An exact owner selection and its authenticated slot answer can ground a new read after a refused write.
-    const exact = exactControlIds(original.text);
-    return answeredSlot && exact.length === 1 && exact[0] === decision.target ? {owner: decision.owner, id: decision.target} : undefined;
+    const exact = exactControlIds(original.text), version = prior.lightingClarification?.deviceVersion;
+    return answeredSlot && exact.length === 1 && exact[0] === decision.target && version !== undefined
+      ? {owner: decision.owner, id: decision.target, ...version, allowRestart: true} : undefined;
   }
   #deviceReadSubject(task: Task, request: string, refers: boolean, history: ReadonlyMap<string, HostedHistoryMessage>,
     rows: readonly LightingDevice[], granted: (id: string) => boolean): LightingDevice | undefined {
@@ -2851,13 +2869,15 @@ export class AssistantEngine {
     if (named.length > 0) return named.length === 1 ? named[0] : undefined;
     if (!refers || exactControlIds(request).length > 0 ||
         controlReferenceIds(rows.filter(row => granted(row.device.id)).map(row => lightingReference(row, true)), request).length > 0) return undefined;
-    const reference = this.#previousDeviceLookup(task, history);
+    const reference = this.#previousDeviceLookup(task, history, rows, granted);
     if (reference === undefined) return undefined;
     const matches = rows.filter(({device}) => device.id === reference.id);
     const [selected] = matches;
-    return matches.length === 1 && selected?.owner === reference.owner &&
-      (reference.configurationRevision === undefined || reference.configurationRevision === selected.device.configurationRevision) &&
-      (reference.generation === undefined || isDeepStrictEqual(reference.generation, selected.device.generation)) ? selected : undefined;
+    if (matches.length !== 1 || selected?.owner !== reference.owner ||
+        reference.configurationRevision !== selected.device.configurationRevision) return undefined;
+    const generation = selected.device.generation;
+    return isDeepStrictEqual(reference.generation, generation) || reference.allowRestart === true &&
+      reference.generation.epoch !== generation.epoch && reference.generation.sequence === generation.sequence ? selected : undefined;
   }
   #lightingDevices(parent: TraceContext): Promise<LightingDevice[]> {
     return this.#catalog().lightingDevices(parent, this.options.devices?.(ASSISTANT_LIGHT_OWNER) ?? [],
@@ -2934,7 +2954,8 @@ export class AssistantEngine {
       if (previous.reference !== reference || previous.modeRevision !== scope.modeRevision) return 'refused: revision-conflict';
       if (family !== (previous.kind === 'missing-saturation' ? 'lifx-color-set' : previous.family)) return 'refused: invalid-request';
     }
-    const binding = {requestId: scope.request.id, owner: row.owner, target: row.device.id, reference, modeRevision: scope.modeRevision};
+    const binding = {requestId: scope.request.id, owner: row.owner, target: row.device.id, reference, modeRevision: scope.modeRevision,
+      deviceVersion: {configurationRevision: row.device.configurationRevision, generation: row.device.generation}};
     if (interpretation.missing !== 'none') {
       const slot = interpretation.missing;
       if (previous !== undefined || this.#controlClarification(current)?.answer != null || !lightingSlotBelongsTo(family, slot)) {
@@ -3486,7 +3507,7 @@ export class AssistantEngine {
           (call.name === READ_DEVICES && lookup?.kind === 'contextual' || owner === ASSISTANT_LIGHT_OWNER) &&
           typeof proposedTarget === 'string' && (call.name === READ_DEVICES || proposedTarget !== '') &&
           (scope.catalogSubject === undefined || scope.brightnessTarget === undefined)) {
-        const rows = await this.#lightingDevices(parent);
+        const rows = call.name === READ_DEVICES ? await this.#catalog().deviceReadRecords(parent) : await this.#lightingDevices(parent);
         this.#fence(active);
         const currentTask = this.#task(task.id);
         const history = this.#hostedHistory(currentTask);

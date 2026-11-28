@@ -5132,6 +5132,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     const selected = {...light(id, 'Fixture Display'), kind: 'pixoo' as const};
     const alias = {...selected, id: 'fixture-other-display', label: `id:${id}`};
     const unrelated = {...selected, id: 'unrelated-display', label: 'Unrelated Display'};
+    const plug = {...light('fixture-context-plug', 'Fixture Plug'), kind: 'wemo' as const};
     const requests: AssistantDispatch[] = [];
     const reads: string[] = [];
     let observed = 9;
@@ -5140,13 +5141,13 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     let priorRequestShared = false;
     let change: 'none' | 'grant' | 'generation' | 'prior-generation' | 'duplicate' | 'observation' = 'none';
     let observedAtMs = Date.now();
-    let readSnapshots = 0;
     let proposedRead = false;
+    let afterRead = () => false;
     let withheldOwnerMessage: string | undefined;
     let propose = `id:${id}`;
     const policy = sharing();
-    const share = (query: ShareQuery) => policy(query) && !(change === 'grant' && proposedRead && readSnapshots > 2 &&
-      query.destination === 'external-model' && query.source === 'devices' && query.field === 'status' && query.record === id) &&
+    const share = (query: ShareQuery) => policy(query) && !(change === 'grant' &&
+      query.destination === 'external-model' && query.source === 'devices' && query.field === 'status' && query.record === id && afterRead()) &&
       !(withheldOwnerMessage !== undefined && query.destination === 'external-model' && query.source === 'conversation' &&
         query.field === 'excerpt' && query.record === withheldOwnerMessage);
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
@@ -5163,12 +5164,12 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       const modelToolId = answer ? `${effect}-answer` : effect;
       const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set' : 'read_devices';
       const effectArguments = turn === 'write' ? {percent: setting} : {on: false};
-      const args = {owner, target: turn === 'read' ? answer ? result : propose : `id:${id}`, ...(turn === 'read' ? {} : {
+      const args = {owner: turn === 'read' ? 'auto' : owner, target: turn === 'read' ? answer ? result : propose : `id:${id}`, ...(turn === 'read' ? {} : {
         ...immediateLight, ...(turn === 'power' ? {powerLiteral: 'off'} : {}), arguments: JSON.stringify(effectArguments)})};
       if (turn === 'read') {
         priorRequestShared ||= init.body.includes(instruction);
         if (result?.startsWith('{') === true) reads.push(result);
-        if (proposeTool) {readSnapshots = 0; proposedRead = true;}
+        if (proposeTool) proposedRead = true;
       }
       const usage = {input_tokens: 50, output_tokens: 20, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}};
       return Promise.resolve(Response.json(adapter === 'anthropic'
@@ -5198,20 +5199,26 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     const state = (data: DeviceRecord) => ({
       type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
     });
+    let probeStore = w.store();
+    afterRead = () => {
+      if (turn !== 'read' || !proposedRead) return false;
+      const current = probeStore.latest().find(task => task.profile === 'bunny');
+      return current !== undefined && probeStore.calls(current.id).some(call => call.kind === 'tool' && call.deviceLookup?.match !== undefined);
+    };
     await pixoo.serveSync(['device'], () => {
-      // The first two reads after a model proposal bind the target and produce the tool result.
-      // A subsequent read sees the changed device or grant before the result replays.
-      const afterTool = turn === 'read' && proposedRead && readSnapshots++ >= 2;
+      const afterTool = afterRead();
       return {revision: 1, states: [state({...selected,
         generation: change === 'prior-generation' || afterTool && change === 'generation' ? {epoch: 'replacement', sequence: 0} : selected.generation,
         observed: {status: 'known', observedAtMs: afterTool && change === 'observation' ? observedAtMs + 1 : observedAtMs,
           power: {status: 'known', value: powered}, brightness: {status: 'known', value: observed}},
       }), state(alias), state(unrelated)]};
     });
-    const otherOwner = w.bus.connect('bunny/modules/nanoleaf');
+    const otherOwner = w.bus.connect(WEMO_OWNER);
     context.after(() => otherOwner.close());
-    await otherOwner.serveSync(['device'], () => ({revision: 1, states: change === 'duplicate' && proposedRead && readSnapshots > 2
-      ? [state({...selected, kind: 'nanoleaf'})] : []}));
+    await otherOwner.serveSync(['device'], () => ({revision: 1, states: [
+      state({...plug, observed: {status: 'known', observedAtMs, power: {status: 'known', value: true}, brightness: unknown}}),
+      ...(change === 'duplicate' && afterRead() ? [state({...selected, kind: 'wemo'})] : []),
+    ]}));
     await control(w.core, w.module(), 'enable');
 
     assert.equal((await input(w.core, w.module(), instruction)).status, 'accepted');
@@ -5259,7 +5266,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     };
 
     for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound', 'lookalike',
-      'unknown-name', 'late-old-result', 'multiple', 'two-lookups', 'correction', 'hidden-newer', 'prior-generation', 'saved-blank'] as const) {
+      'unknown-name', 'unknown-id', 'late-old-result', 'multiple', 'two-lookups', 'correction', 'hidden-newer',
+      'prior-generation', 'saved-blank', 'neutral'] as const) {
       change = 'none';
       withheldOwnerMessage = undefined;
       propose = selected.label ?? id;
@@ -5291,6 +5299,11 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         await ask(`Compare the brightness of ${selected.label} and id:${unrelated.id}.`);
         assert.match(reads.at(-1) ?? '', new RegExp(unrelated.id));
       }
+      if (variation === 'neutral' || variation === 'unknown-id') {
+        turn = 'chatter';
+        await ask(variation === 'neutral' ? 'Thanks for checking.' : 'Now let’s talk about display id:missing-panel instead.');
+        turn = 'read';
+      }
       if (variation === 'correction' || variation === 'multiple') {
         turn = 'chatter';
         await ask(variation === 'multiple' ? `Compare ${selected.label} and id:${unrelated.id}.`
@@ -5303,32 +5316,46 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       const spendBefore = await unreported();
       await ask(question);
       assert.equal(await unreported(), spendBefore, 'local refusal leaves no unreported provider charge');
-      if (variation === 'unknown-name' || variation === 'late-old-result' || variation === 'multiple' || variation === 'two-lookups' ||
+      if (variation === 'unknown-name' || variation === 'unknown-id' || variation === 'late-old-result' || variation === 'multiple' || variation === 'two-lookups' ||
           variation === 'correction' || variation === 'hidden-newer' || variation === 'prior-generation') {
         assert.equal(status(w), 'waiting', variation);
         assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up?');
         assert.equal(reads.length, callsBefore, 'the focused question sends no stale device facts');
         const waiting = task(w)?.taskId;
         if (variation === 'unknown-name') {
+          proposedRead = false;
           await w.restart();
+          probeStore = w.store();
           assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up?');
         }
         assert.equal((await input(w.core, w.module(), `id:${id}`, true)).status, 'accepted');
         await until(() => status(w) === 'succeeded');
         assert.equal(task(w)?.taskId, waiting);
         assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
-      } else if (variation === 'observation' || variation === 'unbound' || variation === 'lookalike' || variation === 'saved-blank') {
+      } else if (variation === 'observation' || variation === 'unbound' || variation === 'lookalike' || variation === 'saved-blank' || variation === 'neutral') {
         assert.equal(status(w), 'succeeded');
         assert.equal(reads.length, callsBefore + 1);
         if (variation === 'unbound' || variation === 'lookalike') assert.equal(reads.at(-1), '{"devices":[]}');
         else assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
       } else {
         assert.equal(status(w), 'failed', variation);
-        assert.equal(task(w)?.code, 'forbidden');
+        assert.equal(task(w)?.code, 'forbidden', variation);
         assert.equal(reads.length, callsBefore, 'stale proof cannot reach the provider');
       }
       assert.equal(requests.length, 2, 'none of the status probes dispatch writes');
     }
+    change = 'none';
+    propose = 'Fixture Plug';
+    await ask('Is Fixture Plug on?');
+    assert.equal(status(w), 'succeeded');
+    const beforePlugFollowUp = reads.length;
+    propose = `id:${plug.id}`;
+    await ask('Is it on?');
+    assert.equal(status(w), 'succeeded');
+    assert.equal(reads.length, beforePlugFollowUp + 1);
+    assert.match(reads.at(-1) ?? '', /"owner":"bunny\/modules\/wemo"/u);
+    assert.match(reads.at(-1) ?? '', /"power":\{"status":"known","value":true\}/u);
+    assert.equal(requests.length, 2, 'the common Wemo status path sends zero writes');
   });
 }
 
