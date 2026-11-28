@@ -1,0 +1,89 @@
+## ADDED Requirements
+
+### Requirement: Contextual lighting settings
+
+Conversation SHALL use the selected supervisor's interpretation of the current authenticated owner request to resolve supported lighting power, brightness, color and temperature. The Hub SHALL validate the result against registered device identity, capability, settings, grants and current command guards. The current request supplies action authority. Authorized conversation context supplies references. The supervisor SHALL declare read or set intent, timing, and any missing setting independently. A setting answer SHALL retain the original timing and exact device.
+
+#### Scenario: Follow-up setting and read
+
+- **WHEN** the owner sets a configured light's brightness, refers back to the light to change a supported setting, and asks how the light is set
+- **THEN** each valid setting change reaches the exact light once through its registered writer
+- **AND** the status question reads the known setting under the current grants and sends no write.
+- **WHEN** a lighting proposal declares a read, a conditional or future scope, or unresolved timing
+- **THEN** the Hub sends no immediate lighting command.
+- **WHEN** a proposed boolean conflicts with an explicit on or off value in its quoted owner evidence
+- **THEN** the Hub refuses the proposed command before dispatch.
+
+#### Scenario: A conditional lighting request needs a setting
+
+- **WHEN** the supervisor declares a conditional or later lighting change and identifies a missing setting
+- **THEN** Conversation asks once for that setting and saves the current request, condition, device and setting slot.
+- **AND** answering the question after a restart retains the original scope and sends zero immediate commands.
+- **AND** a generic clarification without a saved lighting scope cannot supply execution authority.
+
+#### Scenario: Ineligible or ambiguous proposal
+
+- **WHEN** the proposal has an ambiguous target or lacks a required setting
+- **THEN** Conversation asks a focused question before dispatch.
+- **WHEN** the settings are invalid or the permission, device binding, capability or controller guard refuses the request
+- **THEN** the affected device receives no command.
+
+#### Scenario: Receipt after interruption
+
+- **WHEN** the action is interrupted or the same request is delivered again
+- **THEN** the original receipt remains authoritative and a possibly sent effect is not sent again.
+
+#### Scenario: Context preserves ambiguity and owner qualification
+
+- **WHEN** an earlier owner message uses a name shared by one light's ID and another light's label
+- **AND** the current owner request refers back without resolving that collision
+- **THEN** Conversation asks for the exact device and sends no command even if the model supplies an ID.
+- **WHEN** the owner qualifies a shared label by device owner
+- **THEN** the requested route may resolve that owner's eligible device.
+
+#### Scenario: A color proposal is missing saturation
+
+- **WHEN** a valid color proposal specifies hue for a resolved light and lacks saturation
+- **THEN** Conversation asks one focused saturation question and sends no command until the owner answers.
+- **AND** the completed proposal preserves the resolved target and hue and passes the current permission, mode and device revision checks before dispatch.
+- **AND** the owner answer supplies one whole saturation percentage that matches the proposed value. An answer with no usable percentage, conflicting values or incompatible units sends no command.
+
+#### Scenario: Context remains available in a read-only configuration
+
+- **WHEN** the owner asks a contextual LIFX status question with the LIFX read tool enabled
+- **THEN** Conversation reads the eligible light under the current grants without requiring or adding a lighting write tool.
+
+#### Scenario: A hosted device read omits its selector
+
+- **WHEN** the selected supervisor leaves the device selector empty and the complete current owner request binds to one permitted device
+- **THEN** the Hub reads that device and rechecks its owner, exact ID and grants before replaying the facts.
+- **WHEN** that binding is unclear
+- **THEN** the same supervisor gets one facts-free opportunity to supply an explicit selector for this request.
+- **AND** if the target remains unclear, Conversation asks which exact device the owner means before any command.
+- **AND** a cancelled read discloses no device facts. An excluded device cannot be selected via the missing-selector path.
+
+#### Scenario: Explicit quantities keep their meaning
+
+- **WHEN** the owner names a starting value and a desired value
+- **THEN** the selected supervisor distinguishes them and the Hub validates the whole desired quantity in the registered unit, including signed digits and whole numbers written in words.
+- **WHEN** a proposed absolute setting drops a sign, uses a malformed quantity, conflicts with the cited owner value or exceeds the registered bounds
+- **THEN** the Hub sends no command.
+- **WHEN** the owner supplies a numeric lighting value with repeated or conflicting signs, or declares an unsupported unit beside the quantity or separately for that setting
+- **THEN** Conversation asks for an unambiguous value in a supported unit and sends no command before the owner answers.
+- **AND** a corrected numeric answer binds to the same selected device, operation and current guards.
+
+#### Scenario: Brightness requires a determinate value
+
+- **WHEN** the current request names a clear brightness value, a fraction of brightness or a registered limit
+- **THEN** the Hub uses the stated value and unit on the resolved device. A conflicting model scalar cannot replace a fraction or registered limit. A limit named only as an exclusion or ceiling supplies no setting.
+- **AND** a fractional percent must be representable at the device step.
+- **WHEN** the brightness is missing, subjective or only qualified by a time
+- **THEN** Conversation asks once for a percent, fraction or limit. The answer must supply that value for the same device and operation before one command can be sent. A bare affirmation cannot supply a value for this open question.
+
+#### Scenario: Relative and extreme settings use registered limits
+
+- **WHEN** the owner asks for a supported relative brightness or temperature change
+- **THEN** the Hub calculates the proposed setting in the selected unit from current observed state, rounds to the registered step and stays within the registered bounds.
+- **AND** the Hub sends no command if the observation is stale or unknown, the observed base changes before dispatch, or the calculated setting is unchanged.
+- **WHEN** the owner requests a supported extreme
+- **THEN** the Hub uses the registered bound.

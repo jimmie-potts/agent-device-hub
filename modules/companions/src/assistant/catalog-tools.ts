@@ -49,6 +49,12 @@ export function modelCatalogTool(name: string): boolean {
 const draft = text('The exact draft ID or the draft name the owner supplied.');
 const draftRevision = integer("Use the owner's exact draft revision when given, or -1 to bind the current revision.");
 const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family => family !== 'nanoleaf-show-save' && family !== 'art-request');
+const QUANTITY = 'For a number, use {"kind":"absolute","amount":30,"literal":"30%","unit":"percent"}. Copy the complete signed quantity including its adjoining unit into literal. If the owner supplies a unit separately, copy it into unit. Never replace an unsupported owner unit with a supported one. Use startingLiteral for a separate starting value. For a qualitative setting, copy the current owner’s setting phrase into literal. An explicit named amount or extreme can omit literal. Ask when the value or unit is unclear.';
+const BRIGHTNESS = 'JSON with a percent field. For a number, copy the complete signed quantity and unit into literal. ' +
+  'Use startingLiteral for a separate starting value. Use increase or decrease for percentage points and increase-percent or decrease-percent for a percentage of current brightness. ' +
+  'For a limit or fraction use kind minimum, maximum, fraction-of-scale, fraction-of-maximum, fraction-of-current, increase-by-fraction-of-current or decrease-by-fraction-of-current, with the exact literal. Use the missing slot for a missing value.';
+const TEMPERATURE = `JSON with a kelvin field. ${QUANTITY} Use increase for cooler and decrease for warmer, with the amount of change in Kelvin. Use minimum or maximum for the registered Kelvin extremes.`;
+const COLOR = `JSON with hue in degrees and saturation in percent. Each field uses a whole number or an absolute quantity. ${QUANTITY} For a named color, include its exact owner quote in the literal of each value inferred from that color.`;
 export const catalogTools = [
   define(READ_HUB_GUIDE, 'read', 'Discover the Hub sources and read operations that answer current device, deadline and historical power questions.', {}),
   define(READ_DEVICE_HISTORY, 'read', 'Read a bounded page of observed power evidence and deterministic duration totals. Use the same query on later pages.', {
@@ -93,7 +99,8 @@ export const catalogTools = [
       : family === 'scene-activate' ? 'Activate the saved scene the owner requests. Use the scene name directly when the owner gives one. The Hub resolves it on the selected light under current grants. If the scene is missing or ambiguous, ask the owner for clarification. The Hub sends nothing for an unresolved scene.'
         : `Run ${family} on a configured, supported target only when requested in the current owner turn. Interpret ordinary language; never ask the owner for a JSON payload.`, {
     owner: text('The exact owner source returned by the read tool.'), target: text(family === 'playback-control' ? 'Use the requested playback ID, or auto for the unique presented playback record.' : family === 'brightness-set' ? 'Use the device ID returned by read_devices. id:<device-id> also selects that exact ID. An unambiguous label is accepted.' : 'Exact target ID, or its label if unambiguous.'),
-    arguments: text(family === 'scene-activate'
+    arguments: text(family === 'brightness-set' ? BRIGHTNESS : family === 'lifx-temperature-set' ? TEMPERATURE : family === 'lifx-color-set' ? COLOR
+      : family === 'scene-activate'
       ? 'JSON object with sceneId. Supply the owner’s exact scene name, exact scene ID, or "last-activated" when the owner asks for the last activation on the selected light. Include the matching scene reference. The Hub supplies revision and generation guards.'
       : `JSON object with the appropriate owner command fields: ${assistantRoutes[family].fields}. Do not supply revision or generation guards.`),
   })),
@@ -112,6 +119,10 @@ const references = {
   }, required: ['role', 'kind', 'disposition', 'source', 'quote'], additionalProperties: false},
 } as const satisfies ToolInputSchema['properties'][string];
 export function catalogToolWithReferences(tool: ToolDefinition): ToolDefinition {
+  if (tool.name === READ_DEVICES) return {...tool,
+    description: 'Read status and permitted controls for one device in the current owner request. Use an explicit device name or ID when known. Retry a missing selector once as instructed. Ask which device the owner means if it is still unclear. Do not look up a cancelled or excluded device.',
+    input: {...tool.input, properties: {...tool.input.properties, target: text(
+      'Device name or ID from the current owner request. Use id:<device-id> to select that exact ID. An empty selector works only for a clear single device request.')}}};
   if (!modelCatalogTool(tool.name) || tool.name === CREATE_SHOW) return tool;
   return {...tool, description: `${tool.description} If the Hub refuses a target selection or it is unclear, ask the owner which target they mean. Do not substitute a target.`,
     input: {...tool.input, properties: {...tool.input.properties, references}, required: [...tool.input.required, 'references']}};

@@ -1,4 +1,5 @@
 import {isDeepStrictEqual} from 'node:util';
+import type {ObservationBasis} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {Proposal} from './history-contract.js';
 
 export type SceneReceipt = {readonly requestId: string; readonly revision: number; readonly sceneId: string};
@@ -11,6 +12,7 @@ export type BoundControl = {
   readonly text: string;
   readonly call: string;
   readonly draftRevision?: number;
+  readonly observationBasis?: ObservationBasis;
   readonly sceneReceipt?: SceneReceipt;
   readonly modelCallId?: string;
   readonly contextTargets?: readonly string[];
@@ -19,6 +21,17 @@ export type BoundControl = {
 export const normalizedControlText = (value: string): string => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 export const containsControlValue = (input: string, value: string): boolean =>
   normalizedControlText(value) !== '' && ` ${normalizedControlText(input)} `.includes(` ${normalizedControlText(value)} `);
+
+export const ownerRequestClauses = (text: string): string[] =>
+  text.trim().split(/(?<=[.!?;,])(?:\s+|$)|[\r\n]+/u).filter(Boolean);
+
+export const ownerCancelled = /(?:^|[,.!?;]\s+)(?:never mind|cancel (?:that|the request))[.!?]?\s*$/iu;
+
+export function controlExclusion(clause: string): {affirmative: string; excluded?: string} {
+  const marker = /\b(?:except|rather than|instead of|not|don['’]t|without|leave)\b/iu.exec(clause);
+  if (marker === null) return {affirmative: clause};
+  return {affirmative: clause.slice(0, marker.index), excluded: clause.slice(marker.index + marker[0].length)};
+}
 
 function explicitWords(text: string): string | undefined {
   const addressed = normalizedControlText(text).replace(/^(?:hey )?(?:b u n n y|bunny|reachy|microduck) /u, '');
@@ -56,9 +69,9 @@ function requestedPower(input: string): {on: boolean; subject: string} | undefin
   return undefined;
 }
 
-export function powerSubject(text: string): string | undefined {
+export function explicitPowerRequest(text: string): {on: boolean; subject: string} | undefined {
   const words = explicitWords(text);
-  return words === undefined ? undefined : requestedPower(words)?.subject;
+  return words === undefined ? undefined : requestedPower(words);
 }
 
 const brightnessAfterTarget = /^(?:set|change) (.+?) brightness (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u;
@@ -73,6 +86,12 @@ export function literalToolDeviceId(target: unknown): string | undefined {
 }
 
 export const literalDeviceId = (value: string): string | undefined => /^id:([a-z0-9-]{1,128})$/u.exec(value.trim())?.[1];
+
+export function matchesControlSubject(subject: string | undefined, id: string, label: string): boolean {
+  if (subject === undefined) return false;
+  const explicit = literalDeviceId(subject);
+  return explicit === undefined ? [id, label].some(name => normalizedControlText(name) === subject) : id === explicit;
+}
 
 /** Keep an explicit ID only when it accounts for the entire subject of the recognized instruction or read. */
 export function literalDeviceSubject(text: string, subject: string): string {
@@ -89,9 +108,10 @@ export function brightnessSubject(text: string): string | undefined {
   return literalDeviceSubject(text, subject);
 }
 
-export function missingBrightness(text: string): boolean {
+export function missingBrightnessSubject(text: string): string | undefined {
   const words = explicitWords(text);
-  return words !== undefined && /^(?:set|change) .+ brightness(?: to| at)?$/u.test(words);
+  const subject = words === undefined ? undefined : /^(?:set|change) (.+) brightness(?: to| at)?$/u.exec(words)?.[1];
+  return subject === undefined ? undefined : literalDeviceSubject(text, optionalArticle(subject));
 }
 const optionalArticle = (value: string) => value.replace(/^(?:the|my) /u, '');
 const matchNumber = (expression: RegExp, input: string, requested: unknown): {subject: string} | undefined => {

@@ -3238,6 +3238,12 @@ exercises the typed proposal through the Companions engine at the dispatch
 boundary with synthetic plugs. The runtime suite and Wemo suite cover the
 tracked dispatcher and its writer. No hosted model or physical plug is needed.
 
+For contextual lighting, the Companions suite exercises Messages and Responses
+with fake providers and synthetic configured lights. It checks signed values,
+starting and desired settings, absolute bounds, relative units, fresh and
+changed observations, and zero writes at a boundary. It also checks the
+existing route bindings and receipt recovery.
+
 The Conversation maximum-on read uses a disposable Companions engine with
 synthetic Wemo and core SDK records. After the root build, the
 `assistant.test.js` cases exercise both named device reads, every limit status,
@@ -3814,3 +3820,9 @@ existing coding coordinator fixture. After the root build, run
 these cases in the Companions suite. They exercise admission through the common
 selector, expiry, uncertain workspace effects and verified teardown. The
 fixtures have no provider credentials and incur zero infrastructure cost.
+
+For contextual lighting controls, run the root build, typecheck, JavaScript
+lint, and `node scripts/native-test.mjs test:companions:built`. The existing
+Companions CI suite exercises the Messages and Responses adapters against
+synthetic registered device records and guarded dispatches. These checks use no
+hosted model or physical device.

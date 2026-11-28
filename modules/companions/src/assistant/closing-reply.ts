@@ -24,6 +24,7 @@ export function actionDescription(proposal: Proposal, approvalText: string): str
         return `Show the selected artwork on ${data.targets.join(', ')}`;
       }
       if (command === 'brightness-set') return `Set ${target} brightness to ${String(data.percent)}%`;
+      if (command === 'lifx-temperature-set') return `Set ${target} temperature to ${String(data.kelvin)} K`;
       return `${command.replaceAll('-', ' ')} on ${target}`;
     }
   }

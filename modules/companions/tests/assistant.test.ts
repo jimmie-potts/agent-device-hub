@@ -53,6 +53,7 @@ function counted(script?: (input: TurnInput, turn: number, signal: AbortSignal) 
 }
 const reply = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const call = (name: string, input: Record<string, unknown> = {}, id = `call-${name}`): TurnReply => ({text: null, calls: [{id, name, input}], stop: 'tool', units: 10});
+const immediateLight = {intent: 'set', execution: 'immediate', condition: '', missing: 'none'} as const;
 const wemoPowerArgs = (targets: readonly string[], on: boolean, contextTargets: readonly string[] = []) =>
   ({selection: targets.length === 0 ? 'group' : 'references', targets, contextTargets, on});
 const wemoPower = (targets: readonly string[], on: boolean, contextTargets?: readonly string[]) =>
@@ -99,7 +100,7 @@ const status = (w: {module: () => CompanionsModule}) => task(w)?.status;
 async function page(w: {module: () => CompanionsModule}, profile = 'bunny', view?: 'recent') {
   const content = await w.module().manifest.content?.('conversation', {query: {profile, ...(view === undefined ? {} : {view})}, signal: new AbortController().signal});
   assert.ok(content !== undefined && !('error' in content));
-  return JSON.parse(Buffer.from(content.bytes).toString()) as {messages: {id: string; role: string; text: string}[]; currentTask: {question: {kind: string; proposal: {data: {mode: string}; expectedRevision: number | null} | null; answer: string | null} | null} | null};
+  return JSON.parse(Buffer.from(content.bytes).toString()) as {messages: {id: string; role: string; text: string}[]; currentTask: {question: {kind: string; text: string; proposal: {data: {mode: string}; expectedRevision: number | null} | null; answer: string | null} | null} | null};
 }
 
 const unknown = {status: 'unknown'} as const;
@@ -3285,7 +3286,7 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     if (body.input.some(item => item.content === 'New synthetic topic')) output = [message('A fresh topic.')];
     else if (body.input.some(item => item.type === 'function_call_output')) output = [message('I checked the tool result.')];
     else if (ownerRequest === 'What is the status of catalog-plug?') output = [functionCall('read_devices', {target: 'catalog-plug', owner: 'bunny/modules/pixoo'})];
-    else if (ownerRequest === 'Turn off Catalog Plug') output = [functionCall('control_power_set', {target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
+    else if (ownerRequest === 'Turn off Catalog Plug') output = [functionCall('control_power_set', {...immediateLight, powerLiteral: 'off', target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
     else if (ownerRequest === 'What color is it?') output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
     else if (ownerRequest === 'Turn off Studio Plug') output = [reasoning, functionCall('set_wemo_power',
       wemoPowerArgs(['studio-plug'], false))];
@@ -4349,7 +4350,7 @@ void test('both hosted supervisors look up owner-named devices regardless of req
   const duplicate = {...wall, id: 'duplicate-wall'};
   const hiddenAliases = [{...duplicate, id: 'hidden-duplicate'}, {...wall, id: 'hidden-alias', label: 'Studio Wall Special'}];
   let aliasesPresent = false, duplicateVisible = false;
-  let replaceOwner = false, originalReads = 0, substituteReads = 0;
+  let replaceOwner = false, revokeStatus = false, statusRevoked = false;
   const resultByProvider = {anthropic: [] as string[], openai: [] as string[]};
   const usage = {input_tokens: 20, output_tokens: 10};
   let lookups: {target: string; owner: string}[] = [];
@@ -4374,17 +4375,27 @@ void test('both hosted supervisors look up owner-named devices regardless of req
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic device answer.', annotations: []}]}]}));
   }});
   const standard = sharing();
+  function factsSaved(): boolean {
+    const taskId = task(w)?.taskId;
+    return taskId !== undefined && w.store().calls(taskId)
+      .some(saved => saved.namedDeviceRead?.owner === owner && saved.namedDeviceRead.id === wall.id);
+  }
   const w = await world(context, {provider: anthropic, alternateProvider: openai, tools: ['read_devices', 'control_scene_activate'],
-    share: grant => standard(grant) && !(grant.source === 'devices' && grant.record?.startsWith('hidden-') === true),
+    share: grant => standard(grant) && !(grant.source === 'devices' && (grant.record?.startsWith('hidden-') === true ||
+      statusRevoked && grant.record === wall.id && grant.field === 'status')),
     dispatch: () => assert.fail('a named lookup must not dispatch')});
   const participant = w.bus.connect(owner), substitute = w.bus.connect(substituteOwner);
   context.after(async () => {await participant.close(); await substitute.close();});
   const snapshot = (records: DeviceRecord[]) => ({revision: 1, states: records.map(data => ({
     type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
   }))});
-  await participant.serveSync(['device'], () => snapshot(replaceOwner && ++originalReads > 1 ? []
-    : [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])]));
-  await substitute.serveSync(['device'], () => snapshot(replaceOwner && ++substituteReads > 1 ? [{...wall, kind: 'tidbyt'}] : []));
+  const ownerReplaced = () => replaceOwner && factsSaved();
+  await participant.serveSync(['device'], () => {
+    if (revokeStatus && factsSaved()) statusRevoked = true;
+    return snapshot(ownerReplaced() ? []
+      : [...devices, ...(aliasesPresent ? hiddenAliases : []), ...(duplicateVisible ? [duplicate] : [])]);
+  });
+  await substitute.serveSync(['device'], () => snapshot(ownerReplaced() ? [{...wall, kind: 'tidbyt'}] : []));
   await control(w.core, w.module(), 'enable');
   for (const provider of ['anthropic', 'openai'] as const) {
     const ask = async (prompt: string, selector: string, selectedOwner = 'auto', after?: string) => {
@@ -4420,18 +4431,56 @@ void test('both hosted supervisors look up owner-named devices regardless of req
     assert.deepEqual(await ask('Apply Night Sky on Hidden Wall.', 'Hidden Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Missing Wall.', 'Missing Wall'), {devices: []});
     assert.deepEqual(await ask('Apply Night Sky on Studio Wall XL.', 'Studio Wall'), {devices: []});
-    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', ''), {devices: []});
+    assert.deepEqual(await ask('Check the status of Studio Wall.', ''), statusFacts);
+    assert.deepEqual(await ask('Read id:studio-wall.', ''), statusFacts);
+    const missing = {devices: [], instruction: /Retry read_devices once/u};
+    const requireRepair = (facts: unknown) => {
+      assert.ok(typeof facts === 'object' && facts !== null && 'instruction' in facts);
+      assert.match(String(facts.instruction), missing.instruction);
+      assert.deepEqual(facts, {...missing, instruction: facts.instruction});
+    };
+    requireRepair(await ask('How bright is it now?', ''));
+    requireRepair(await ask('Check Studio Wall. Actually, use the other one.', ''));
+    requireRepair(await ask("I'm writing an example about Studio Wall. Which device did we use earlier?", ''));
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall.', '', 'auto', 'Studio Wall'), statusFacts);
+    requireRepair(await ask('Read Studio Wall or Studio Wall XL.', ''));
+    requireRepair(await ask('Read Studio Wall and the light next to it.', ''));
+    requireRepair(await ask('Read id:studio-wall and id:studio-wall-xl.', ''));
+    requireRepair(await ask('Instead of Studio Wall, apply Dusk to Side Wall.', ''));
+    requireRepair(await ask('Check the status of Studio Wall; actually, do not read Studio Wall.', ''));
+    const withdrawalResult = `${task(w)?.taskId}-result`;
+    assert.equal((await page(w, 'bunny', 'recent')).messages.find(message => message.id === withdrawalResult)?.text,
+      'Synthetic device answer.');
+    assert.deepEqual(await ask('Read Studio Wall. Never mind.', ''), {devices: []});
+    assert.deepEqual(await ask('Apply Night Sky on Studio Wall, not Dusk.', '', 'auto', 'Studio Wall'), statusFacts);
+    const beforeRepair = task(w)?.taskId;
+    lookups = [{owner: 'auto', target: ''}, {owner: 'auto', target: ''}];
+    assert.equal((await input(w.core, w.module(), 'What is its status?', false, randomUUID(), {provider})).status, 'accepted');
+    await until(() => task(w)?.taskId !== beforeRepair && status(w) === 'waiting');
+    assert.equal((await page(w)).currentTask?.question?.text, 'Which exact device should I look up?');
+    const repairTask = task(w)?.taskId ?? assert.fail('The repair task is saved');
+    const seenRepair = resultByProvider[provider].length;
+    await w.restart();
+    assert.equal(resultByProvider[provider].length, seenRepair, 'restart must not reset the repair or call a supervisor again');
+    assert.equal(w.store().task(repairTask)?.question?.text, 'Which exact device should I look up?');
+    lookups.push({owner: 'auto', target: 'id:studio-wall'});
+    const questionId = w.store().task(repairTask)?.question?.id;
+    assert.equal((await input(w.core, w.module(), 'id:studio-wall', true, randomUUID(),
+      {taskId: repairTask, questionId})).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    assert.deepEqual(JSON.parse(resultByProvider[provider].at(-1) ?? ''), statusFacts);
     assert.deepEqual(await ask('Apply Night Sky without changing Studio Wall.', 'Studio Wall'), {devices: []});
-    lookups = [{owner: 'auto', target: 'Studio Wall'}];
-    replaceOwner = true;
-    originalReads = 0;
-    substituteReads = 0;
-    const previous = task(w)?.taskId, before = resultByProvider[provider].length;
-    assert.equal((await input(w.core, w.module(), 'Apply Night Sky on Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
-    await until(() => task(w)?.taskId !== previous && status(w) === 'failed');
-    assert.equal(task(w)?.code, 'forbidden');
-    assert.equal(resultByProvider[provider].length, before, 'the old owner facts do not cross the provider boundary');
-    replaceOwner = false;
+    lookups = [{owner: 'auto', target: ''}];
+    for (const changed of ['owner', 'status grant'] as const) {
+      replaceOwner = changed === 'owner';
+      revokeStatus = changed === 'status grant';
+      const previous = task(w)?.taskId, before = resultByProvider[provider].length;
+      assert.equal((await input(w.core, w.module(), 'Check the status of Studio Wall.', false, randomUUID(), {provider})).status, 'accepted');
+      await until(() => task(w)?.taskId !== previous && status(w) === 'failed');
+      assert.equal(task(w)?.code, 'forbidden', `${provider} after ${changed} changes`);
+      assert.equal(resultByProvider[provider].length, before, `facts do not reach the supervisor after the ${changed} changes`);
+      replaceOwner = revokeStatus = statusRevoked = false;
+    }
   }
 });
 
@@ -4720,7 +4769,7 @@ void test('Responses resolves an exact brightness instruction before sending one
     if (results.some(result => /^The brightness|^accepted:/u.test(result))) replayedReceipts += 1;
     const tool = (name: string, args: Record<string, unknown>, id: string) =>
       [{type: 'function_call', id: 'fc_'+id, call_id: id, name, arguments: JSON.stringify(args)}];
-    const control = (id: string) => tool('control_brightness_set', {owner: writeOwner, target: writeTarget ?? active.id,
+    const control = (id: string) => tool('control_brightness_set', {...immediateLight, owner: writeOwner, target: writeTarget ?? active.id,
       arguments: JSON.stringify({percent: active.wrongAmount ? 82 : 37})}, id);
     const done = [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic answer.', annotations: []}]}];
     if (results.length === 1) lookup.push(results[0] ?? '');
@@ -4816,15 +4865,15 @@ void test('Responses resolves an exact brightness instruction before sending one
   assert.equal(requests.length, 3);
   active = {...active, id: 'shared-a', attempt: false};
   await ask('Set Shared Display brightness to 37%');
-  assert.equal(lookup.at(-1), '{"devices":[]}');
+  assert.deepEqual((JSON.parse(lookup.at(-1) ?? '{}') as {devices: unknown}).devices, []);
   active = {...active, id: target};
   for (const destination of ['private-conversation', 'external-model'] as const) {
     denied = destination;
     await ask('Set fixture-display brightness to 37%');
-    assert.equal(lookup.at(-1), '{"devices":[]}');
+    assert.deepEqual((JSON.parse(lookup.at(-1) ?? '{}') as {devices: unknown}).devices, []);
   }
   denied = undefined;
-  active = {...active, attempt: true};
+  active = {...active, attempt: false};
   await ask('What is the currently reported brightness of fixture-display?');
   assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
   assert.equal(requests.length, 3);
@@ -4848,15 +4897,17 @@ void test('Responses resolves an exact brightness instruction before sending one
   devices.push({...unsupported, id: 'unsupported-alias', label: target});
   active = {...active, id: target, bypassLookup: true};
   await ask('Set fixture-display brightness to 37%', 'reachy');
-  assert.equal(lookup.at(-1), '{"devices":[]}');
+  assert.deepEqual((JSON.parse(lookup.at(-1) ?? '{}') as {devices: unknown}).devices, []);
   assert.equal(requests.length, 3);
   const reachy = () => w.module().inspectAssistant()?.tasks.find(item => item.profile === 'reachy');
   for (const response of ['yes', 'other-display', 'maybe fixture-display']) {
     const questionId = reachy()?.questionId;
     assert.equal((await input(w.core, w.module(), response, true, randomUUID(),
       {profile: 'reachy', taskId: reachy()?.taskId, questionId})).status, 'accepted');
-    await until(() => requests.length > 3 || reachy()?.status === 'waiting' && reachy()?.questionId !== questionId);
+    await until(() => ['succeeded', 'failed'].includes(reachy()?.status ?? ''));
     assert.equal(requests.length, 3);
+    await ask('Set fixture-display brightness to 37%', 'reachy');
+    assert.equal(reachy()?.status, 'waiting');
   }
   const resolve = async () => {
     assert.equal((await input(w.core, w.module(), 'id:fixture-display', true, randomUUID(),
@@ -4950,7 +5001,7 @@ void test('a scoped brightness lookup supports the typed LIFX tool and refuses a
     if (write) evidence.push(results[0]?.output ?? '');
     const output = results.length <= 1 ? [{type: 'function_call', id: write ? 'fc_set' : 'fc_read', call_id: write ? 'set' : 'read',
       name: write ? 'set_lifx_brightness' : 'read_devices',
-      arguments: JSON.stringify(write ? {device: `id:${exact.id}`, percent: 37} : {target: `id:${exact.id}`, owner: 'auto'})}]
+      arguments: JSON.stringify(write ? {...immediateLight, device: `id:${exact.id}`, percent: 37, operation: 'absolute', literal: '37%', startingLiteral: ''} : {target: `id:${exact.id}`, owner: 'auto'})}]
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic result.', annotations: []}]}];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
   }});
@@ -4977,14 +5028,14 @@ void test('a scoped brightness lookup supports the typed LIFX tool and refuses a
   await until(() => status(w) === 'succeeded');
   assert.match(evidence[0] ?? '', /"controls":\["set_lifx_brightness"\]/u);
   assert.deepEqual(requests[0]?.data, {percent: 37, expectedConfigurationRevision: exact.configurationRevision, expectedGeneration: exact.generation});
-  aliasAtRead = pixooReads + 3;
+  aliasAtRead = pixooReads + 4;
   const beforeLateAlias = task(w)?.taskId;
   assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
   await until(() => task(w)?.taskId !== beforeLateAlias && status(w) === 'succeeded');
   assert.match(evidence.at(-1) ?? '', /"controls":\["set_lifx_brightness"\]/u);
   assert.equal(requests.length, 1, 'a new alias before dispatch must remain blocked');
   aliasAtRead = Number.POSITIVE_INFINITY;
-  revokeAtRead = pixooReads + 3;
+  revokeAtRead = pixooReads + 5;
   const beforeRevoke = task(w)?.taskId;
   assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
   await until(() => task(w)?.taskId !== beforeRevoke && status(w) === 'succeeded');
@@ -5046,6 +5097,639 @@ void test('Claude reads an explicit device ID within its current grants when a l
   source = owner;
   selector = id;
   assert.deepEqual(await ask('Check Main display status.'), [[owner, id]]);
+});
+
+for (const adapter of ['anthropic', 'openai'] as const) {
+  void test(`${adapter} reads a display's brightness by context after a guarded write`, async context => {
+    const owner = 'bunny/modules/pixoo', id = 'fixture-context-display';
+    const setting = 37;
+    const instruction = `Set id:${id} brightness to ${String(setting)}%`;
+    const followUp = 'Switch it off.';
+    const question = 'How bright is it now?';
+    const selected = {...light(id, 'Fixture Display'), kind: 'pixoo' as const};
+    const alias = {...selected, id: 'fixture-other-display', label: `id:${id}`};
+    const requests: AssistantDispatch[] = [];
+    const reads: string[] = [];
+    let observed = 9;
+    let powered = true;
+    let turn: 'write' | 'power' | 'read' = 'write';
+    let priorRequestShared = false;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {
+        messages?: {content: {type: string; content?: string; tool_use_id?: string}[]}[];
+        input?: {type?: string; output?: string; call_id?: string}[];
+      };
+      const effect = 'fixture-' + turn;
+      const result = adapter === 'anthropic'
+        ? body.messages?.flatMap(message => message.content).find(block => block.type === 'tool_result' && block.tool_use_id === effect)?.content
+        : body.input?.find(item => item.type === 'function_call_output' && item.call_id === effect)?.output;
+      const name = turn === 'write' ? 'control_brightness_set' : turn === 'power' ? 'control_power_set' : 'read_devices';
+      const effectArguments = turn === 'write' ? {percent: setting} : {on: false};
+      const args = {owner, target: `id:${id}`, ...(turn === 'read' ? {} : {
+        ...immediateLight, ...(turn === 'power' ? {powerLiteral: 'off'} : {}), arguments: JSON.stringify(effectArguments)})};
+      if (turn === 'read') {
+        priorRequestShared ||= init.body.includes(instruction);
+        if (result !== undefined) reads.push(result);
+      }
+      const usage = {input_tokens: 50, output_tokens: 20};
+      return Promise.resolve(Response.json(adapter === 'anthropic'
+        ? {content: result === undefined ? [{type: 'tool_use', id: effect, name, input: args}]
+          : [{type: 'text', text: 'The fixture lookup is complete.'}], stop_reason: result === undefined ? 'tool_use' : 'end_turn', usage}
+        : {status: 'completed', output: result === undefined
+          ? [{type: 'function_call', id: `fc_${effect}`, call_id: effect, name, arguments: JSON.stringify(args)}]
+          : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'The fixture lookup is complete.', annotations: []}]}], usage}));
+    };
+    const provider = adapter === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const now = Date.now();
+    const w = await world(context, {provider, share: sharing(), tools: ['control_brightness_set', 'control_power_set', 'read_devices'],
+      dispatch: data => {
+        requests.push(data);
+        if (data.family === 'catalog-action' && data.target === id && data.command === 'brightness-set' && typeof data.data.percent === 'number') {
+          observed = data.data.percent;
+        }
+        if (data.family === 'catalog-action' && data.target === id && data.command === 'power-set' && typeof data.data.on === 'boolean') {
+          powered = data.data.on;
+        }
+        return Promise.resolve(accepted(data.requestId));
+      }}, undefined, now);
+    const pixoo = w.bus.connect(owner);
+    context.after(() => pixoo.close());
+    await pixoo.serveSync(['device'], () => ({revision: 1, states: [selected, alias].map(device => {
+      const data: DeviceRecord = device.id !== id ? device : {...device, observed: {
+        status: 'known', observedAtMs: now, power: {status: 'known', value: powered}, brightness: {status: 'known', value: observed},
+      }};
+      return {type: 'org.bunny.device.updated', subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data};
+    })}));
+    await control(w.core, w.module(), 'enable');
+
+    assert.equal((await input(w.core, w.module(), instruction)).status, 'accepted');
+    await until(() => requests.length === 1 || status(w) === 'waiting' || status(w) === 'succeeded');
+    assert.equal(requests.length, 1, 'the explicit ID resolves despite a colliding label');
+    const sent = requests[0];
+    assert.ok(sent?.family === 'catalog-action');
+    assert.deepEqual([sent.target, sent.command, sent.data.percent], [id, 'brightness-set', setting]);
+    assert.deepEqual(sent.binding, {kind: 'device', owner, target: id,
+      configurationRevision: selected.configurationRevision, generation: selected.generation});
+    w.advance(1200);
+    await until(() => status(w) === 'succeeded');
+
+    turn = 'power';
+    const afterBrightness = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), followUp)).status, 'accepted');
+    await until(() => task(w)?.taskId !== afterBrightness && status(w) === 'succeeded');
+    assert.equal(requests.length, 2, 'the follow-up sends one power command');
+    const power = requests[1];
+    assert.ok(power?.family === 'catalog-action');
+    assert.deepEqual([power.target, power.command, power.data.on], [id, 'power-set', false]);
+
+    turn = 'read';
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), question)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+    assert.equal(requests.length, 2, 'the status question sends no command');
+    assert.equal(priorRequestShared, true, 'the adapter received the earlier explicit owner request');
+    assert.equal(reads.length, 1);
+    assert.match(reads[0] ?? '', /"id":"fixture-context-display"/u, 'the contextual lookup returns the selected device');
+    assert.match(reads[0] ?? '', /"brightness":\{"status":"known","value":37\}/u);
+    assert.match(reads[0] ?? '', /"power":\{"status":"known","value":false\}/u);
+    assert.doesNotMatch(reads[0] ?? '', /fixture-other-display/u);
+  });
+}
+
+void test('lighting proposals use each registered command route and refuse invalid settings or held devices', async context => {
+  const devices: DeviceRecord[] = (['lifx', 'nanoleaf', 'pixoo', 'tidbyt'] as const).map(kind => ({
+    ...light(`route-${kind}`), kind,
+    ...(kind === 'tidbyt' ? {capabilities: {...light(kind).capabilities, power: {supported: false}}} : {}),
+  }));
+  const operations = [
+    ['lifx', 'set_lifx_power', {on: false}],
+    ['lifx', 'set_lifx_brightness', {percent: 21}],
+    ['lifx', 'control_lifx_color_set', {hue: 135, saturation: 64}, 'missing color evidence'],
+    ['lifx', 'control_lifx_color_set', {hue: 135, saturation: 64}, undefined, 'Set hue 135 and saturation 64% on id:route-lifx.'],
+    ['lifx', 'control_lifx_temperature_set', {kelvin: 3200}, undefined, 'Set id:route-lifx to 3,200 K.'],
+    ['lifx', 'control_lifx_temperature_set', {kelvin: 3200}, 'ambiguous Kelvin', 'Set id:route-lifx to 3,200 K or 3,500 K.'],
+    ['lifx', 'control_lifx_color_set', {hue: 135, saturation: 64}, 'wrong hue', 'Set id:route-lifx to 120 degrees and 64%.'],
+    ['nanoleaf', 'control_power_set', {on: true}],
+    ['nanoleaf', 'control_brightness_set', {percent: 40}],
+    ['nanoleaf', 'control_brightness_set', {percent: 0}, 'out of range', 'Set id:route-nanoleaf brightness to 1,000 percent.'],
+    ['nanoleaf', 'control_brightness_set', {percent: 40}, 'ambiguous percent', 'Set id:route-nanoleaf brightness to 40% or 70%.'],
+    ['pixoo', 'control_power_set', {on: false}],
+    ['pixoo', 'control_brightness_set', {percent: 42}],
+    ['tidbyt', 'control_brightness_set', {percent: 19}],
+    ['tidbyt', 'control_power_set', {on: true}, 'unsupported'],
+    ['lifx', 'control_lifx_temperature_set', {kelvin: 16000}, 'range'],
+    ['lifx', 'control_lifx_temperature_set', {kelvin: '3200 K'}, 'unit'],
+    ['lifx', 'control_lifx_color_set', {hue: 135}, 'missing'],
+    ['nanoleaf', 'control_power_set', {on: false}, 'held'],
+    ['nanoleaf', 'control_brightness_set', {percent: 60}, 'changed'],
+  ] as const;
+  const requests: AssistantDispatch[] = [];
+  let active: typeof operations[number] = operations[0];
+  let altered: DeviceRecord | undefined;
+  const provider = new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {input: {type?: string}[]; tools: {name: string}[]};
+    const complete = body.input.some(item => item.type === 'function_call_output');
+    const [kind, name, settings, fault] = active;
+    const id = `route-${kind}`;
+    const arguments_ = fault === 'missing' ? {text: 'What saturation percentage do you want?'}
+      : name === 'set_lifx_brightness' ? {device: id, ...settings, operation: 'absolute', literal: '', startingLiteral: ''}
+        : name.startsWith('set_') ? {device: id, ...settings} : {owner: `bunny/modules/${kind}`, target: id, arguments: JSON.stringify(settings)};
+    if (!complete && fault === 'changed') {
+      const device = devices.find(candidate => candidate.id === id) ?? assert.fail('missing fixture device');
+      altered = {...device, configurationRevision: device.configurationRevision + 1};
+    }
+    const output = complete
+      ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Fixture response.', annotations: []}]}]
+      : [{type: 'function_call', id: 'fc_fixture', call_id: 'fixture', name: fault === 'missing' ? 'ask_owner' : name,
+        arguments: JSON.stringify(fault === 'missing' ? arguments_ :
+          {...immediateLight, ...('on' in settings ? {powerLiteral: settings.on ? 'on' : 'off'} : {}), ...arguments_})}];
+    return Promise.resolve(Response.json({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 20}}));
+  }});
+  const w = await world(context, {provider, share: sharing(), tools: [...new Set(operations.map(item => item[1]))],
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  for (const device of devices) {
+    const participant = w.bus.connect(`bunny/modules/${device.kind}`);
+    context.after(() => participant.close());
+    await participant.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated', subject: device.id,
+      dataschema: DEVICE_READBACK_SCHEMA, data: altered?.id === device.id ? altered : device}]}));
+    if (device.kind === 'lifx') await participant.serveSync(['lifx-light'], () => ({revision: 1, states: [{
+      type: 'org.bunny.lifx-light.updated', subject: device.id, dataschema: 'https://bunny.invalid/events/lifx-light/2.0',
+      data: {id: device.id, revision: 1, capabilities: {color: {supported: true}, temperature: {supported: true, minimum: 1500, maximum: 9000}}, observed: unknown},
+    }]}));
+  }
+  await control(w.core, w.module(), 'enable');
+  for (const operation of operations) {
+    active = operation;
+    const [kind, name, setting, fault, ownerRequest] = operation;
+    const device = devices.find(row => row.id === `route-${kind}`) ?? assert.fail('missing fixture device');
+    altered = fault === 'held' ? {...device, held: {requestId: 'fixture-hold', heldAtMs: 1}} : undefined;
+    const before = requests.length, prior = task(w)?.taskId;
+    const prompt = ownerRequest ?? (fault === 'missing' ? `Choose the hue for id:${device.id}.`
+      : 'percent' in setting ? `Set id:${device.id} brightness to ${String(setting.percent)}%.`
+      : 'kelvin' in setting && typeof setting.kelvin === 'number' ? `Set id:${device.id} temperature to ${String(setting.kelvin)} K.`
+      : 'on' in setting ? `Turn id:${device.id} ${setting.on ? 'on' : 'off'}.`
+      : `Apply the requested fixture setting to id:${device.id}.`);
+    assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+    await until(() => task(w)?.taskId !== prior && (requests.length > before || status(w) === 'succeeded' || status(w) === 'waiting'));
+    if (fault !== undefined) {
+      assert.equal(requests.length, before, fault);
+      if (fault === 'missing') {
+        assert.equal(status(w), 'waiting');
+        assert.match((await page(w)).currentTask?.question?.kind ?? '', /clarification/u);
+        await control(w.core, w.module(), 'cancel', task(w)?.taskId);
+      }
+      continue;
+    }
+    assert.equal(requests.length, before + 1, name);
+    const sent = requests.at(-1);
+    assert.equal(sent?.target, device.id);
+    assert.deepEqual(sent?.data, name.startsWith('set_')
+      ? {...setting, expectedConfigurationRevision: device.configurationRevision, expectedGeneration: device.generation} : setting);
+    if (sent?.family === 'catalog-action') assert.deepEqual(sent.binding, {kind: 'device', target: device.id,
+      owner: `bunny/modules/${kind}`, configurationRevision: device.configurationRevision, generation: device.generation});
+    w.advance(1200);
+    await until(() => status(w) === 'succeeded');
+  }
+});
+
+void test('a hosted read-only lighting history turn cannot dispatch an injected write', async context => {
+  const calls: string[][] = [];
+  let dispatched = 0;
+  const provider = new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {tools: {name: string}[]};
+    calls.push(body.tools.map(tool => tool.name));
+    const output = calls.length === 1
+      ? [{type: 'function_call', id: 'fc_injected', call_id: 'injected', name: 'set_lifx_power', arguments: '{"device":"desk","on":false}'}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Fixture history reply.', annotations: []}]}];
+    return Promise.resolve(Response.json({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 20}}));
+  }});
+  const w = await world(context, {provider, share: sharing(), timeZone: 'UTC', tools: ['read_device_history', 'set_lifx_power'],
+    devices: owner => owner === 'bunny/modules/lifx' ? [light('desk', 'Desk Lamp')] : [],
+    dispatch: data => {dispatched += 1; return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'How long was Desk Lamp on yesterday?')).status, 'accepted');
+  await until(() => calls.length > 0 && ['succeeded', 'failed', 'uncertain'].includes(status(w) ?? ''));
+  assert.deepEqual(calls[0], ['read_device_history']);
+  assert.equal(dispatched, 0);
+});
+
+function lightingFixtureSupervisor(select: (results: readonly string[], tools: readonly string[]) => {name: string; args: object} | undefined) {
+  return new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
+    const results = body.input.flatMap(item => item.type === 'function_call_output' && item.output !== undefined ? [item.output] : []);
+    const selected = select(results, body.tools.map(tool => tool.name));
+    const id = `fixture-${String(results.length)}`;
+    const output = selected === undefined
+      ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Fixture reply.', annotations: []}]}]
+      : [{type: 'function_call', id: `fc_${id}`, call_id: id, name: selected.name, arguments: JSON.stringify(
+        /^(?:set_lifx_(?:power|brightness)|control_(?:power_set|brightness_set|lifx_color_set|lifx_temperature_set))$/u.test(selected.name)
+          ? {...immediateLight, ...selected.args} : selected.args)}];
+    return Promise.resolve(Response.json({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 20}}));
+  }});
+}
+
+for (const adapter of ['anthropic', 'openai'] as const) for (const privateAnswer of [false, true]) {
+  void test(`${adapter} keeps the original conditional lighting scope through a restarted value question (${privateAnswer ? 'private' : 'shared'})`, async context => {
+    const device = light('studio', 'Studio Lamp');
+    const original = 'When I get home, set Studio Lamp to something cozy.';
+    const usage = {input_tokens: 30, output_tokens: 20};
+    let deliveredAnswer: string | undefined;
+    const transport = (_url: string, init: {body: string}): Promise<Response> => {
+      const body = JSON.parse(init.body) as {
+        input?: {type?: string; output?: string}[];
+        messages?: {content: {type: string; content?: string}[]}[];
+      };
+      const value = body.input?.find(item => item.type === 'function_call_output')?.output ??
+        body.messages?.flatMap(message => message.content).find(item => item.type === 'tool_result')?.content;
+      if (value !== undefined) deliveredAnswer = value;
+      if (value === 'The owner’s answer is private.') {
+        return Promise.resolve(Response.json(adapter === 'anthropic'
+          ? {content: [{type: 'text', text: 'The setting remains unanswered.'}], stop_reason: 'end_turn', usage}
+          : {status: 'completed', output: [{type: 'message', role: 'assistant',
+            content: [{type: 'output_text', text: 'The setting remains unanswered.'}]}], usage}));
+      }
+      const answered = value === JSON.stringify({kind: 'authenticated-owner-answer', slot: 'percent',
+        execution: 'conditional-or-future', answer: '51%.'});
+      const args = {device: 'id:studio', operation: 'absolute', percent: answered ? 51 : 0,
+        literal: answered ? '51%.' : '', startingLiteral: '', intent: 'set',
+        execution: answered ? 'immediate' : 'conditional-or-future', condition: answered ? '' : 'When I get home',
+        missing: answered ? 'none' : 'percent'};
+      const id = answered ? 'value' : 'initial';
+      const name = 'set_lifx_brightness';
+      return Promise.resolve(Response.json(adapter === 'anthropic'
+        ? {content: [{type: 'tool_use', id, name, input: args}], stop_reason: 'tool_use', usage}
+        : {status: 'completed', output: [{type: 'function_call', id: `fc_${id}`, call_id: id, name,
+          arguments: JSON.stringify(args)}], usage}));
+    };
+    const provider = adapter === 'anthropic' ? new AnthropicProvider({key: 'fixture', transport})
+      : new OpenAIProvider({key: 'fixture', model: OPENAI_MODEL, effort: 'low', transport});
+    const commands: AssistantDispatch[] = [];
+    const baseline = sharing();
+    const w = await world(context, {provider, share: query => baseline(query) &&
+      !(privateAnswer && query.destination === 'external-model' && query.source === 'conversation' &&
+        query.field === 'excerpt' && query.record?.endsWith('-answer') === true), tools: ['set_lifx_brightness'], devices: () => [device], dispatch: command => {
+      commands.push(command);
+      return Promise.resolve(accepted(command.requestId));
+    }});
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), original)).status, 'accepted');
+    await until(() => status(w) === 'waiting');
+    const taskId = task(w)?.taskId ?? assert.fail('Missing pending task.');
+    const decision = w.store().task(taskId)?.lightingDecision;
+    assert.equal(decision?.execution, 'conditional-or-future');
+    assert.equal(decision?.condition, 'When I get home');
+    assert.equal(decision?.target, device.id);
+    assert.deepEqual(commands, []);
+    await w.restart();
+    assert.deepEqual(w.store().task(taskId)?.lightingDecision, decision);
+    assert.equal((await input(w.core, w.module(), '51%.', true)).status, 'accepted');
+    await until(() => status(w) === 'succeeded');
+    const completed = w.store().task(taskId)?.lightingDecision;
+    assert.equal(completed?.execution, 'conditional-or-future');
+    assert.deepEqual(completed?.completed, privateAnswer ? undefined : {family: 'brightness-set', data: {percent: 51}});
+    assert.equal(deliveredAnswer, privateAnswer ? 'The owner’s answer is private.' :
+      JSON.stringify({kind: 'authenticated-owner-answer', slot: 'percent', execution: 'conditional-or-future', answer: '51%.'}));
+    assert.equal(w.store().task(taskId)?.question?.answer, '51%.');
+    assert.equal(w.store().task(taskId)?.questions, 1);
+    assert.deepEqual(commands, []);
+  });
+}
+
+for (const adapter of ['anthropic', 'openai'] as const) {
+  for (const group of ['binding', 'units', 'signs'] as const) {
+    void test(`${adapter} lighting quantities preserve owner intent (${group})`, async context => {
+      const owner = 'bunny/modules/pixoo', id = 'fixture-display';
+      const lifx = 'bunny/modules/lifx', lamp = 'fixture-lamp';
+      const bulb = {...light(id, 'Studio 2'), kind: 'pixoo' as const};
+      const clockStart = Date.now();
+      const writes: AssistantDispatch[] = [];
+      const outcomes: string[] = [];
+      const allScenarios: {text: string; quantity: unknown; expected?: number; current?: number; temperature?: true;
+        stale?: true; boundary?: true; dispatchChange?: 'value' | 'time'; native?: true; byName?: true; unitCase?: true; signCase?: true; correction?: string; correctedQuantity?: unknown}[] = [
+        {text: 'Set brightness to 20 nits.', quantity: {kind: 'absolute', amount: 20, literal: '20'}, correction: 'Twenty-five percent.', correctedQuantity: 25, expected: 25},
+        {text: 'Set brightness to 20 milliwatts.', quantity: 20, correction: '20.', expected: 20},
+        {text: 'Set brightness to 20 in lumens.', quantity: {kind: 'absolute', amount: 20, literal: '20'},
+          correction: '20 in percent.', correctedQuantity: {kind: 'absolute', amount: 20, literal: '20 in percent', unit: 'percent'}, expected: 20},
+        {text: 'Set the brightness in nits to 20.', quantity: 20, correction: '21%.', correctedQuantity: 21, expected: 21},
+        {text: 'Set the brightness in percent to 20.', quantity: {kind: 'absolute', amount: 20, literal: '20', unit: 'percent'}, unitCase: true, expected: 20},
+        {text: 'Set the lamp in the office to 20.', quantity: 20, unitCase: true, expected: 20},
+        {text: 'Set the brightness to 20 on the lamp in the office.', quantity: 20, unitCase: true, expected: 20},
+        {text: 'Raise the brightness in percent by 20.', quantity: {kind: 'increase', amount: 20}, current: 50, unitCase: true},
+        {text: 'Set brightness to 20%.', quantity: {kind: 'absolute', amount: 20, unit: 'kelvin'}, unitCase: true},
+        {text: 'Set brightness to 20 nits.', quantity: 20, correction: '−twenty percent.', signCase: true},
+        {text: 'Set brightness to 20 nits.', quantity: 20, correction: '- twenty percent.', signCase: true},
+        {text: 'Set brightness to 20 nits.', quantity: 20, correction: '+−twenty percent.', signCase: true},
+        {text: 'Set brightness to −+20%.', quantity: 20, correction: '22%.', signCase: true, correctedQuantity: 22, expected: 22},
+        {text: 'Set brightness to minus −twenty percent.', quantity: 20, correction: '23%.', signCase: true, correctedQuantity: 23, expected: 23},
+        {text: 'Set brightness to plus plus 20%.', quantity: 20, correction: '+24%.', signCase: true, correctedQuantity: 24, expected: 24},
+        {text: 'Set brightness to ±20%.', quantity: 20, correction: '25%.', signCase: true, correctedQuantity: 25, expected: 25},
+        {text: 'Set brightness to ∓20%.', quantity: 20, correction: '26%.', signCase: true, correctedQuantity: 26, expected: 26},
+        {text: 'Set brightness to +/−20%.', quantity: 20, correction: '27%.', signCase: true, correctedQuantity: 27, expected: 27},
+        {text: 'Set brightness to plus or minus twenty percent.', quantity: 20, correction: 'Twenty-eight percent.', signCase: true, correctedQuantity: 28, expected: 28},
+        {text: 'Set brightness to ±20%.', quantity: 20, correction: 'plus or minus twenty percent.', signCase: true},
+        {text: 'Set brightness to abc+37%.', quantity: 37, signCase: true},
+        {text: 'Set brightness to abc+thirty-seven percent.', quantity: 37, signCase: true},
+        {text: 'Set brightness to twenty nits.', quantity: 20, correction: '21 percent.', correctedQuantity: 21, expected: 21},
+        {text: 'Set brightness to half a watt.', quantity: 50, correction: '50%.', expected: 50},
+        {text: 'Set brightness to twenty percent.', quantity: 20, unitCase: true, expected: 20},
+        {text: 'Set brightness to twenty percent.', quantity: 90, unitCase: true},
+        {text: 'Set brightness to minus twenty percent.', quantity: 20, unitCase: true},
+        {text: 'Set the one by my desk to 50%.', quantity: 50, unitCase: true, expected: 50},
+        {text: 'Set brightness to 20 nits.', quantity: 20, current: 50, correction: '25%', correctedQuantity: {kind: 'increase-percent', amount: 25}},
+        {text: 'Set temperature to 3200 mired.', quantity: 3200, correction: '3200 kelvin.', temperature: true, expected: 3200},
+        {text: 'Set brightness to 20.', quantity: 20, unitCase: true, expected: 20},
+        {text: 'Set brightness to 20 on Studio 2.', quantity: 20, byName: true, unitCase: true, expected: 20},
+        {text: 'Set temperature to 3200.', quantity: 3200, temperature: true, unitCase: true, expected: 3200},
+        {text: 'Set temperature to three thousand two hundred Kelvin.', quantity: 3200, temperature: true, unitCase: true, expected: 3200},
+        {text: 'Set brightness to −75%.', quantity: 75},
+        {text: 'Set brightness to 1/75%.', quantity: 75},
+        {text: 'Set brightness to ½%.', quantity: 50},
+        {text: 'Set brightness to 1⁄2%.', quantity: 2},
+        {text: 'Set brightness to 1∕2%.', quantity: 2},
+        ...[' ', '\u00a0', '\u2009', '\u202f'].flatMap(separator => [
+          {text: `Set brightness to 1${separator}000%.`, quantity: 0},
+          {text: `Set brightness to −1${separator}000%.`, quantity: 100},
+        ]),
+        {text: 'Set brightness to 75‰.', quantity: 75, correction: '75 nits.'},
+        {text: 'Set brightness to 75 ‱.', quantity: 75, correction: '75 nits.'},
+        {text: 'Set brightness to 75lx.', quantity: 75, correction: '75 nits.'},
+        {text: 'Set brightness to 75 lux.', quantity: 75, correction: '75 nits.'},
+        {text: 'Set brightness to 75%extra.', quantity: 75},
+        {text: 'Set brightness to 75\u200b%.', quantity: 75},
+        {text: 'Set brightness to 20 45%.', quantity: 45},
+        {text: 'Set brightness to 2+75%.', quantity: 2},
+        {text: 'Set brightness to negative 75 percent.', quantity: 75},
+        {text: 'Set brightness to 75.%.', quantity: 75},
+        {text: 'Set brightness to 150%.', quantity: 100},
+        {text: 'Set brightness to 37%.', quantity: 37, expected: 37},
+        {text: 'Set brightness to +37%.', quantity: {kind: 'absolute', amount: 37, literal: '+37%'}, expected: 37},
+        {text: 'Change brightness from 80% to 30%.', quantity: {kind: 'absolute', amount: 30, literal: '30%', startingLiteral: '80%'}, expected: 30},
+        {text: 'Set brightness to 80% or 30%.', quantity: {kind: 'absolute', amount: 30, literal: '30%'}},
+        {text: 'Set Studio 2 to half brightness.', quantity: {kind: 'fraction-of-scale', literal: 'half brightness'}, expected: 50, byName: true},
+        {text: 'Set Studio 2 to maximum brightness.', quantity: {kind: 'maximum', literal: 'maximum brightness'}, expected: 100, byName: true},
+        {text: 'Set Studio 2 brightness to 2%.', quantity: 2, expected: 2, byName: true},
+        {text: 'Set Studio 2 milliwatts.', quantity: 2, byName: true, correction: '3%.', correctedQuantity: 3, expected: 3},
+        {text: 'Set Studio 2 brightness to −2%.', quantity: 2, byName: true},
+        {text: 'Set it to half brightness.', quantity: {kind: 'fraction-of-scale', literal: 'half brightness'}, expected: 50},
+        {text: 'Make it as bright as possible.', quantity: {kind: 'maximum', literal: 'as bright as possible'}, expected: 100},
+        {text: 'Use minimum brightness.', quantity: {kind: 'minimum', literal: 'minimum brightness'}, expected: 0},
+        {text: 'Raise brightness by 20 percentage points.', quantity: {kind: 'increase', amount: 20, literal: '20 percentage points'}, current: 50, expected: 70},
+        {text: 'Make it 20% brighter.', quantity: {kind: 'increase-percent', amount: 20, literal: '20%'}, current: 50, expected: 60},
+        {text: 'Make it 20% brighter.', quantity: {kind: 'increase', amount: 20, literal: '20%'}, current: 50},
+        {text: 'Raise brightness by 20 percentage points.', quantity: {kind: 'increase', amount: 20}, current: 50, stale: true},
+        {text: 'Raise brightness by 20 percentage points.', quantity: {kind: 'increase', amount: 20}, current: 100, boundary: true},
+        {text: 'Raise brightness by 20 percentage points.', quantity: {kind: 'increase', amount: 20}, current: 50, dispatchChange: 'value'},
+        {text: 'Raise brightness by 20 percentage points.', quantity: {kind: 'increase', amount: 20}, current: 50, dispatchChange: 'time'},
+        {text: 'Make the light a bit warmer.', quantity: {kind: 'decrease', amount: 250, literal: 'a bit'}, current: 1600, temperature: true, expected: 1500},
+        {text: 'Make the light a bit cooler.', quantity: {kind: 'increase', amount: 250, literal: 'a bit'}, current: 8900, temperature: true, expected: 9000},
+        {text: 'Lower brightness by 10 percentage points.', quantity: 10, current: 55, native: true, expected: 45},
+        {text: 'Set it to +3\u202f200 K.', quantity: {kind: 'absolute', amount: 3200, literal: '+3\u202f200 K'}, temperature: true, expected: 3200},
+        {text: 'Set it to −3\u202f200 K.', quantity: 3200, temperature: true},
+        {text: 'Set it to 10,000 K.', quantity: 9000, current: 8900, temperature: true},
+      ];
+      const scenarios = allScenarios.filter(attempt => (attempt.signCase === true ? 'signs'
+        : attempt.correction !== undefined || attempt.unitCase === true ? 'units' : 'binding') === group);
+      let scenario = scenarios[0] ?? assert.fail('No fixture input.');
+      let corrected = false;
+      let offered = false;
+      const select = (results: readonly string[]) => {
+        if (offered) {
+          outcomes.push(...results);
+          return undefined;
+        }
+        offered = true;
+        if (scenario.native === true) return {name: 'set_lifx_brightness',
+          args: {device: `id:${lamp}`, percent: scenario.quantity, operation: 'decrease', literal: '10 percentage points', startingLiteral: ''}};
+        const temperature = scenario.temperature === true;
+        const quantity = corrected ? scenario.correctedQuantity ?? scenario.quantity : scenario.quantity;
+        return {name: temperature ? 'control_lifx_temperature_set' : 'control_brightness_set',
+          args: {owner: temperature ? lifx : owner, target: `id:${temperature ? lamp : id}`,
+            arguments: JSON.stringify(temperature ? {kelvin: quantity} : {percent: quantity})}};
+      };
+      const provider = adapter === 'openai' ? lightingFixtureSupervisor(select) : new AnthropicProvider({key: 'fixture',
+        transport: (_url, init) => {
+          const body = JSON.parse(init.body) as {messages: {content: {type: string; content?: string}[]}[]};
+          const results = body.messages.flatMap(message => message.content.flatMap(block =>
+            block.type === 'tool_result' && block.content !== undefined ? [block.content] : []));
+          const selected = select(results);
+          return Promise.resolve(Response.json({content: selected === undefined
+            ? [{type: 'text', text: 'Fixture reply.'}]
+            : [{type: 'tool_use', id: corrected ? 'fixture-correction' : 'fixture', name: selected.name, input: {...immediateLight, ...selected.args}}],
+          stop_reason: selected === undefined ? 'end_turn' : 'tool_use', usage: {input_tokens: 40, output_tokens: 20}}));
+        }});
+      const w = await world(context, {provider, share: sharing(), tools: ['control_brightness_set', 'control_lifx_temperature_set', 'set_lifx_brightness'],
+        dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}}, undefined, clockStart);
+      const participant = w.bus.connect(owner), color = w.bus.connect(lifx);
+      context.after(() => participant.close());
+      context.after(() => color.close());
+      await participant.serveSync(['device'], () => {
+        const taskId = task(w)?.taskId;
+        const dispatching = scenario.dispatchChange !== undefined && taskId !== undefined &&
+          w.store().calls(taskId).some(call => call.status === 'admitted' && call.action?.control !== undefined);
+        const current = scenario.current;
+        const data: DeviceRecord = current === undefined ? bulb : {...bulb, observed: {status: 'known',
+          observedAtMs: scenario.stale === true ? clockStart - 31_000 : dispatching && scenario.dispatchChange === 'time' ? clockStart + 1 : clockStart,
+          power: unknown, brightness: {status: 'known', value: dispatching && scenario.dispatchChange === 'value' ? current + 1 : current}}};
+        return {revision: 1, states: [{type: 'org.bunny.device.updated', subject: id, dataschema: DEVICE_READBACK_SCHEMA, data}]};
+      });
+      await color.serveSync(['device'], () => ({revision: 1, states: [{
+        type: 'org.bunny.device.updated', subject: lamp, dataschema: DEVICE_READBACK_SCHEMA,
+        data: {...light(lamp), observed: {status: 'known', observedAtMs: clockStart, power: unknown,
+          brightness: {status: 'known', value: scenario.current ?? 55}}},
+      }]}));
+      await color.serveSync(['lifx-light'], () => ({revision: 1, states: [{
+        type: 'org.bunny.lifx-light.updated', subject: lamp, dataschema: 'https://bunny.invalid/events/lifx-light/2.0',
+        data: {id: lamp, revision: 1, capabilities: {color: {supported: true}, temperature: {supported: true, minimum: 1500, maximum: 9000}},
+          observed: {status: 'known', observedAtMs: clockStart, hue: 0, saturation: 0, brightness: 50, kelvin: scenario.current ?? 3500}},
+      }]}));
+      await control(w.core, w.module(), 'enable');
+      for (const attempt of scenarios) {
+        scenario = attempt;
+        corrected = false;
+        offered = false;
+        const prior = task(w)?.taskId, before = writes.length;
+        const prompt = attempt.byName === true ? attempt.text
+          : `${attempt.text} Use id:${attempt.temperature === true || attempt.native === true ? lamp : id}`;
+        assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+        await until(() => task(w)?.taskId !== prior && (status(w) === 'waiting' || status(w) === 'succeeded' || writes.length > before));
+        if (attempt.correction !== undefined) {
+          assert.equal(status(w), 'waiting', attempt.text);
+          assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which.*(?:percent|kelvin)/iu, attempt.text);
+          assert.equal(writes.length, before, attempt.text);
+          corrected = true;
+          offered = false;
+          assert.equal((await input(w.core, w.module(), attempt.correction, true)).status, 'accepted');
+          await until(() => status(w) === 'succeeded' || writes.length > before);
+        }
+        if (attempt.expected !== undefined) {
+          w.advance(1200);
+          await until(() => status(w) === 'succeeded').catch(() => {
+            assert.fail(`${attempt.text}: status=${status(w)}, writes=${writes.length - before}, result=${outcomes.at(-1)}`);
+          });
+          const expected = attempt.temperature === true ? {kelvin: attempt.expected} : {percent: attempt.expected};
+          const sent = writes[before] ?? assert.fail(`Expected one synthetic command for ${attempt.text}`);
+          assert.deepEqual(sent.data, attempt.native !== true ? expected :
+            {...expected, expectedConfigurationRevision: bulb.configurationRevision, expectedGeneration: bulb.generation}, attempt.text);
+          assert.deepEqual(sent.observationBasis, attempt.current === undefined ? undefined : {
+            kind: attempt.temperature === true ? 'temperature' : 'brightness', observedAtMs: clockStart, value: attempt.current,
+          }, attempt.text);
+        }
+        assert.equal(writes.length, before + (attempt.expected === undefined ? 0 : 1), attempt.text);
+        if (attempt.boundary === true) assert.match(outcomes.at(-1) ?? '', /No command was sent.*100 percent/u);
+      }
+    });
+  }
+}
+
+void test('a contextual light does not inherit an ambiguous prior alias, but an owner-qualified name resolves', async context => {
+  const lifx = 'bunny/modules/lifx', pixoo = 'bunny/modules/pixoo';
+  const bulb = light('studio', 'Desk Lamp');
+  const records: DeviceRecord[] = [{...light('display-a', 'studio'), kind: 'pixoo'}, {...light('display-b', 'Desk Lamp'), kind: 'pixoo'}];
+  const writes: AssistantDispatch[] = [];
+  let aliasAppearsAtDispatch = false;
+  let probedAtDispatch = false;
+  let operation: 'none' | 'power' = 'none';
+  const provider = lightingFixtureSupervisor(results => operation === 'power' && results.length === 0
+    ? {name: 'set_lifx_power', args: {device: 'id:studio', on: false, powerLiteral: 'off'}} : undefined);
+  const w = await world(context, {provider, tools: ['set_lifx_power'], share: sharing(),
+    devices: owner => owner === lifx ? [bulb] : [],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const display = w.bus.connect(pixoo);
+  context.after(() => display.close());
+  await display.serveSync(['device'], () => {
+    const taskId = task(w)?.taskId;
+    const dispatchAdmitted = taskId !== undefined && w.store().calls(taskId).some(call => call.status === 'admitted' && call.action?.control !== undefined);
+    probedAtDispatch ||= aliasAppearsAtDispatch && dispatchAdmitted;
+    const devices = !aliasAppearsAtDispatch || dispatchAdmitted ? records : [];
+    return {revision: 1, states: devices.map(data => ({type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data}))};
+  });
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'What can studio do?')).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  operation = 'power';
+  const previous = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), 'Turn it off.')).status, 'accepted');
+  await until(() => task(w)?.taskId !== previous && status(w) === 'waiting');
+  assert.equal(writes.length, 0, 'the model supplying id:studio does not resolve the owner ambiguity');
+  assert.match((await page(w)).currentTask?.question?.text ?? '', /exact device ID/u);
+  await control(w.core, w.module(), 'cancel', task(w)?.taskId);
+  assert.equal((await input(w.core, w.module(), 'Turn the LIFX Desk Lamp off.')).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0]?.target, 'studio');
+  assert.deepEqual(writes[0]?.data, {on: false, expectedConfigurationRevision: bulb.configurationRevision, expectedGeneration: bulb.generation});
+
+  aliasAppearsAtDispatch = true;
+  operation = 'none';
+  const afterQualifiedWrite = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), 'What can studio do?')).status, 'accepted');
+  await until(() => task(w)?.taskId !== afterQualifiedWrite && status(w) === 'succeeded');
+  operation = 'power';
+  const afterQuestion = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), 'Turn it off.')).status, 'accepted');
+  await until(() => task(w)?.taskId !== afterQuestion && status(w) === 'succeeded');
+  assert.equal(probedAtDispatch, true, 'the conflicting alias appears after a command is reserved');
+  assert.equal(writes.length, 1, 'the dispatch recheck refuses the new ambiguity');
+});
+
+void test('read_lifx alone reads a contextual target without enabling lighting writes', async context => {
+  const bulb = light('fixture-desk', 'Fixture Desk Lamp');
+  let followUp = false;
+  let evidence = '';
+  const provider = lightingFixtureSupervisor((results, tools) => {
+    assert.deepEqual([...tools].sort(), ['ask_owner', 'read_lifx']);
+    if (!followUp) return undefined;
+    if (results.length === 0) return {name: 'read_lifx', args: {device: 'id:fixture-desk'}};
+    evidence = results[0] ?? '';
+    return undefined;
+  });
+  const w = await world(context, {provider, share: sharing(), tools: ['read_lifx'],
+    devices: owner => owner === 'bunny/modules/lifx' ? [bulb] : [],
+    dispatch: () => assert.fail('a read-only configuration cannot dispatch')});
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'Tell me about Fixture Desk Lamp.')).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  followUp = true;
+  const previous = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), 'How bright is it now?')).status, 'accepted');
+  await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+  assert.match(evidence, /Fixture Desk Lamp \(fixture-desk\)/u);
+});
+
+void test('an incomplete color proposal binds saturation and any unit correction to the selected hue and revision', async context => {
+  const owner = 'bunny/modules/lifx', id = 'fixture-color';
+  const bulb = light(id, 'Fixture Color Lamp');
+  const writes: AssistantDispatch[] = [];
+  let configurationRevision = bulb.configurationRevision;
+  let saturation: number | undefined;
+  let hue = 120;
+  const provider = lightingFixtureSupervisor(results => results.some(result => result.startsWith('refused:') || result.startsWith('accepted:'))
+    ? undefined : {name: 'control_lifx_color_set', args: {owner, target: `id:${id}`,
+      arguments: JSON.stringify(saturation === undefined ? {hue} : {hue, saturation})}});
+  const w = await world(context, {provider, share: sharing(), tools: ['control_lifx_color_set'],
+    devices: source => source === owner ? [{...bulb, configurationRevision}] : [],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const module = w.bus.connect(owner);
+  context.after(() => module.close());
+  await module.serveSync(['lifx-light'], () => ({revision: 1, states: [{
+    type: 'org.bunny.lifx-light.updated', subject: id, dataschema: 'https://bunny.invalid/events/lifx-light/2.0',
+    data: {id, revision: 1, capabilities: {color: {supported: true}, temperature: {supported: false}}, observed: unknown},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  const answers = [
+    {answer: 'Please use 75 percent.', proposed: 80},
+    {answer: 'Set saturation to 75%.', proposed: 80},
+    {answer: 'Use 75 kelvin.', proposed: 75, correction: '75 percent.', accepted: true},
+    {answer: 'Use 75/100.', proposed: 75},
+    {answer: 'Use −75%.', proposed: 75},
+    {answer: 'Use negative 75 percent.', proposed: 75},
+    {answer: 'Use 0.75.', proposed: 75},
+    {answer: 'Use 75 percent per second.', proposed: 75, correction: '75 nits.'},
+    {answer: 'Use 75 or 80 percent.', proposed: 75},
+    {answer: 'Use 75% or 80%.', proposed: 75},
+    {answer: 'Whatever looks good.', proposed: 75},
+    {answer: '75%', proposed: 75, change: 'stale'},
+    {answer: '75%', proposed: 75, change: 'hue'},
+    {answer: 'Please use 75 percent.', proposed: 75, accepted: true},
+    {answer: 'Set saturation to 75%.', proposed: 75, accepted: true},
+    {answer: '75', proposed: 75, accepted: true},
+  ] as const;
+  for (const attempt of answers) {
+    hue = 120;
+    saturation = undefined;
+    const previous = task(w)?.taskId, before = writes.length;
+    assert.equal((await input(w.core, w.module(), `Set the hue of id:${id} to 120 degrees.`)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'waiting');
+    const question = (await page(w)).currentTask?.question;
+    assert.equal(question?.kind, 'clarification');
+    assert.equal(question?.text, 'What saturation percentage do you want?');
+    assert.equal(writes.length, before);
+    if ('change' in attempt && attempt.change === 'stale') configurationRevision += 1;
+    if ('change' in attempt && attempt.change === 'hue') hue = 135;
+    saturation = attempt.proposed;
+    const answeredQuestion = task(w)?.questionId;
+    assert.equal((await input(w.core, w.module(), attempt.answer, true)).status, 'accepted');
+    if ('correction' in attempt) {
+      await until(() => status(w) === 'waiting' && task(w)?.questionId !== answeredQuestion);
+      assert.equal((await page(w)).currentTask?.question?.text, 'Which saturation value in percent do you want?');
+      assert.equal(writes.length, before);
+      assert.equal((await input(w.core, w.module(), attempt.correction, true)).status, 'accepted');
+    }
+    await until(() => status(w) === 'succeeded');
+    assert.equal(writes.length, before + ('accepted' in attempt ? 1 : 0), attempt.answer);
+    if ('accepted' in attempt) {
+      const sent = writes[before];
+      assert.ok(sent?.family === 'catalog-action');
+      assert.deepEqual(sent.binding, {kind: 'device', owner, target: id, configurationRevision, generation: bulb.generation});
+    }
+  }
+  assert.equal(writes.length, 4);
+  for (const sent of writes) {
+    assert.ok(sent.family === 'catalog-action');
+    assert.equal(sent.command, 'lifx-color-set');
+    assert.deepEqual(sent.data, {hue: 120, saturation: 75});
+  }
 });
 
 for (const [name, profile] of [['anthropic', 'bunny'], ['anthropic', 'reachy'], ['anthropic', 'microduck'],

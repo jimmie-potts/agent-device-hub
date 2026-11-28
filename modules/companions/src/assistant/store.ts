@@ -1,3 +1,5 @@
+import type {LightingDecision} from './lighting-execution.js';
+import type {LightingClarification} from './lighting-control.js';
 import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
 import type {ModelControlProof} from './model-control.js';
@@ -37,7 +39,10 @@ export {LIMITS} from './limits.js';
 type SavedTranscriptItem = (Extract<TranscriptItem, {role: 'owner'}> & {submittedAtMs?: number})
   | Exclude<TranscriptItem, {role: 'owner'}>;
 type ConversationQuestion = SavedQuestion & {call: string; codingChoice?: CodingChoice; codingDestination?: CodingDestinationChoice; codingRequirements?: CodingRequirements};
-export type Question = ConversationQuestion & {modeClarification?: {requestId: string; requestRevision: number; modeRevision: number}};
+export type Question = ConversationQuestion & {
+  modeClarification?: {requestId: string; requestRevision: number; modeRevision: number};
+  deviceReadClarification?: {requestId: string};
+};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   /** Only the private Conversation page renders this receipt, after a fresh exact Jobs lookup. */
   localJobStatus?: {question: string; visible?: {jobId: string; operationId: string; status: string}};
@@ -45,6 +50,8 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   supervisor?: SupervisorIdentity;
   codingPreference?: CodingPreference;
   clarificationDevices?: readonly string[];
+  lightingClarification?: LightingClarification;
+  lightingDecision?: LightingDecision;
   historyScope?: DeviceHistoryBinding;
   ownerInputStart?: string;
   /** Legacy Messages task's bound history query. */
@@ -70,6 +77,8 @@ export type HostedHistoryMessage = Pick<RecentMessage, 'id' | 'role' | 'text'> &
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   directBrightness?: true;
   modelControlProof?: ModelControlProof;
+  lightingControlProof?: ModelControlProof;
+  lightingReadTarget?: string;
   privateDraftId?: string;
   wemoFacts?: readonly {id: string; revision: string}[];
   namedDeviceRead?: {owner: string; id: string};

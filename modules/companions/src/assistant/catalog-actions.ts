@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {containsControlValue, literalToolDeviceId, literalDeviceId, normalizedControlText, type SceneReceipt} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
+import {exactControlIds} from './model-control.js';
 import {catalogCueReferences, catalogQuoteNames, catalogSelectorId, type CatalogReferenceRole} from './catalog-grounding.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -15,6 +16,7 @@ import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {deviceFacts, deviceLabel, matchingDevices, MAX_OBSERVATION_AGE_MS, Outcome, readDeviceRecords, readLifxDeviceFacts, usableArtComposition,
   type LifxDeviceFacts, type ModuleContext, type OwnedDevice, type TraceContext} from '@jimmie-potts/sdk';
 import type {DeviceReadDisplay} from './devices.js';
+import {LIGHTING_OWNERS, type LightingDevice} from './lighting-control.js';
 import {ShowDrafts, showCueIndex} from './show-drafts.js';
 import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
@@ -67,7 +69,7 @@ export function deviceClarification(noun: string, ids: readonly string[], canNam
 }
 type Refusal = {code: ErrorCode};
 type Match = OwnedDevice;
-export type NamedDeviceLookup = {owner: string; target: string; request: string};
+export type NamedDeviceLookup = {owner: string; target: string; request: string; currentSubject?: true};
 type ScopedDeviceFacts = {
   subject: string | undefined;
   named: NamedDeviceLookup | undefined;
@@ -169,17 +171,40 @@ export class ConversationActions {
     return readDeviceRecords(this.context.sdk, owners, {timeoutMs: 1200, parent});
   }
 
+  async lightingDevices(parent: TraceContext, localLifx: readonly DeviceRecord[], includeColor: boolean): Promise<LightingDevice[]> {
+    const [records, lights] = await Promise.all([
+      this.#deviceRecords(LIGHTING_OWNERS, parent),
+      includeColor ? readLifxDeviceFacts(this.context.sdk, {timeoutMs: 1200, parent}) : undefined,
+    ]);
+    const rows = [...records.rows];
+    for (const device of localLifx) {
+      if (!rows.some(row => row.owner === LIFX && row.device.id === device.id)) rows.push({owner: LIFX, device});
+    }
+    return rows.sort((a, b) => a.owner === b.owner ? a.device.id.localeCompare(b.device.id) : a.owner.localeCompare(b.owner)).map(row => {
+      const light = row.owner === LIFX ? lights?.find(record => record.id === row.device.id) : undefined;
+      return light === undefined ? row : {...row, light};
+    });
+  }
+
   async deviceSubjectMatches(subject: string, parent: TraceContext): Promise<Match[]> {
     const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
     const id = literalDeviceId(subject);
     return rows.filter(({device}) => id === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === id);
   }
 
-  async namedDeviceMatch({owner, target, request}: NamedDeviceLookup, granted: (id: string) => boolean, parent: TraceContext): Promise<Match | undefined> {
-    const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
+  async namedDeviceMatch({owner, target, request, currentSubject}: NamedDeviceLookup, granted: (id: string) => boolean, parent: TraceContext): Promise<Match | undefined> {
+    const owners = owner === 'auto' || currentSubject === true ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     const {rows} = await this.#deviceRecords(owners, parent);
     const visible = rows.filter(({device}) => granted(device.id));
     const literal = literalToolDeviceId(target);
+    if (currentSubject === true) {
+      const selectors = exactControlIds(request);
+      if (selectors.length > 1 || selectors.some(id => id !== literal)) return undefined;
+      const matches = visible.filter(({device}) => literal === undefined
+        ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === target) : device.id === literal);
+      const [selected] = matches;
+      return matches.length === 1 && selected !== undefined && (owner === 'auto' || selected.owner === owner) ? selected : undefined;
+    }
     // A longer permitted name in the request cannot authorize a shorter alias.
     if (literal === undefined && visible.some(({device}) => [device.id, deviceLabel(device)].some(value =>
       normalizedControlText(value) !== normalizedControlText(target) && containsControlValue(value, target) && containsControlValue(request, value)))) return undefined;
@@ -838,7 +863,7 @@ export class ConversationActions {
       const selected = scopedFacts.named !== undefined ? await this.namedDeviceMatch(scopedFacts.named, scopedFacts.granted, parent)
         : matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
-          target !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
+          target.trim() !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
       const {owner: source, device} = selected;
       scopedFacts.resolve(device.id);
       if (!access('devices', 'index', device.id) || !access('devices', 'label', device.id) || !access('devices', 'status', device.id)) {

@@ -1439,6 +1439,17 @@ match a write, Conversation asks for the exact ID. It binds the setting to the
 selected light's configuration revision and generation. The core tracks the
 operation. Expand **Tool result** to inspect its receipt and evidence.
 
+Either Conversation supervisor can interpret absolute brightness, an extreme
+such as maximum brightness, or a relative change. Relative requests use fresh
+observed state. A change in percentage points moves along the brightness scale.
+A proportional change uses a percentage of the current reading. Relative
+changes respect device limits. An absolute value outside the range is refused.
+Supported color temperature controls use Kelvin, with smaller values warmer
+and larger values cooler. A clearly bare value uses the selected setting's
+unit. If the request gives an unsupported unit, Conversation asks for a value
+in a supported unit before any command. For color, it can ask for a corrected
+saturation percentage while keeping the selected hue.
+
 ### Wemo status and power
 
 `read_wemo` reports the plug's observed power, freshness, and hold state.

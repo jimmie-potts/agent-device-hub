@@ -83,7 +83,7 @@ export function readCatalogReferences(value: unknown, scope: ModelControlScope, 
   return refs;
 }
 
-function containsControlQuote(body: string, quote: string): boolean {
+export function containsControlQuote(body: string, quote: string): boolean {
   const index = body.indexOf(quote);
   return index !== -1 && body.indexOf(quote, index + 1) === -1 &&
     !/[\p{L}\p{N}_-]/u.test(body[index - 1] ?? '') &&
