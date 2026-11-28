@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {containsControlValue, literalToolDeviceId, literalDeviceId, normalizedControlText, type SceneReceipt} from './control-intent.js';
 import type {FieldAccess} from './sharing.js';
-import {exactControlIds} from './model-control.js';
+import {controlReferenceIds, exactControlIds} from './model-control.js';
 import {catalogCueReferences, catalogQuoteNames, catalogSelectorId, type CatalogReferenceRole} from './catalog-grounding.js';
 import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -16,7 +16,7 @@ import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {deviceFacts, deviceLabel, matchingDevices, MAX_OBSERVATION_AGE_MS, Outcome, readDeviceRecords, readLifxDeviceFacts, usableArtComposition,
   type LifxDeviceFacts, type ModuleContext, type OwnedDevice, type TraceContext} from '@jimmie-potts/sdk';
 import type {DeviceReadDisplay} from './devices.js';
-import {LIGHTING_OWNERS, type LightingDevice} from './lighting-control.js';
+import {LIGHTING_OWNERS, lightingReference, type LightingDevice} from './lighting-control.js';
 import {ShowDrafts, showCueIndex} from './show-drafts.js';
 import {SET_LIFX_BRIGHTNESS} from './tool-scope.js';
 import {textBytes, type ToolCall} from './provider.js';
@@ -74,7 +74,7 @@ type ScopedDeviceFacts = {
   subject: string | undefined;
   named: NamedDeviceLookup | undefined;
   granted: (id: string) => boolean;
-  recordNamed: (match: Match) => void;
+  recordNamed: (match: Match, unambiguousContext: boolean) => void;
   admitContextual?: (match: Match) => boolean;
   recordContextual?: (match: Match) => void;
   brightnessControl: boolean;
@@ -194,10 +194,12 @@ export class ConversationActions {
     return rows.filter(({device}) => id === undefined ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject) : device.id === id);
   }
 
-  async namedDeviceMatch({owner, target, request, currentSubject}: NamedDeviceLookup, granted: (id: string) => boolean, parent: TraceContext): Promise<Match | undefined> {
+  async namedDeviceMatch({owner, target, request, currentSubject}: NamedDeviceLookup, granted: (id: string) => boolean, parent: TraceContext,
+    checkContext?: (unambiguous: boolean) => void): Promise<Match | undefined> {
     const owners = owner === 'auto' || currentSubject === true ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
-    const {rows} = await this.#deviceRecords(owners, parent);
-    const visible = rows.filter(({device}) => granted(device.id));
+    const {rows} = await this.#deviceRecords(checkContext === undefined ? owners : assistantDeviceOwners, parent);
+    const grantedRows = rows.filter(({device}) => granted(device.id));
+    const visible = grantedRows.filter(row => owners.some(source => source === row.owner));
     const literal = literalToolDeviceId(target);
     if (currentSubject === true) {
       const selectors = exactControlIds(request);
@@ -205,13 +207,25 @@ export class ConversationActions {
       const matches = visible.filter(({device}) => literal === undefined
         ? [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === target) : device.id === literal);
       const [selected] = matches;
-      return matches.length === 1 && selected !== undefined && (owner === 'auto' || selected.owner === owner) ? selected : undefined;
+      if (matches.length !== 1 || selected === undefined || owner !== 'auto' && selected.owner !== owner) return undefined;
+      checkContext?.(true);
+      return selected;
     }
     // A longer permitted name in the request cannot authorize a shorter alias.
     if (literal === undefined && visible.some(({device}) => [device.id, deviceLabel(device)].some(value =>
       normalizedControlText(value) !== normalizedControlText(target) && containsControlValue(value, target) && containsControlValue(request, value)))) return undefined;
     const matches = matchingDevices(visible, target, owner, literal);
-    return matches.length === 1 ? matches[0] : undefined;
+    const [selected] = matches;
+    if (matches.length !== 1 || selected === undefined) return undefined;
+    if (checkContext !== undefined) {
+      const exact = exactControlIds(request);
+      const label = normalizedControlText(deviceLabel(selected.device));
+      const candidates = grantedRows.filter(row => exact.length !== 1 || exact[0] !== selected.device.id ||
+        normalizedControlText(deviceLabel(row.device)) !== label);
+      const otherIds = controlReferenceIds(candidates.map(row => lightingReference(row, true)), request);
+      checkContext([...exact, ...otherIds].every(id => id === selected.device.id));
+    }
+    return selected;
   }
 
   async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {
@@ -862,8 +876,9 @@ export class ConversationActions {
     if (scopedFacts !== undefined) {
       const matches = scopedFacts.named !== undefined || scopedFacts.subject === undefined ? []
         : await this.deviceSubjectMatches(scopedFacts.subject, parent);
-      const selected = scopedFacts.named !== undefined ? await this.namedDeviceMatch(scopedFacts.named, scopedFacts.granted, parent)
-        : matches.length === 1 ? matches[0] : undefined;
+      let unambiguousContext = false;
+      const selected = scopedFacts.named !== undefined ? await this.namedDeviceMatch(scopedFacts.named, scopedFacts.granted, parent,
+        unambiguous => {unambiguousContext = unambiguous;}) : matches.length === 1 ? matches[0] : undefined;
       if (selected === undefined || !owners.some(value => value === selected.owner) ||
           target.trim() !== '' && matchingDevices([selected], target, owner, literalToolDeviceId(target)).length !== 1) return textResult({devices: []});
       if (scopedFacts.admitContextual?.(selected) === false) return textResult({devices: []});
@@ -872,7 +887,7 @@ export class ConversationActions {
       if (!access('devices', 'index', device.id) || !access('devices', 'label', device.id) || !access('devices', 'status', device.id)) {
         return textResult({devices: []});
       }
-      if (scopedFacts.named !== undefined) scopedFacts.recordNamed(selected);
+      if (scopedFacts.named !== undefined) scopedFacts.recordNamed(selected, unambiguousContext);
       else scopedFacts.recordContextual?.(selected);
       if (scopedFacts.brightnessControl) {
         const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');

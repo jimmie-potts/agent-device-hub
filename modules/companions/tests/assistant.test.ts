@@ -5156,8 +5156,8 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       };
       const effect = 'fixture-' + turn;
       const result = adapter === 'anthropic'
-        ? body.messages?.flatMap(message => message.content).filter(block => block.type === 'tool_result' && block.tool_use_id?.startsWith(effect)).at(-1)?.content
-        : body.input?.filter(item => item.type === 'function_call_output' && item.call_id?.startsWith(effect)).at(-1)?.output;
+        ? body.messages?.flatMap(message => message.content).filter(block => block.type === 'tool_result' && block.tool_use_id?.startsWith(effect) === true).at(-1)?.content
+        : body.input?.filter(item => item.type === 'function_call_output' && item.call_id?.startsWith(effect) === true).at(-1)?.output;
       const answer = turn === 'read' && result?.startsWith('id:') === true;
       const proposeTool = turn !== 'chatter' && (result === undefined || answer);
       const modelToolId = answer ? `${effect}-answer` : effect;
@@ -5259,21 +5259,37 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     };
 
     for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound', 'lookalike',
-      'unknown-name', 'multiple', 'correction', 'hidden-newer', 'prior-generation', 'saved-blank'] as const) {
+      'unknown-name', 'late-old-result', 'multiple', 'two-lookups', 'correction', 'hidden-newer', 'prior-generation', 'saved-blank'] as const) {
       change = 'none';
       withheldOwnerMessage = undefined;
       propose = selected.label ?? id;
       await ask(`What brightness does ${selected.label} report?`);
       assert.equal(status(w), 'succeeded');
-      if (variation === 'unknown-name' || variation === 'hidden-newer') {
+      if (variation === 'unknown-name' || variation === 'hidden-newer' || variation === 'late-old-result') {
+        const earlier = task(w)?.taskId;
+        assert.ok(earlier !== undefined);
         propose = 'Porch Display';
         await ask('What brightness does Porch Display report?');
         assert.equal(reads.at(-1), '{"devices":[]}');
+        if (variation === 'late-old-result') {
+          const store = w.store();
+          const earlierTask = store.task(earlier);
+          const earlierLookup = store.calls(earlier).find(call => call.deviceLookup?.match?.id === id);
+          assert.ok(earlierTask && earlierLookup?.result != null);
+          const late = { ...earlierLookup, id: `${earlierLookup.id}-late` };
+          store.saveCall(late);
+          store.message(earlierTask, late.id, 'tool', earlierLookup.result, now);
+        }
         if (variation === 'hidden-newer') {
           const latest = task(w);
           assert.ok(latest);
           withheldOwnerMessage = latest.taskId + '-prompt';
         }
+      }
+      if (variation === 'two-lookups') {
+        propose = `id:${unrelated.id}`;
+        await ask(`Compare the brightness of ${selected.label} and id:${unrelated.id}.`);
+        assert.match(reads.at(-1) ?? '', new RegExp(unrelated.id));
       }
       if (variation === 'correction' || variation === 'multiple') {
         turn = 'chatter';
@@ -5287,11 +5303,16 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       const spendBefore = await unreported();
       await ask(question);
       assert.equal(await unreported(), spendBefore, 'local refusal leaves no unreported provider charge');
-      if (variation === 'unknown-name' || variation === 'multiple' || variation === 'correction' || variation === 'hidden-newer' || variation === 'prior-generation') {
+      if (variation === 'unknown-name' || variation === 'late-old-result' || variation === 'multiple' || variation === 'two-lookups' ||
+          variation === 'correction' || variation === 'hidden-newer' || variation === 'prior-generation') {
         assert.equal(status(w), 'waiting', variation);
         assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up?');
         assert.equal(reads.length, callsBefore, 'the focused question sends no stale device facts');
         const waiting = task(w)?.taskId;
+        if (variation === 'unknown-name') {
+          await w.restart();
+          assert.equal((await page(w, 'bunny', 'recent')).currentTask?.question?.text, 'Which exact device should I look up?');
+        }
         assert.equal((await input(w.core, w.module(), `id:${id}`, true)).status, 'accepted');
         await until(() => status(w) === 'succeeded');
         assert.equal(task(w)?.taskId, waiting);

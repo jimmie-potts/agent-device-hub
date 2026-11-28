@@ -3244,9 +3244,10 @@ starting and desired settings, absolute bounds, relative units, fresh and
 changed observations, and zero writes at a boundary. It also checks the
 existing route bindings and receipt recovery. The contextual status cases in
 `assistant.test.js` verify that a second Messages or Responses request can
-summarize the permitted result, and that changed identity, ambiguous matches
-and revoked grants block it before transport. Only successful provider-shaped
-responses contribute a reported charge in these fake runs.
+summarize a permitted saved lookup result. They cover a fresh read after a
+refused command, invalidation after an unresolved or ambiguous newer lookup,
+the device-selection question and answer, and identity or grant changes between
+the lookup and the provider call. A locally blocked call has zero reported usage.
 
 The Conversation maximum-on read uses a disposable Companions engine with
 synthetic Wemo and core SDK records. After the root build, the
