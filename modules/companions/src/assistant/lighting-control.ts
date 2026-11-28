@@ -183,7 +183,8 @@ const WRITTEN_NUMBER = new RegExp(String.raw`\b(?:${NUMBER_WORD})(?:(?:[ -]| and
 const STATED_UNIT = new RegExp(String.raw`^\s*(${UNIT_SPELLING})`, 'iu');
 const UNIT_INTRODUCER = /^\s+in\s+/iu;
 const LOCATION = /^(?:the|my|our|your|this|that)\b/iu;
-const UNIT_CONTINUATION = /^\s*(?:[/⁄∕／‰‱°]|(?:per|nits?|lumens?|lux|lx|(?:milli)?watts?|mireds?)\b)/iu;
+const UNIT_CONTINUATION = /^\s*(?:[/⁄∕／‰‱°]|(?:nits?|lumens?|lux|lx|(?:milli)?watts?|mireds?|foot[- ]lamberts?|celsius|fahrenheit)\b)/iu;
+const RATE_DENOMINATOR = /^\s*(?:per\b|(?:an?|each|every)\s+(?:milliseconds?|seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?)\b)/iu;
 const PROPERTY_UNIT = /\b(?:brightness|temperature|hue|saturation)\s+in\s+([^.!?;]+?)(?=\s+(?:to|by|at)\b|[.!?;]|$)/giu;
 const QUALITATIVE_AMOUNT = /\b(?:half|(?:(?:a|one|two|three|four) )?quarters?|a (?:bit|few|couple))\b/giu;
 
@@ -241,7 +242,7 @@ function writtenValue(words: string): number {
 
 function explicitQuantityUnit(unit: string, remainder: string): QuantityToken['unit'] {
   const introducer = UNIT_INTRODUCER.exec(remainder)?.[0];
-  if (STATED_UNIT.test(remainder) || UNIT_CONTINUATION.test(remainder) ||
+  if (STATED_UNIT.test(remainder) || UNIT_CONTINUATION.test(remainder) || RATE_DENOMINATOR.test(remainder) ||
       introducer !== undefined && !LOCATION.test(remainder.slice(introducer.length))) return 'unsupported';
   return QUANTITY_UNITS[unit.toLowerCase()];
 }
