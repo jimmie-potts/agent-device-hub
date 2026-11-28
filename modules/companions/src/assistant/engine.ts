@@ -3956,7 +3956,7 @@ export class AssistantEngine {
       if (admitted !== undefined && admitted.status === 'admitted') {
         try {await this.outbox.transaction(() => {
           admitted.status = definitive ? 'failed' : 'uncertain'; if (definitive) admitted.code = codeOf(error); this.store.saveCall(admitted);
-          this.spend.settle(id, answer?.usage ?? null);
+          this.spend.settle(id, answer?.usage ?? (error instanceof ProviderFault ? error.usage ?? null : null));
         });} catch { /* Admission remains evidence of unknown fate. */ }
       }
       throw error;
@@ -3997,6 +3997,12 @@ export class AssistantEngine {
           }).catch(() => {});
         }
         return reply;
+      }, (error: unknown) => {
+        const usage = error instanceof ProviderFault ? error.usage : undefined;
+        if (settled && usage != null && !this.#closed && !this.context.signal.aborted && this.context.database().isOpen) {
+          void this.outbox.transaction(() => this.spend.settle(call.id, usage)).catch(() => {});
+        }
+        throw error;
       });
       return await Promise.race([pending, deadline]);
     } finally {settled = true; cancel?.(); if (stopped !== undefined) active.controller.signal.removeEventListener('abort', stopped);}

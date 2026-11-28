@@ -2029,6 +2029,29 @@ void test('expected cancellation before call admission uses info severity', asyn
   assert.equal(task(w)?.modelCalls, 0);
 });
 
+void test('an unoffered Claude lighting command cannot reach dispatch', async context => {
+  let requests = 0;
+  const provider = new AnthropicProvider({key: 'fixture', transport: (_url, init) => {
+    requests += 1;
+    const body = JSON.parse(init.body) as {tools: {name: string}[]};
+    assert.ok(!body.tools.some(tool => tool.name === 'set_lifx_power'));
+    const content = requests === 1
+      ? [{type: 'tool_use', id: 'toolu_unoffered', name: 'set_lifx_power',
+        input: {...immediateLight, device: 'id:desk-lamp', on: false, powerLiteral: 'off'}}]
+      : [{type: 'text', text: 'No change was sent.'}];
+    return Promise.resolve(Response.json({content, stop_reason: requests === 1 ? 'tool_use' : 'end_turn',
+      usage: {input_tokens: 40, output_tokens: 20}}));
+  }});
+  const w = await world(context, {provider, tools: ['read_devices'], share: sharing(),
+    devices: () => [light('desk-lamp')], dispatch: () => assert.fail('an unoffered command cannot dispatch')});
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'Turn id:desk-lamp off.')).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(requests, 2);
+  assert.equal(task(w)?.questions, 0);
+  assert.ok((await page(w)).messages.some(message => message.text.includes('This tool is not permitted')));
+});
+
 void test('a command the section does not allow is refused to the model without an effect, and reads need no approval', async context => {
   let sends = 0; const script = (input: TurnInput, turn: number): TurnReply => turn === 1 ? call('set_mode', {mode: 'free'}) : turn === 2 ? call('read_sessions') : reply(`Done: ${input.transcript.filter(item => item.role === 'tool').map(item => item.role === 'tool' ? item.result : '').join(' | ')}`);
   const w = await world(context, {provider: counted(script), tools: ['read_sessions'], core: () => ({sessions: [session('PRIVATE-LABEL')], mode: hub(1), synced: true}), dispatch: () => {sends += 1; return Promise.resolve(accepted('x'));}});

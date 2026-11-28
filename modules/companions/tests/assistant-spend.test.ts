@@ -13,7 +13,7 @@ import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, reservationCost, SpendLedger, usageCost, type ModelPrices, type SpendView, type TokenUsage} from '../src/assistant/spend.js';
-import {SPEND_LIMIT_REACHED} from '../src/assistant/anthropic.js';
+import {AnthropicProvider, SPEND_LIMIT_REACHED} from '../src/assistant/anthropic.js';
 import {SyntheticProvider} from '../src/assistant/synthetic.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 
@@ -93,6 +93,48 @@ void test('a paid call reserves its request bound and dearest cost before it is 
   assert.deepEqual((await spend(w)).day, {period: '2026-11-21', spentMicros: total, limitMicros: 20_000_000, unreported: 0, unreportedMicros: 0});
   assert.deepEqual((await spend(w)).month.spentMicros, total);
   assert.deepEqual([task(w)?.reservedUnits, task(w)?.usageUnits], [2112 + 2039, 2112 + 2039], 'reported units replace the reservation');
+});
+
+void test('a malformed Claude proposal sends no command and counts any reported usage', async context => {
+  for (const outcome of ['reported', 'unreported', 'late'] as const) {
+    let sends = 0;
+    const late = deferred<Response>();
+    const reported = outcome !== 'unreported';
+    const malformed = () => Response.json({content: [{type: 'tool_use', id: 'toolu_bad', name: 'set_mode',
+      input: {mode: 'party'}}], stop_reason: 'tool_use', usage: reported ? {input_tokens: 120, output_tokens: 30} : {}});
+    const provider = new AnthropicProvider({key: 'fixture', model: 'model-a', transport: () => {
+      sends += 1;
+      return outcome === 'late' ? late.promise : Promise.resolve(malformed());
+    }});
+    const w = await world(context, {provider, tools: ['set_mode'], dispatch: () => assert.fail('malformed command reached dispatch')});
+    await enable(w.core, w.module());
+    assert.equal((await input(w.core, w.module(), 'Set the Hub mode to free.')).status, 'accepted');
+    if (outcome === 'late') {
+      await until(() => sends === 1);
+      w.advance(LIMITS.modelMs);
+      await until(() => task(w)?.status === 'uncertain');
+      assert.equal((await spend(w)).day.unreported, 1);
+      late.resolve(malformed());
+      await until(() => w.ledger().totals().day.unreported === 0);
+      assert.equal(task(w)?.status, 'uncertain');
+    } else {
+      await until(() => task(w)?.status === 'failed');
+      assert.equal(task(w)?.code, 'invalid-message');
+    }
+    assert.equal(task(w)?.toolCalls, 0);
+    assert.equal(sends, 1);
+    const {day, month} = await spend(w);
+    for (const period of [day, month]) {
+      assert.equal(period.unreported, reported ? 0 : 1);
+      if (reported) {
+        assert.equal(period.spentMicros, usageCost(A, used(120, 30)));
+        assert.equal(period.unreportedMicros, 0);
+      } else {
+        assert.ok(period.spentMicros > 0);
+        assert.equal(period.spentMicros, period.unreportedMicros);
+      }
+    }
+  }
 });
 
 void test('unreported usage and a lost answer keep counting their reservations across restart, and a late report replaces one', async context => {
