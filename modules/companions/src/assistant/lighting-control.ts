@@ -264,20 +264,21 @@ function writtenQuantities(text: string, signs: ReadonlyMap<number, Sign>): Quan
   });
 }
 
-function withoutLightingName(device: DeviceRecord, text: string, settingEvidence = false): string {
-  if (!settingEvidence && exactControlIds(text).includes(device.id)) return text;
+function withoutLightingName(device: DeviceRecord, text: string, includeWordNames = false): string {
+  let source = text;
   for (const reference of new Set([device.id, deviceLabel(device)])) {
     const name = normalizedControlText(reference);
-    if (!/\p{L}/u.test(name) || !settingEvidence && !/\p{N}/u.test(name)) continue;
+    if (!/\p{L}/u.test(name) || !includeWordNames && !/\p{N}/u.test(name)) continue;
     const words = name.split(' ').join('[^\\p{L}\\p{N}]+');
     const mention = new RegExp(`(?<![\\p{L}\\p{N}_])${words}(?![\\p{L}\\p{N}_])`, 'giu');
-    // Keep a number when the spelling could be part of a requested quantity rather than the target alone.
-    text = text.replace(mention, (matched: string, offset: number, whole: string) => {
+    source = source.replace(mention, (matched: string, offset: number, whole: string) => {
       const after = whole.slice(offset + matched.length).replace(/^["'”’]/u, '');
-      return followingUnit(after).unit === undefined ? ' ' : matched;
+      // A property name after a device label is distinct from a unit attached to its number.
+      return includeWordNames || /^\s+(?:brightness|temperature|color|hue|saturation)\b/iu.test(after) ||
+        followingUnit(after).unit === undefined ? ' ' : matched;
     });
   }
-  return text;
+  return source;
 }
 
 function quantityTokens(text: string): QuantityToken[] {
@@ -326,8 +327,12 @@ function quantity(value: unknown): Quantity | undefined {
   return {kind, amount, ...(literal === undefined ? {} : {literal}), ...(startingLiteral === undefined ? {} : {startingLiteral}), ...(unit === undefined ? {} : {unit})};
 }
 
+export function valueCitation(literal: string | undefined): string | undefined {
+  return literal?.replace(/[.!?]$/u, '');
+}
+
 function supportsQuantity(tokens: ReturnType<typeof quantityTokens>, unit: QuantityUnit, requested: Quantity, answerOnly = false,
-  otherColor?: {unit: 'degrees' | 'percent'; amount: number | undefined}): boolean {
+  otherColor?: {unit: 'degrees' | 'percent'; amount: number | undefined}, qualitativeSource?: string): boolean {
   const available = otherColor === undefined ? tokens : tokens.filter(token => token.unit !== otherColor.unit);
   if (available.some(token => token.unit !== undefined && token.unit !== unit || !Number.isSafeInteger(token.value))) return false;
   // An unqualified hue or saturation can accompany the other field's explicit unit.
@@ -338,14 +343,16 @@ function supportsQuantity(tokens: ReturnType<typeof quantityTokens>, unit: Quant
   if (!('amount' in requested)) return candidates.length === 0;
   if (requested.unit !== undefined && QUANTITY_UNITS[requested.unit.toLowerCase()] !== unit) return false;
   if (answerOnly && candidates.length !== 1) return false;
-  if (requested.startingLiteral !== undefined) {
-    return candidates.length === 2 && candidates.some(token => token.literal === requested.startingLiteral) &&
-      requested.startingLiteral !== requested.literal &&
-      candidates.some(token => token.literal === requested.literal && token.value === requested.amount);
+  const literal = valueCitation(requested.literal);
+  const startingLiteral = valueCitation(requested.startingLiteral);
+  if (startingLiteral !== undefined) {
+    return candidates.length === 2 && candidates.some(token => token.literal === startingLiteral) &&
+      startingLiteral !== literal && candidates.some(token => token.literal === literal && token.value === requested.amount);
   }
-  if (candidates.length === 0) return !answerOnly && requested.literal === undefined;
+  if (candidates.length === 0) return qualitativeSource !== undefined && literal !== undefined && /\p{L}/u.test(literal) &&
+    containsControlQuote(qualitativeSource, literal) && quantityTokens(literal).length === 0;
   return candidates.length === 1 && candidates[0]?.value === requested.amount &&
-    (requested.literal === undefined || candidates[0].literal === requested.literal);
+    (literal === undefined || candidates[0].literal === literal);
 }
 
 type LightingValue = {kind: 'ready'; setting: Settings; observationBasis?: ObservationBasis}
@@ -379,7 +386,7 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
     }
     if (!supportsQuantity(hueTokens, 'degrees', hue,
       previous?.kind === 'quantity-clarification' || previous?.kind === 'setting-slot' && previous.slot === 'hue',
-      {unit: 'percent', amount: saturation?.amount})) return invalid;
+      {unit: 'percent', amount: saturation?.amount}, withoutLightingName(row.device, color, true))) return invalid;
     if (saturation === undefined) return {kind: 'missing-saturation', hue: hue.amount};
     const slot = previous?.kind === 'setting-slot' ? previous.slot : undefined;
     if (previous?.kind === 'setting-slot' && previous.fixed !== undefined &&
@@ -392,7 +399,7 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
       return {kind: 'missing-saturation', hue: previous.hue, unsupportedUnit: true};
     }
     if (!supportsQuantity(saturationTokens, 'percent', saturation, previous !== undefined,
-      previous?.kind === 'missing-saturation' || slot !== undefined ? undefined : {unit: 'degrees', amount: hue.amount})) return invalid;
+      previous?.kind === 'missing-saturation' || slot !== undefined ? undefined : {unit: 'degrees', amount: hue.amount}, withoutLightingName(row.device, source, true))) return invalid;
     return {kind: 'ready', setting: {family, data: {hue: hue.amount, saturation: saturation.amount}}};
   }
   if (!('quantity' in intent)) return invalid;
@@ -407,17 +414,23 @@ export function lightingValue(row: LightingDevice, scope: ModelControlScope, int
   if (source === undefined) return invalid;
   const ownerSource = answering ? scope.answer?.text ?? '' : scope.request.text;
   if ('literal' in requested && requested.literal !== undefined && !containsControlQuote(ownerSource, requested.literal)) return invalid;
+  const literal = valueCitation(requested.literal);
   const fraction = FRACTIONS.find(kind => kind === requested.kind);
-  if (fraction !== undefined && requested.literal !== undefined) {
+  if (fraction !== undefined && literal !== undefined) {
     if (!brightness || previous?.kind === 'quantity-clarification' && previous.operation !== 'absolute') return invalid;
-    if (!completeLightingValueCitation(ownerSource, requested.literal, fraction) ||
-        propertyUnits(source).some(unit => unit !== 'percent')) return invalid;
-    return fractionBrightness(row, fraction, requested.literal, minimum, maximum, now);
+    const operand = FRACTION_OPERAND.exec(literal)?.[0];
+    const suffixUnit = operand === undefined ? undefined :
+      followingUnit(ownerSource.slice(ownerSource.indexOf(literal) + operand.length)).unit;
+    if (propertyUnits(source).some(unit => unit !== 'percent') || suffixUnit !== undefined && suffixUnit !== 'percent') {
+      return {kind: 'quantity-clarification', unit: 'percent', operation: 'absolute', reason: 'unit'};
+    }
+    if (!completeLightingValueCitation(ownerSource, literal, fraction)) return invalid;
+    return fractionBrightness(row, fraction, literal, minimum, maximum, now);
   }
   if (requested.kind === 'minimum' || requested.kind === 'maximum') {
     if (previous?.kind === 'quantity-clarification' && previous.operation !== 'absolute' ||
-        !completeLightingValueCitation(ownerSource, requested.literal) || propertyUnits(source).some(stated => stated !== unit)) return invalid;
-    const limit = normalizedControlText(requested.literal);
+        literal === undefined || !completeLightingValueCitation(ownerSource, literal) || propertyUnits(source).some(stated => stated !== unit)) return invalid;
+    const limit = normalizedControlText(literal);
     const expected = requested.kind === 'minimum' ? /^(?:min(?:imum)?|as dim as possible)(?: brightness)?$/u
       : /^(?:max(?:imum)?|full|as bright as possible)(?: brightness)?$/u;
     return expected.test(limit) ? numericLightingValue(family, requested.kind === 'minimum' ? minimum : maximum) : invalid;
@@ -491,8 +504,11 @@ export function fixedLightingColor(row: LightingDevice, request: string, slot: '
   const text = withoutLightingName(row.device, request);
   const tokens = quantityTokens(text);
   return value.kind === 'absolute' && integerIn(value.amount, 0, maximum) &&
-    !hasUnsupportedUnit(text, tokens, unit) && supportsQuantity(tokens, unit, value);
+    !hasUnsupportedUnit(text, tokens, unit) && supportsQuantity(tokens, unit, value, false, undefined,
+      withoutLightingName(row.device, text, true));
 }
+
+const FRACTION_OPERAND = /^(?:(?:(a|one|two|three|four|five|six|seven)[ -])?(half|thirds?|quarters?|fourths?|fifths?|eighths?)|([¼-¾⅐-⅞]|\d+\s*[/⁄∕／]\s*\d+))(?:\s*(%|percent\b))?(?:\s+of (?:the |its )?((?:maximum|current)(?: brightness)?|brightness))?(?:\s+brightness)?/iu;
 
 function fractionBrightness(row: LightingDevice, kind: FractionQuantity['kind'], literal: string,
   minimum: number, maximum: number, now: number): LightingValue {
@@ -500,8 +516,8 @@ function fractionBrightness(row: LightingDevice, kind: FractionQuantity['kind'],
   // Completeness applies to the cited value, not the sentence that contains it.
   const halve = /^halve$/iu.test(literal);
   const value = halve ? 'half' : literal;
-  const match = /^(?:(?:(a|one|two|three|four|five|six|seven)[ -])?(half|thirds?|quarters?|fourths?|fifths?|eighths?)|([¼-¾⅐-⅞]|\d+\s*[/⁄∕／]\s*\d+))(?:\s*(%|percent\b))?(?:\s+of (?:the |its )?((?:maximum|current)(?: brightness)?|brightness))?(?:\s+brightness)?$/iu.exec(value);
-  if (match === null) return invalid;
+  const match = FRACTION_OPERAND.exec(value);
+  if (match?.[0] !== value) return invalid;
   const [, amountWord, fractionWord, fraction, percent, basis] = match;
   const reference = basis?.toLowerCase() ?? '';
   const supportedKind = halve ? kind === 'fraction-of-current'

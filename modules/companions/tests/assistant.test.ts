@@ -5205,7 +5205,7 @@ void test('lighting proposals use each registered command route and refuse inval
   const operations = [
     ['lifx', 'set_lifx_power', {on: false}],
     ['lifx', 'set_lifx_brightness', {percent: 21}],
-    ['lifx', 'control_lifx_color_set', {hue: 135, saturation: 64}],
+    ['lifx', 'control_lifx_color_set', {hue: 135, saturation: 64}, 'missing color evidence'],
     ['lifx', 'control_lifx_color_set', {hue: 135, saturation: 64}, undefined, 'Set hue 135 and saturation 64% on id:route-lifx.'],
     ['lifx', 'control_lifx_temperature_set', {kelvin: 3200}, undefined, 'Set id:route-lifx to 3,200 K.'],
     ['lifx', 'control_lifx_temperature_set', {kelvin: 3200}, 'ambiguous Kelvin', 'Set id:route-lifx to 3,200 K or 3,500 K.'],
@@ -5350,9 +5350,9 @@ for (const adapter of ['anthropic', 'openai'] as const) for (const privateAnswer
             content: [{type: 'output_text', text: 'The setting remains unanswered.'}]}], usage}));
       }
       const answered = value === JSON.stringify({kind: 'authenticated-owner-answer', slot: 'percent',
-        execution: 'conditional-or-future', answer: '37%'});
-      const args = {device: 'id:studio', operation: 'absolute', percent: answered ? 37 : 0,
-        literal: answered ? '37%' : '', startingLiteral: '', intent: 'set',
+        execution: 'conditional-or-future', answer: '51%.'});
+      const args = {device: 'id:studio', operation: 'absolute', percent: answered ? 51 : 0,
+        literal: answered ? '51%.' : '', startingLiteral: '', intent: 'set',
         execution: answered ? 'immediate' : 'conditional-or-future', condition: answered ? '' : 'When I get home',
         missing: answered ? 'none' : 'percent'};
       const id = answered ? 'value' : 'initial';
@@ -5383,14 +5383,14 @@ for (const adapter of ['anthropic', 'openai'] as const) for (const privateAnswer
     assert.deepEqual(commands, []);
     await w.restart();
     assert.deepEqual(w.store().task(taskId)?.lightingDecision, decision);
-    assert.equal((await input(w.core, w.module(), '37%', true)).status, 'accepted');
+    assert.equal((await input(w.core, w.module(), '51%.', true)).status, 'accepted');
     await until(() => status(w) === 'succeeded');
     const completed = w.store().task(taskId)?.lightingDecision;
     assert.equal(completed?.execution, 'conditional-or-future');
-    assert.deepEqual(completed?.completed, privateAnswer ? undefined : {family: 'brightness-set', data: {percent: 37}});
+    assert.deepEqual(completed?.completed, privateAnswer ? undefined : {family: 'brightness-set', data: {percent: 51}});
     assert.equal(deliveredAnswer, privateAnswer ? 'The owner’s answer is private.' :
-      JSON.stringify({kind: 'authenticated-owner-answer', slot: 'percent', execution: 'conditional-or-future', answer: '37%'}));
-    assert.equal(w.store().task(taskId)?.question?.answer, '37%');
+      JSON.stringify({kind: 'authenticated-owner-answer', slot: 'percent', execution: 'conditional-or-future', answer: '51%.'}));
+    assert.equal(w.store().task(taskId)?.question?.answer, '51%.');
     assert.equal(w.store().task(taskId)?.questions, 1);
     assert.deepEqual(commands, []);
   });
@@ -5555,7 +5555,7 @@ for (const adapter of ['anthropic', 'openai'] as const) {
         await until(() => task(w)?.taskId !== prior && (status(w) === 'waiting' || status(w) === 'succeeded' || writes.length > before));
         if (attempt.correction !== undefined) {
           assert.equal(status(w), 'waiting', attempt.text);
-          assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which.*(?:percent|kelvin)/iu);
+          assert.match(JSON.stringify((await page(w)).currentTask?.question), /Which.*(?:percent|kelvin)/iu, attempt.text);
           assert.equal(writes.length, before, attempt.text);
           corrected = true;
           offered = false;

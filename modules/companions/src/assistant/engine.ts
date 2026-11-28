@@ -24,7 +24,7 @@ import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, hostedInputCapacity, hostedInputUnits, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, codingShareDestination, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
 import {authorizesControl, authorizesHubMode, brightnessSubject, containsControlValue, controlExclusion, explicitPowerRequest, hubModeChoice, literalDeviceId, matchesControlSubject, missingBrightnessSubject, missingMode, namedControlTargets, normalizedControlText, ownerCancelled, ownerRequestClauses, type BoundControl, type SceneReceipt} from './control-intent.js';
-import {fixedLightingColor, lightingControl, lightingFamily, lightingReference, lightingRefusal, lightingSlotBelongsTo, lightingValue, planLightingControl, qualifiedLightingOwner, resolveLightingTarget, updateLightingGrounding, type LightingControlScope, type LightingDevice, type LightingClarification, type LightingQuestion} from './lighting-control.js';
+import {fixedLightingColor, lightingControl, lightingFamily, lightingReference, lightingRefusal, lightingSlotBelongsTo, lightingValue, planLightingControl, qualifiedLightingOwner, resolveLightingTarget, updateLightingGrounding, valueCitation, type LightingControlScope, type LightingDevice, type LightingClarification, type LightingQuestion} from './lighting-control.js';
 import {lightingConditionMatches, lightingIntent, lightingIntentFields, powerLiteralField, type LightingDecision} from './lighting-execution.js';
 import {CONTROL_INSTRUCTIONS, controlReferenceIds, controlReferenceSnapshot, exactControlIds, modelControlProof, resolveModelControl, type ControlSource, type ModelControlProof, type ModelControlScope} from './model-control.js';
 import {planWemoPower, resolveWemoControl, wemoControlReference} from './wemo-control.js';
@@ -2847,7 +2847,7 @@ export class AssistantEngine {
       const {powerLiteral} = call.input;
       const ownerValue = previous === undefined ? scope.request.text : scope.answer?.text ?? '';
       const expected = input.setting.on ? 'on' : 'off';
-      const polarity = typeof powerLiteral === 'string' ? powerLiteral.toLowerCase() : undefined;
+      const polarity = typeof powerLiteral === 'string' ? valueCitation(powerLiteral)?.toLowerCase() : undefined;
       if (typeof powerLiteral !== 'string' || powerLiteral === '' || powerLiteral.length > 131 ||
           !containsControlQuote(ownerValue, powerLiteral) || (polarity === 'on' || polarity === 'off') && polarity !== expected) {
         return deferred ? settle(noExecution, boundDecision) : 'refused: the power value does not match the cited owner input.';

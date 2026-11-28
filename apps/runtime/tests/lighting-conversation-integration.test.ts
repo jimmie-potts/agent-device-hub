@@ -26,6 +26,8 @@ for (const provider of ['anthropic', 'openai'] as const) {
     {kind: 'power', label: 'retains polarity when the owner asks for a report too', text: 'Turn Studio 2 on, then tell me if it worked.',
       refusal: 'opposite'},
     {kind: 'power', label: 'refuses the opposite of an explicit power action', text: 'Turn Studio 2 on.', refusal: 'opposite'},
+    {kind: 'power', label: 'refuses opposite power even when the citation includes a terminal period',
+      text: 'Turn Studio 2 on.', powerQuote: 'on.', refusal: 'opposite'},
     {kind: 'power', label: 'refuses writing to a device named with a conjunction during status', text: 'Is Desk and Shelf Lamp off?',
       deviceLabel: 'Desk and Shelf Lamp', refusal: 'read-only'},
     {kind: 'power', label: 'refuses the opposite for a device named with a conjunction', text: 'Turn Desk and Shelf Lamp on.',
@@ -98,6 +100,12 @@ for (const provider of ['anthropic', 'openai'] as const) {
       text: 'Set Studio 2 to three quarters brightness.', operation: 'fraction-of-scale', valueQuote: 'quarters brightness', refusal: 'unsupported-fraction'},
     {kind: 'brightness', label: 'refuses a fraction citation that omits its basis',
       text: 'Set Studio 2 to half of its maximum.', operation: 'fraction-of-scale', valueQuote: 'half', refusal: 'unsupported-fraction'},
+    {kind: 'brightness', label: 'asks for supported units after an unsupported word fraction',
+      text: 'Set Studio 2 to half nits.', operation: 'fraction-of-scale', valueQuote: 'half nits', refusal: 'missing', unsupportedFractionUnit: true},
+    {kind: 'brightness', label: 'asks for supported units after an unsupported numeric fraction',
+      text: 'Set Studio 2 to 1/2 nits.', operation: 'fraction-of-scale', valueQuote: '1/2 nits', refusal: 'missing', unsupportedFractionUnit: true},
+    {kind: 'brightness', label: 'asks for percent when a fraction uses Kelvin',
+      text: 'Set Studio 2 to half Kelvin.', operation: 'fraction-of-scale', valueQuote: 'half Kelvin', refusal: 'missing', unsupportedFractionUnit: true},
     {kind: 'brightness', label: 'refuses a limit citation that omits the unsupported unit',
       text: 'Set Studio 2 to maximum in nits.', operation: 'maximum', valueQuote: 'maximum', refusal: 'unsupported-fraction'},
     {kind: 'brightness', label: 'uses the actual maximum despite a conflicting scalar', operation: 'maximum', valueQuote: 'maximum brightness', text: 'Set Studio 2 to maximum brightness.',
@@ -111,6 +119,14 @@ for (const provider of ['anthropic', 'openai'] as const) {
       refusal: 'missing', typedMissing: true},
     {kind: 'brightness', label: 'keeps a conditional brightness clarification from becoming an immediate command',
       text: 'When I get home, set Studio 2 to something cozy.', refusal: 'missing', typedMissing: true, condition: 'When I get home'},
+    {kind: 'brightness', label: 'binds a fully quoted punctuated brightness answer',
+      text: 'Set Studio 2 brightness.', refusal: 'missing', typedMissing: true, answer: '42%.', answerLiteral: '42%.'},
+    {kind: 'brightness', label: 'rejects a mismatched scalar with a fully quoted punctuated answer',
+      text: 'Set Studio 2 brightness.', refusal: 'missing', typedMissing: true, answer: '42%.', answerLiteral: '42%.', wrongCorrection: true},
+    {kind: 'brightness', label: 'rejects the wrong sign with a punctuated brightness answer',
+      text: 'Set Studio 2 brightness.', refusal: 'missing', typedMissing: true, answer: '−42%.', answerLiteral: '−42%.', rejectCorrection: true},
+    {kind: 'brightness', label: 'rejects a fractional decimal as a whole brightness answer',
+      text: 'Set Studio 2 brightness.', refusal: 'missing', typedMissing: true, answer: '42.5%.', answerLiteral: '42.5%.', rejectCorrection: true},
     {kind: 'brightness', label: 'keeps a complete conditional brightness request from dispatch',
       text: 'Set Studio 2 brightness to 42% on the weekend.', refusal: 'deferred', condition: 'on the weekend', percent: 42, literal: '42%'},
     {kind: 'brightness', label: 'a generic question does not authorize a later lighting answer',
@@ -136,6 +152,15 @@ for (const provider of ['anthropic', 'openai'] as const) {
     {kind: 'brightness', label: 'admits a contextual qualitative brightness setting', operation: 'fraction-of-scale', valueQuote: 'half brightness', text: 'Set it to half brightness.', percent: 50,
       previous: 'Set Studio 2 brightness to 50%.'},
     {kind: 'brightness', label: 'admits a relative brightness change from a fresh observation'},
+    {kind: 'color', label: 'refuses invented hue and saturation without owner evidence',
+      text: 'Set Studio Lamp color.', deviceLabel: 'Studio Lamp', color: {hue: 120, saturation: 55}, refusal: 'unbound-setting'},
+    {kind: 'color', label: 'admits supplied hue and saturation with a numeric device label',
+      text: 'Set Studio 2 color to 120 degrees and 55%.', color: {hue: 120, saturation: 55}},
+    {kind: 'color', label: 'admits a model-interpreted color with an exact owner citation',
+      text: 'Set Studio 2 color to mint green.',
+      color: {hue: {kind: 'absolute', amount: 120, literal: 'mint green'}, saturation: {kind: 'absolute', amount: 55, literal: 'mint green'}}},
+    {kind: 'temperature', label: 'admits supplied absolute Kelvin with a numeric device label',
+      text: 'Set Studio 2 temperature to 3500 Kelvin.', temperatureValue: 3500},
     {kind: 'temperature', label: 'admits a relative temperature change from a fresh observation'},
     {kind: 'brightness', label: 'refuses relative brightness when the observation is stale', refusal: 'stale'},
     {kind: 'brightness', label: 'refuses absolute brightness when the device goes offline before admission', refusal: 'offline'},
@@ -157,7 +182,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
       light.capabilities.brightness = {supported: true, minimum: 0, maximum: 100};
       light.observed = {status: 'known', observedAtMs: clock.now() - (refusal === 'stale' ? 31_000 : 0), power: {status: 'known', value: true},
         brightness: {status: 'known', value: 35}};
-      const writes: {requestId: string; percent?: number; kelvin?: number; on?: boolean}[] = [];
+      const writes: {requestId: string; percent?: number; kelvin?: number; hue?: number; saturation?: number; on?: boolean}[] = [];
       let fixtureDevice: ModuleContext | undefined;
       const lifx: BunnyModule = {
         manifest: {name: 'lifx', apiVersion: '1.2', configure: config => ({config, devices: [id]})},
@@ -166,18 +191,20 @@ for (const provider of ['anthropic', 'openai'] as const) {
           await given.sdk.serveSync(['device'], () => ({revision: light.revision, states: [deviceState(light)]}));
           await given.sdk.serveSync(['lifx-light'], () => ({revision: 1, states: [{
             type: 'org.bunny.lifx-light.updated', subject: id, dataschema: 'https://bunny.invalid/events/lifx-light/2.1',
-            data: {id, revision: 1, capabilities: {color: {supported: false}, temperature: {supported: true, minimum: 2700, maximum: 6500}},
+            data: {id, revision: 1, capabilities: {color: {supported: true}, temperature: {supported: true, minimum: 2700, maximum: 6500}},
               observed: {status: 'known', observedAtMs: clock.now(), hue: 0, saturation: 0, brightness: 35, kelvin: 3600}},
           }]}));
-          await given.sdk.respond<{requestId: string; percent?: number; kelvin?: number; on?: boolean}>(`bunny.cmd.${family}.${id}`, command => {
+          await given.sdk.respond<{requestId: string; percent?: number; kelvin?: number; hue?: number; saturation?: number; on?: boolean}>(`bunny.cmd.${family}.${id}`, command => {
             writes.push(command.data);
             return {status: 'accepted'};
           });
         },
         stop() {},
       };
-      const family = kind === 'power' ? 'power-set' : kind === 'brightness' ? 'brightness-set' : 'lifx-temperature-set';
-      const name = kind === 'power' ? 'set_lifx_power' : kind === 'brightness' ? 'set_lifx_brightness' : 'control_lifx_temperature_set';
+      const family = kind === 'power' ? 'power-set' : kind === 'brightness' ? 'brightness-set'
+        : kind === 'color' ? 'lifx-color-set' : 'lifx-temperature-set';
+      const name = kind === 'power' ? 'set_lifx_power' : kind === 'brightness' ? 'set_lifx_brightness'
+        : kind === 'color' ? 'control_lifx_color_set' : 'control_lifx_temperature_set';
       const input = kind === 'brightness'
         ? {device: `id:${id}`, percent: exactOperation !== undefined || 'typedMissing' in scenario ? 0 : qualitative ?? (refusal === 'missing' ? 50 : absolute ? 45 : 10),
           operation: 'typedMissing' in scenario ? 'absolute'
@@ -186,7 +213,9 @@ for (const provider of ['anthropic', 'openai'] as const) {
             : refusal === 'opposite' ? '10 percentage points' : absolute ? '45%' : '10 percentage points',
           startingLiteral: ''}
         : kind === 'power' ? {device: `id:${id}`, on: false}
-        : {owner, target: `id:${id}`, arguments: JSON.stringify({kelvin: {kind: 'decrease', amount: 200, literal: '200 Kelvin'}})};
+        : {owner, target: `id:${id}`, arguments: JSON.stringify(kind === 'color' ? scenario.color :
+          'temperatureValue' in scenario ? {kelvin: scenario.temperatureValue} :
+            {kelvin: {kind: 'decrease', amount: 200, literal: '200 Kelvin'}})};
       let seeding = false;
       const companions = createCompanionsModule({share: () => true, transport: (_url, init) => {
         const body = JSON.parse(init.body) as {
@@ -206,7 +235,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
         const valueOnAnswer = ownerAnswer === 'half' ? {operation: 'fraction-of-scale', percent: 0, literal: 'half'} :
           ownerAnswer === 'maximum' ? {operation: 'maximum', percent: 0, literal: 'maximum'} :
             {operation: 'absolute', percent: 'wrongCorrection' in scenario ? 50 : 'unresolvedCorrection' in scenario ? 35 : 42,
-              literal: 'unresolvedCorrection' in scenario ? '35%' : '42%'};
+              literal: 'unresolvedCorrection' in scenario ? '35%' : 'answerLiteral' in scenario ? scenario.answerLiteral : '42%'};
         const args = answered ? {...input, ...valueOnAnswer} : seeding && kind === 'brightness'
           ? {...input, operation: 'absolute', percent: 50, literal: '50%'} :
             kind === 'brightness' && refusal === 'opposite' ? {...input, percent: 20} : input;
@@ -215,7 +244,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
           ...args, intent: !seeding && refusal === 'read-only' ? 'read' : 'set',
           execution: condition !== '' ? 'conditional-or-future' : refusal === 'cancelled' || answered && 'unresolvedCorrection' in scenario
             ? 'unresolved' : 'immediate',
-          condition, missing: !seeding && !answered && refusal === 'missing' ? 'percent' : 'none',
+          condition, missing: !seeding && !answered && refusal === 'missing' && !('unsupportedFractionUnit' in scenario) ? 'percent' : 'none',
           ...(kind === 'power' ? {powerLiteral: seeding ? 'off' : 'powerQuote' in scenario ? scenario.powerQuote :
             refusal === 'opposite' ? 'on' : 'off'} : {}),
         };
@@ -296,7 +325,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
       const prior = companions.inspectAssistant()?.tasks[0]?.taskId;
       await submit({action: 'start', text});
       await waitFor(() => companions.inspectAssistant()?.tasks[0]?.taskId !== prior);
-      if (refusal === 'stale' || refusal === 'read-only' || refusal === 'opposite' || refusal === 'missing' || refusal === 'unsupported-fraction' || refusal === 'cancelled' || refusal === 'deferred') {
+      if (refusal === 'stale' || refusal === 'read-only' || refusal === 'opposite' || refusal === 'missing' || refusal === 'unsupported-fraction' || refusal === 'unbound-setting' || refusal === 'cancelled' || refusal === 'deferred') {
         await waitFor(() => ['waiting', 'succeeded', 'failed', 'uncertain'].includes(companions.inspectAssistant()?.tasks[0]?.status ?? ''));
         assert.equal(submissions.length, 0);
         assert.equal(writes.length, 0);
@@ -305,7 +334,7 @@ for (const provider of ['anthropic', 'openai'] as const) {
         assert.equal(awaiting?.status, 'waiting');
         await submit({action: 'answer', taskId: awaiting?.taskId, questionId: awaiting?.questionId,
           text: ownerAnswer});
-        if ('repeatQuestion' in scenario || 'wrongCorrection' in scenario || 'unresolvedCorrection' in scenario || 'condition' in scenario || 'genericQuestion' in scenario) {
+        if ('repeatQuestion' in scenario || 'wrongCorrection' in scenario || 'rejectCorrection' in scenario || 'unresolvedCorrection' in scenario || 'condition' in scenario || 'genericQuestion' in scenario) {
           await waitFor(() => companions.inspectAssistant()?.tasks[0]?.status === 'succeeded');
           assert.equal(submissions.length, 0);
           assert.equal(writes.length, 0);
@@ -326,14 +355,18 @@ for (const provider of ['anthropic', 'openai'] as const) {
         return;
       }
       await waitFor(() => writes.length > 0);
-      const hasBasis = 'currentFraction' in scenario || kind !== 'power' && qualitative === undefined;
-      assert.deepEqual(submissions, [{schema: `https://bunny.invalid/events/assistant-dispatch/${hasBasis ? '2.4' : '2.1'}`,
+      const hasBasis = 'currentFraction' in scenario || kind === 'temperature' && !('temperatureValue' in scenario) ||
+        kind === 'brightness' && qualitative === undefined;
+      const schemaVersion = hasBasis ? '2.4' : kind === 'color' || kind === 'temperature' ? '2.3' : '2.1';
+      assert.deepEqual(submissions, [{schema: `https://bunny.invalid/events/assistant-dispatch/${schemaVersion}`,
         basis: hasBasis ? {kind, observedAtMs: clock.now(), value: kind === 'brightness' ? 35 : 3600} : undefined}]);
       assert.equal(writes.length, 1);
       const sent = writes[0] ?? assert.fail('Expected a single device submission.');
       if (kind === 'power') assert.equal(sent.on, false);
+      else if (kind === 'color') assert.deepEqual({hue: sent.hue, saturation: sent.saturation}, {hue: 120, saturation: 55});
       else assert.equal(kind === 'brightness' ? sent.percent : sent.kelvin,
-        'expected' in scenario ? scenario.expected : qualitative ?? (kind === 'brightness' ? 45 : 3400));
+        'expected' in scenario ? scenario.expected : 'temperatureValue' in scenario ? scenario.temperatureValue :
+          qualitative ?? (kind === 'brightness' ? 45 : 3400));
       assert.equal(core.operation(sent.requestId)?.family, family);
       assert.equal(core.operation(sent.requestId)?.requestedBy, 'bunny/modules/companions');
     });
