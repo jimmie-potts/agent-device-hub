@@ -183,6 +183,7 @@ const WRITTEN_NUMBER = new RegExp(String.raw`\b(?:${NUMBER_WORD})(?:(?:[ -]| and
 const STATED_UNIT = new RegExp(String.raw`^\s*(${UNIT_SPELLING})`, 'iu');
 const UNIT_INTRODUCER = /^\s+in\s+/iu;
 const LOCATION = /^(?:the|my|our|your|this|that)\b/iu;
+const UNIT_CONTINUATION = /^\s*(?:[/⁄∕／‰‱°]|(?:per|nits?|lumens?|lux|lx|(?:milli)?watts?|mireds?)\b)/iu;
 const PROPERTY_UNIT = /\b(?:brightness|temperature|hue|saturation)\s+in\s+([^.!?;]+?)(?=\s+(?:to|by|at)\b|[.!?;]|$)/giu;
 const QUALITATIVE_AMOUNT = /\b(?:half|(?:(?:a|one|two|three|four) )?quarters?|a (?:bit|few|couple))\b/giu;
 
@@ -238,17 +239,26 @@ function writtenValue(words: string): number {
   return total + group + tail;
 }
 
-function followingUnit(suffix: string): {literal: string; unit: QuantityToken['unit']} {
+function explicitQuantityUnit(unit: string, remainder: string): QuantityToken['unit'] {
+  const introducer = UNIT_INTRODUCER.exec(remainder)?.[0];
+  if (STATED_UNIT.test(remainder) || UNIT_CONTINUATION.test(remainder) ||
+      introducer !== undefined && !LOCATION.test(remainder.slice(introducer.length))) return 'unsupported';
+  return QUANTITY_UNITS[unit.toLowerCase()];
+}
+
+function followingUnit(suffix: string, endsAtExplicitUnit = false): {literal: string; unit: QuantityToken['unit']} {
   const introduced = UNIT_INTRODUCER.exec(suffix)?.[0] ?? '';
   const introducer = LOCATION.test(suffix.slice(introduced.length).trimStart()) ? '' : introduced;
   const known = STATED_UNIT.exec(suffix.slice(introducer.length));
+  const unit = known?.[1];
   const literal = introducer + (known?.[0] ?? '');
   const end = suffix.slice(literal.length);
+  if (endsAtExplicitUnit && unit !== undefined) return {literal, unit: explicitQuantityUnit(unit, end)};
   if (introducer !== '' && known === null ||
       !BARE_QUANTITY_END.test(end) && !/^\s+(?:(?:the|its) )?brightness\b/iu.test(end)) {
     return {literal, unit: 'unsupported'};
   }
-  return {literal, unit: known?.[1] === undefined ? undefined : QUANTITY_UNITS[known[1].toLowerCase()]};
+  return {literal, unit: unit === undefined ? undefined : QUANTITY_UNITS[unit.toLowerCase()]};
 }
 
 function writtenQuantities(text: string, signs: ReadonlyMap<number, Sign>): QuantityToken[] {
@@ -259,7 +269,7 @@ function writtenQuantities(text: string, signs: ReadonlyMap<number, Sign>): Quan
     // In these references “one” identifies the light. It does not supply its setting.
     if (words.toLowerCase() === 'one' && !signs.has(match.index) &&
         /\b(?:the|this|that|which|another)\s+$/iu.test(text.slice(0, match.index)) && !STATED_UNIT.test(suffix)) return [];
-    const {literal, unit} = followingUnit(suffix);
+    const {literal, unit} = followingUnit(suffix, true);
     return [{...signedQuantity(text, match.index, words + literal, writtenValue(words), signs), unit}];
   });
 }
@@ -295,12 +305,11 @@ function quantityTokens(text: string): QuantityToken[] {
     const remainder = clean.slice(end);
     const malformed = skippedNumber || !WHOLE_NUMBER.test(raw) || ATTACHED_QUANTITY.test(remainder) ||
       suffix !== undefined && /^[\p{L}\p{S}%‰‱_]/u.test(remainder);
-    const rest = suffix === undefined && /[.,]$/u.test(number) && !/^\S/u.test(remainder)
-      ? {literal: '', unit: undefined} : followingUnit(remainder);
-    const unit = suffix === undefined ? rest.unit : rest.unit === undefined ? QUANTITY_UNITS[suffix.toLowerCase()] : 'unsupported';
+    const rest = suffix !== undefined ? {literal: '', unit: explicitQuantityUnit(suffix, remainder)}
+      : /[.,]$/u.test(number) && !/^\S/u.test(remainder) ? {literal: '', unit: undefined} : followingUnit(remainder, true);
     const literal = suffix === undefined ? raw + rest.literal : match[0].trim();
     const value = malformed ? Number.NaN : Number(raw.replace(/[,\p{Zs}]/gu, ''));
-    return [{...signedQuantity(clean, match.index, literal, value, signs), unit}];
+    return [{...signedQuantity(clean, match.index, literal, value, signs), unit: rest.unit}];
   });
   if (/\p{N}/u.test(clean.slice(end))) tokens.push({literal: '', unit: undefined, value: Number.NaN});
   return [...tokens, ...writtenQuantities(clean, signs)];
