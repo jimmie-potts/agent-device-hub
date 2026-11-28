@@ -5420,6 +5420,57 @@ for (const adapter of ['anthropic', 'openai'] as const) for (const privateAnswer
 }
 
 for (const adapter of ['anthropic', 'openai'] as const) {
+  void test(`${adapter} applies explicit brightness before trailing prose`, async context => {
+    const owner = 'bunny/modules/pixoo', id = 'fixture-pixoo-2', target = `id:${id}`;
+    const row = {...light(id, 'Fixture Pixoo'), kind: 'pixoo' as const};
+    const now = Date.now();
+    const writes: AssistantDispatch[] = [];
+    let literal = '';
+    const select = (results: readonly string[]) => {
+      if (results.length === 0) return {name: 'read_devices', args: {owner, target}};
+      if (results.length !== 1) return undefined;
+      assert.match(results[0] ?? '', /"brightness":\{"status":"known","value":100\}/u);
+      return {name: 'control_brightness_set', args: {owner, target,
+        arguments: JSON.stringify({percent: {kind: 'absolute', amount: 100, literal}})}};
+    };
+    const provider = adapter === 'openai' ? lightingFixtureSupervisor(select) : new AnthropicProvider({key: 'fixture', transport: (_url, init) => {
+      const body = JSON.parse(init.body) as {messages: {content: {type: string; content?: string}[]}[]};
+      const results = body.messages.flatMap(message => message.content.flatMap(block =>
+        block.type === 'tool_result' && block.content !== undefined ? [block.content] : []));
+      const selected = select(results);
+      return Promise.resolve(Response.json({content: selected === undefined ? [{type: 'text', text: 'Fixture reply.'}]
+        : [{type: 'tool_use', id: `fixture-${String(results.length)}`, name: selected.name,
+          input: selected.name === 'read_devices' ? selected.args : {...immediateLight, ...selected.args}}],
+      stop_reason: selected === undefined ? 'end_turn' : 'tool_use', usage: {input_tokens: 40, output_tokens: 20}}));
+    }});
+    const w = await world(context, {provider, share: sharing(), tools: ['read_devices', 'control_brightness_set'],
+      dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}}, undefined, now);
+    const pixoo = w.bus.connect(owner);
+    context.after(() => pixoo.close());
+    await pixoo.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated', subject: id,
+      dataschema: DEVICE_READBACK_SCHEMA, data: {...row, observed: {status: 'known', observedAtMs: now,
+        power: unknown, brightness: {status: 'known', value: 100}}}}]}));
+    await control(w.core, w.module(), 'enable');
+
+    for (const [quantity, ending] of [['100%', 'once'], ['100 percent', 'without changing anything else'],
+      ['one hundred percent', 'exactly as shown'], ['100 in percent', 'directly'],
+      ['100%', '((as previously shown))'], ['100 percent', '[in the office]']] as const) {
+      literal = quantity;
+      const prior = task(w)?.taskId, before = writes.length;
+      const prompt = `Reapply the current brightness of ${target} at ${quantity} ${ending}.`;
+      assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+      await until(() => task(w)?.taskId !== prior && (status(w) === 'waiting' || status(w) === 'succeeded' || writes.length > before));
+      const sent = writes[before];
+      assert.ok(sent?.family === 'catalog-action', `${prompt} Expected a dispatch, got ${(await page(w)).currentTask?.question?.text ?? status(w)}.`);
+      assert.deepEqual([sent.target, sent.command, sent.data], [id, 'brightness-set', {percent: 100}], prompt);
+      assert.deepEqual(sent.binding, {kind: 'device', owner, target: id, configurationRevision: row.configurationRevision, generation: row.generation});
+      w.advance(1200);
+      await until(() => status(w) === 'succeeded');
+      assert.equal(task(w)?.questions, 0, prompt);
+      assert.equal(writes.length, before + 1, prompt);
+    }
+  });
+
   for (const group of ['binding', 'units', 'signs'] as const) {
     void test(`${adapter} lighting quantities preserve owner intent (${group})`, async context => {
       const owner = 'bunny/modules/pixoo', id = 'fixture-display';
@@ -5431,6 +5482,16 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       const allScenarios: {text: string; quantity: unknown; expected?: number; current?: number; temperature?: true;
         stale?: true; boundary?: true; dispatchChange?: 'value' | 'time'; native?: true; byName?: true; unitCase?: true; signCase?: true; correction?: string; correctedQuantity?: unknown}[] = [
         {text: 'Set brightness to 20 nits.', quantity: {kind: 'absolute', amount: 20, literal: '20'}, correction: 'Twenty-five percent.', correctedQuantity: 25, expected: 25},
+        {text: 'Set brightness to 20% Kelvin.', quantity: {kind: 'absolute', amount: 20, literal: '20%'}, correction: '21%.', correctedQuantity: 21, expected: 21},
+        {text: 'Set brightness to 20% nits.', quantity: {kind: 'absolute', amount: 20, literal: '20%'}, correction: '22%.', correctedQuantity: 22, expected: 22},
+        {text: 'Set brightness to 20% in lumens.', quantity: 20, correction: '23%.', correctedQuantity: 23, expected: 23},
+        {text: 'Set brightness to twenty percent per second.', quantity: 20, correction: '24%.', correctedQuantity: 24, expected: 24},
+        ...['a second', 'each minute', 'foot-lamberts', '(nits)', '([per second])', '(in foot-lamberts)', '[Fahrenheit]', '— nits', '“nits”']
+          .map(ending => ({text: `Set brightness to 18% ${ending}.`, quantity: {kind: 'absolute', amount: 18, literal: '18%'},
+            correction: '25%.', correctedQuantity: 25, expected: 25})),
+        {text: 'Set temperature to 3200 K Fahrenheit.', quantity: {kind: 'absolute', amount: 3200, literal: '3200 K'},
+          correction: '3200 Kelvin.', correctedQuantity: 3200, expected: 3200, temperature: true},
+        {text: 'Set brightness to 20% directly.', quantity: {kind: 'absolute', amount: 20, unit: 'foot-lamberts'}, unitCase: true},
         {text: 'Set brightness to 20 milliwatts.', quantity: 20, correction: '20.', expected: 20},
         {text: 'Set brightness to 20 in lumens.', quantity: {kind: 'absolute', amount: 20, literal: '20'},
           correction: '20 in percent.', correctedQuantity: {kind: 'absolute', amount: 20, literal: '20 in percent', unit: 'percent'}, expected: 20},
