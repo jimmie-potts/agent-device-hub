@@ -370,6 +370,14 @@ export class AssistantStore {
       AND NOT EXISTS (SELECT 1 FROM companion_removals WHERE id=assistant_messages.id) ORDER BY seq`)
       .iterate(conversationId, through, profile, profile) as Iterable<HostedHistoryMessage>;
   }
+  /** Identify newer owner sources without reading their text or consulting disclosure grants. */
+  ownerSourceIdsAfter(conversationId: string, sourceId: string, through: number): Iterable<{id: string}> {
+    return this.database.prepare(`SELECT id FROM assistant_messages
+      WHERE conversation_id=? AND role='owner' AND seq<=?
+      AND seq>(SELECT seq FROM assistant_messages WHERE id=? AND conversation_id=?)
+      AND json_extract(record,'$.speakerId')='owner' AND json_extract(record,'$.provenance.imported')=0 ORDER BY seq`)
+      .iterate(conversationId, through, sourceId, conversationId) as Iterable<{id: string}>;
+  }
   historySourceRevision(id: string): number | undefined {
     const row = this.database.prepare(`SELECT COALESCE(json_extract(record,'$.revision'),0) AS revision
       FROM assistant_messages WHERE id=? AND NOT EXISTS (SELECT 1 FROM companion_removals WHERE id=assistant_messages.id)`)

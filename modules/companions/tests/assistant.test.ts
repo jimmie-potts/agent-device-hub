@@ -5142,10 +5142,13 @@ for (const adapter of ['anthropic', 'openai'] as const) {
     let observedAtMs = Date.now();
     let readSnapshots = 0;
     let proposedRead = false;
+    let withheldOwnerMessage: string | undefined;
     let propose = id;
     const policy = sharing();
     const share = (query: ShareQuery) => policy(query) && !(change === 'grant' && proposedRead && readSnapshots > 2 &&
-      query.destination === 'external-model' && query.source === 'devices' && query.field === 'status' && query.record === id);
+      query.destination === 'external-model' && query.source === 'devices' && query.field === 'status' && query.record === id) &&
+      !(withheldOwnerMessage !== undefined && query.destination === 'external-model' && query.source === 'conversation' &&
+        query.field === 'excerpt' && query.record === withheldOwnerMessage);
     const transport = (_url: string, init: {body: string}): Promise<Response> => {
       const body = JSON.parse(init.body) as {
         messages?: {content: {type: string; content?: string; tool_use_id?: string}[]}[];
@@ -5252,21 +5255,32 @@ for (const adapter of ['anthropic', 'openai'] as const) {
       return (JSON.parse(Buffer.from(content.bytes).toString()) as {day: {unreported: number}}).day.unreported;
     };
 
-    for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound', 'lookalike', 'multiple'] as const) {
+    for (const variation of ['grant', 'generation', 'duplicate', 'observation', 'unbound', 'lookalike', 'multiple', 'unknown', 'correction', 'filler', 'hidden-newer'] as const) {
       change = 'none';
+      withheldOwnerMessage = undefined;
       propose = id;
       await ask(variation === 'multiple' ? `Compare ${selected.label} and id:${unrelated.id}.` : `Check the brightness of id:${id}.`);
       assert.equal(status(w), 'succeeded');
-      change = variation === 'unbound' || variation === 'lookalike' || variation === 'multiple' ? 'none' : variation;
+      if (variation === 'unknown' || variation === 'hidden-newer') {
+        await ask('Now let’s talk about id:missing-panel instead.');
+        if (variation === 'hidden-newer') {
+          const latest = task(w);
+          assert.ok(latest);
+          withheldOwnerMessage = latest.taskId + '-prompt';
+        }
+      }
+      if (variation === 'correction') await ask(`Stop referring to ${selected.label}. I mean the other display.`);
+      if (variation === 'filler') await ask('Thanks for checking.');
+      change = variation === 'grant' || variation === 'generation' || variation === 'duplicate' || variation === 'observation' ? variation : 'none';
       propose = variation === 'unbound' ? unrelated.id : variation === 'lookalike' ? alias.id : id;
       const callsBefore: number = reads.length;
       const spendBefore = await unreported();
       await ask(question);
       assert.equal(await unreported(), spendBefore, 'a request stopped locally leaves no unreported provider charge');
-      if (variation === 'observation' || variation === 'unbound' || variation === 'lookalike' || variation === 'multiple') {
+      if (variation !== 'grant' && variation !== 'generation' && variation !== 'duplicate') {
         assert.equal(status(w), 'succeeded');
         assert.equal(reads.length, callsBefore + 1);
-        if (variation !== 'observation') assert.equal(reads.at(-1), '{"devices":[]}');
+        if (variation !== 'observation' && variation !== 'filler') assert.equal(reads.at(-1), '{"devices":[]}');
         else assert.match(reads.at(-1) ?? '', /"brightness":\{"status":"known","value":37\}/u);
       } else {
         assert.equal(status(w), 'failed', JSON.stringify({variation, readSnapshots, facts: reads.at(-1)}));

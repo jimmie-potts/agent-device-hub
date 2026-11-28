@@ -1428,7 +1428,7 @@ Conversation SHALL use the selected supervisor's interpretation of the current a
 
 - **WHEN** a current status request refers back to one permitted device and a read resolves that binding
 - **THEN** before returning the facts to the supervisor, the Hub SHALL recheck the exact device, original owner sources and current grants using the saved binding.
-- **AND** a changed identity, ambiguity or revocation SHALL withhold the facts. A later observation of the same device SHALL NOT invalidate the permitted earlier sample.
+- **AND** a changed identity, ambiguity or revocation SHALL withhold the facts. An unavailable newer owner message SHALL NOT revive an older contextual binding. A later observation of the same device SHALL NOT invalidate the permitted earlier sample.
 - **AND** the status request SHALL send no device write. A local refusal before provider transmission SHALL NOT retain a charge for that unsent call.
 
 #### Scenario: A hosted device read omits its selector
